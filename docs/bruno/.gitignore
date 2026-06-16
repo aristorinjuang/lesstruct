@@ -1,0 +1,14 @@
+# Secrets
+.env*
+
+# Dependencies
+node_modules
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Per-developer environment files (use *.example.yml as a template)
+/environments/Local.yml
+/environments/*.local.yml
+!/environments/*.example.yml

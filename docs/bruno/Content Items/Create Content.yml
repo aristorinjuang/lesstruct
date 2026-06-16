@@ -1,0 +1,33 @@
+info:
+  name: Create Content
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/content_items"
+  body:
+    type: json
+    data: |-
+      {
+        "title": "My First Content",
+        "content": "<p>Hello World.</p>",
+        "tags": [
+          "test",
+          "first"
+        ],
+        "status": "draft",
+        "postType": "post",
+        "metaDescription": "This description is for short.",
+        "ogTitle": "My First Content SEO",
+        "ogDescription": "This description is for SEO."
+      }
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -1,0 +1,24 @@
+{{define "body"}}
+<div class="auth-page container">
+<h1>{{t .Lang "ui.register"}}</h1>
+<div id="auth-error" class="auth-error alert alert--error" style="display:none"></div>
+<form id="register-form" class="auth-form">
+<label for="username">{{t .Lang "ui.username_label"}}</label>
+<input type="text" id="username" name="username" class="form-control" required>
+<label for="name">{{t .Lang "ui.name_label"}}</label>
+<input type="text" id="name" name="name" class="form-control" required>
+<label for="email">{{t .Lang "ui.email_label"}}</label>
+<input type="email" id="email" name="email" class="form-control" required>
+<label for="password">{{t .Lang "ui.password_label"}}</label>
+<input type="password" id="password" name="password" class="form-control" autocomplete="new-password" required>
+<button type="submit" class="btn">{{t .Lang "ui.register"}}</button>
+</form>
+<div id="auth-success" class="auth-success alert alert--success" style="display:none">
+<p>{{t .Lang "ui.check_email_verify"}}</p>
+</div>
+<div class="auth-links">
+<p><a href="/login">{{t .Lang "ui.already_have_account"}}</a></p>
+</div>
+</div>
+<script src="/static/auth.js"></script>
+{{end}}

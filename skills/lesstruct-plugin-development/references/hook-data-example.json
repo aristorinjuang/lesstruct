@@ -1,0 +1,19 @@
+{
+  "_comment": "Real shape the host sends to a before_save hook. contentId is 0 on create; populated with the existing ID on update. The plugin should return a JSON object containing (at most) customFields; the host ignores other fields in the result.",
+
+  "contentId": 0,
+  "userId": 42,
+  "title": "My Product",
+  "content": "<p>Lorem ipsum.</p>",
+  "tags": ["featured", "sale"],
+  "status": "draft",
+  "postType": "product",
+
+  "customFields": {
+    "price": 29.99,
+    "_comment_regular_vs_system": "price is a regular custom field. internal_sku and sync_status are system fields (defined in the post type schema with system = true). Plugins can read and write both, but only via the before_save hook.",
+
+    "internal_sku": "SKU-001",
+    "sync_status": "synced"
+  }
+}

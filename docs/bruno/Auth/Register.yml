@@ -1,0 +1,23 @@
+info:
+  name: Register
+  type: http
+  seq: 5
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/auth/register"
+  body:
+    type: json
+    data: |-
+      {
+        "username": "{{USERNAME}}",
+        "email": "{{USER_EMAIL}}",
+        "password": "{{USER_PASSWORD}}"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

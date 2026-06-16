@@ -1,0 +1,14 @@
+{{/*
+  Override of hugo-book's `html-head-favicon.html`. The upstream partial
+  emits a single `<link rel="icon">` pointing at one PNG; we emit the
+  full set of favicon link tags that match the Lesstruct admin panel
+  (web/admin/public/), so the docs site uses the same brand identity.
+
+  The `<link rel="manifest">` tag is NOT emitted here — hugo-book's
+  html-head.html emits it from assets/manifest.json (overridden in
+  site/assets/manifest.json with the same Lesstruct branding).
+*/}}
+<link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />

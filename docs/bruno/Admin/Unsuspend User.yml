@@ -1,0 +1,17 @@
+info:
+  name: Unsuspend User
+  type: http
+  seq: 8
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/admin/users/{{USER_ID}}/unsuspend"
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

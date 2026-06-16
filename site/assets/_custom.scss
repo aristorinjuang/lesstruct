@@ -1,0 +1,133 @@
+/*
+ * Lesstruct docs site customizations.
+ *
+ * Overrides and additions layered on top of the vendored hugo-book theme.
+ * See site/hugo.yaml for the asset pipeline; this file is automatically
+ * picked up because Hugo's `assets/` directory takes precedence over the
+ * theme's `assets/` directory of the same name.
+ */
+
+/* ----------------------------------------------------------------------- */
+/* Code blocks with line numbers (Hugo chroma, noClasses=false, lineNos=true) */
+/* ----------------------------------------------------------------------- */
+
+.markdown .highlight {
+  /* Breathing room from surrounding prose. No outer border — the gutter
+     shade is the visual boundary. */
+  margin: 1.25rem 0;
+  overflow: hidden;
+  background: var(--gray-100);
+}
+
+.markdown .highlight > .chroma {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.markdown .highlight .lntable {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  margin: 0;
+  display: table;
+  table-layout: fixed;
+}
+
+.markdown .highlight .lntable tr {
+  border: 0;
+}
+
+.markdown .highlight .lntable tr td {
+  display: table-cell;
+  vertical-align: top;
+  padding: 0;
+  border: 0;
+}
+
+/* Line-number gutter. Same font-size, same line-height as the code so
+   the two columns line up row-by-row. The background tint is the only
+   separator — no vertical border. */
+.markdown .highlight .lntable tr td.lntd:first-child {
+  width: 1%;
+  white-space: nowrap;
+  user-select: none;
+  text-align: right;
+  color: var(--gray-500);
+  background: rgba(0, 0, 0, 0.025);
+  padding: 0.75rem 0.5rem 0.75rem 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Code cell. */
+.markdown .highlight .lntable tr td.lntd:last-child {
+  padding: 0.75rem 1rem;
+}
+
+/* Both <pre> elements share identical font metrics and no border. */
+.markdown .highlight .lntable tr td pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  font-size: 0.875em;
+  line-height: 1.6;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.markdown .highlight .lntable tr td pre code {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-size: inherit;
+  line-height: inherit;
+  font-family: inherit;
+  white-space: pre;
+}
+
+/* Each chroma `<span>` (one per line) becomes its own block so the
+   line-number gutter and the code gutter line up row-by-row. Without
+   `display: block` here, hugo-book's `code > span { display: flex }`
+   makes each line a one-line flex container and the two gutters drift
+   vertically. */
+.markdown .highlight .lntable tr td pre code > span,
+.markdown .highlight .lntable .lnt {
+  display: block;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Line-number text — dim, never selectable. */
+.markdown .highlight .lntable .lnt {
+  color: var(--gray-500);
+}
+
+@media (prefers-color-scheme: dark) {
+  .markdown .highlight .lntable tr td.lntd:first-child {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .markdown .highlight .lntable tr td.lntd:first-child,
+  .markdown .highlight .lntable .lnt {
+    color: var(--gray-500);
+  }
+}
+
+/* Plain code blocks (no line numbers). */
+.markdown pre {
+  padding: 1rem;
+  background: var(--gray-100);
+  border-radius: 0.25rem;
+  border: 1px solid var(--gray-200);
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 0.875em;
+  line-height: 1.6;
+}

@@ -1,0 +1,23 @@
+info:
+  name: Complete Setup
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/auth/first-login"
+  body:
+    type: json
+    data: |-
+      {
+        "password": "{{PASSWORD}}",
+        "email": "{{EMAIL}}",
+        "databaseType": "{{DATABASE_TYPE}}"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

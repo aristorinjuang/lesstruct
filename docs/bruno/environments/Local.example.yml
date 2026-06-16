@@ -1,0 +1,35 @@
+# Bruno environment template.
+# Copy this file to Local.yml and replace the placeholders with your own values.
+# Local.yml is gitignored — do not commit it.
+name: Local
+variables:
+  - name: BASE_URL
+    value: http://localhost:8080
+  - secret: true
+    name: PASSWORD
+  - name: EMAIL
+    value: admin@lesstruct.local
+  - name: DATABASE_TYPE
+    value: sqlite
+  - name: USERNAME
+    value: johndoe
+  - secret: true
+    name: USER_PASSWORD
+  - name: USER_EMAIL
+    value: alice@lesstruct.local
+  - secret: true
+    name: VERIFICATION_TOKEN
+  - secret: true
+    name: TOKEN
+  - name: USER_ID
+    value: "5"
+  - secret: true
+    name: PROFILE_VERIFICATION_TOKEN
+  - secret: true
+    name: USER_PASSWORD_NEW
+  - name: CONTENT_ID
+    value: "1"
+  - name: MEDIA_ID
+    value: "1"
+  - name: SLUG
+    value: my-first-content

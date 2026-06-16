@@ -1,0 +1,37 @@
+// Copy this block into your plugin's main.go (Go/TinyGo).
+// The Lesstruct SDK does not currently ship these declarations; you
+// must write them yourself, or copy this file.
+//
+// Note: Lesstruct's host function result offset is 4096. Read the
+// result from offset 4096 BEFORE invoking the next host function, or
+// the second call will overwrite the first result.
+
+package main
+
+//go:wasmimport lesstruct http_get
+func httpGet(urlPtr, urlLen, headersPtr, headersLen uint32) uint32
+
+//go:wasmimport lesstruct http_post
+func httpPost(
+	urlPtr, urlLen uint32,
+	headersPtr, headersLen uint32,
+	bodyPtr, bodyLen uint32,
+) uint32
+
+//go:wasmimport lesstruct db_query
+func dbQuery(
+	sqlPtr, sqlLen uint32,
+	paramsPtr, paramsLen uint32,
+) uint32
+
+//go:wasmimport lesstruct db_exec
+func dbExec(
+	sqlPtr, sqlLen uint32,
+	paramsPtr, paramsLen uint32,
+) uint32
+
+//go:wasmimport lesstruct log_info
+func logInfo(msgPtr, msgLen uint32)
+
+//go:wasmimport lesstruct log_error
+func logError(msgPtr, msgLen uint32)

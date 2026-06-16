@@ -1,0 +1,29 @@
+{{define "body"}}
+<div class="author-page container">
+{{if .AuthorAvatarURL}}<img src="{{.AuthorAvatarURL}}" class="author-page-avatar" alt="{{.AuthorName}}">{{end}}
+<h1>{{.AuthorName}}</h1>
+{{if .CustomFieldsFormatted}}
+<section class="custom-fields" aria-label="About the Author">
+<dl class="custom-fields-list">
+{{range .CustomFieldsFormatted}}<dt>{{.Label}}</dt>
+<dd>{{.Value}}</dd>
+{{end}}
+</dl>
+</section>
+{{end}}
+<div class="posts-grid">
+{{range .Posts}}
+<article class="post-card">
+<a href="/{{.Slug}}">
+{{if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+<h2>{{.Title}}</h2>
+{{if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
+<time>{{.CreatedAt}}</time>
+</a>
+</article>
+{{else}}
+<p class="empty">{{t .Lang "ui.no_posts"}}</p>
+{{end}}
+</div>
+</div>
+{{end}}

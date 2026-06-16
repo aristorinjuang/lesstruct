@@ -1,0 +1,32 @@
+{{/*
+  Override of hugo-book's `columns` shortcode. The upstream template uses
+  `{{ .Inner | safeHTML }}` which, under Hugo 0.163's shortcode handling,
+  emits the inner markdown source as text rather than rendering it. This
+  override uses `markdownify` so the inner markdown list (each `-` item
+  becomes a column) actually renders as HTML.
+
+  Layout contract and class names are preserved 1:1 so the theme's
+  `.book-columns` / `.markdown-inner` / flex-grow styles still apply.
+*/}}
+
+{{- $ratio := (split (.Get "ratio") ":") -}}
+{{- if strings.Contains .InnerDeindent "<--->" -}}
+  {{- warnf "Columns shortcode separator '<--->' is deprecated, use markdown list instead." -}}
+  <div class="book-columns flex flex-wrap{{ with .Get "class" }} {{ . }}{{ end }}">
+    {{- range $index, $content := split .InnerDeindent "<--->" -}}
+      {{- $grow := default 1 (index $ratio $index) -}}
+      <div class="flex-even markdown-inner" style="flex-grow: {{ $grow }};">
+        {{- $content | markdownify -}}
+      </div>
+    {{- end -}}
+  </div>
+{{- else -}}
+  {{- if .Get "ratio" -}}<style>{{- range $index, $grow := $ratio -}}
+    .book-columns-{{ $.Ordinal }}>ul>li:nth-child({{ $index | add 1 }}){
+      flex-grow: {{ default 1 $grow }};
+    }
+  {{- end -}}</style>{{- end -}}
+  <div class="book-columns book-columns-{{ .Ordinal }}{{ with .Get "class" }} {{ . }}{{ end }}">
+    {{- .Inner | markdownify -}}
+  </div>
+{{- end -}}

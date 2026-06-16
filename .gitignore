@@ -1,0 +1,11 @@
+.claude/
+.deepseek/
+.playwright-mcp/
+_bmad/
+_bmad-output/
+data/
+node_modules/
+bin/
+.env
+*.cov
+*.out

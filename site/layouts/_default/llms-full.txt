@@ -1,0 +1,37 @@
+{{- $projectName := .Site.Title -}}
+{{- $description := .Site.Params.description | default "Documentation site for Lesstruct." -}}
+# {{ $projectName }} — Full Documentation
+
+> {{ $description }}
+
+> This file concatenates every documentation page on the site in section order.
+> For a slim index, see `/llms.txt`. For per-page fetching, use each page's `/<path>/index.md` URL.
+
+{{- range .Site.Sections.ByWeight }}
+## Section: {{ .Title | default (humanize .Section) }}
+
+{{ range .Pages.ByWeight }}
+{{- $title := "" -}}
+{{- if .Title -}}
+  {{- $title = .Title -}}
+{{- else -}}
+  {{- $h1 := index (findRE "^#\\s+([^\n]+)" .RawContent 1) 0 -}}
+  {{- if $h1 -}}
+    {{- $title = replaceRE "^#\\s+" "" $h1 -}}
+  {{- end -}}
+{{- end -}}
+{{- if not $title -}}
+  {{- $title = .File.BaseFileName | humanize | title -}}
+{{- end -}}
+### {{ $title }}
+
+Source: [{{ .RelPermalink }}index.html]({{ .RelPermalink }}index.html)
+{{ with .Description }}{{ . }}
+{{ else }}Reference page for {{ $title }}.{{ end }}
+
+{{ .RawContent }}
+
+---
+
+{{ end }}
+{{- end }}

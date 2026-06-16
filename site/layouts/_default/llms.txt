@@ -1,0 +1,40 @@
+{{- $projectName := .Site.Title -}}
+{{- $description := .Site.Params.description | default "Documentation site for Lesstruct." -}}
+# {{ $projectName }}
+
+> {{ $description }}
+
+## Pages
+
+{{- range .Site.Sections.ByWeight }}
+### {{ .Title | default (humanize .Section) }}
+
+{{- range .Pages.ByWeight }}
+{{- $title := "" -}}
+{{- if .Title -}}
+  {{- $title = .Title -}}
+{{- else -}}
+  {{- $h1 := index (findRE "^#\\s+([^\n]+)" .RawContent 1) 0 -}}
+  {{- if $h1 -}}
+    {{- $title = replaceRE "^#\\s+" "" $h1 -}}
+  {{- end -}}
+{{- end -}}
+{{- if not $title -}}
+  {{- $title = .File.BaseFileName | humanize | title -}}
+{{- end -}}
+{{- $desc := printf "Reference page at %s." .RelPermalink -}}
+{{- with .Description -}}
+  {{- $desc = . | plainify | chomp -}}
+{{- end -}}
+{{- if gt (len $desc) 220 -}}
+  {{- $desc = printf "%s…" (substr $desc 0 220) -}}
+{{- end -}}
+- [{{ $title }}]({{ .RelPermalink }}index.html): {{ $desc }}
+{{- end }}
+{{- end }}
+
+## Optional
+
+- [Full documentation (single file)](/llms-full.txt): All pages concatenated in section order, suitable for a single context window.
+- [Sitemap](/sitemap.xml): Machine-readable page index.
+- [Markdown sources on GitHub](https://github.com/aristorinjuang/lesstruct/tree/main/docs): The source of truth for every doc on this site.

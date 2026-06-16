@@ -1,0 +1,195 @@
+/* color palette from <https://github.com/vuejs/theme> */
+:root {
+  --vt-c-white: #ffffff;
+  --vt-c-white-soft: #f8f8f8;
+  --vt-c-white-mute: #f2f2f2;
+
+  --vt-c-black: #181818;
+  --vt-c-black-soft: #222222;
+  --vt-c-black-mute: #282828;
+
+  --vt-c-indigo: #2c3e50;
+
+  --vt-c-divider-light-1: rgba(60, 60, 60, 0.29);
+  --vt-c-divider-light-2: rgba(60, 60, 60, 0.12);
+  --vt-c-divider-dark-1: rgba(84, 84, 84, 0.65);
+  --vt-c-divider-dark-2: rgba(84, 84, 84, 0.48);
+
+  --vt-c-text-light-1: var(--vt-c-indigo);
+  --vt-c-text-light-2: rgba(60, 60, 60, 0.66);
+  --vt-c-text-dark-1: var(--vt-c-white);
+  --vt-c-text-dark-2: rgba(235, 235, 235, 0.64);
+}
+
+/* semantic color variables for this project */
+:root {
+  --color-background: var(--vt-c-white);
+  --color-background-soft: var(--vt-c-white-soft);
+  --color-background-mute: var(--vt-c-white-mute);
+
+  --color-border: var(--vt-c-divider-light-2);
+  --color-border-hover: var(--vt-c-divider-light-1);
+
+  --color-heading: var(--vt-c-text-light-1);
+  --color-text: var(--vt-c-text-light-1);
+
+  --section-gap: 160px;
+
+  color-scheme: light;
+}
+
+/* Lesstruct Brand Colors */
+:root {
+  /* Primary Color - cyan */
+  --brand-primary: #22d3ee;
+  --brand-primary-hover: #06b6d4;
+  --brand-primary-light: rgba(34, 211, 238, 0.1);
+
+  /* Secondary Color - indigo */
+  --brand-secondary: #2536eb;
+  --brand-secondary-hover: #1e3a8a;
+  --brand-secondary-light: rgba(37, 54, 235, 0.1);
+
+  /* Accent/Third Color - violet */
+  --brand-accent: #8b5cf6;
+  --brand-accent-hover: #7c3aed;
+  --brand-accent-light: rgba(139, 92, 246, 0.1);
+
+  /* Dark Colors */
+  --brand-dark-1: #0f172a;
+  --brand-dark-2: #111827;
+
+  /* Light Colors */
+  --brand-light-1: #f9fafb;
+  --brand-light-2: #e5e7eb;
+}
+
+/* Semantic color variables */
+:root {
+  /* Error / Danger */
+  --color-error: #ef4444;
+  --color-error-dark: #991b1b;
+  --color-error-bg: #fef2f2;
+  --color-error-border: #fecaca;
+  --color-destructive: #d64535;
+
+  /* Success */
+  --color-success: #16a34a;
+  --color-success-bg: #d1fae5;
+  --color-success-border: #a7f3d0;
+  --color-success-dark: #065f46;
+
+  /* Warning */
+  --color-warning-dark: #92400e;
+  --color-warning-bg: #fef3c7;
+  --color-warning-border: #fbbf24;
+
+  /* Info */
+  --color-info: #3b82f6;
+  --color-info-dark: #1e40af;
+  --color-info-bg: #dbeafe;
+
+  /* Spam */
+  --color-spam: #6b21a8;
+  --color-spam-bg: #f3e8ff;
+
+  /* Interactive */
+  --color-interactive-hover: #4338CA;
+
+  /* Muted grays */
+  --color-bg-muted: #f3f4f6;
+  --color-text-muted: #6b7280;
+  --color-text-secondary: #374151;
+  --color-bg-inverse: #1f2937;
+  --color-border-strong: #d1d5db;
+
+  /* Misc */
+  --color-white: #ffffff;
+}
+
+/* Dark mode theme (user-controlled via data-theme attribute) */
+[data-theme='dark'] {
+  --color-background: var(--vt-c-black);
+  --color-background-soft: var(--vt-c-black-soft);
+  --color-background-mute: var(--vt-c-black-mute);
+
+  --color-border: var(--vt-c-divider-dark-2);
+  --color-border-hover: var(--vt-c-divider-dark-1);
+
+  --color-heading: var(--vt-c-text-dark-1);
+  --color-text: var(--vt-c-text-dark-2);
+
+  /* Swap light/dark brand variables for dark mode */
+  --brand-dark-1: #f9fafb; /* was #0f172a — now used as text color */
+  --brand-dark-2: #e5e7eb; /* was #111827 — now used as secondary text */
+  --brand-light-1: #111827; /* was #f9fafb — now used as background */
+  --brand-light-2: #1e293b; /* was #e5e7eb — now used as borders */
+
+  /* Slightly increase light variant opacities for dark backgrounds */
+  --brand-primary-light: rgba(34, 211, 238, 0.15);
+  --brand-secondary-light: rgba(37, 54, 235, 0.15);
+  --brand-accent-light: rgba(139, 92, 246, 0.15);
+
+  /* Brighten secondary hover for visibility in dark mode */
+  --brand-secondary-hover: #374ce0;
+
+  /* Semantic color overrides for dark mode */
+  --color-warning-bg: #451a03;
+  --color-warning-border: #78350f;
+
+  /* Success — dark background, readable light text */
+  --color-success-bg: #052e1a;
+  --color-success-border: #1b4332;
+  --color-success-dark: #4ade80;
+
+  /* Error / Danger — dark background, readable light text */
+  --color-error-bg: #2a0e0e;
+  --color-error-border: #5b1c1c;
+  --color-error-dark: #fca5a5;
+
+  /* Info — dark background, readable light text */
+  --color-info-bg: #0c1e3a;
+  --color-info-border: #1e3a5f;
+  --color-info-dark: #93c5fd;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  font-weight: normal;
+  transition:
+    color 0.3s ease-in-out,
+    background-color 0.3s ease-in-out,
+    border-color 0.3s ease-in-out;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--color-text);
+  background: var(--color-background);
+  transition:
+    color 0.3s ease-in-out,
+    background-color 0.3s ease-in-out;
+  line-height: 1.6;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Oxygen,
+    Ubuntu,
+    Cantarell,
+    'Fira Sans',
+    'Droid Sans',
+    'Helvetica Neue',
+    sans-serif;
+  font-size: 15px;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

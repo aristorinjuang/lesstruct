@@ -1,0 +1,27 @@
+info:
+  name: Upload
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/media/upload"
+  body:
+    type: multipart-form
+    data:
+      - name: image
+        type: file
+        value:
+          - ./logo.png
+      - name: alt_text
+        type: text
+        value: Logo
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

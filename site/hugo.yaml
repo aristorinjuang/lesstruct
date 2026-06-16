@@ -1,0 +1,100 @@
+baseURL: "https://lesstruct.dev/"
+title: "Lesstruct"
+theme: "hugo-book"
+copyright: "Released under the [MIT License](https://github.com/aristorinjuang/lesstruct/blob/main/LICENSE)."
+
+disablePathToLower: true
+enableGitInfo: true
+
+enableRobotsTXT: true
+
+pagination:
+  pagerSize: 20
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+  tableOfContents:
+    startLevel: 1
+    endLevel: 3
+  highlight:
+    noClasses: false
+    lineNos: true
+    codeFences: true
+    guessSyntax: true
+
+module:
+  mounts:
+    - source: content
+      target: content
+    - source: ../docs
+      target: content/docs
+      files:
+        - "*.md"
+        - "**/*.md"
+    - source: ../skills/lesstruct-theme-development/references
+      target: content/skills/theme-development
+      files:
+        - "*.md"
+        - "**/*.md"
+    - source: ../skills/lesstruct-plugin-development/references
+      target: content/skills/plugin-development
+      files:
+        - "*.md"
+        - "**/*.md"
+
+outputs:
+  home:
+    - html
+    - llms
+    - llms-full
+  page:
+    - html
+    - Markdown
+  section:
+    - html
+    - rss
+
+outputFormats:
+  Markdown:
+    baseName: index
+    mediaType: text/markdown
+    isPlainText: true
+    notAlternative: true
+  llms:
+    baseName: llms
+    mediaType: text/plain
+    isPlainText: true
+    notAlternative: true
+  llms-full:
+    baseName: llms-full
+    mediaType: text/plain
+    isPlainText: true
+    notAlternative: true
+
+menu:
+  after:
+    - name: "GitHub"
+      url: "https://github.com/aristorinjuang/lesstruct"
+      weight: 10
+    - name: "Sponsor"
+      url: "https://github.com/sponsors/aristorinjuang"
+      weight: 20
+    - name: "License"
+      url: "https://github.com/aristorinjuang/lesstruct/blob/main/LICENSE"
+      weight: 30
+
+params:
+  BookTheme: "auto"
+  BookSection: "docs"
+  BookSearch: true
+  BookComments: false
+  BookPortableLinks: true
+  BookDateFormat: "January 2, 2006"
+  BookLastChangeLink: 'https://github.com/aristorinjuang/lesstruct/commit/{{ .GitInfo.Hash }}'
+  BookEditLink: 'https://github.com/aristorinjuang/lesstruct/edit/main/docs/{{ .File.LogicalName }}'
+
+sitemap:
+  changefreq: weekly
+  priority: 0.5

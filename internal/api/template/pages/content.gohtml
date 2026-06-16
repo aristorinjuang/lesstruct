@@ -1,0 +1,62 @@
+{{define "body"}}
+<article class="content-article">
+<h1 class="content-wrapper">{{.Title}}</h1>
+<div class="content-meta content-wrapper">
+{{if .AuthorAvatarURL}}<img src="{{.AuthorAvatarURL}}" class="author-avatar" alt="{{.Author}}">{{end}}<time>{{.CreatedAt}}</time>
+{{if .Author}}<span class="author">{{t .Lang "ui.by_author"}} <a href="/authors/{{.Username}}">{{.Author}}</a></span>{{end}}
+</div>
+	{{if .LanguageLinks}}
+	<div class="content-languages content-wrapper">
+	{{range .LanguageLinks}}<a href="{{.URL}}" hreflang="{{.Code}}" rel="alternate" class="lang-link{{if eq $.Lang .Code}} lang-link--active{{end}}">{{.Name}}</a>{{end}}
+	</div>
+	{{end}}
+{{if .Tags}}
+<div class="content-tags content-wrapper">
+{{range .Tags}}<a href="/tags/{{. | urlpath}}" class="tag">{{.}}</a>{{end}}
+</div>
+{{end}}
+<div class="content-body">
+{{.Body}}
+</div>
+{{if .CustomFieldsFormatted}}
+<section class="custom-fields" aria-label="Custom Fields">
+<dl class="custom-fields-list">
+{{range .CustomFieldsFormatted}}<dt>{{.Label}}</dt>
+<dd>{{.Value}}</dd>
+{{end}}
+</dl>
+</section>
+{{end}}
+{{if .AllowComments}}
+<section class="comments-section content-wrapper" aria-label="{{t .Lang "ui.comments"}}">
+<h2>{{t .Lang "ui.comments"}}</h2>
+{{if .Comments}}
+<div class="comment-list">
+{{range .Comments}}
+<div class="comment-item">
+<div class="comment-header">
+<span class="comment-author">{{.Author}}</span>
+<time class="comment-date">{{.CreatedAt}}</time>
+</div>
+<p class="comment-text">{{.Text}}</p>
+</div>
+{{end}}
+</div>
+{{else}}
+<p class="comment-empty">{{t .Lang "ui.no_comments"}}</p>
+{{end}}
+<div id="comment-login-link" class="comment-login" style="display:none;">
+<a href="/login">{{t .Lang "ui.login_to_comment"}}</a>
+</div>
+<form id="comment-form" class="comment-form" data-slug="{{.Slug}}" style="display:none;">
+<div id="comment-error" class="comment-error alert alert--error" style="display:none;"></div>
+<div id="comment-success" class="comment-success alert alert--success" style="display:none;"></div>
+<textarea name="comment" class="form-control" placeholder="{{t .Lang "ui.add_comment_placeholder"}}" rows="4" required maxlength="2000"></textarea>
+<button type="submit" class="btn">{{t .Lang "ui.submit_comment"}}</button>
+</form>
+</section>
+<script src="/static/comments.js"></script>
+{{end}}
+</article>
+<p class="container"><a href="/" class="back-link">&larr; {{t .Lang "ui.back_to_home"}}</a></p>
+{{end}}

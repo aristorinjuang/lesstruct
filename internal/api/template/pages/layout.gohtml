@@ -1,0 +1,47 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{.PageTitle}}</title>
+<meta name="description" content="{{.Description}}">
+<meta property="og:title" content="{{.OGTitle}}">
+<meta property="og:description" content="{{.OGDesc}}">
+{{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+{{if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">{{end}}
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css">
+</head>
+<body>
+<header class="site-header">
+<div class="container">
+<a href="/" class="site-logo">Lesstruct</a>
+<div class="nav-wrapper">
+<div class="site-search"><button class="search-toggle" aria-label="{{t .Lang "ui.search"}}" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button><div class="search-box"><input type="search" id="search-input" class="search-input" placeholder="{{t .Lang "ui.search_posts"}}" autocomplete="off" aria-label="{{t .Lang "ui.search_posts"}}"><div id="search-dropdown" class="search-dropdown" role="listbox" style="display:none"></div></div></div>
+<button class="nav-toggle" aria-label="{{t .Lang "ui.toggle_navigation"}}" aria-expanded="false"><span></span><span></span><span></span><span></span></button>
+<nav class="site-nav">
+{{range .NavigationItems}}<a href="{{.URL}}"{{if .IsActive}} class="active"{{end}}>{{.Title}}</a>
+{{end}}<a id="nav-login" href="/login">{{t .Lang "ui.login"}}</a><a id="nav-logout" href="/" style="display:none">{{t .Lang "ui.logout"}}</a>
+</nav>
+</div>
+</div>
+</header>
+<main>
+{{template "body" .}}
+</main>
+<footer class="site-footer">
+<div class="container">
+<p>&copy; 2026 Lesstruct. All rights reserved.</p>
+</div>
+</footer>
+<script src="/static/nav-auth.js"></script>
+<script src="/static/search.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="/static/math.js"></script>
+<script src="/static/highlight.min.js"></script>
+<script>document.addEventListener('DOMContentLoaded', function() { hljs.highlightAll() })</script>
+</body>
+</html>{{end}}

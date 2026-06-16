@@ -1,0 +1,28 @@
+# DO NOT EDIT -- overwritten on every update.
+#
+# Customization surface for the lesstruct-theme-development skill.
+# Mirrors the BMad agent customization shape under the [workflow] namespace.
+# Agents that do not understand this file (most non-BMad agents) will ignore
+# it; the SKILL.md is the canonical workflow.
+
+[workflow]
+
+# --- Configurable below. Overrides merge per BMad structural rules: ---
+#   scalars: override wins
+#   arrays (persistent_facts, activation_steps_*): append
+
+# Steps to run before the standard activation.
+activation_steps_prepend = []
+
+# Steps to run after greet but before the workflow begins.
+activation_steps_append = []
+
+# Persistent facts the workflow keeps in mind for the whole run.
+# The default loads the user-facing theme contract as a foundational fact.
+persistent_facts = [
+  "file:{skill-root}/references/theme-development.md",
+]
+
+# Post-completion hook. Empty by default; override to push a summary
+# to a Slack channel, a file, or a ticket queue.
+on_complete = ""

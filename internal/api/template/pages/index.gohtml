@@ -1,0 +1,17 @@
+{{define "body"}}
+<div class="posts-grid container">
+{{range .Posts}}
+<article class="post-card">
+<a href="/{{.Slug}}">
+{{if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+<h2>{{.Title}}</h2>
+{{if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
+<time>{{.CreatedAt}}</time>
+{{if .Author}}{{if .AuthorAvatarURL}}<img src="{{.AuthorAvatarURL}}" class="author-avatar" alt="{{.Author}}">{{end}}<span class="author">{{t $.Lang "ui.by_author"}} {{.Author}}</span>{{end}}
+</a>
+</article>
+{{else}}
+<p class="empty">{{t .Lang "ui.no_posts"}}</p>
+{{end}}
+</div>
+{{end}}

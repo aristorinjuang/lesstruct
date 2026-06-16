@@ -1,0 +1,145 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/aristorinjuang/lesstruct/internal/auth"
+)
+
+// BlockedEmail represents a blocked email entry
+type BlockedEmail struct {
+	ID        int
+	Email     string
+	CreatedAt string
+	Reason    string
+}
+
+// BlockedEmailRepo defines the interface for blocked email repository operations
+type BlockedEmailRepo interface {
+	BlockEmail(ctx context.Context, email string, reason string) error
+	IsEmailBlocked(ctx context.Context, email string) (bool, error)
+	UnblockEmail(ctx context.Context, email string) error
+}
+
+// BlockedEmailRepository handles blocked email data operations
+type BlockedEmailRepository struct {
+	db *sql.DB
+}
+
+// BlockEmail adds an email to the blocked list
+func (r *BlockedEmailRepository) BlockEmail(ctx context.Context, email string, reason string) error {
+	// Verify database connection is alive
+	if err := r.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("database connection lost: %w", err)
+	}
+
+	// Add timeout context if not provided
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	// Sanitize email
+	email = strings.TrimSpace(email)
+	email = strings.ToLower(email)
+
+	// Validate email format
+	if err := auth.ValidateEmail(email); err != nil {
+		return fmt.Errorf("invalid email format: %w", err)
+	}
+
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO blocked_emails (email, reason)
+		VALUES (?, ?)
+	`, email, reason)
+	if err != nil {
+		return fmt.Errorf("failed to block email: %w", err)
+	}
+
+	return nil
+}
+
+// IsEmailBlocked checks if an email is in the blocked list
+func (r *BlockedEmailRepository) IsEmailBlocked(ctx context.Context, email string) (bool, error) {
+	// Add timeout context if not provided
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	// Sanitize email
+	email = strings.TrimSpace(email)
+	email = strings.ToLower(email)
+
+	// Validate email format before checking
+	if err := auth.ValidateEmail(email); err != nil {
+		return false, fmt.Errorf("invalid email format: %w", err)
+	}
+
+	var exists bool
+	err := r.db.QueryRowContext(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM blocked_emails WHERE email = ? COLLATE NOCASE
+		)
+	`, email).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if email is blocked: %w", err)
+	}
+
+	return exists, nil
+}
+
+// UnblockEmail removes an email from the blocked list
+func (r *BlockedEmailRepository) UnblockEmail(ctx context.Context, email string) error {
+	// Verify database connection is alive
+	if err := r.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("database connection lost: %w", err)
+	}
+
+	// Add timeout context if not provided
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	// Sanitize email
+	email = strings.TrimSpace(email)
+	email = strings.ToLower(email)
+
+	// Validate email format
+	if err := auth.ValidateEmail(email); err != nil {
+		return fmt.Errorf("invalid email format: %w", err)
+	}
+
+	result, err := r.db.ExecContext(ctx, `
+		DELETE FROM blocked_emails WHERE email = ? COLLATE NOCASE
+	`, email)
+	if err != nil {
+		return fmt.Errorf("failed to unblock email: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("email not found in blocked list")
+	}
+
+	return nil
+}
+
+// NewBlockedEmailRepository creates a new blocked email repository
+func NewBlockedEmailRepository(db *sql.DB) *BlockedEmailRepository {
+	return &BlockedEmailRepository{
+		db: db,
+	}
+}

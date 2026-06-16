@@ -1,0 +1,19 @@
+{{define "body"}}
+<div class="tag-page container">
+<h1>#{{.TagName}}</h1>
+<div class="posts-grid">
+{{range .Posts}}
+<article class="post-card">
+<a href="/{{.Slug}}">
+{{if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+<h2>{{.Title}}</h2>
+{{if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
+<time>{{.CreatedAt}}</time>
+</a>
+</article>
+{{else}}
+<p class="empty">{{t .Lang "ui.no_posts"}}</p>
+{{end}}
+</div>
+</div>
+{{end}}
