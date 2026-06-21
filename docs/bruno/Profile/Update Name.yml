@@ -1,0 +1,23 @@
+info:
+  name: Update Name
+  type: http
+  seq: 7
+
+http:
+  method: PUT
+  url: "{{BASE_URL}}/api/profile/name"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Jane Doe"
+      }
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

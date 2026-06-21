@@ -415,6 +415,80 @@ func (_c *MockContentService_Publish_Call) RunAndReturn(run func(ctx context.Con
 	return _c
 }
 
+// SetSystemFields provides a mock function for the type MockContentService
+func (_mock *MockContentService) SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*content.Content, error) {
+	ret := _mock.Called(ctx, contentID, systemFields)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetSystemFields")
+	}
+
+	var r0 *content.Content
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, map[string]any) (*content.Content, error)); ok {
+		return returnFunc(ctx, contentID, systemFields)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, map[string]any) *content.Content); ok {
+		r0 = returnFunc(ctx, contentID, systemFields)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*content.Content)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, map[string]any) error); ok {
+		r1 = returnFunc(ctx, contentID, systemFields)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockContentService_SetSystemFields_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetSystemFields'
+type MockContentService_SetSystemFields_Call struct {
+	*mock.Call
+}
+
+// SetSystemFields is a helper method to define mock.On call
+//   - ctx context.Context
+//   - contentID int
+//   - systemFields map[string]any
+func (_e *MockContentService_Expecter) SetSystemFields(ctx any, contentID any, systemFields any) *MockContentService_SetSystemFields_Call {
+	return &MockContentService_SetSystemFields_Call{Call: _e.mock.On("SetSystemFields", ctx, contentID, systemFields)}
+}
+
+func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Context, contentID int, systemFields map[string]any)) *MockContentService_SetSystemFields_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 map[string]any
+		if args[2] != nil {
+			arg2 = args[2].(map[string]any)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockContentService_SetSystemFields_Call) Return(content1 *content.Content, err error) *MockContentService_SetSystemFields_Call {
+	_c.Call.Return(content1, err)
+	return _c
+}
+
+func (_c *MockContentService_SetSystemFields_Call) RunAndReturn(run func(ctx context.Context, contentID int, systemFields map[string]any) (*content.Content, error)) *MockContentService_SetSystemFields_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Unpublish provides a mock function for the type MockContentService
 func (_mock *MockContentService) Unpublish(ctx context.Context, id int, userID int, role string) (*content.Content, error) {
 	ret := _mock.Called(ctx, id, userID, role)

@@ -9,6 +9,8 @@ import type { PostType } from '@/types/posttype'
 
 const mockUserRole = ref<string | null>(null)
 
+const mockLanguages = ref<string[]>(['en'])
+
 vi.mock('@/utils/request', () => ({
   default: {
     get: vi.fn(() => Promise.resolve({ data: { data: [], features: { textGeneration: false } } })),
@@ -28,10 +30,10 @@ vi.mock('@/composables/useAuth', () => ({
 
 vi.mock('@/composables/useConfig', () => ({
   useConfig: () => ({
-    languages: { value: ['en'] },
+    languages: mockLanguages,
     isLoaded: { value: false },
-    fetchConfig: vi.fn(() => Promise.resolve(['en'])),
-    primaryLanguage: () => 'en',
+    fetchConfig: vi.fn(async () => mockLanguages.value),
+    primaryLanguage: () => mockLanguages.value[0] ?? 'en',
   }),
 }))
 
@@ -98,6 +100,7 @@ describe('ContentEditor', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     mockUserRole.value = null
+    mockLanguages.value = ['en']
   })
 
   describe('Status Management', () => {
@@ -1981,6 +1984,93 @@ describe('ContentEditor', () => {
       await wrapper.vm.$nextTick()
 
       expect(vm.customFieldErrors.price).toBe('Price is required')
+    })
+  })
+
+  describe('Language Switching', () => {
+    const stubs = {
+      InputText: true,
+      Button: true,
+      Select: true,
+      FormField: true,
+      TipTapEditor: true,
+      MediaPanel: true,
+      CustomFieldRenderer: true,
+      DeleteConfirmDialog: true,
+      Toast: true,
+    }
+
+    it('loads an existing translation instead of blanking the form when switching to a secondary language', async () => {
+      mockLanguages.value = ['en', 'id']
+
+      const indonesianContent: Content = {
+        id: 25,
+        userId: 1,
+        title: 'Tentang Lesstruct',
+        slug: 'tentang-lesstruct',
+        content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+        tags: [],
+        status: 'published',
+        postType: 'page',
+        language: 'id',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      }
+
+      const englishContent: Content = {
+        id: 4,
+        userId: 1,
+        title: 'About Lesstruct',
+        slug: 'about-lesstruct',
+        content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+        tags: [],
+        status: 'published',
+        postType: 'page',
+        language: 'en',
+        translations: [indonesianContent],
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      }
+
+      // Mirrors ContentListView: the list passes a summary (no translations).
+      const summary: Content = { ...englishContent, translations: undefined }
+
+      const contentStore = useContentStore()
+      vi.spyOn(contentStore, 'fetchPostTypes').mockResolvedValue([])
+      const getById = vi
+        .spyOn(contentStore, 'getById')
+        .mockResolvedValueOnce(englishContent)    // onMounted authoritative fetch (id 4)
+        .mockResolvedValueOnce(indonesianContent) // switching to the ID tab (id 25)
+
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1, contentId: 4, initialContent: summary },
+        global: { stubs },
+      })
+
+      await new Promise(r => setTimeout(r, 0))
+      await wrapper.vm.$nextTick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+
+      // Fix: the authoritative record is fetched on mount so the translations
+      // are known — without it the secondary tab has nothing to load.
+      expect(getById).toHaveBeenCalledWith(4)
+      expect(vm.form.title).toBe('About Lesstruct')
+
+      const idTab = wrapper
+        .findAll('button.content-editor__lang-tab')
+        .find(b => b.text() === 'ID')
+      expect(idTab).toBeTruthy()
+      await idTab!.trigger('click')
+      await new Promise(r => setTimeout(r, 0))
+      await wrapper.vm.$nextTick()
+
+      // The existing Indonesian translation is loaded — not a blanked new-translation form.
+      expect(getById).toHaveBeenCalledWith(25)
+      expect(vm.form.title).toBe('Tentang Lesstruct')
+
+      wrapper.unmount()
     })
   })
 })

@@ -126,6 +126,21 @@ func TestValidateTitle(t *testing.T) {
 			title:   `<img src="x" onerror="alert(1)">`,
 			wantErr: contentdomain.ErrHTMLInTitle,
 		},
+		{
+			name:    "valid title with ampersand",
+			title:   "Install & first content",
+			wantErr: nil,
+		},
+		{
+			name:    "valid title with apostrophe",
+			title:   "roaster's best brew",
+			wantErr: nil,
+		},
+		{
+			name:    "valid title with math less-than",
+			title:   "Why 5 < 10 matters",
+			wantErr: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,3 +1,11 @@
+# Module path (matches go.mod) and CLI build version. VERSION is derived from
+# git when available (tag, falling back to the commit SHA, plus a -dirty
+# suffix); otherwise it defaults to "dev". It is injected into the CLI binary
+# via -ldflags so `lesstruct-cli --version` reports the shipped version.
+MODULE := github.com/aristorinjuang/lesstruct
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+CLI_LDFLAGS := -X $(MODULE)/cmd/lesstruct-cli/cmd.version=$(VERSION)
+
 lint:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
 	golangci-lint run
@@ -17,11 +25,11 @@ build-admin:
 	cd web/admin && npm ci && npm run build-only
 
 build-cli:
-	mkdir -p bin && go build -o bin/lesstruct-cli ./cmd/lesstruct-cli
+	mkdir -p bin && go build -ldflags "$(CLI_LDFLAGS)" -o bin/lesstruct-cli ./cmd/lesstruct-cli
 
 install: build-admin build-cli
 	go install
-	go install ./cmd/lesstruct-cli
+	go install -ldflags "$(CLI_LDFLAGS)" ./cmd/lesstruct-cli
 
 clean-bin:
 	rm -rf bin

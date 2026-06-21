@@ -29,10 +29,15 @@ func newTemplates(t *testing.T) *template.Templates {
 
 func setupHandler(t *testing.T, mockService *mocks.MockContentService) *contentpage.ContentPageHandler {
 	t.Helper()
+	return setupHandlerWithLanguages(t, mockService, []string{"en"})
+}
+
+func setupHandlerWithLanguages(t *testing.T, mockService *mocks.MockContentService, languages []string) *contentpage.ContentPageHandler {
+	t.Helper()
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"})
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages)
 }
 
 func setupHandlerWithResolver(t *testing.T, mockService *mocks.MockContentService, mockResolver *mocks.MockPostTypeResolver) *contentpage.ContentPageHandler {
@@ -170,8 +175,8 @@ func TestServeIndex_NavigationIncludesPages(t *testing.T) {
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{
-		{Slug: "about", Title: "About", PostType: "page"},
-		{Slug: "contact", Title: "Contact", PostType: "page"},
+		{Slug: "about", Title: "About", PostType: "page", Language: "en"},
+		{Slug: "contact", Title: "Contact", PostType: "page", Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{}, nil)
 
@@ -189,6 +194,29 @@ func TestServeIndex_NavigationIncludesPages(t *testing.T) {
 	assert.Contains(t, body, `href="/contact"`)
 	assert.Contains(t, body, "About")
 	assert.Contains(t, body, "Contact")
+	mockService.AssertExpectations(t)
+}
+
+func TestServeIndex_NavigationExcludesSecondaryLanguage(t *testing.T) {
+	mockService := new(mocks.MockContentService)
+	mockService.On("GetPublished", mock.Anything, 50, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{
+		{Slug: "about", Title: "About", PostType: "page", Language: "en"},
+		{Slug: "tentang", Title: "Tentang", PostType: "page", Language: "id"},
+	}, nil)
+	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{}, nil)
+
+	handler := setupHandlerWithLanguages(t, mockService, []string{"en", "id"})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, `href="/about"`)
+	assert.NotContains(t, body, `href="/tentang"`)
 	mockService.AssertExpectations(t)
 }
 
@@ -228,7 +256,7 @@ func TestServeIndex_NavigationActiveClass(t *testing.T) {
 		Tags: []string{},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{
-		{Slug: "about", Title: "About", PostType: "page"},
+		{Slug: "about", Title: "About", PostType: "page", Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{}, nil)
 

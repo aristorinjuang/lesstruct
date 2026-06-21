@@ -518,6 +518,59 @@ func (h *ProfileHandler) UpdateCustomFields(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// UpdateName handles PUT /api/profile/name
+func (h *ProfileHandler) UpdateName(w http.ResponseWriter, r *http.Request) {
+	userIDStr, ok := middleware.GetUserID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_USER_ID", "Invalid user ID", nil)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "INVALID_REQUEST_BODY", "Invalid request body", nil)
+		return
+	}
+
+	if err := h.profileService.UpdateName(r.Context(), userID, req.Name); err != nil {
+		h.logger.Error("Failed to update name: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update name", nil)
+		return
+	}
+
+	updatedProfile, err := h.profileService.GetProfile(r.Context(), userID)
+	if err != nil {
+		h.logger.Error("Failed to fetch updated profile: %v", err)
+		response.Success(w, map[string]any{
+			"message": "Name updated successfully",
+		})
+		return
+	}
+
+	profileInfo := ProfileInfo{
+		ID:             updatedProfile.ID,
+		Username:       updatedProfile.Username,
+		Name:           updatedProfile.Name,
+		Email:          updatedProfile.Email,
+		Role:           updatedProfile.Role,
+		ProfilePicture: h.buildProfilePictureURL(updatedProfile.ProfilePicture),
+		CreatedAt:      updatedProfile.CreatedAt,
+		UpdatedAt:      updatedProfile.UpdatedAt,
+		CustomFields:   updatedProfile.CustomFields,
+	}
+	response.Success(w, map[string]any{
+		"profile": profileInfo,
+	})
+}
+
 // GetUserFields handles GET /api/profile/user-fields
 func (h *ProfileHandler) GetUserFields(w http.ResponseWriter, r *http.Request) {
 	if h.userFieldsProvider == nil {

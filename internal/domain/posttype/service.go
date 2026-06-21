@@ -16,6 +16,25 @@ type config struct {
 	UserFields UserFields `toml:"user_fields"`
 }
 
+// mergeFields returns a copy of existing with incoming merged by slug: an
+// incoming field replaces an existing one of the same slug in place (preserving
+// order) and is appended otherwise. Last write wins on repeated merges.
+func mergeFields(existing, incoming []customfield.FieldSchema) []customfield.FieldSchema {
+	merged := make([]customfield.FieldSchema, len(existing))
+	copy(merged, existing)
+	for _, f := range incoming {
+		idx := slices.IndexFunc(merged, func(e customfield.FieldSchema) bool {
+			return e.Slug == f.Slug
+		})
+		if idx >= 0 {
+			merged[idx] = f
+		} else {
+			merged = append(merged, f)
+		}
+	}
+	return merged
+}
+
 // Service manages post type registration and lookup
 type Service struct {
 	registry     map[string]PostType
@@ -24,35 +43,63 @@ type Service struct {
 	userFields   UserFields
 }
 
-// Register registers a new post type
+// Register registers a new post type. A non-default slug is validated in full
+// and stored; a slug matching a built-in type (post/page/media/comment) instead
+// EXTENDS that built-in — its Fields and SystemFields are merged in (by slug),
+// preserving the built-in's Name/Description/Supports/identity. Only the fields
+// are validated on the extension path, because an extension entry legitimately
+// omits name/supports (it is not defining a new type).
 func (s *Service) Register(pt PostType) error {
-	if err := Validate(pt); err != nil {
-		return err
-	}
-
-	// Prevent custom post types from overriding default post types
-	s.mu.RLock()
-	_, isDefault := s.defaultSlugs[pt.Slug]
-	s.mu.RUnlock()
-
-	if isDefault {
-		return ErrDuplicatePostType
-	}
-
-	return s.registerUnsafe(pt)
-}
-
-// registerUnsafe registers a post type without validation (internal use)
-func (s *Service) registerUnsafe(pt PostType) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.defaultSlugs[pt.Slug] {
+		if err := customfield.ValidateFields(pt.Fields); err != nil {
+			return fmt.Errorf("extending default post type %q: %w", pt.Slug, err)
+		}
+		if err := customfield.ValidateFields(pt.SystemFields); err != nil {
+			return fmt.Errorf("extending default post type %q system fields: %w", pt.Slug, err)
+		}
+		return s.mergeIntoDefaultLocked(pt)
+	}
+
+	if err := Validate(pt); err != nil {
+		return err
+	}
+	return s.registerUnsafeLocked(pt)
+}
+
+// mergeIntoDefaultLocked merges pt's Fields and SystemFields into the existing
+// built-in post type of the same slug, preserving the built-in's identity. The
+// write lock must be held by the caller, and the caller must have confirmed the
+// slug is a built-in default (so registry[pt.Slug] always exists).
+func (s *Service) mergeIntoDefaultLocked(pt PostType) error {
+	base := s.registry[pt.Slug]
+	base.Fields = mergeFields(base.Fields, pt.Fields)
+	base.SystemFields = mergeFields(base.SystemFields, pt.SystemFields)
+	s.registry[pt.Slug] = base
+	return nil
+}
+
+// registerUnsafeLocked stores pt without validation, assuming the write lock is
+// held. Returns ErrDuplicatePostType if the slug already exists.
+func (s *Service) registerUnsafeLocked(pt PostType) error {
 	if _, exists := s.registry[pt.Slug]; exists {
 		return ErrDuplicatePostType
 	}
 
 	s.registry[pt.Slug] = pt
 	return nil
+}
+
+// registerUnsafe registers a post type without validation (internal use). It is
+// used only by NewService during single-threaded bootstrap and takes the write
+// lock itself.
+func (s *Service) registerUnsafe(pt PostType) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.registerUnsafeLocked(pt)
 }
 
 // GetBySlug retrieves a post type by its slug

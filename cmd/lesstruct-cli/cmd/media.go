@@ -6,26 +6,37 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
+// mediaVariant is the cmd-layer projection of a single thumbnail variant — it
+// keeps only the URL and pixel dimensions. The server's MediaVariant also
+// carries an internal filePath the CLI never prints, which decoding drops.
+type mediaVariant struct {
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
 // mediaSummary is the cmd-layer projection of a media item — it mirrors the
 // server's MediaProjection field set, so decoding a server envelope into it
 // drops unknown fields silently. Used by the text output of get/list.
 type mediaSummary struct {
-	ID         int    `json:"id"`
-	Filename   string `json:"filename"`
-	MimeType   string `json:"mimeType"`
-	FileSize   int64  `json:"fileSize"`
-	URL        string `json:"url"`
-	AltText    string `json:"altText"`
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
-	IsWebP     bool   `json:"isWebp"`
-	Hash       string `json:"hash"`
-	UpdatedAt  string `json:"updatedAt,omitempty"`
+	ID        int                     `json:"id"`
+	Filename  string                  `json:"filename"`
+	MimeType  string                  `json:"mimeType"`
+	FileSize  int64                   `json:"fileSize"`
+	URL       string                  `json:"url"`
+	AltText   string                  `json:"altText"`
+	Width     int                     `json:"width"`
+	Height    int                     `json:"height"`
+	IsWebP    bool                    `json:"isWebp"`
+	Hash      string                  `json:"hash"`
+	Variants  map[string]mediaVariant `json:"variants,omitempty"`
+	UpdatedAt string                  `json:"updatedAt,omitempty"`
 }
 
 // newMediaCmd builds the `media` command tree. The persistent-flag pointers
@@ -46,6 +57,8 @@ func newMediaCmd(apiKey, baseURL, output *string) *cobra.Command {
 		Long: "Upload a media file to /api/v1/media as multipart/form-data. " +
 			"Reads the file from --file <path>, optionally sending --alt-text " +
 			"(built into {\"altText\":\"...\"}) or --metadata <raw JSON> (escape hatch). " +
+			"--metadata values may be strings, numbers, booleans, or objects " +
+			"(passed through as typed JSON); the server persists only altText today. " +
 			"--alt-text and --metadata are mutually exclusive.",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
@@ -77,7 +90,7 @@ func newMediaCmd(apiKey, baseURL, output *string) *cobra.Command {
 		&metadata,
 		"metadata",
 		"",
-		"raw JSON metadata (escape hatch; mutually exclusive with --alt-text)",
+		"raw JSON metadata; values may be typed (string/number/bool/object). Server persists only altText. Mutually exclusive with --alt-text",
 	)
 
 	var listLimit int
@@ -208,31 +221,20 @@ func runMediaUpload(cmd *cobra.Command, args []string, opts mediaUploadOptions) 
 	// Build the metadata map (or nil when no metadata is provided). When the
 	// user passes --alt-text, send it as `{"altText": "..."}` even if empty
 	// (so `--alt-text ""` is distinguishable from "no --alt-text"). For
-	// --metadata, all values MUST be strings (the server's `MediaMetadata`
-	// shape is all-string); non-string values are a clear error, not a
-	// silent drop.
-	var meta map[string]string
+	// --metadata, values are passed through as typed JSON — numbers, booleans,
+	// and nested objects are all accepted. Note the server's `MediaMetadata`
+	// persists only `altText` today, so non-altText keys are ignored server-side
+	// until a metadata store is added; the client no longer rejects them.
+	var meta map[string]any
 	switch {
 	case opts.altText != "" || cmd.Flags().Changed("alt-text"):
-		meta = map[string]string{"altText": opts.altText}
+		meta = map[string]any{"altText": opts.altText}
 	case opts.metadata != "":
-		var raw map[string]any
-		if uerr := json.Unmarshal([]byte(opts.metadata), &raw); uerr != nil {
+		if uerr := json.Unmarshal([]byte(opts.metadata), &meta); uerr != nil {
 			return &exitError{
 				code: client.ExitValidation,
 				msg:  fmt.Sprintf("lesstruct-cli: --metadata is not valid JSON: %s", uerr),
 			}
-		}
-		meta = make(map[string]string, len(raw))
-		for k, v := range raw {
-			s, ok := v.(string)
-			if !ok {
-				return &exitError{
-					code: client.ExitValidation,
-					msg:  fmt.Sprintf("lesstruct-cli: --metadata[\"%s\"] is not a string (got %T)", k, v),
-				}
-			}
-			meta[k] = s
 		}
 	}
 
@@ -367,7 +369,25 @@ func printMediaGet(w io.Writer, mode string, data, meta json.RawMessage, verb st
 		m.URL,
 		m.AltText,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Thumbnail variants (thumbnail/medium/large) on their own lines, sorted by
+	// size key for deterministic output. Omitted entirely when the item has none
+	// (non-images, or a server that did not generate variants).
+	keys := make([]string, 0, len(m.Variants))
+	for k := range m.Variants {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := m.Variants[k]
+		if _, verr := fmt.Fprintf(w, "  variant %s: url=%s %dx%d\n", k, v.URL, v.Width, v.Height); verr != nil {
+			return verr
+		}
+	}
+	return nil
 }
 
 // printMediaList writes a media list response to w in the requested mode.

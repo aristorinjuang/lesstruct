@@ -161,8 +161,12 @@ onMounted(async () => {
     console.error('Failed to load config:', err)
   }
 
-  // Fetch content by ID if contentId is provided but initialContent is not
-  if (props.contentId && !props.initialContent) {
+  // Fetch the authoritative record when editing existing content if either:
+  //  - no list summary was passed (we need the whole record), or
+  //  - more than one language is configured. The list summary (initialContent)
+  //    omits translations, so without this fetch the language tabs can't
+  //    discover an existing translation and switchLanguage() blanks the form.
+  if (props.contentId && (!props.initialContent || showLanguageTabs.value)) {
     try {
       const fetchedContent = await contentStore.getById(props.contentId)
       loadContentIntoForm(fetchedContent)

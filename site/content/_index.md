@@ -32,6 +32,18 @@ lesstruct
 
 Open <http://localhost:8080/admin>, register the first account, and start publishing. Full configuration reference lives in the [Configuration](/docs/configuration/) docs.
 
+## Install the CLI
+
+`lesstruct-cli` is a terminal client for the REST API — useful for scripts and
+AI agents.
+
+```bash
+go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli@latest
+```
+
+Point it at a running server and create an API key from the admin panel. The
+full command reference lives in the [API Reference](/docs/api-reference/).
+
 ## Where to go next
 
 - **New to Lesstruct?** Read the [Project Context](/docs/project-context/) for the architecture overview, then skim the [Configuration](/docs/configuration/) reference.

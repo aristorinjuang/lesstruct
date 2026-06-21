@@ -137,7 +137,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	userLookup := mwmocks.NewMockUserLookup(t)
 	apiKeyAuthMiddleware := middleware.NewAPIKeyAuthMiddleware(verifier, userLookup, logger)
 	contentSvc := agentmocks.NewMockContentService(t)
-	agentContentHandler := agent.NewContentHandler(contentSvc, logger)
+	agentContentHandler := agent.NewContentHandler(contentSvc, nil, logger)
 	mediaSvc := agentmocks.NewMockMediaService(t)
 	agentMediaHandler := agent.NewMediaHandler(mediaSvc, logger)
 
@@ -249,7 +249,7 @@ func TestSetup(t *testing.T) {
 		mwmocks.NewMockUserLookup(t),
 		logger,
 	)
-	agentContentHandler := agent.NewContentHandler(agentmocks.NewMockContentService(t), logger)
+	agentContentHandler := agent.NewContentHandler(agentmocks.NewMockContentService(t), nil, logger)
 	agentMediaHandler := agent.NewMediaHandler(agentmocks.NewMockMediaService(t), logger)
 
 	r := routes.Setup(

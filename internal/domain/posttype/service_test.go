@@ -94,30 +94,161 @@ func TestService_RegisterDuplicate(t *testing.T) {
 	}
 }
 
-func TestService_RegisterOverrideDefault(t *testing.T) {
+func TestService_RegisterExtendsDefault(t *testing.T) {
 	service := posttype.NewService()
 
-	// Try to register a custom post type with the same slug as a default type
+	// Registering a built-in slug EXTENDS it: the field merges in while the
+	// built-in identity (Name/Description/Supports) is preserved. (Replaces the
+	// old reject-on-default-slug behavior.)
 	pt := posttype.PostType{
-		Name:     "Custom Post",
-		Slug:     "post", // This is a default post type slug
-		Supports: []string{"title", "content"},
+		Slug: "post", // built-in slug
+		Fields: []customfield.FieldSchema{
+			{Name: "Mood", Slug: "mood", Type: customfield.FieldTypeText},
+		},
 	}
 
-	// Should fail because "post" is a default post type
-	err := service.Register(pt)
-	if err != posttype.ErrDuplicatePostType {
-		t.Errorf("Register() with default slug error = %v, want %v", err, posttype.ErrDuplicatePostType)
+	if err := service.Register(pt); err != nil {
+		t.Fatalf("Register() extending default slug error = %v, want nil", err)
 	}
 
-	// Verify the default "post" type was not overridden
+	// Built-in identity preserved.
 	defaultPost, err := service.GetBySlug("post")
 	if err != nil {
 		t.Fatalf("GetBySlug(post) failed: %v", err)
 	}
 	if defaultPost.Name != "Post" {
-		t.Errorf("Default post was overridden: Name = %s, want 'Post'", defaultPost.Name)
+		t.Errorf("Default post identity changed: Name = %s, want 'Post'", defaultPost.Name)
 	}
+	if defaultPost.Description != "Blog posts and articles" {
+		t.Errorf("Default post description changed: %s", defaultPost.Description)
+	}
+	wantSupports := []string{"title", "content", "tags", "featured_image"}
+	if len(defaultPost.Supports) != len(wantSupports) {
+		t.Errorf("Default post supports changed: %v, want %v", defaultPost.Supports, wantSupports)
+	}
+
+	// The merged field is visible via GetFieldsByPostType (content validation
+	// depends on this).
+	fields, err := service.GetFieldsByPostType("post")
+	if err != nil {
+		t.Fatalf("GetFieldsByPostType(post) failed: %v", err)
+	}
+	if len(fields) != 1 || fields[0].Slug != "mood" {
+		t.Errorf("Merged field missing: got %+v, want one field with slug 'mood'", fields)
+	}
+}
+
+func TestService_RegisterMergeDefault(t *testing.T) {
+	textField := func(slug string) customfield.FieldSchema {
+		return customfield.FieldSchema{Name: slug, Slug: slug, Type: customfield.FieldTypeText}
+	}
+
+	t.Run("appends new field", func(t *testing.T) {
+		s := posttype.NewService()
+		if err := s.Register(posttype.PostType{Slug: "post", Fields: []customfield.FieldSchema{textField("mood")}}); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+		fields, _ := s.GetFieldsByPostType("post")
+		if len(fields) != 1 || fields[0].Slug != "mood" {
+			t.Errorf("appended field missing: %+v", fields)
+		}
+	})
+
+	t.Run("replaces existing field by slug", func(t *testing.T) {
+		s := posttype.NewService()
+		if err := s.Register(posttype.PostType{Slug: "post", Fields: []customfield.FieldSchema{
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber},
+		}}); err != nil {
+			t.Fatalf("seed Register: %v", err)
+		}
+		// A second extension with the same slug but a different type replaces it.
+		if err := s.Register(posttype.PostType{Slug: "post", Fields: []customfield.FieldSchema{
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeText},
+		}}); err != nil {
+			t.Fatalf("replace Register: %v", err)
+		}
+		fields, _ := s.GetFieldsByPostType("post")
+		if len(fields) != 1 {
+			t.Fatalf("expected a single replaced field, got %+v", fields)
+		}
+		if fields[0].Type != customfield.FieldTypeText {
+			t.Errorf("field not replaced: type = %v, want text", fields[0].Type)
+		}
+	})
+
+	t.Run("merges system fields", func(t *testing.T) {
+		s := posttype.NewService()
+		if err := s.Register(posttype.PostType{Slug: "post", SystemFields: []customfield.FieldSchema{textField("internal_id")}}); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+		sys, _ := s.GetSystemFieldsByPostType("post")
+		if len(sys) != 1 || sys[0].Slug != "internal_id" {
+			t.Errorf("merged system field missing: %+v", sys)
+		}
+	})
+
+	t.Run("ignores incoming name and supports", func(t *testing.T) {
+		s := posttype.NewService()
+		if err := s.Register(posttype.PostType{
+			Name:     "Ignored",
+			Slug:     "post",
+			Supports: []string{"excerpt"},
+			Fields:   []customfield.FieldSchema{textField("mood")},
+		}); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+		pt, _ := s.GetBySlug("post")
+		if pt.Name != "Post" {
+			t.Errorf("incoming Name was applied: %s", pt.Name)
+		}
+		want := []string{"title", "content", "tags", "featured_image"}
+		if len(pt.Supports) != len(want) {
+			t.Errorf("incoming Supports were applied: %v, want %v", pt.Supports, want)
+		}
+	})
+
+	t.Run("no fields is a no-op success", func(t *testing.T) {
+		s := posttype.NewService()
+		if err := s.Register(posttype.PostType{Slug: "post"}); err != nil {
+			t.Fatalf("Register with no fields: %v", err)
+		}
+		fields, _ := s.GetFieldsByPostType("post")
+		if len(fields) != 0 {
+			t.Errorf("expected no fields, got %+v", fields)
+		}
+	})
+
+	t.Run("rejects invalid incoming field", func(t *testing.T) {
+		s := posttype.NewService()
+		err := s.Register(posttype.PostType{Slug: "post", Fields: []customfield.FieldSchema{
+			{Name: "Bad", Slug: "bad", Type: customfield.FieldType("nope")},
+		}})
+		if err == nil {
+			t.Errorf("expected error for invalid field type, got nil")
+		}
+	})
+
+	t.Run("rejects invalid incoming system field", func(t *testing.T) {
+		s := posttype.NewService()
+		err := s.Register(posttype.PostType{Slug: "post", SystemFields: []customfield.FieldSchema{
+			{Name: "Bad", Slug: "bad", Type: customfield.FieldType("nope")},
+		}})
+		if err == nil {
+			t.Errorf("expected error for invalid system field type, got nil")
+		}
+	})
+
+	t.Run("non-default duplicate slug still errors", func(t *testing.T) {
+		s := posttype.NewService()
+		pt := posttype.PostType{Name: "Portfolio", Slug: "portfolio", Supports: []string{"title"}}
+		if err := s.Register(pt); err != nil {
+			t.Fatalf("first Register: %v", err)
+		}
+		err := s.Register(pt)
+		if !errors.Is(err, posttype.ErrDuplicatePostType) {
+			t.Errorf("duplicate non-default slug error = %v, want ErrDuplicatePostType", err)
+		}
+	})
 }
 
 func TestService_RegisterInvalid(t *testing.T) {
@@ -301,38 +432,115 @@ supports = ["content"]
 	}
 }
 
-func TestService_LoadConfigOverrideDefault(t *testing.T) {
+func TestService_GetUserSystemFieldSlugs(t *testing.T) {
 	tempDir := t.TempDir()
-	configFile := filepath.Join(tempDir, "override-default.toml")
+	configFile := filepath.Join(tempDir, "user-system-fields.toml")
+	tomlContent := `[user_fields]
+[[user_fields.system_fields]]
+name = "Internal"
+slug = "internal"
+type = "text"
+`
+	if err := os.WriteFile(configFile, []byte(tomlContent), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	service := posttype.NewService()
+	if err := service.LoadConfigFromFile(configFile); err != nil {
+		t.Fatalf("LoadConfigFromFile: %v", err)
+	}
+	slugs := service.GetUserSystemFieldSlugs()
+	if len(slugs) != 1 || slugs[0] != "internal" {
+		t.Errorf("GetUserSystemFieldSlugs() = %v, want [internal]", slugs)
+	}
+}
 
-	// Write TOML that tries to override a default post type
+func TestService_LoadConfigExtendsDefault(t *testing.T) {
+	tempDir := t.TempDir()
+	configFile := filepath.Join(tempDir, "extend-default.toml")
+
+	// A [[post_type]] with a built-in slug extends it: only fields/system_fields
+	// are read; name/description/supports are ignored and may be omitted.
 	tomlContent := `[[post_type]]
-	name = "Custom Post"
-	slug = "post"
-	description = "Trying to override default post type"
-	supports = ["title", "content"]
-	`
+slug = "post"
+
+[[post_type.fields]]
+name = "Mood"
+slug = "mood"
+type = "text"
+`
 	err := os.WriteFile(configFile, []byte(tomlContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
 	service := posttype.NewService()
-	err = service.LoadConfigFromFile(configFile)
-	if !errors.Is(err, posttype.ErrDuplicatePostType) {
-		t.Errorf("LoadConfigFromFile() overriding default error = %v, want %v", err, posttype.ErrDuplicatePostType)
+	if err := service.LoadConfigFromFile(configFile); err != nil {
+		t.Fatalf("LoadConfigFromFile() extending default slug error = %v, want nil", err)
 	}
 
-	// Verify the default "post" type was not overridden
+	// Built-in identity preserved.
 	defaultPost, err := service.GetBySlug("post")
 	if err != nil {
 		t.Fatalf("GetBySlug(post) failed: %v", err)
 	}
 	if defaultPost.Name != "Post" {
-		t.Errorf("Default post was overridden: Name = %s, want 'Post'", defaultPost.Name)
+		t.Errorf("Default post identity changed: Name = %s, want 'Post'", defaultPost.Name)
 	}
 	if defaultPost.Description != "Blog posts and articles" {
-		t.Errorf("Default post description was overridden: Description = %s", defaultPost.Description)
+		t.Errorf("Default post description changed: %s", defaultPost.Description)
+	}
+
+	// The configured field merged in.
+	fields, err := service.GetFieldsByPostType("post")
+	if err != nil {
+		t.Fatalf("GetFieldsByPostType(post) failed: %v", err)
+	}
+	if len(fields) != 1 || fields[0].Slug != "mood" {
+		t.Errorf("Merged field missing: got %+v, want one field with slug 'mood'", fields)
+	}
+}
+
+func TestService_LoadConfigMergesDefaultFieldsCumulatively(t *testing.T) {
+	// Two [[post_type]] blocks with the same built-in slug cumulatively merge
+	// their fields (last-wins on slug collisions), instead of erroring.
+	tempDir := t.TempDir()
+	configFile := filepath.Join(tempDir, "cumulative-extend.toml")
+
+	tomlContent := `[[post_type]]
+slug = "post"
+
+[[post_type.fields]]
+name = "Mood"
+slug = "mood"
+type = "text"
+
+[[post_type]]
+slug = "post"
+
+[[post_type.fields]]
+name = "Topic"
+slug = "topic"
+type = "text"
+`
+	if err := os.WriteFile(configFile, []byte(tomlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	service := posttype.NewService()
+	if err := service.LoadConfigFromFile(configFile); err != nil {
+		t.Fatalf("LoadConfigFromFile() cumulative extend error = %v, want nil", err)
+	}
+
+	fields, err := service.GetFieldsByPostType("post")
+	if err != nil {
+		t.Fatalf("GetFieldsByPostType(post) failed: %v", err)
+	}
+	gotSlugs := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		gotSlugs[f.Slug] = true
+	}
+	if !gotSlugs["mood"] || !gotSlugs["topic"] {
+		t.Errorf("cumulative merge missing fields: got %+v, want both mood and topic", fields)
 	}
 }
 

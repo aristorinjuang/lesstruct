@@ -387,3 +387,110 @@ func TestContentCreate_ServerValidationOnLanguage(t *testing.T) {
 	assert.Contains(t, errOut.String(), "language is not in the configured languages list")
 	assert.Empty(t, out.String(), "no data on stdout for an error")
 }
+
+func TestContentCreate_CustomFieldsFlag(t *testing.T) {
+	// --field key=value is auto-typed: string stays a string, integers/floats
+	// become numbers (JSON numbers decode as float64 on the wire), "true"/"false"
+	// become bools — so they satisfy the server's type-strict field validators.
+	var info requestInfo
+	srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{
+			"content", "create", "# Hi",
+			"--field", "difficulty=beginner",
+			"--field", "minutes=30",
+			"--field", "has_video=true",
+			"--field", "rating=4.5",
+			"--base-url", srv.URL, "--api-key", "k",
+		},
+		strings.NewReader(""),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+
+	fields, ok := info.payload["customFields"].(map[string]any)
+	require.True(t, ok, "customFields must be a JSON object on the wire")
+	assert.Equal(t, "beginner", fields["difficulty"], "string value stays a string")
+	assert.Equal(t, float64(30), fields["minutes"], "integer-looking value is typed as a number")
+	assert.Equal(t, true, fields["has_video"], "'true' is typed as a bool")
+	assert.Equal(t, float64(4.5), fields["rating"], "float value is typed as a number")
+}
+
+func TestContentCreate_TranslationOfFlag(t *testing.T) {
+	t.Run("set sends translationGroupId", func(t *testing.T) {
+		var info requestInfo
+		srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+		defer srv.Close()
+
+		var out, errOut bytes.Buffer
+		code := cmd.ExecuteArgs(
+			[]string{
+				"content", "create", "# Hi",
+				"--translation-of", "7",
+				"--base-url", srv.URL, "--api-key", "k",
+			},
+			strings.NewReader(""),
+			&out,
+			&errOut,
+		)
+		require.Equal(t, 0, code, "stderr: %s", errOut)
+		assert.Equal(t, float64(7), info.payload["translationGroupId"])
+	})
+
+	t.Run("omitted sends nothing on the wire", func(t *testing.T) {
+		var info requestInfo
+		srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+		defer srv.Close()
+
+		var out, errOut bytes.Buffer
+		code := cmd.ExecuteArgs(
+			[]string{"content", "create", "# Hi", "--base-url", srv.URL, "--api-key", "k"},
+			strings.NewReader(""),
+			&out,
+			&errOut,
+		)
+		require.Equal(t, 0, code, "stderr: %s", errOut)
+		_, has := info.payload["translationGroupId"]
+		assert.False(t, has, "translationGroupId must be absent when --translation-of is not set")
+	})
+}
+
+func TestContentCreate_FieldFlagMalformed(t *testing.T) {
+	// A malformed --field must fail validation before the request is sent.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("server should not be called when --field is malformed")
+	}))
+	defer srv.Close()
+
+	tests := []struct {
+		name       string
+		arg        string
+		wantSubstr string
+	}{
+		{name: "missing equals", arg: "nokeyvalue", wantSubstr: "key=value"},
+		{name: "empty key", arg: "=value", wantSubstr: "empty key"},
+		{name: "whitespace key", arg: " =value", wantSubstr: "empty key"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			code := cmd.ExecuteArgs(
+				[]string{
+					"content", "create", "# Hi",
+					"--field", tt.arg,
+					"--base-url", srv.URL, "--api-key", "k",
+				},
+				strings.NewReader(""),
+				&out,
+				&errOut,
+			)
+			assert.Equal(t, 5, code)
+			assert.Contains(t, errOut.String(), tt.wantSubstr)
+		})
+	}
+}

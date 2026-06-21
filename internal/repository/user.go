@@ -73,6 +73,7 @@ type UserRepo interface {
 	GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*User, error)
 	GetUserStatus(ctx context.Context, userID int) (string, error)
 	UpdateEmail(ctx context.Context, userID int, email string) error
+	UpdateName(ctx context.Context, userID int, name string) error
 	UpdatePassword(ctx context.Context, userID int, currentPasswordHash, newPasswordHash string) error
 	UpdateLastLoginAt(ctx context.Context, userID int) error
 	UpdatePasswordByUserID(ctx context.Context, userID int, newPasswordHash string) error
@@ -849,6 +850,44 @@ func (r *UserRepository) UpdateEmail(ctx context.Context, userID int, email stri
 		SET email = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
 	`, email, userID)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("user not found with ID %d", userID)
+	}
+
+	return nil
+}
+
+// UpdateName updates a user's display name
+func (r *UserRepository) UpdateName(ctx context.Context, userID int, name string) error {
+	// Verify database connection is alive
+	if err := r.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("database connection lost: %w", err)
+	}
+
+	// Add timeout context if not provided
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	// Sanitize name: trim surrounding whitespace
+	name = strings.TrimSpace(name)
+
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET name = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, name, userID)
 	if err != nil {
 		return err
 	}

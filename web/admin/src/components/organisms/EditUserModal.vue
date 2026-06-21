@@ -21,7 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const userStore = useUserStore()
-const { role: currentUserRole } = useAuth()
+const { role: currentUserRole, userId: currentUserId } = useAuth()
 
 const isAdmin = computed(() => currentUserRole.value === 'Admin')
 
@@ -47,6 +47,11 @@ const emailPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](
 
 const editingUser = computed(() =>
   userStore.users.find(u => String(u.id) === String(props.userId))
+)
+
+// An admin must not be able to change their own role (prevents self-lockout).
+const isSelf = computed(() =>
+  editingUser.value != null && String(editingUser.value?.id) === String(currentUserId.value),
 )
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,10 +222,12 @@ function handleClose() {
           id="edit-role"
           v-model="role"
           class="edit-user-modal__input"
-          :disabled="state === 'loading'"
+          :class="{ 'edit-user-modal__input--disabled': isSelf }"
+          :disabled="isSelf || state === 'loading'"
         >
           <option v-for="r in roles" :key="r.value" :value="r.value">{{ r.label }}</option>
         </select>
+        <span v-if="isSelf" class="edit-user-modal__hint">You can’t change your own role.</span>
       </div>
 
       <!-- Custom fields validation summary -->
@@ -343,6 +350,11 @@ function handleClose() {
 .edit-user-modal__field-error {
   font-size: 0.8125rem;
   color: var(--color-error-dark);
+}
+
+.edit-user-modal__hint {
+  font-size: 0.8125rem;
+  color: var(--brand-dark-2);
 }
 
 .edit-user-modal__section-divider {

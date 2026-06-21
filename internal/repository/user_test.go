@@ -376,3 +376,41 @@ func TestUpdatePasswordByUserID_UserNotFound(t *testing.T) {
 	err := repo.UpdatePasswordByUserID(context.Background(), 99999, "$2a$12$newHash")
 	assert.Error(t, err, "Expected error for non-existing user")
 }
+
+func TestUpdateName(t *testing.T) {
+	db := setupUserTestDB(t)
+	defer closeUserTestDB(db)
+
+	repo := repository.NewUserRepository(db.DB())
+
+	user := &repository.User{
+		Username:     "testuser",
+		PasswordHash: "$2a$12$oldHash",
+		Email:        "test@example.com",
+		Name:         "Old Name",
+		Role:         "Author",
+		Status:       "verified",
+	}
+	err := repo.CreateUser(context.Background(), user)
+	require.NoError(t, err, "Failed to create user")
+
+	err = repo.UpdateName(context.Background(), user.ID, "  New Name  ")
+	require.NoError(t, err, "UpdateName failed")
+
+	var name string
+	err = db.DB().QueryRow(`
+		SELECT name FROM users WHERE id = ?
+	`, user.ID).Scan(&name)
+	require.NoError(t, err, "Failed to query name")
+	assert.Equal(t, "New Name", name, "Expected trimmed name to be stored")
+}
+
+func TestUpdateName_UserNotFound(t *testing.T) {
+	db := setupUserTestDB(t)
+	defer closeUserTestDB(db)
+
+	repo := repository.NewUserRepository(db.DB())
+
+	err := repo.UpdateName(context.Background(), 99999, "New Name")
+	assert.Error(t, err, "Expected error for non-existing user")
+}

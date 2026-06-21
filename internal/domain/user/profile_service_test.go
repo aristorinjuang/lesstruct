@@ -702,3 +702,35 @@ func TestProfileService_UpdateCustomFields_RepoError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestProfileService_UpdateName_Success(t *testing.T) {
+	userRepo := repomocks.NewMockUserRepo(t)
+	emailUpdateTokenRepo := repomocks.NewMockEmailUpdateTokenRepo(t)
+	userDataExportRepo := repomocks.NewMockUserDataExportRepo(t)
+	emailService := emailmocks.NewMockEmailService(t)
+
+	userRepo.EXPECT().
+		UpdateName(context.Background(), 123, "Jane Doe").
+		Return(nil)
+
+	service := newService(t, userRepo, emailUpdateTokenRepo, userDataExportRepo, emailService)
+
+	err := service.UpdateName(context.Background(), 123, "Jane Doe")
+	require.NoError(t, err)
+}
+
+func TestProfileService_UpdateName_RepoError(t *testing.T) {
+	userRepo := repomocks.NewMockUserRepo(t)
+	emailUpdateTokenRepo := repomocks.NewMockEmailUpdateTokenRepo(t)
+	userDataExportRepo := repomocks.NewMockUserDataExportRepo(t)
+	emailService := emailmocks.NewMockEmailService(t)
+
+	userRepo.EXPECT().
+		UpdateName(context.Background(), 123, "Jane Doe").
+		Return(assert.AnError)
+
+	service := newService(t, userRepo, emailUpdateTokenRepo, userDataExportRepo, emailService)
+
+	err := service.UpdateName(context.Background(), 123, "Jane Doe")
+	require.Error(t, err)
+}
+

@@ -28,6 +28,7 @@ type systemFieldProvider interface {
 type ProfileServiceInterface interface {
 	GetProfile(ctx context.Context, userID int) (*Profile, error)
 	UpdateEmail(ctx context.Context, userID int, newEmail, currentPasswordHash string) error
+	UpdateName(ctx context.Context, userID int, name string) error
 	ChangePassword(ctx context.Context, userID int, currentPassword, newPassword string) error
 	ExportUserData(ctx context.Context, userID int) (*repository.UserDataExport, error)
 	VerifyEmailUpdate(ctx context.Context, token string) (int, string, error)
@@ -169,6 +170,11 @@ func (s *ProfileService) UpdateEmail(ctx context.Context, userID int, newEmail, 
 	}
 
 	return nil
+}
+
+// UpdateName updates a user's display name. Whitespace trimming is handled by the repository.
+func (s *ProfileService) UpdateName(ctx context.Context, userID int, name string) error {
+	return s.userRepo.UpdateName(ctx, userID, name)
 }
 
 // VerifyEmailUpdate verifies an email update token and updates the user's email

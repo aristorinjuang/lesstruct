@@ -112,6 +112,14 @@ func Setup(
 	r.Use(maxBodySizeMiddleware(1 << 20)) // 1MB
 
 	// Health endpoint is NOT rate-limited
+	// SEO discovery endpoints live at the router ROOT (not under /api) so crawlers
+	// find them at the canonical paths: /sitemap.xml (XML sitemap, advertised by
+	// robots.txt) and /robots.txt. They are registered before the /* content-site
+	// catchall so they win over it. The JSON sitemap at /api/v1/sitemap (below,
+	// for programmatic callers) stays where it is.
+	r.Get("/sitemap.xml", seoHandler.GetSitemapXML)
+	r.Get("/robots.txt", seoHandler.GetRobotsTxt)
+
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -162,6 +170,10 @@ func Setup(
 		r.Get("/api/v1/content", agentContentHandler.List)
 		r.Get("/api/v1/content/{id}", agentContentHandler.Get)
 		r.Put("/api/v1/content/{id}", agentContentHandler.Update)
+		// Admin-only (a non-admin API key gets 403): lets the CLI set the
+		// admin-managed system fields for a content item (mirror of the browser
+		// admin's system-fields endpoint, in the Bearer/agent realm).
+		r.Put("/api/v1/content/{id}/system-fields", agentContentHandler.SetSystemFields)
 		r.Delete("/api/v1/content/{id}", agentContentHandler.Delete)
 		// Standalone status-toggle actions — let agents flip published/draft
 		// without resending the body. Both accept an empty request body and
@@ -276,6 +288,7 @@ func Setup(
 			r.Put("/password", profileHandler.ChangePassword)
 			r.Get("/export", profileHandler.ExportUserData)
 			r.Put("/custom-fields", profileHandler.UpdateCustomFields)
+			r.Put("/name", profileHandler.UpdateName)
 			r.Get("/user-fields", profileHandler.GetUserFields)
 			r.Delete("/account", profileHandler.DeleteAccount)
 

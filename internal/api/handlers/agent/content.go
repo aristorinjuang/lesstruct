@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -138,6 +140,16 @@ type ContentService interface {
 	DeleteContent(ctx context.Context, id int, userID int, role string) error
 	Publish(ctx context.Context, id int, userID int, role string) (*contentdomain.Content, error)
 	Unpublish(ctx context.Context, id int, userID int, role string) (*contentdomain.Content, error)
+	SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*contentdomain.Content, error)
+}
+
+// SystemFieldResolver resolves the admin-managed system field schemas for a post
+// type. *posttype.Service satisfies it. It is exported so mockery can generate a
+// mock reachable from the *_test package (CLAUDE.md mandates *_test packages).
+// It is optional: a nil resolver disables the system-field-rejection check on
+// create/update (the service still strips such keys afterwards).
+type SystemFieldResolver interface {
+	GetSystemFieldsByPostType(slug string) ([]customfield.FieldSchema, error)
 }
 
 // ContentHandler exposes the Bearer-authenticated agent content endpoints. It
@@ -145,7 +157,54 @@ type ContentService interface {
 // fires plugin hooks) — it never duplicates that logic.
 type ContentHandler struct {
 	contentService ContentService
+	systemFields   SystemFieldResolver
 	logger         *util.Logger
+}
+
+// systemFieldKeys returns the system-field slugs for postTypeSlug, or nil when the
+// resolver is unset or the post type has none. A resolution error (e.g. an unknown
+// post type) is treated as "no system fields" so an agent passing a stray
+// customField on an unknown post type is not blocked here — the service's own
+// post-type validation rejects unknown types afterwards.
+func (h *ContentHandler) systemFieldKeys(postTypeSlug string) []string {
+	if h.systemFields == nil {
+		return nil
+	}
+	schemas, err := h.systemFields.GetSystemFieldsByPostType(postTypeSlug)
+	if err != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(schemas))
+	for _, sf := range schemas {
+		keys = append(keys, sf.Slug)
+	}
+	return keys
+}
+
+// rejectSystemFields returns a non-empty VALIDATION_ERROR message when customFields
+// contains a key that is an admin-managed system field for the post type. System
+// fields are not settable via the authoring API (they are admin-managed, settable
+// via the dedicated system-fields endpoint / the CLI's "content system-fields"
+// command); previously the service silently dropped them via stripSystemFields.
+// Returns "" when the payload is acceptable (no collision, no resolver, or no
+// system fields for the type).
+func (h *ContentHandler) rejectSystemFields(postTypeSlug string, customFields map[string]any) string {
+	if len(customFields) == 0 {
+		return ""
+	}
+	keys := h.systemFieldKeys(postTypeSlug)
+	if len(keys) == 0 {
+		return ""
+	}
+	for k := range customFields {
+		if slices.Contains(keys, k) {
+			return fmt.Sprintf(
+				`customFields key %q is an admin-managed system field and cannot be set via the authoring API; use "lesstruct-cli content system-fields <id>" instead`,
+				k,
+			)
+		}
+	}
+	return ""
 }
 
 // Create handles POST /api/v1/content. It maps the streamlined agent payload onto a
@@ -175,6 +234,14 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// System fields are admin-managed and set via the dedicated system-fields
+	// endpoint (the CLI's "content system-fields" command), not the authoring
+	// API. Reject them up front instead of letting the service silently drop them.
+	if msg := h.rejectSystemFields(req.PostType, req.CustomFields); msg != "" {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", msg, nil)
+		return
+	}
+
 	status := contentdomain.StatusDraft
 	if req.IsPublished {
 		status = contentdomain.StatusPublished
@@ -182,17 +249,19 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Slug is intentionally NOT mapped: CreateContentRequest has no Slug field and
 	// the service auto-generates the slug from the title. See Completion Notes.
-	// Tags and Language are forwarded as-given; the service normalizes Tags via
-	// contentdomain.ValidateTags and rejects an unknown Language with
-	// ErrInvalidLanguage (mapped to VALIDATION_ERROR by handleError).
+	// Tags, Language, and TranslationGroupID are forwarded as-given; the service
+	// normalizes Tags via contentdomain.ValidateTags, rejects an unknown Language
+	// with ErrInvalidLanguage, and validates a provided TranslationGroupID exists
+	// (ErrTranslationGroupNotFound) — all mapped to VALIDATION_ERROR by handleError.
 	domainReq := contentdomain.CreateContentRequest{
-		Title:        req.Title,
-		Content:      body,
-		Status:       status,
-		PostType:     req.PostType,
-		CustomFields: req.CustomFields,
-		Tags:         req.Tags,
-		Language:     req.Language,
+		Title:              req.Title,
+		Content:            body,
+		Status:             status,
+		PostType:           req.PostType,
+		CustomFields:       req.CustomFields,
+		Tags:               req.Tags,
+		Language:           req.Language,
+		TranslationGroupID: req.TranslationGroupID,
 	}
 
 	created, err := h.contentService.Create(r.Context(), userID, domainReq)
@@ -419,6 +488,19 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// System fields are admin-managed (set via the dedicated system-fields
+	// endpoint, not the authoring API). Reject agent-supplied system-field keys
+	// against the effective post type — the request's, falling back to the
+	// existing item's — instead of letting the service silently drop them.
+	effectivePostType := req.PostType
+	if effectivePostType == "" {
+		effectivePostType = existing.PostType
+	}
+	if msg := h.rejectSystemFields(effectivePostType, req.CustomFields); msg != "" {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", msg, nil)
+		return
+	}
+
 	status := contentdomain.StatusDraft
 	if req.IsPublished {
 		status = contentdomain.StatusPublished
@@ -578,15 +660,59 @@ func (h *ContentHandler) Unpublish(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, NewContentResponse(updated))
 }
 
+// SetSystemFields handles PUT /api/v1/content/{id}/system-fields. System fields are
+// admin-managed metadata (e.g. editorial_status, internal_notes), so this endpoint is
+// admin-only: a non-admin caller gets 403. It mirrors the browser admin's
+// system-fields endpoint but lives in the Bearer/agent realm so the CLI can set them
+// with an admin API key. It delegates to ContentService.SetSystemFields, which
+// validates each key against the post type's system-field schema and each value's
+// type — an unknown key returns ErrUnknownSystemFieldKey and a bad value returns
+// ErrSystemFieldValidation (both → 400 VALIDATION_ERROR via handleError).
+func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request) {
+	role := authenticatedRole(r)
+	if role != contentdomain.RoleAdmin {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "system fields are admin-only", nil)
+		return
+	}
+
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid content ID", nil)
+		return
+	}
+
+	var req struct {
+		SystemFields map[string]any `json:"systemFields"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid request body", nil)
+		return
+	}
+
+	updated, err := h.contentService.SetSystemFields(r.Context(), id, req.SystemFields)
+	if err != nil {
+		h.logger.Error("agent set system fields failed: id=%d err=%v", id, err)
+		handleError(w, err)
+		return
+	}
+
+	response.Success(w, NewContentResponse(updated))
+}
+
 // NewContentHandler constructs a ContentHandler backed by the given content
-// service. A nil logger degrades to a discard sink so the handler is safe to
-// construct in any context (mirrors NewAPIKeyHandler/NewAPIKeyAuthMiddleware).
-func NewContentHandler(s ContentService, logger *util.Logger) *ContentHandler {
+// service. systemFields resolves admin-managed system fields per post type so the
+// authoring endpoints can reject (not silently drop) agent-supplied system-field
+// keys; a nil resolver disables that check. A nil logger degrades to a discard sink
+// so the handler is safe to construct in any context (mirrors
+// NewAPIKeyHandler/NewAPIKeyAuthMiddleware).
+func NewContentHandler(s ContentService, systemFields SystemFieldResolver, logger *util.Logger) *ContentHandler {
 	if logger == nil {
 		logger = util.NewLogger(io.Discard)
 	}
 	return &ContentHandler{
 		contentService: s,
+		systemFields:   systemFields,
 		logger:         logger,
 	}
 }

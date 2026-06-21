@@ -31,8 +31,10 @@ type contentSummary struct {
 func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 	var (
 		file, title, postType, language string
-		tags                             []string
-		published                        bool
+		tags                            []string
+		fields                          []string
+		translationOf                   int
+		published                       bool
 	)
 
 	content := &cobra.Command{
@@ -47,21 +49,34 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		Aliases: []string{"new"},
 		Short:   "Create content from Markdown",
 		Long: "Create content from Markdown read via --file <path>, a positional " +
-			"argument, or piped stdin. Sends POST /api/v1/content with format: markdown.",
+			"argument, or piped stdin. Sends POST /api/v1/content with format: markdown. " +
+			"Use repeatable --field key=value to set custom fields (auto-typed: " +
+			"true/false→bool, numbers→number, else string) and --translation-of <id> " +
+			"to mark this item as a translation of an existing one.",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// --translation-of is optional; only send translationGroupId when the
+			// flag is present (0 is never a valid content id, but Changed() is the
+			// explicit signal so an absent flag sends nothing on the wire).
+			var translationGroupID *int
+			if cmd.Flags().Changed("translation-of") {
+				id := translationOf
+				translationGroupID = &id
+			}
 			return runContentCreate(cmd, args, contentCreateOptions{
-				apiKey:    *apiKey,
-				baseURL:   *baseURL,
-				output:    *output,
-				file:      file,
-				title:     title,
-				published: published,
-				postType:  postType,
-				tags:      tags,
-				language:  language,
+				apiKey:             *apiKey,
+				baseURL:            *baseURL,
+				output:             *output,
+				file:               file,
+				title:              title,
+				published:          published,
+				postType:           postType,
+				tags:               tags,
+				language:           language,
+				fields:             fields,
+				translationGroupID: translationGroupID,
 			})
 		},
 	}
@@ -102,9 +117,22 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		"",
 		"language code (e.g. \"en\") — must be in the server's configured languages",
 	)
+	create.Flags().StringArrayVar(
+		&fields,
+		"field",
+		nil,
+		"custom field as key=value (repeatable). Values are auto-typed: \"true\"/\"false\"→bool, integers/floats→number, else string",
+	)
+	create.Flags().IntVar(
+		&translationOf,
+		"translation-of",
+		0,
+		"id of content this item translates (joins its translation group; the server validates the id exists)",
+	)
 
 	var (
 		updateFile, updateTitle, updatePostType, updateLanguage string
+		updateFields                                            []string
 		updateTags                                              []string
 		updatePublished                                         bool
 	)
@@ -115,13 +143,13 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 			"with format: markdown. The Markdown body is read via --file <path>, a " +
 			"second positional argument, or piped stdin. The title is taken from " +
 			"--title or, when absent, derived from the first heading or line of the " +
-			"body (same as `content create`). Pass --published to set isPublished=true; " +
-			"omitting it sends isPublished=false, which the server maps to draft. " +
-			"--post-type, --tags, and --language forward the v1-supplied values; " +
-			"omitting them sends zero values, which the server applies as a " +
-			"replace (postType=\"\", tags=nil, language=\"\"). " +
-			"SEO metadata (metaDescription, ogTitle, ogDescription), allowComments, " +
-			"and translationGroupId are server-managed and preserved from the existing item. " +
+			"body (same as `content create`). Patch semantics: --post-type, --tags, " +
+			"--language, and --published are PRESERVED from the existing item when " +
+			"omitted, so a body-only edit no longer wipes them and does not unpublish; " +
+			"set them explicitly to change, and pass --published=false to unpublish. " +
+			"Repeatable --field key=value REPLACES all custom fields (auto-typed; omit " +
+			"to preserve). SEO metadata (metaDescription, ogTitle, ogDescription), " +
+			"allowComments, and translationGroupId are server-managed and preserved. " +
 			"slug is accepted but not honored (the server auto-generates it from the title).",
 		Args:          cobra.MaximumNArgs(2),
 		SilenceUsage:  true,
@@ -137,6 +165,13 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 				postType:  updatePostType,
 				tags:      updateTags,
 				language:  updateLanguage,
+				fields:    updateFields,
+				changed: contentUpdateChanged{
+					tags:      cmd.Flags().Changed("tags"),
+					postType:  cmd.Flags().Changed("post-type"),
+					language:  cmd.Flags().Changed("language"),
+					published: cmd.Flags().Changed("published"),
+				},
 			})
 		},
 	}
@@ -176,16 +211,22 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		"",
 		"language code (e.g. \"en\") — must be in the server's configured languages",
 	)
+	update.Flags().StringArrayVar(
+		&updateFields,
+		"field",
+		nil,
+		"custom field as key=value (repeatable; REPLACES all custom fields). Auto-typed: \"true\"/\"false\"→bool, numbers→number, else string. Omit to preserve existing fields",
+	)
 
 	var (
-		limit              int
-		cursor             string
-		listTags           []string
-		listLanguage       string
-		listStatus         string
-		listPostType       string
-		listAuthor         string
-		listSearch         string
+		limit        int
+		cursor       string
+		listTags     []string
+		listLanguage string
+		listStatus   string
+		listPostType string
+		listAuthor   string
+		listSearch   string
 	)
 	list := &cobra.Command{
 		Use:   "list",
@@ -301,8 +342,8 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 	// flags. Idempotent on the server: publishing an already-published post
 	// is a no-op 200.
 	publishCmd := &cobra.Command{
-		Use:           "publish <id>",
-		Short:         "Publish a content item (sets status=published)",
+		Use:   "publish <id>",
+		Short: "Publish a content item (sets status=published)",
 		Long: "Publish the content item identified by <id> via POST " +
 			"/api/v1/content/{id}/publish. No body required. On the " +
 			"draft→published edge the server auto-generates SEO metadata and " +
@@ -321,8 +362,8 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 	}
 
 	unpublishCmd := &cobra.Command{
-		Use:           "unpublish <id>",
-		Short:         "Unpublish a content item (sets status=draft)",
+		Use:   "unpublish <id>",
+		Short: "Unpublish a content item (sets status=draft)",
 		Long: "Unpublish the content item identified by <id> via POST " +
 			"/api/v1/content/{id}/unpublish. No body required. Unpublishing an " +
 			"already-draft post is a 200 no-op. Never fires the AfterPublish " +
@@ -339,6 +380,39 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		},
 	}
 
+	// system-fields sets the admin-managed system fields on an item. Admin only:
+	// the server returns 403 unless the API key belongs to an Admin. Reuses the
+	// same --field key=value (auto-typed) parsing as create/update.
+	var systemFieldsFlags []string
+	systemFieldsCmd := &cobra.Command{
+		Use:   "system-fields <id>",
+		Short: "Set admin-managed system fields on a content item (admin only)",
+		Long: "Set the admin-managed system fields (e.g. editorial_status, " +
+			"internal_notes) on a content item via PUT " +
+			"/api/v1/content/{id}/system-fields. Admin only: the server returns " +
+			"403 unless the API key belongs to an Admin. Use repeatable " +
+			"--field key=value to set fields (auto-typed: true/false→bool, " +
+			"numbers→number, else string); the server validates each key against " +
+			"the item's post-type system-field schema and each value's type.",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runContentSystemFields(cmd, args, contentSystemFieldsOptions{
+				apiKey:  *apiKey,
+				baseURL: *baseURL,
+				output:  *output,
+				fields:  systemFieldsFlags,
+			})
+		},
+	}
+	systemFieldsCmd.Flags().StringArrayVar(
+		&systemFieldsFlags,
+		"field",
+		nil,
+		"system field as key=value (repeatable). Auto-typed: \"true\"/\"false\"→bool, numbers→number, else string",
+	)
+
 	content.AddCommand(create)
 	content.AddCommand(list)
 	content.AddCommand(getCmd)
@@ -346,21 +420,35 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 	content.AddCommand(deleteCmd)
 	content.AddCommand(publishCmd)
 	content.AddCommand(unpublishCmd)
+	content.AddCommand(systemFieldsCmd)
 	return content
 }
 
 // contentCreateOptions bundles the resolved flag values for runContentCreate
 // (kept off the package scope so each ExecuteArgs call is isolated).
 type contentCreateOptions struct {
-	apiKey    string
-	baseURL   string
-	output    string
-	file      string
-	title     string
+	apiKey             string
+	baseURL            string
+	output             string
+	file               string
+	title              string
+	published          bool
+	postType           string
+	tags               []string
+	language           string
+	fields             []string
+	translationGroupID *int
+}
+
+// contentUpdateChanged records which optional update flags were explicitly set,
+// so runContentUpdate can apply patch semantics: an omitted flag carries the
+// existing value forward instead of being sent as a zero that the server would
+// apply as a forced replace (clearing tags/postType/language, or unpublishing).
+type contentUpdateChanged struct {
+	tags      bool
+	postType  bool
+	language  bool
 	published bool
-	postType  string
-	tags      []string
-	language  string
 }
 
 // contentUpdateOptions bundles the resolved flag values for runContentUpdate
@@ -377,6 +465,8 @@ type contentUpdateOptions struct {
 	postType  string
 	tags      []string
 	language  string
+	fields    []string
+	changed   contentUpdateChanged
 }
 
 // runContentCreate implements `lesstruct-cli content create`.
@@ -415,14 +505,21 @@ func runContentCreate(cmd *cobra.Command, args []string, opts contentCreateOptio
 		return &exitError{code: client.ExitGeneric, msg: err.Error()}
 	}
 
+	customFields, err := parseCustomFields(opts.fields)
+	if err != nil {
+		return &exitError{code: client.ExitValidation, msg: "lesstruct-cli: " + err.Error()}
+	}
+
 	data, meta, err := cl.CreateContent(cmd.Context(), client.CreateContentRequest{
-		Title:       title,
-		Body:        body,
-		Format:      "markdown",
-		PostType:    opts.postType,
-		Tags:        normalizeTags(opts.tags),
-		Language:    opts.language,
-		IsPublished: opts.published,
+		Title:              title,
+		Body:               body,
+		Format:             "markdown",
+		PostType:           opts.postType,
+		Tags:               normalizeTags(opts.tags),
+		Language:           opts.language,
+		IsPublished:        opts.published,
+		CustomFields:       customFields,
+		TranslationGroupID: opts.translationGroupID,
 	})
 	if err != nil {
 		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
@@ -493,14 +590,74 @@ func runContentUpdate(cmd *cobra.Command, args []string, opts contentUpdateOptio
 		return &exitError{code: client.ExitGeneric, msg: err.Error()}
 	}
 
+	customFields, err := parseCustomFields(opts.fields)
+	if err != nil {
+		return &exitError{code: client.ExitValidation, msg: "lesstruct-cli: " + err.Error()}
+	}
+
+	// Patch semantics: tags/post-type/language/published carry the existing value
+	// forward when their flag is omitted, so a body-only edit no longer wipes them
+	// (and omitting --published no longer silently unpublishes). When any of the
+	// four is omitted, GET the current item once and overlay the existing values
+	// onto the request. Title and body are always taken from the input — an update
+	// is an edit of the body, and the title is derived from it (or --title).
+	postType := opts.postType
+	tags := normalizeTags(opts.tags)
+	language := opts.language
+	isPublished := opts.published
+	if !opts.changed.postType || !opts.changed.tags || !opts.changed.language || !opts.changed.published {
+		getData, _, gerr := cl.GetContent(cmd.Context(), id)
+		if gerr != nil {
+			return &exitError{code: client.ExitCode(gerr), msg: apiErrorMessage(gerr)}
+		}
+		if len(getData) == 0 {
+			return &exitError{
+				code: client.ExitGeneric,
+				msg:  "lesstruct-cli: server returned no content while resolving existing fields",
+			}
+		}
+		var existing struct {
+			Content struct {
+				PostType string   `json:"postType"`
+				Tags     []string `json:"tags"`
+				Language string   `json:"language"`
+				Status   string   `json:"status"`
+			} `json:"content"`
+		}
+		if uerr := json.Unmarshal(getData, &existing); uerr != nil {
+			return &exitError{
+				code: client.ExitGeneric,
+				msg:  fmt.Sprintf("lesstruct-cli: decode existing content: %s", uerr),
+			}
+		}
+		if !opts.changed.postType {
+			postType = existing.Content.PostType
+		}
+		if !opts.changed.tags {
+			// Carry the existing tags through verbatim (no re-normalize) so they
+			// survive the round-trip; an empty set is preserved as empty.
+			tags = existing.Content.Tags
+			if tags == nil {
+				tags = []string{}
+			}
+		}
+		if !opts.changed.language {
+			language = existing.Content.Language
+		}
+		if !opts.changed.published {
+			isPublished = existing.Content.Status == "published"
+		}
+	}
+
 	data, meta, err := cl.UpdateContent(cmd.Context(), id, client.UpdateContentRequest{
-		Title:       title,
-		Body:        body,
-		Format:      "markdown",
-		PostType:    opts.postType,
-		Tags:        normalizeTags(opts.tags),
-		Language:    opts.language,
-		IsPublished: opts.published,
+		Title:        title,
+		Body:         body,
+		Format:       "markdown",
+		PostType:     postType,
+		Tags:         tags,
+		Language:     language,
+		IsPublished:  isPublished,
+		CustomFields: customFields,
 	})
 	if err != nil {
 		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
@@ -628,6 +785,58 @@ func normalizeTags(in []string) []string {
 		return nil
 	}
 	return out
+}
+
+// parseCustomFields parses repeated --field key=value flags into a custom
+// fields map suitable for the server's customFields payload. Values are coerced
+// to bool / number / string (see coerceFieldValue) so they satisfy the server's
+// type-strict field validators without the caller writing JSON: "--field
+// minutes=30" validates against a number field, "--field has_video=true" against
+// a checkbox field, and "--field difficulty=beginner" against a text/select
+// field. Returns nil when no fields are provided so the request omits the map
+// entirely (on create that means no custom fields; on update it preserves the
+// existing ones). An entry without '=', or with an empty key, is a hard error so
+// typos are caught before the request is sent.
+func parseCustomFields(pairs []string) (map[string]any, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	fields := make(map[string]any, len(pairs))
+	for _, pair := range pairs {
+		key, value, found := strings.Cut(pair, "=")
+		if !found {
+			return nil, fmt.Errorf("--field %q must be key=value", pair)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("--field %q has an empty key", pair)
+		}
+		fields[key] = coerceFieldValue(value)
+	}
+	return fields, nil
+}
+
+// coerceFieldValue converts a --field value string to the most specific JSON
+// type that matches it: booleans ("true"/"false"), then integers, then floats,
+// else a plain string. The CLI sends customFields as JSON, and the server decodes
+// JSON numbers into any as float64 — so an integer here round-trips as a number
+// and satisfies the number field validator. Note a value that looks numeric but
+// is meant as text (e.g. a "2024" tagline) will be typed as a number; force a
+// string by using the raw API in that niche case.
+func coerceFieldValue(value string) any {
+	switch value {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	if i, err := strconv.Atoi(value); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(value, 64); err == nil {
+		return f
+	}
+	return value
 }
 
 // apiErrorMessage extracts a human-readable message from a Client error.
@@ -918,6 +1127,73 @@ func runContentUnpublish(cmd *cobra.Command, args []string, opts contentUnpublis
 	}
 
 	if err := printContent(cmd.OutOrStdout(), opts.output, data, meta, "Unpublished"); err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	}
+	return nil
+}
+
+// contentSystemFieldsOptions bundles the resolved flag values for
+// runContentSystemFields (kept off the package scope so each ExecuteArgs call is
+// isolated). fields is the raw repeatable --field key=value list, auto-typed by
+// parseCustomFields before being sent.
+type contentSystemFieldsOptions struct {
+	apiKey  string
+	baseURL string
+	output  string
+	fields  []string
+}
+
+// runContentSystemFields implements `lesstruct-cli content system-fields <id>`. It
+// sets the admin-managed system fields via PUT /api/v1/content/{id}/system-fields.
+// Admin only: the server returns 403 to a non-admin API key. Each --field
+// key=value is auto-typed (parseCustomFields) and the server validates each key
+// against the item's post-type system-field schema and each value's type. At
+// least one --field is required (a no-op set is rejected client-side). Mirrors the
+// structure of runContentPublish (validate output, parse id, resolve credentials,
+// call, print).
+func runContentSystemFields(cmd *cobra.Command, args []string, opts contentSystemFieldsOptions) error {
+	if err := validateOutput(opts.output); err != nil {
+		return err
+	}
+
+	id, err := parseIntID(args[0], "content")
+	if err != nil {
+		return err
+	}
+
+	apiKey, baseURL, err := resolveCredentials(opts.apiKey, opts.baseURL)
+	if err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	}
+
+	systemFields, err := parseCustomFields(opts.fields)
+	if err != nil {
+		return &exitError{code: client.ExitValidation, msg: "lesstruct-cli: " + err.Error()}
+	}
+	if len(systemFields) == 0 {
+		return &exitError{
+			code: client.ExitValidation,
+			msg:  "lesstruct-cli: no system fields provided (use --field key=value)",
+		}
+	}
+
+	cl, err := client.New(baseURL, apiKey)
+	if err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	}
+
+	data, meta, err := cl.SetSystemFields(cmd.Context(), id, systemFields)
+	if err != nil {
+		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
+	}
+	if len(data) == 0 {
+		return &exitError{
+			code: client.ExitGeneric,
+			msg:  "lesstruct-cli: server returned no content",
+		}
+	}
+
+	if err := printContent(cmd.OutOrStdout(), opts.output, data, meta, "Updated system fields for"); err != nil {
 		return &exitError{code: client.ExitGeneric, msg: err.Error()}
 	}
 	return nil

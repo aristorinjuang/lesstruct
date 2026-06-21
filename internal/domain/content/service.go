@@ -567,12 +567,32 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		TranslationGroupID: req.TranslationGroupID,
 	}
 
+	// Creating directly as published runs the publish pipeline: auto-generate
+	// SEO metadata (honoring any overrides, like Update) so it lands in the
+	// initial insert, then fire AfterPublish after the row is persisted. This
+	// makes create-when-published behave like create + publish.
+	if req.Status == StatusPublished && s.seoService != nil {
+		generated, err := s.generateSEOMetadata(content, req.MetaDescription, req.OGTitle, req.OGDescription)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate SEO metadata: %w", err)
+		}
+		content.MetaDescription = generated.MetaDescription
+		content.OGTitle = generated.OGTitle
+		content.OGDescription = generated.OGDescription
+	}
+
 	if err := s.repo.Create(ctx, content); err != nil {
 		return nil, fmt.Errorf("failed to create content: %w", err)
 	}
 
 	// Execute AfterCreate hook (fire and forget)
 	s.executeAfterCreateHook(ctx, content)
+
+	// Fire AfterPublish too when created directly as published, so plugins see
+	// the same draft→publish edge they get from the publish endpoint.
+	if req.Status == StatusPublished {
+		s.executeAfterPublishHook(ctx, content)
+	}
 
 	return content, nil
 }
@@ -936,41 +956,10 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 	existing.Status = req.Status
 
 	if isTransitioningToPublished && s.seoService != nil {
-		// Generate SEO metadata for published content
-		now := time.Now().Format(time.RFC3339)
-
-		// Build URL based on post type
-		urlPrefix := "/posts"
-		if existing.PostType != "" && existing.PostType != "post" {
-			urlPrefix = fmt.Sprintf("/%s", existing.PostType)
-		}
-
-		seoInput := seo.GenerateInput{
-			Title:         existing.Title,
-			Content:       existing.Content,
-			URL:           fmt.Sprintf("%s/%s", urlPrefix, existing.Slug),
-			DatePublished: now,
-			DateModified:  now,
-			AuthorName:    existing.Author,
-			Tags:          existing.Tags,
-		}
-
-		// Use custom overrides if provided
-		if req.MetaDescription != "" {
-			seoInput.MetaDescription = req.MetaDescription
-		}
-		if req.OGTitle != "" {
-			seoInput.OGTitle = req.OGTitle
-		}
-		if req.OGDescription != "" {
-			seoInput.OGDescription = req.OGDescription
-		}
-
-		generated, err := s.seoService.Generate(seoInput)
+		generated, err := s.generateSEOMetadata(existing, req.MetaDescription, req.OGTitle, req.OGDescription)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate SEO metadata: %w", err)
 		}
-
 		existing.MetaDescription = generated.MetaDescription
 		existing.OGTitle = generated.OGTitle
 		existing.OGDescription = generated.OGDescription
@@ -993,6 +982,41 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 	}
 
 	return existing, nil
+}
+
+// generateSEOMetadata builds the SEO input from content (title/content/slug-URL/
+// timestamps/author/tags), applies any non-empty overrides, and generates the
+// metadata. Pass empty strings for the overrides to get pure auto-generation
+// (the status-only publish path). Shared by Create, Update, and transitionStatus
+// so every publish edge produces identical SEO.
+func (s *Service) generateSEOMetadata(
+	c *Content,
+	metaDescription, ogTitle, ogDescription string,
+) (*seo.GeneratedMetadata, error) {
+	now := time.Now().Format(time.RFC3339)
+	urlPrefix := "/posts"
+	if c.PostType != "" && c.PostType != "post" {
+		urlPrefix = fmt.Sprintf("/%s", c.PostType)
+	}
+	seoInput := seo.GenerateInput{
+		Title:         c.Title,
+		Content:       c.Content,
+		URL:           fmt.Sprintf("%s/%s", urlPrefix, c.Slug),
+		DatePublished: now,
+		DateModified:  now,
+		AuthorName:    c.Author,
+		Tags:          c.Tags,
+	}
+	if metaDescription != "" {
+		seoInput.MetaDescription = metaDescription
+	}
+	if ogTitle != "" {
+		seoInput.OGTitle = ogTitle
+	}
+	if ogDescription != "" {
+		seoInput.OGDescription = ogDescription
+	}
+	return s.seoService.Generate(seoInput)
 }
 
 // transitionStatus flips existing.Status to newStatus, persists the row, and
@@ -1019,21 +1043,7 @@ func (s *Service) transitionStatus(
 	existing.Status = newStatus
 
 	if isTransitioningToPublished && s.seoService != nil {
-		now := time.Now().Format(time.RFC3339)
-		urlPrefix := "/posts"
-		if existing.PostType != "" && existing.PostType != "post" {
-			urlPrefix = fmt.Sprintf("/%s", existing.PostType)
-		}
-		seoInput := seo.GenerateInput{
-			Title:         existing.Title,
-			Content:       existing.Content,
-			URL:           fmt.Sprintf("%s/%s", urlPrefix, existing.Slug),
-			DatePublished: now,
-			DateModified:  now,
-			AuthorName:    existing.Author,
-			Tags:          existing.Tags,
-		}
-		generated, err := s.seoService.Generate(seoInput)
+		generated, err := s.generateSEOMetadata(existing, "", "", "")
 		if err != nil {
 			return fmt.Errorf("failed to generate SEO metadata: %w", err)
 		}

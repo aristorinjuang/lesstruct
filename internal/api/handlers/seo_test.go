@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,6 +16,27 @@ import (
 
 	. "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 )
+
+// sitemapLocs extracts the "loc" values from the JSON sitemap envelope's data
+// array, asserting the array shape so callers can focus on values/counts.
+func sitemapLocs(t *testing.T, body map[string]any) []string {
+	t.Helper()
+	data, ok := body["data"].([]any)
+	if !ok {
+		t.Fatal("data field is not an array")
+	}
+	locs := make([]string, 0, len(data))
+	for _, d := range data {
+		entry, ok := d.(map[string]any)
+		if !ok {
+			continue
+		}
+		if loc, ok := entry["loc"].(string); ok {
+			locs = append(locs, loc)
+		}
+	}
+	return locs
+}
 
 func TestSEOHandler_GetSitemapData(t *testing.T) {
 	tests := []struct {
@@ -53,12 +75,17 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
-				data, ok := body["data"].([]any)
-				if !ok {
-					t.Fatal("data field is not an array")
+				locs := sitemapLocs(t, body)
+				if len(locs) != 3 {
+					t.Fatalf("expected 3 entries (homepage + post + page), got %d", len(locs))
 				}
-				if len(data) != 3 {
-					t.Fatalf("expected 3 entries (homepage + post + page), got %d", len(data))
+				// Content is served at the site root by slug (/<slug>), NOT under
+				// /posts/<slug> — that path 404s. Assert both resolve to the root.
+				if !slices.Contains(locs, "http://localhost:3000/my-post") {
+					t.Errorf("expected post at root URL /my-post, got %v", locs)
+				}
+				if !slices.Contains(locs, "http://localhost:3000/about") {
+					t.Errorf("expected page at root URL /about, got %v", locs)
 				}
 			},
 		},
@@ -82,12 +109,9 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
-				data, ok := body["data"].([]any)
-				if !ok {
-					t.Fatal("data field is not an array")
-				}
-				if len(data) != 2 {
-					t.Fatalf("expected 2 entries (homepage + 1 valid post), got %d", len(data))
+				locs := sitemapLocs(t, body)
+				if len(locs) != 2 {
+					t.Fatalf("expected 2 entries (homepage + 1 valid post), got %d", len(locs))
 				}
 			},
 		},
@@ -98,29 +122,41 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
-				data, ok := body["data"].([]any)
-				if !ok {
-					t.Fatal("data field is not an array")
-				}
-				if len(data) != 1 {
-					t.Fatalf("expected 1 entry (homepage only), got %d", len(data))
+				locs := sitemapLocs(t, body)
+				if len(locs) != 1 {
+					t.Fatalf("expected 1 entry (homepage only), got %d", len(locs))
 				}
 			},
 		},
 		{
-			name: "skips content with unknown PostType",
+			name: "includes custom post types (tutorial, showcase) at the root URL",
 			contents: []*contentdomain.Content{
 				{Slug: "custom-type", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "recipe"},
 				{Slug: "valid-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
-				data, ok := body["data"].([]any)
-				if !ok {
-					t.Fatal("data field is not an array")
+				locs := sitemapLocs(t, body)
+				if len(locs) != 3 {
+					t.Fatalf("expected 3 entries (homepage + custom type + post), got %d", len(locs))
 				}
-				if len(data) != 2 {
-					t.Fatalf("expected 2 entries (homepage + 1 valid post), got %d", len(data))
+				if !slices.Contains(locs, "http://localhost:3000/custom-type") {
+					t.Errorf("expected custom post type at root URL, got %v", locs)
+				}
+			},
+		},
+		{
+			name: "skips media and comment post types (no public page)",
+			contents: []*contentdomain.Content{
+				{Slug: "img-1", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "media"},
+				{Slug: "c-1", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "comment"},
+				{Slug: "valid-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
+			},
+			expectedStatus: http.StatusOK,
+			validateBody: func(t *testing.T, body map[string]any) {
+				locs := sitemapLocs(t, body)
+				if len(locs) != 2 {
+					t.Fatalf("expected 2 entries (homepage + post; media/comment excluded), got %d", len(locs))
 				}
 			},
 		},
@@ -157,6 +193,97 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 
 			mockService.AssertExpectations(t)
 		})
+	}
+}
+
+func TestSEOHandler_GetSitemapXML(t *testing.T) {
+	contents := []*contentdomain.Content{
+		{Slug: "my-tutorial", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "tutorial"},
+		{Slug: "my-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
+	}
+
+	mockService := &MockContentServiceInterface{}
+	mockService.On("GetPublished", mock.Anything, mock.Anything, mock.Anything).Return(contents, nil)
+
+	handler := &SEOHandler{
+		contentService: mockService,
+		baseURL:        "http://localhost:3000",
+		logger:         util.NewLogger(os.Stdout),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sitemap.xml", nil)
+	w := httptest.NewRecorder()
+	handler.GetSitemapXML(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "xml") {
+		t.Errorf("expected an xml content-type, got %s", ct)
+	}
+
+	body := w.Body.String()
+	if !strings.HasPrefix(body, `<?xml`) {
+		t.Errorf("expected body to start with the <?xml declaration, got: %q", body)
+	}
+	if !strings.Contains(body, "<urlset") {
+		t.Error("expected an <urlset> root element")
+	}
+	// Custom post types must be indexed, at the root URL (the real routing), and
+	// the sitemap must never emit /posts/<slug> (that path 404s).
+	if !strings.Contains(body, "http://localhost:3000/my-tutorial") {
+		t.Errorf("expected the tutorial URL at the root, body: %q", body)
+	}
+	if strings.Contains(body, "/posts/") {
+		t.Errorf("sitemap must not emit /posts/ URLs, body: %q", body)
+	}
+
+	mockService.AssertExpectations(t)
+}
+
+// TestSEOHandler_GetSitemapXML_HreflangAlternates verifies that translated pages
+// declare their language variants via <xhtml:link rel="alternate" hreflang="…">.
+// The English "about" (id 1, primary) and Indonesian "tentang" (id 2, translation
+// of 1) form one group, so each gets both alternates; the standalone "solo" post
+// has no translations and gets none.
+func TestSEOHandler_GetSitemapXML_HreflangAlternates(t *testing.T) {
+	groupID := 1 // primary "about" (id 1); "tentang" joins its group.
+	contents := []*contentdomain.Content{
+		{ID: 1, Slug: "about", UpdatedAt: "2026-04-15T08:00:00Z", PostType: "page", Language: "en"},
+		{ID: 2, Slug: "tentang", UpdatedAt: "2026-04-15T08:00:00Z", PostType: "page", Language: "id", TranslationGroupID: &groupID},
+		{ID: 3, Slug: "solo", UpdatedAt: "2026-04-16T08:00:00Z", PostType: "post", Language: "en"},
+	}
+
+	mockService := &MockContentServiceInterface{}
+	mockService.On("GetPublished", mock.Anything, mock.Anything, mock.Anything).Return(contents, nil)
+
+	handler := &SEOHandler{
+		contentService: mockService,
+		baseURL:        "http://localhost:3000",
+		logger:         util.NewLogger(os.Stdout),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/sitemap.xml", nil)
+	w := httptest.NewRecorder()
+	handler.GetSitemapXML(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	body := w.Body.String()
+	// The translated group declares both language variants on each member URL.
+	if !strings.Contains(body, `<xhtml:link rel="alternate" hreflang="en" href="http://localhost:3000/about"`) {
+		t.Errorf("expected an en hreflang alternate for the group, body: %q", body)
+	}
+	if !strings.Contains(body, `<xhtml:link rel="alternate" hreflang="id" href="http://localhost:3000/tentang"`) {
+		t.Errorf("expected an id hreflang alternate for the group, body: %q", body)
+	}
+	// The standalone post has no translations → it appears but gets no hreflang.
+	if !strings.Contains(body, "<loc>http://localhost:3000/solo</loc>") {
+		t.Errorf("expected the standalone post in the sitemap, body: %q", body)
+	}
+	if strings.Contains(body, `hreflang="en" href="http://localhost:3000/solo"`) {
+		t.Errorf("standalone post must not get an hreflang alternate, body: %q", body)
 	}
 }
 

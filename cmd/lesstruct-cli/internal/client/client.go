@@ -88,13 +88,15 @@ func (e *APIError) Error() string {
 // for the configured-languages list (it returns ErrInvalidLanguage for an
 // unknown code, mapped to 400 VALIDATION_ERROR by the CLI's exit code map).
 type CreateContentRequest struct {
-	Title       string   `json:"title"`
-	Body        string   `json:"body"`
-	Format      string   `json:"format,omitempty"`
-	PostType    string   `json:"postType,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Language    string   `json:"language,omitempty"`
-	IsPublished bool     `json:"isPublished,omitempty"`
+	Title              string         `json:"title"`
+	Body               string         `json:"body"`
+	Format             string         `json:"format,omitempty"`
+	PostType           string         `json:"postType,omitempty"`
+	Tags               []string       `json:"tags,omitempty"`
+	Language           string         `json:"language,omitempty"`
+	IsPublished        bool           `json:"isPublished,omitempty"`
+	CustomFields       map[string]any `json:"customFields,omitempty"`
+	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
 }
 
 // UpdateContentRequest is the agent content-update payload. It carries the same
@@ -102,16 +104,20 @@ type CreateContentRequest struct {
 // accepts the same ContentRequest shape. The server preserves the
 // server-managed fields (SEO metadata — metaDescription / ogTitle / ogDescription,
 // allowComments, translationGroupId) from the existing item; the client does
-// not surface flags for them. The client cannot import the server's DTO types
-// so the subset is re-declared here.
+// not surface a flag for translationGroupId on update (the server ignores it).
+// CustomFields may be set: when non-nil it replaces the item's custom fields
+// (preserving plugin-managed system fields); when nil the existing custom
+// fields are preserved. The client cannot import the server's DTO types so the
+// subset is re-declared here.
 type UpdateContentRequest struct {
-	Title       string   `json:"title"`
-	Body        string   `json:"body"`
-	Format      string   `json:"format,omitempty"`
-	PostType    string   `json:"postType,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Language    string   `json:"language,omitempty"`
-	IsPublished bool     `json:"isPublished,omitempty"`
+	Title        string         `json:"title"`
+	Body         string         `json:"body"`
+	Format       string         `json:"format,omitempty"`
+	PostType     string         `json:"postType,omitempty"`
+	Tags         []string       `json:"tags,omitempty"`
+	Language     string         `json:"language,omitempty"`
+	IsPublished  bool           `json:"isPublished,omitempty"`
+	CustomFields map[string]any `json:"customFields,omitempty"`
 }
 
 // Client is a typed HTTP client over the /api/v1 surface. It depends only on
@@ -383,16 +389,36 @@ func (c *Client) UpdateContent(
 	return c.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/content/%d", id), nil, req)
 }
 
+// SetSystemFields sends PUT /api/v1/content/{id}/system-fields with the given
+// system field key/value pairs and returns the decoded data and meta payloads, or
+// an *APIError on failure. System fields are admin-managed metadata (e.g.
+// editorial_status, internal_notes), so the server returns 403 FORBIDDEN unless
+// the API key belongs to an Admin; an unknown key returns ErrUnknownSystemFieldKey
+// and a value that fails the field schema returns ErrSystemFieldValidation, both
+// surfaced as a 400 VALIDATION_ERROR.
+func (c *Client) SetSystemFields(
+	ctx context.Context,
+	id int,
+	systemFields map[string]any,
+) (json.RawMessage, json.RawMessage, error) {
+	body := struct {
+		SystemFields map[string]any `json:"systemFields"`
+	}{SystemFields: systemFields}
+	return c.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/content/%d/system-fields", id), nil, body)
+}
+
 // UploadMediaRequest is the multipart payload sent to POST /api/v1/media. It
 // is built in memory by UploadMedia — callers supply the file reader + filename
 // and an optional metadata map (the server reads `altText` today; the map
-// type allows future expansion without a client signature change). The
-// client validates that File is non-nil and Filename is non-empty so a bad
-// call site fails fast with a clear error instead of a runtime panic.
+// values are passed through as typed JSON so non-string values such as numbers
+// or booleans are accepted, even though the server currently persists only
+// `altText`). The client validates that File is non-nil and Filename is
+// non-empty so a bad call site fails fast with a clear error instead of a
+// runtime panic.
 type UploadMediaRequest struct {
 	File     io.Reader
 	Filename string
-	Metadata map[string]string
+	Metadata map[string]any
 }
 
 // UploadMedia sends POST /api/v1/media as multipart/form-data with a `file`

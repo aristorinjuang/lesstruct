@@ -36,6 +36,7 @@ func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "lesstruct-cli",
 		Short:         "Author and manage Lesstruct content and media over the /api/v1 API",
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

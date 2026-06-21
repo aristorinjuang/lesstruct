@@ -382,6 +382,69 @@ func (_c *MockProfileServiceInterface_UpdateEmail_Call) RunAndReturn(run func(ct
 	return _c
 }
 
+// UpdateName provides a mock function for the type MockProfileServiceInterface
+func (_mock *MockProfileServiceInterface) UpdateName(ctx context.Context, userID int, name string) error {
+	ret := _mock.Called(ctx, userID, name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateName")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string) error); ok {
+		r0 = returnFunc(ctx, userID, name)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockProfileServiceInterface_UpdateName_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateName'
+type MockProfileServiceInterface_UpdateName_Call struct {
+	*mock.Call
+}
+
+// UpdateName is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID int
+//   - name string
+func (_e *MockProfileServiceInterface_Expecter) UpdateName(ctx any, userID any, name any) *MockProfileServiceInterface_UpdateName_Call {
+	return &MockProfileServiceInterface_UpdateName_Call{Call: _e.mock.On("UpdateName", ctx, userID, name)}
+}
+
+func (_c *MockProfileServiceInterface_UpdateName_Call) Run(run func(ctx context.Context, userID int, name string)) *MockProfileServiceInterface_UpdateName_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockProfileServiceInterface_UpdateName_Call) Return(err error) *MockProfileServiceInterface_UpdateName_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockProfileServiceInterface_UpdateName_Call) RunAndReturn(run func(ctx context.Context, userID int, name string) error) *MockProfileServiceInterface_UpdateName_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // VerifyEmailUpdate provides a mock function for the type MockProfileServiceInterface
 func (_mock *MockProfileServiceInterface) VerifyEmailUpdate(ctx context.Context, token string) (int, string, error) {
 	ret := _mock.Called(ctx, token)

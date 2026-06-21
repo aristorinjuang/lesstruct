@@ -443,6 +443,27 @@ func (r *UserRepository) UpdateEmail(ctx context.Context, userID int, email stri
 	return nil
 }
 
+func (r *UserRepository) UpdateName(ctx context.Context, userID int, name string) error {
+	if err := r.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("database connection lost: %w", err)
+	}
+	name = strings.TrimSpace(name)
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE users SET name = ?, updated_at = NOW() WHERE id = ?
+	`, name, userID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("user not found with ID %d", userID)
+	}
+	return nil
+}
+
 // UpdatePassword updates user's password with current password verification.
 func (r *UserRepository) UpdatePassword(ctx context.Context, userID int, currentPasswordHash, newPasswordHash string) error {
 	if err := r.db.PingContext(ctx); err != nil {

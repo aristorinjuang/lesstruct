@@ -233,7 +233,14 @@ func (h *ContentPageHandler) buildNavigationItems(ctx context.Context, currentPa
 
 	pages, err := h.contentService.GetPublishedPages(ctx)
 	if err == nil {
+		// The site nav surfaces only primary-language pages; each page still
+		// links to its own translations via buildLanguageLinks, so secondary
+		// languages are reachable without crowding the nav.
+		primaryLang := config.PrimaryLanguage(h.languages)
 		for _, page := range pages {
+			if page.Language != primaryLang {
+				continue
+			}
 			items = append(items, tpl.NavigationItem{
 				Title:    page.Title,
 				URL:      "/" + page.Slug,
@@ -451,6 +458,7 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 	data := tpl.ContentData{
 		LayoutData: tpl.LayoutData{
 			Title:           content.Title,
+			Description:     content.MetaDescription,
 			PageTitle:       content.Title + " - Lesstruct",
 			OGTitle:         ogTitle,
 			OGDesc:          ogDesc,
@@ -545,6 +553,8 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 		LayoutData: tpl.LayoutData{
 			Title:           authorName,
 			PageTitle:       authorName + " - Lesstruct",
+			Description:     fmt.Sprintf("Posts by %s.", authorName),
+			OGDesc:          fmt.Sprintf("Posts by %s.", authorName),
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
@@ -611,6 +621,8 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 		LayoutData: tpl.LayoutData{
 			Title:           tag,
 			PageTitle:       tag + " - Lesstruct",
+			Description:     fmt.Sprintf("Posts tagged %q.", tag),
+			OGDesc:          fmt.Sprintf("Posts tagged %q.", tag),
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
@@ -696,6 +708,8 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 		LayoutData: tpl.LayoutData{
 			Title:           pageTitle,
 			PageTitle:       pageTitle + " - Lesstruct",
+			Description:     fmt.Sprintf("Browse %s.", pageTitle),
+			OGDesc:          fmt.Sprintf("Browse %s.", pageTitle),
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,

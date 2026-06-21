@@ -93,7 +93,6 @@ params:
   BookPortableLinks: true
   BookDateFormat: "January 2, 2006"
   BookLastChangeLink: 'https://github.com/aristorinjuang/lesstruct/commit/{{ .GitInfo.Hash }}'
-  BookEditLink: 'https://github.com/aristorinjuang/lesstruct/edit/main/docs/{{ .File.LogicalName }}'
 
 sitemap:
   changefreq: weekly

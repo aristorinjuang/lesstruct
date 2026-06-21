@@ -182,6 +182,7 @@ func TestContentGet_MissingKeyExitsOne(t *testing.T) {
 		t.Errorf("server should not be called when API key is missing")
 	}))
 	defer srv.Close()
+	withNoCredentials(t)
 
 	var out, errOut bytes.Buffer
 	code := cmd.ExecuteArgs(

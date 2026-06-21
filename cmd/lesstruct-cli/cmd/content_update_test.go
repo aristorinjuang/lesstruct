@@ -23,6 +23,35 @@ import (
 // asserts on the captured values.
 const updateSuccessEnvelope = `{"data":{"content":{"id":7,"title":"Hello v2","slug":"hello-v2","status":"published"}}}`
 
+// newPatchServer replies to GET /api/v1/content/{id} with the `existing`
+// content projection (so runContentUpdate can carry omitted flags forward) and
+// to PUT with updateSuccessEnvelope, recording the PUT payload into *put. The
+// GET response is the raw projection object; it is wrapped in the data/content
+// envelope here.
+func newPatchServer(t *testing.T, existing string, put *requestInfo) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"data":{"content":` + existing + `}}`))
+		case http.MethodPut:
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &put.payload)
+			put.method = r.Method
+			put.path = r.URL.Path
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(updateSuccessEnvelope))
+		}
+	}))
+}
+
+// richExisting is a content projection with every carry-forward field populated,
+// used by patch-semantics tests: omitting --post-type/--tags/--language must
+// preserve these, and omitting --published must preserve the published status.
+const richExisting = `{"id":7,"title":"Original","status":"published","postType":"post","tags":["keep-a","keep-b"],"language":"en"}`
+
 func TestContentUpdate_PositionalBody(t *testing.T) {
 	var info requestInfo
 	srv := newCreateServer(t, http.StatusOK, updateSuccessEnvelope, &info)
@@ -41,8 +70,9 @@ func TestContentUpdate_PositionalBody(t *testing.T) {
 	assert.Equal(t, "# Hello v2", info.payload["body"])
 	assert.Equal(t, "markdown", info.payload["format"])
 	assert.Equal(t, "Hello v2", info.payload["title"], "title derived from the first heading")
-	_, hasPublished := info.payload["isPublished"]
-	assert.False(t, hasPublished, "isPublished omitted when --published absent")
+	// Patch semantics: --published is omitted, so the existing status ("published"
+	// in the GET response) is carried forward → isPublished=true is sent.
+	assert.Equal(t, true, info.payload["isPublished"], "omitted --published carries the existing status forward")
 	assert.Contains(t, out.String(), "Updated content #7")
 	assert.Contains(t, out.String(), `hello-v2`)
 	assert.Contains(t, out.String(), "published")
@@ -334,6 +364,7 @@ func TestContentUpdate_MissingKeyExitsOne(t *testing.T) {
 		t.Errorf("server should not be called when API key is missing")
 	}))
 	defer srv.Close()
+	withNoCredentials(t)
 
 	var out, errOut bytes.Buffer
 	code := cmd.ExecuteArgs(
@@ -430,9 +461,13 @@ func TestContentUpdate_LanguageFlag(t *testing.T) {
 	assert.Equal(t, "en", info.payload["language"])
 }
 
-func TestContentUpdate_NoFlagsOmitsAll(t *testing.T) {
-	var info requestInfo
-	srv := newCreateServer(t, http.StatusOK, updateSuccessEnvelope, &info)
+func TestContentUpdate_OmittedFlagsCarriedForward(t *testing.T) {
+	// Patch semantics: omitting --post-type/--tags/--language/--published carries
+	// the existing values forward (fetched via a GET), so a body-only edit no
+	// longer wipes them and does not unpublish. (Replaces the old omit→absent
+	// contract, which relied on the server to preserve them.)
+	var put requestInfo
+	srv := newPatchServer(t, richExisting, &put)
 	defer srv.Close()
 
 	var out, errOut bytes.Buffer
@@ -443,16 +478,66 @@ func TestContentUpdate_NoFlagsOmitsAll(t *testing.T) {
 		&errOut,
 	)
 	require.Equal(t, 0, code, "stderr: %s", errOut)
-	// omitempty on the request: when the flags are not set, the keys must be
-	// absent from the wire payload. The server's update handler then
-	// preserves the existing item's postType/tags/language — the existing
-	// v1 contract.
-	_, hasPostType := info.payload["postType"]
-	assert.False(t, hasPostType, "postType must be absent when --post-type is not set")
-	_, hasTags := info.payload["tags"]
-	assert.False(t, hasTags, "tags must be absent when --tags is not set")
-	_, hasLanguage := info.payload["language"]
-	assert.False(t, hasLanguage, "language must be absent when --language is not set")
+	assert.Equal(t, http.MethodPut, put.method)
+	assert.Equal(t, "post", put.payload["postType"], "postType carried forward from existing")
+	assert.Equal(t, "en", put.payload["language"], "language carried forward from existing")
+	assert.Equal(t, true, put.payload["isPublished"], "published status carried forward from existing")
+	gotTags, ok := put.payload["tags"].([]any)
+	require.True(t, ok, "tags carried forward as a JSON array")
+	assert.Equal(t, []any{"keep-a", "keep-b"}, gotTags, "tags carried forward from existing")
+}
+
+func TestContentUpdate_SetFlagsOverrideExisting(t *testing.T) {
+	// Explicitly-set flags override the existing values; omitted flags still
+	// carry forward. Here --post-type/--tags/--language are overridden while
+	// --published is omitted, so the published status is carried forward. (Note
+	// --published=false serializes as false+omitempty → omitted on the wire,
+	// which the server reads as draft, so it can't be asserted distinctly from
+	// omit here; the draft-preserve test covers that wire shape.)
+	var put requestInfo
+	srv := newPatchServer(t, richExisting, &put)
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{
+			"content", "update", "7", "# Hi",
+			"--post-type", "page",
+			"--tags", "new",
+			"--language", "fr",
+			"--base-url", srv.URL, "--api-key", "k",
+		},
+		strings.NewReader(""),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	assert.Equal(t, "page", put.payload["postType"], "explicit --post-type overrides existing")
+	assert.Equal(t, "fr", put.payload["language"], "explicit --language overrides existing")
+	assert.Equal(t, true, put.payload["isPublished"], "omitted --published still carries forward the published status")
+	gotTags, ok := put.payload["tags"].([]any)
+	require.True(t, ok)
+	assert.Equal(t, []any{"new"}, gotTags, "explicit --tags overrides existing")
+}
+
+func TestContentUpdate_OmittedPublishedPreservesDraft(t *testing.T) {
+	// Omitting --published preserves whatever the existing status is — here a
+	// draft, so isPublished is false and omitted on the wire (not forced to true).
+	const draftExisting = `{"id":7,"title":"Original","status":"draft","postType":"post","tags":["x"],"language":"en"}`
+	var put requestInfo
+	srv := newPatchServer(t, draftExisting, &put)
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{"content", "update", "7", "# Hi", "--base-url", srv.URL, "--api-key", "k"},
+		strings.NewReader(""),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	_, has := put.payload["isPublished"]
+	assert.False(t, has, "draft status carried forward → isPublished omitted (false + omitempty)")
 }
 
 func TestContentUpdate_ServerValidationOnLanguage(t *testing.T) {
@@ -478,4 +563,49 @@ func TestContentUpdate_ServerValidationOnLanguage(t *testing.T) {
 	)
 	assert.Equal(t, 5, code, "400 VALIDATION_ERROR must map to exit 5")
 	assert.Contains(t, errOut.String(), "language is not in the configured languages list")
+}
+
+func TestContentUpdate_CustomFieldsFlag(t *testing.T) {
+	t.Run("set sends customFields (replace)", func(t *testing.T) {
+		var info requestInfo
+		srv := newCreateServer(t, http.StatusOK, updateSuccessEnvelope, &info)
+		defer srv.Close()
+
+		var out, errOut bytes.Buffer
+		code := cmd.ExecuteArgs(
+			[]string{
+				"content", "update", "7", "# Hi",
+				"--field", "minutes=45",
+				"--field", "has_video=false",
+				"--base-url", srv.URL, "--api-key", "k",
+			},
+			strings.NewReader(""),
+			&out,
+			&errOut,
+		)
+		require.Equal(t, 0, code, "stderr: %s", errOut)
+		fields, ok := info.payload["customFields"].(map[string]any)
+		require.True(t, ok, "customFields must be a JSON object on the wire")
+		assert.Equal(t, float64(45), fields["minutes"])
+		assert.Equal(t, false, fields["has_video"])
+	})
+
+	t.Run("omitted sends nothing on the wire (preserves existing)", func(t *testing.T) {
+		// The server preserves customFields when the request omits the map, so the
+		// CLI must NOT send a nil/empty customFields key when --field is absent.
+		var info requestInfo
+		srv := newCreateServer(t, http.StatusOK, updateSuccessEnvelope, &info)
+		defer srv.Close()
+
+		var out, errOut bytes.Buffer
+		code := cmd.ExecuteArgs(
+			[]string{"content", "update", "7", "# Hi", "--base-url", srv.URL, "--api-key", "k"},
+			strings.NewReader(""),
+			&out,
+			&errOut,
+		)
+		require.Equal(t, 0, code, "stderr: %s", errOut)
+		_, has := info.payload["customFields"]
+		assert.False(t, has, "customFields must be absent when --field is not set")
+	})
 }

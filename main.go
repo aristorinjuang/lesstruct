@@ -513,7 +513,7 @@ func main() {
 	// Initialize agent (Bearer) content handler — the streamlined API surface for
 	// programmatic publishing (Story 2.1). Reuses the same contentService so custom
 	// field validation and plugin hooks fire identically to the admin path.
-	agentContentHandler := agent.NewContentHandler(contentService, utilLogger)
+	agentContentHandler := agent.NewContentHandler(contentService, postTypeService, utilLogger)
 
 	// Initialize media service and handler (Story 2.3)
 	uploadsDir := filepath.Join("data", "uploads", "media")

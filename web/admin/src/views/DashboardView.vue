@@ -3,7 +3,6 @@ import { onMounted, computed } from 'vue'
 import { useDashboardStore } from '@/stores/domain/dashboard'
 import { useNotificationStore } from '@/stores/ui/notifications'
 import StatCard from '@/components/organisms/StatCard.vue'
-import RecentActivity from '@/components/organisms/RecentActivity.vue'
 import PendingRegistrationsAlert from '@/components/organisms/PendingRegistrationsAlert.vue'
 
 // Stores
@@ -110,9 +109,6 @@ const statsCards = computed(() => {
         :pending-count="dashboardStore.stats.pendingRegistrations"
         class="dashboard-view__alert"
       />
-
-      <!-- Recent activity -->
-      <RecentActivity :activities="dashboardStore.activities" />
     </template>
   </div>
 </template>

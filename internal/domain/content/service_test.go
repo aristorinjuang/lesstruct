@@ -4664,3 +4664,99 @@ func TestService_Unpublish_HookNeverFires(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, hookFired, "no hook should fire on unpublish (only AfterPublish is wired to the published edge)")
 }
+
+func TestService_Create_PublishedRunsPublishPipeline(t *testing.T) {
+	// F08: creating directly as published must run the publish pipeline —
+	// auto-generate SEO metadata and fire the AfterPublish hook — so it behaves
+	// like create + publish, not a silent status flag.
+	seoText := "This is a test article with some content for SEO metadata generation purposes."
+	seoBody := testTipTapJSON(seoText)
+
+	t.Run("published generates SEO metadata before insert", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "published-title", "en").Return(true, nil)
+		var captured *content.Content
+		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			captured = args.Get(1).(*content.Content)
+			captured.ID = 1
+		})
+
+		seoService := seo.NewService("http://localhost:8080", "Test Site")
+		service := content.NewService(mockRepo, seoService, nil)
+
+		result, err := service.Create(context.Background(), 1, content.CreateContentRequest{
+			Title:   "Published Title",
+			Content: seoBody,
+			Status:  content.StatusPublished,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, captured, "repo.Create must be called")
+		require.NotNil(t, result)
+		// SEO landed in the initial insert (captured) and the returned object.
+		assert.Equal(t, seoText, captured.MetaDescription, "MetaDescription auto-generated before insert")
+		assert.Equal(t, "Published Title", captured.OGTitle, "OGTitle auto-generated before insert")
+		assert.Equal(t, seoText, captured.OGDescription, "OGDescription auto-generated before insert")
+		assert.Equal(t, captured.MetaDescription, result.MetaDescription)
+	})
+
+	t.Run("published fires AfterPublish and AfterCreate", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "published-title", "en").Return(true, nil)
+		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			c := args.Get(1).(*content.Content)
+			c.ID = 1
+		})
+
+		var fired []plugin.HookName
+		mockHook := &mockHookExecutor{
+			transform: func(hookName plugin.HookName, _ []byte) ([]byte, error) {
+				fired = append(fired, hookName)
+				return nil, nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, nil, nil, mockHook)
+		_, err := service.Create(context.Background(), 1, content.CreateContentRequest{
+			Title:   "Published Title",
+			Content: seoBody,
+			Status:  content.StatusPublished,
+		})
+
+		require.NoError(t, err)
+		assert.Contains(t, fired, plugin.HookAfterCreate, "AfterCreate must fire on create")
+		assert.Contains(t, fired, plugin.HookAfterPublish, "AfterPublish must fire when created as published")
+	})
+
+	t.Run("draft does not fire AfterPublish or generate SEO", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "draft-title", "en").Return(true, nil)
+		var captured *content.Content
+		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			captured = args.Get(1).(*content.Content)
+			captured.ID = 1
+		})
+
+		var fired []plugin.HookName
+		mockHook := &mockHookExecutor{
+			transform: func(hookName plugin.HookName, _ []byte) ([]byte, error) {
+				fired = append(fired, hookName)
+				return nil, nil
+			},
+		}
+
+		seoService := seo.NewService("http://localhost:8080", "Test Site")
+		service := content.NewServiceWithHooks(mockRepo, nil, seoService, nil, mockHook)
+		_, err := service.Create(context.Background(), 1, content.CreateContentRequest{
+			Title:   "Draft Title",
+			Content: seoBody,
+			Status:  content.StatusDraft,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, captured)
+		assert.Empty(t, captured.MetaDescription, "no SEO generation for draft")
+		assert.NotContains(t, fired, plugin.HookAfterPublish, "AfterPublish must NOT fire for draft")
+		assert.Contains(t, fired, plugin.HookAfterCreate, "AfterCreate fires for draft")
+	})
+}

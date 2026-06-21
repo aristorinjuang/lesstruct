@@ -55,6 +55,18 @@ func runCreate(t *testing.T, srvURL string, in io.Reader, extraArgs ...string) (
 	return code, out.String(), errOut.String()
 }
 
+// withNoCredentials neutralizes every credential source so a test can assert the
+// "no API key found" error deterministically, regardless of the shell it runs
+// in. A developer's shell often has LESSTRUCT_API_KEY exported (a real key);
+// without this, the "missing key" tests would find it and pass the auth check.
+// It also points the config lookup at a non-existent path so no config-file key
+// is loaded (LESSTRUCT_CONFIG takes precedence over the XDG/HOME locations).
+func withNoCredentials(t *testing.T) {
+	t.Helper()
+	t.Setenv("LESSTRUCT_API_KEY", "")
+	t.Setenv("LESSTRUCT_CONFIG", filepath.Join(t.TempDir(), "absent-config.toml"))
+}
+
 func TestCredentials_FlagPrecedence(t *testing.T) {
 	srv, gotAuth := newAuthRecorder(t)
 	defer srv.Close()
@@ -83,6 +95,9 @@ func TestCredentials_ConfigFilePrecedence(t *testing.T) {
 	srv, gotAuth := newAuthRecorder(t)
 	defer srv.Close()
 
+	// Neutralize the env key so the config file's key wins (env otherwise beats
+	// the config file in the precedence chain).
+	t.Setenv("LESSTRUCT_API_KEY", "")
 	t.Setenv("LESSTRUCT_CONFIG", writeConfig(t, "cfgkey", ""))
 
 	code, _, errOut := runCreate(t, srv.URL, strings.NewReader(""), "# Hi")
@@ -94,8 +109,8 @@ func TestCredentials_MissingKeyExitsOne(t *testing.T) {
 	srv, _ := newAuthRecorder(t)
 	defer srv.Close()
 
-	// No flag, no env, no config — point LESSTRUCT_CONFIG at a missing file.
-	t.Setenv("LESSTRUCT_CONFIG", filepath.Join(t.TempDir(), "nope.toml"))
+	// No flag, no env, no config.
+	withNoCredentials(t)
 
 	code, _, errOut := runCreate(t, srv.URL, strings.NewReader(""), "# Hi")
 	assert.Equal(t, 1, code)

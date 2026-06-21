@@ -23,7 +23,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **golang-migrate** 4.19.1 — DB migrations via `iofs` embedded filesystem, per-driver subdirs under `internal/database/migrations/{sqlite,postgresql,mysql}/`
 - **BurntSushi/toml** 1.6.0 — `config.toml` parsing
 - **joho/godotenv** 1.5.1 — `.env` loader (called from `config.Load()`)
-- **fsnotify** 1.10.0 — config file hot-reload
+- **fsnotify** 1.10.0 — plugin hot-reload in `DEV_MODE` (config itself is read once at startup, not watched)
 - **golang-jwt** 5.3.1 — JWT auth (browser admin realm)
 - **bluemonday** 1.0.27 — HTML sanitization
 - **goldmark** 1.8.2 — Markdown parser (Markdown → TipTap JSON converter in `internal/content/markdown/`)
@@ -43,6 +43,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Subcommands: `content` (create/get/list/update/delete/publish/unpublish), `media` (upload/get/list), `config`
 - Auth via `--api-key` flag, `LESSTRUCT_API_KEY` env, or config file (precedence in that order)
 - Output mode: `--output text|json` (default `text`)
+- `--version` prints the build version (injected via `-ldflags` in `make build-cli`/`install`, git-derived; defaults to `dev`)
 - Built via `make build-cli` → `bin/lesstruct-cli`; integration tests via `make test-cli` (tag `integration`)
 
 ### Admin Panel (Frontend) — `web/admin/`
@@ -73,8 +74,46 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Response envelope** (`internal/api/response/`): `{"data": ..., "error": {...}, "meta": {...}}`. Lists use `SuccessList()` which uses a dedicated `listResponse` type WITHOUT `omitempty` on `data` so empty lists serialize as `"data":[]`
 - **Plugin system**: wazero WASM runtime in `internal/plugin/` with hook execution (`before_save`, `after_save`, etc.). Subpackages: `bootstrap`, `capability`, `devmode`, `hostfunctions`, `loader`, `registry`, `runtime`
 - **Content pipeline**: `internal/content/` holds format converters — `tiptap/` (canonical), `markdown/` (Markdown→TipTap via goldmark), `wordpress/` (WordPress importer)
-- **Config**: `.env` + env vars loaded via `internal/config/config.go` (`Config` struct, `Load()`); user-facing `config.toml` in project root loaded at startup with hot-reload via fsnotify; post types/languages/thumbnails schemas in `internal/config/`
+- **Config**: `.env` + env vars loaded via `internal/config/config.go` (`Config` struct, `Load()`); user-facing `config.toml` in project root loaded **once** at startup from `${CONFIG_DIR}/${CONFIG_FILE}` (no hot-reload — restart the server to pick up changes); post types/languages/thumbnails schemas in `internal/config/`
 - **Migrations**: numbered `.up.sql`/`.down.sql` pairs in `internal/database/migrations/{driver}/`, embedded via `embed.go`
+
+### Request flow & auth realms
+
+Two auth realms co-exist on shared paths. `dispatchByAuth()` inspects the `Authorization` header **prefix** to route each request through one chain before it reaches a handler — downstream code is auth-agnostic because both inject the same context keys (`UserIDKey`, `UsernameKey`, `RoleKey`).
+
+```mermaid
+flowchart TD
+    Client([Client request])
+    Disp{"Authorization<br/>header prefix?"}
+    Browser["Browser realm<br/>JWT cookie / plain Bearer<br/>→ auth middleware"]
+    Agent["Agent realm<br/>Bearer lesstruct_…<br/>→ apikey middleware"]
+    Handler["Handler<br/>internal/api/handlers/  (browser)<br/>internal/api/handlers/agent/  (/api/v1)"]
+    Service["Domain service<br/>internal/domain/&lt;name&gt;/"]
+    Repo["Repository iface → per-driver impl<br/>internal/repository/{sqlite,mysql,postgresql}/"]
+    DB[("SQLite / PostgreSQL / MySQL")]
+
+    Client --> Disp
+    Disp -- "JWT cookie / other Bearer" --> Browser --> Handler
+    Disp -- "Bearer lesstruct_" --> Agent --> Handler
+    Handler --> Service --> Repo --> DB
+```
+
+---
+
+## Where Does New Code Go?
+
+Quick routing — confirm the exact package by reading the matching `internal/` tree. When a change spans layers, work outside-in (handler → service → repository) and add a test per layer.
+
+| You are adding... | It goes in... |
+|---|---|
+| A business rule, domain type, sentinel error, or repository interface | `internal/domain/<name>/` |
+| Database access for that interface | the interface in `internal/domain/<name>/`, plus an implementation in **all three** `internal/repository/{sqlite,mysql,postgresql}/` (cross-driver helper → `internal/repository/`) |
+| An HTTP endpoint | a handler in `internal/api/handlers/` (browser/admin realm) or `internal/api/handlers/agent/` (`/api/v1`), the route in `internal/api/routes/routes.go`, and the error in the realm's mapper |
+| Request middleware | `internal/api/middleware/` |
+| A content format converter | `internal/content/<format>/` |
+| A plugin host function or hook | `internal/plugin/` |
+| A CLI subcommand | `cmd/lesstruct-cli/` |
+| Admin UI | `web/admin/src/` following atomic design (`atoms/` → `molecules/` → `organisms/` → `views/`); the **Pinia store action** makes the API call — components only call store actions |
 
 ---
 
@@ -90,9 +129,10 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Multi-line function arguments when ≥3 params (one arg per line)
 - Always use constants for HTTP methods: `http.MethodDelete`, not `"DELETE"`
 - `internal/config/` holds env-based config; `config.toml` holds user-facing config
-- Domain errors are sentinel errors (`var ErrSomething = errors.New(...)`) in the domain package
-- Handlers map domain errors to HTTP responses via `handleContentError()` pattern (browser realm) or the agent error mapper in `internal/api/handlers/agent/errors.go` (agent realm)
+- Domain errors are sentinel errors (`var ErrSomething = errors.New(...)`) in the domain package; when propagating, wrap with `fmt.Errorf("failed to X: %w", err)` so `errors.Is`/`errors.As` chains stay intact
+- Handlers map domain errors to HTTP responses via a `switch` over `errors.Is`. **Two error-code casings exist — match the realm you are in:** the agent API (`/api/v1`, `internal/api/handlers/agent/errors.go`) emits `UPPER_SNAKE` codes (`NOT_FOUND`, `FORBIDDEN`, `VALIDATION_ERROR`, `INTERNAL_ERROR`); the browser/admin API (`internal/api/handlers/`, per-resource `handleXxxError()`) emits `lowercase_snake` codes (`content_not_found`, `invalid_title`). When you add a new domain sentinel, **register it in BOTH mappers**
 - JSON responses use the envelope from `internal/api/response/` — call `Success`, `Error`, or `SuccessList`; never hand-roll the envelope
+- Logging uses the injected `util.Logger`, which is **printf-style**: `h.logger.Error("failed to X: %v", err)`. Never use `fmt.Println` or `log.*` outside `main.go`
 - Cross-driver repository code must work for SQLite, PostgreSQL, AND MySQL — beware driver-specific SQL (placeholders, `RETURNING`, time handling). Use the per-driver subpackage when behavior must diverge
 
 #### TypeScript/Vue
@@ -112,7 +152,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Agent realm (`/api/v1/*`) requires Bearer `lesstruct_<keyID>_<secret>` tokens verified by `APIKeyAuthMiddleware`; identity is injected into context using the SAME context keys (`UserIDKey`, `UsernameKey`, `RoleKey`) as the JWT middleware so downstream code is auth-agnostic
 - Content services require a `HookExecutor` — always pass plugin hooks through, don't bypass
 - Custom field validation flows through `content.Service.validateCustomFields()` — never call `validateFieldValue()` directly from handlers
-- Post types loaded from `config.toml` at startup via `internal/config/posttypes.go`; reloaded on file change via fsnotify
+- Post types loaded from `config.toml` **once** at startup via `internal/config/posttypes.go` (restart to pick up changes); built-in slugs (`post`/`page`/`media`/`comment`) extend instead of duplicating
 - SEO auto-extraction: `ExtractPlainText()` and `ExtractImageURL()` consume TipTap JSON from content
 - Markdown bodies on the agent create surface are converted to canonical TipTap JSON via `internal/content/markdown` — raw Markdown is NEVER persisted
 - Rate limits configurable per realm via `RATE_LIMIT_{AUTH,API,PUBLIC}_PER_MINUTE`; toggle via `RATE_LIMIT_ENABLED`

@@ -1,3 +1,22 @@
+<!--
+  This is the CANONICAL agent-instructions file. `CLAUDE.md` is a symlink to it,
+  so edit rules HERE — Claude Code reads it through `CLAUDE.md`, OpenCode reads
+  `AGENTS.md` directly. Both see exactly this content.
+-->
+
+# Lesstruct — Agent Instructions
+
+## Ramp-up — read in this order before your first task
+
+1. **This file** — coding, testing, and doc-sync conventions.
+2. **`docs/_index.md`** — the doc map ("for X, read Y").
+3. **`docs/project-context.md`** — architecture, layers, and the **"Where does new code go?"** decision tree.
+4. **`docs/api-reference.md`** — only if you are touching `/api/v1`.
+5. **One exemplar of each layer**: a handler (`internal/api/handlers/`), a service (`internal/domain/<name>/service.go`), and a `*_test.go` under `internal/domain/`.
+
+> The architecture, layer responsibilities, error/response conventions, and the
+> decision tree live in `docs/project-context.md`. This file is the *style & process* contract; that file is the *architecture* contract. Read both.
+
 ## Code Style
 
 - Put all private structs or functions before all public structs or functions!
@@ -223,6 +242,10 @@ The `site/` directory is the Hugo project that publishes the docs at `lesstruct.
 Before pushing changes that affect `docs/`, `skills/`, or `site/`, run `make docs-serve` locally to spot-check rendering. CI (`/.github/workflows/docs.yml`) builds and deploys the site on every push to `main` that touches the relevant paths.
 
 Do not edit files inside `site/themes/hugo-book/` — they are a vendored copy of [`alex-shpak/hugo-book`](https://github.com/alex-shpak/hugo-book) at tag `v12.0.0`. To upgrade the theme, replace the directory contents from a newer release tag.
+
+## Git
+
+- Never add a `Co-Authored-By` trailer — or any AI/assistant attribution — to Git commit messages. Write commit messages plainly, as if authored solely by the user.
 
 ## Language
 

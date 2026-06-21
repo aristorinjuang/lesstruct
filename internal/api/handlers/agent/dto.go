@@ -24,16 +24,21 @@ import (
 //     [languages] list); an unknown code returns VALIDATION_ERROR
 //     (ErrInvalidLanguage). The CLI cannot pre-validate this and forwards the
 //     value as-given so the server is the single source of truth.
+//   - TranslationGroupID (the CLI's --translation-of <id>) links the new item to
+//     an existing one's translation group. The server validates the id exists
+//     (ErrTranslationGroupNotFound → VALIDATION_ERROR) and stores it; a non-nil
+//     value is what makes the public language switcher appear on the page.
 type ContentRequest struct {
-	Title        string         `json:"title"`
-	Body         string         `json:"body"`
-	Format       string         `json:"format,omitempty"`
-	PostType     string         `json:"postType,omitempty"`
-	Slug         string         `json:"slug,omitempty"`
-	CustomFields map[string]any `json:"customFields,omitempty"`
-	IsPublished  bool           `json:"isPublished,omitempty"`
-	Tags         []string       `json:"tags,omitempty"`
-	Language     string         `json:"language,omitempty"`
+	Title              string         `json:"title"`
+	Body               string         `json:"body"`
+	Format             string         `json:"format,omitempty"`
+	PostType           string         `json:"postType,omitempty"`
+	Slug               string         `json:"slug,omitempty"`
+	CustomFields       map[string]any `json:"customFields,omitempty"`
+	IsPublished        bool           `json:"isPublished,omitempty"`
+	Tags               []string       `json:"tags,omitempty"`
+	Language           string         `json:"language,omitempty"`
+	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
 }
 
 // ContentProjection is the public, whitelisted view of a content item returned by the

@@ -178,7 +178,8 @@ POST /api/v1/content
 | `tags` | no | Array of tag strings. Server normalizes (trim, lowercase, dedupe, length-bound) via `ValidateTags`; an invalid tag returns 400 `VALIDATION_ERROR`. |
 | `language` | no | Language code (e.g. `"en"`, `"id"`). Must be in the server's configured languages list (`config.toml` `[languages]`); an unknown code returns 400 `VALIDATION_ERROR` (`ErrInvalidLanguage`). |
 | `slug` | no | Accepted for API stability but **not honored** — the server auto-generates the slug from the title. |
-| `customFields` | no | Custom-field values, validated through the same path the admin uses. |
+| `customFields` | no | Custom-field values, validated through the same path the admin uses. Admin-managed **system fields** (declared per post type) are rejected here with `400 VALIDATION_ERROR` — set them via [Set system fields](#set-system-fields). |
+| `translationGroupId` | no | ID of an existing content item whose translation group this item joins. The server validates the ID exists; a miss returns 400 `ErrTranslationGroupNotFound`. |
 | `isPublished` | no | `true` → `"published"`; `false`/omitted → `"draft"`. |
 
 **Response** `200 OK`:
@@ -188,6 +189,8 @@ POST /api/v1/content
 ```
 
 > Create returns `200 OK` (not `201 Created`) by design — consistent with the other `/api/v1` success responses.
+
+> Creating directly with `isPublished: true` runs the full publish pipeline: SEO metadata is auto-generated (when the SEO service is configured) and the `AfterPublish` plugin hook fires — equivalent to create + [`/publish`](#publish-content). Creating as a draft (the default) only fires `AfterCreate`.
 
 Errors: `400 VALIDATION_ERROR` (bad/missing fields, invalid Tiptap, custom-field validation, or Markdown that converts to Tiptap the server rejects — see [Authoring in Markdown](#authoring-in-markdown)).
 
@@ -285,6 +288,35 @@ Returns `404 NOT_FOUND` if the item does not exist or you are not its owner (and
 ```bash
 curl -X POST -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
   "https://your-lesstruct.example/api/v1/content/7/unpublish"
+```
+
+### Set system fields
+
+```http
+PUT /api/v1/content/{id}/system-fields
+```
+
+Sets the admin-managed **system fields** (e.g. `editorial_status`, `internal_notes` — declared per post type in `config.toml`) on a content item. **Admin only:** a non-Admin API key receives `403 FORBIDDEN`. This is the agent/Bearer-realm mirror of the admin panel's system-fields editor, so the CLI (`lesstruct-cli content system-fields <id> --field key=value …`) can set them with an Admin API key.
+
+**Request body:**
+
+```json
+{ "systemFields": { "editorial_status": "published" } }
+```
+
+The server validates every key against the item's post-type system-field schema and every value's type — an unknown key returns `400 VALIDATION_ERROR` (`ErrUnknownSystemFieldKey`) and a value that fails the field schema returns `400 VALIDATION_ERROR` (`ErrSystemFieldValidation`).
+
+**Response** `200 OK`: `{"data":{"content":{…}}}` with the updated item.
+
+Returns `403 FORBIDDEN` if the key does not belong to an Admin. Returns `404 NOT_FOUND` if the item does not exist. Errors: `400 VALIDATION_ERROR`.
+
+> System fields are **not** accepted inside `customFields` on [create](#create-content) or [update](#update-content) — they are rejected with a `400 VALIDATION_ERROR` naming the offending key. Use this endpoint instead.
+
+```bash
+curl -X PUT -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
+  -H "Content-Type: application/json" \
+  -d '{"systemFields":{"editorial_status":"published"}}' \
+  "https://your-lesstruct.example/api/v1/content/7/system-fields"
 ```
 
 ## Media
@@ -551,3 +583,22 @@ paths:
 ```
 
 The same pattern extends to the remaining `/api/v1/content[/{id}]` and `/api/v1/media` operations described above. A complete OpenAPI document will be generated in a follow-up.
+
+## Public SEO endpoints (no auth)
+
+These are unauthenticated, served at the site root (not under `/api/v1`) so crawlers find them at their canonical paths:
+
+```http
+GET /sitemap.xml
+```
+
+Returns the [sitemaps.org](https://www.sitemaps.org/protocol.html) XML `<urlset>` of every published content item with a public page — `post`, `page`, and any custom post type (e.g. `tutorial`, `showcase`). Each `<loc>` is the item's root URL (`/<slug>`, where the public site serves it). The homepage is the first entry. `Content-Type: application/xml`. (A JSON shape is also available at `GET /api/v1/sitemap` for programmatic callers.)
+
+Translated pages declare their language variants: each `<url>` in a translation group carries `<xhtml:link rel="alternate" hreflang="…" href="…"/>` entries for every published translation (including itself), so search engines can serve the right locale. Pages with no published translations emit no `hreflang`.
+
+```http
+GET /robots.txt
+```
+
+Returns a permissive `robots.txt` that allows all crawlers, disallows `/admin`, and points at the sitemap: `Sitemap: <site URL>/sitemap.xml`.
+

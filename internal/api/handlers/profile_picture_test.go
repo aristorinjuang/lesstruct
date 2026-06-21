@@ -137,6 +137,11 @@ func (m *mockUserRepoForHandler) UpdateEmail(ctx context.Context, userID int, em
 	return args.Error(0)
 }
 
+func (m *mockUserRepoForHandler) UpdateName(ctx context.Context, userID int, name string) error {
+	args := m.Called(ctx, userID, name)
+	return args.Error(0)
+}
+
 func (m *mockUserRepoForHandler) UpdatePassword(ctx context.Context, userID int, currentPasswordHash, newPasswordHash string) error {
 	args := m.Called(ctx, userID, currentPasswordHash, newPasswordHash)
 	return args.Error(0)

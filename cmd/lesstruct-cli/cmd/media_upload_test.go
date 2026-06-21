@@ -306,6 +306,7 @@ func TestMediaUpload_MissingKeyExitsOne(t *testing.T) {
 		t.Errorf("server should not be called when API key missing")
 	}))
 	defer srv.Close()
+	withNoCredentials(t)
 
 	var out, errOut bytes.Buffer
 	code := cmd.ExecuteArgs(
@@ -399,14 +400,17 @@ func TestMediaUpload_SymlinkToDirectoryIsRejected(t *testing.T) {
 	assert.Contains(t, errOut.String(), "is a directory")
 }
 
-func TestMediaUpload_MetadataNonStringExitsFive(t *testing.T) {
+func TestMediaUpload_MetadataAcceptsTypedValues(t *testing.T) {
+	// --metadata values may be typed (number/bool/object), not just strings.
+	// They are passed through as typed JSON; the CLI must not reject them.
+	// (The server persists only altText today, but the wire payload should
+	// carry the typed values through unchanged.)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.jpg")
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o644))
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("server should not be called when --metadata has non-string values")
-	}))
+	rec := &mediaServer{}
+	srv := httptest.NewServer(rec.handler(t, http.StatusOK, mediaSuccessBody))
 	defer srv.Close()
 
 	var out, errOut bytes.Buffer
@@ -414,7 +418,7 @@ func TestMediaUpload_MetadataNonStringExitsFive(t *testing.T) {
 		[]string{
 			"media", "upload",
 			"--file", path,
-			"--metadata", `{"altText":42}`,
+			"--metadata", `{"altText":"a view","priority":42,"featured":true}`,
 			"--base-url", srv.URL,
 			"--api-key", "k",
 		},
@@ -422,8 +426,10 @@ func TestMediaUpload_MetadataNonStringExitsFive(t *testing.T) {
 		&out,
 		&errOut,
 	)
-	assert.Equal(t, 5, code)
-	assert.Contains(t, errOut.String(), "not a string")
+	require.Equal(t, 0, code, "stderr: %s", errOut.String())
+	assert.Contains(t, rec.gotMetadata, `"altText":"a view"`)
+	assert.Contains(t, rec.gotMetadata, `"priority":42`)
+	assert.Contains(t, rec.gotMetadata, `"featured":true`)
 }
 
 func TestMediaUpload_AltTextEmptyStillSent(t *testing.T) {

@@ -79,6 +79,18 @@ const passwordError = ref('')
 const passwordSuccess = ref('')
 const isChangingPassword = ref(false)
 
+// Name editing state
+const editingName = ref('')
+const isSavingName = ref(false)
+const nameError = ref('')
+
+// Email change state
+const newEmail = ref('')
+const emailCurrentPassword = ref('')
+const isChangingEmail = ref(false)
+const emailError = ref('')
+const emailSuccess = ref('')
+
 // Custom fields state
 const customFields = ref<Record<string, any>>({})
 const userFields = ref<FieldSchema[]>([])
@@ -200,6 +212,7 @@ onMounted(async () => {
     profile.value = response.data.data.profile
 
     if (profile.value) {
+      editingName.value = profile.value.name || ''
       customFields.value = profile.value.customFields
         ? { ...profile.value.customFields }
         : {}
@@ -281,6 +294,71 @@ async function handleChangePassword() {
     isChangingPassword.value = false
   }
 }
+
+async function handleSaveName() {
+  nameError.value = ''
+  isSavingName.value = true
+
+  try {
+    const response = await api.put<{ data: { profile: UserProfile } }>('/api/profile/name', {
+      name: editingName.value,
+    })
+    profile.value = response.data.data.profile
+    editingName.value = profile.value?.name || ''
+    displayToast('Name updated successfully')
+  } catch (err: unknown) {
+    const apiErr = err as { message?: string }
+    nameError.value = apiErr?.message || 'Failed to update name'
+  } finally {
+    isSavingName.value = false
+  }
+}
+
+async function handleChangeEmail() {
+  emailError.value = ''
+  emailSuccess.value = ''
+
+  if (!newEmail.value.trim()) {
+    emailError.value = 'New email is required'
+    return
+  }
+  if (!emailCurrentPassword.value) {
+    emailError.value = 'Current password is required'
+    return
+  }
+
+  isChangingEmail.value = true
+
+  try {
+    const response = await api.put<{ data: { message: string } }>('/api/profile/email', {
+      newEmail: newEmail.value.trim(),
+      currentPassword: emailCurrentPassword.value,
+    })
+    emailSuccess.value = response.data.data.message
+    newEmail.value = ''
+    emailCurrentPassword.value = ''
+  } catch (err: unknown) {
+    const apiErr = err as { statusCode?: number; code?: string; message?: string }
+    if (!apiErr?.statusCode) {
+      emailError.value = 'Unable to connect to server. Please check your connection.'
+      return
+    }
+    const code = apiErr?.code
+    if (code === 'INVALID_EMAIL') {
+      emailError.value = 'Invalid email address format'
+    } else if (code === 'EMAIL_ALREADY_IN_USE') {
+      emailError.value = 'Email address is already in use'
+    } else if (code === 'INVALID_PASSWORD') {
+      emailError.value = 'Current password is incorrect'
+    } else if (code === 'MISSING_FIELDS') {
+      emailError.value = 'New email and current password are required'
+    } else {
+      emailError.value = apiErr?.message || 'Failed to update email'
+    }
+  } finally {
+    isChangingEmail.value = false
+  }
+}
 </script>
 
 <template>
@@ -340,10 +418,28 @@ async function handleChangePassword() {
           </div>
         </div>
 
-        <div class="profile-view__field">
-          <label class="profile-view__label">Name</label>
-          <p class="profile-view__value">{{ profile.name || profile.username }}</p>
-        </div>
+        <form class="profile-view__name-form" @submit.prevent="handleSaveName">
+          <div class="profile-view__field">
+            <label for="profile-name" class="profile-view__label">Name</label>
+            <input
+              id="profile-name"
+              v-model="editingName"
+              type="text"
+              class="form-input"
+              autocomplete="name"
+              :disabled="isSavingName"
+              placeholder="Optional"
+            />
+            <p v-if="nameError" class="profile-view__field-error" role="alert">{{ nameError }}</p>
+          </div>
+          <button
+            type="submit"
+            class="profile-view__button"
+            :disabled="isSavingName"
+          >
+            {{ isSavingName ? 'Saving...' : 'Save Name' }}
+          </button>
+        </form>
         <div class="profile-view__field">
           <label class="profile-view__label">Username</label>
           <p class="profile-view__value">{{ profile.username }}</p>
@@ -360,6 +456,52 @@ async function handleChangePassword() {
           <label class="profile-view__label">Member since</label>
           <p class="profile-view__value">{{ formatDate(profile.createdAt) }}</p>
         </div>
+      </div>
+
+      <!-- Change Email -->
+      <div v-if="profile" class="card">
+        <h2 class="card-title">Change Email</h2>
+        <p class="profile-view__hint">
+          Your current email is <strong>{{ profile.email }}</strong>. For security, changing it
+          requires your current password and a confirmation link sent to the new address.
+        </p>
+
+        <p v-if="emailSuccess" class="alert alert-success" role="status">{{ emailSuccess }}</p>
+        <p v-if="emailError" class="profile-view__field-error" role="alert">{{ emailError }}</p>
+
+        <form class="profile-view__password-form" @submit.prevent="handleChangeEmail">
+          <div class="profile-view__field">
+            <label for="new-email" class="profile-view__label">New Email</label>
+            <input
+              id="new-email"
+              v-model="newEmail"
+              type="email"
+              class="form-input profile-view__input--password"
+              autocomplete="email"
+              :disabled="isChangingEmail"
+            />
+          </div>
+
+          <div class="profile-view__field">
+            <label for="email-current-password" class="profile-view__label">Current Password</label>
+            <input
+              id="email-current-password"
+              v-model="emailCurrentPassword"
+              type="password"
+              class="form-input profile-view__input--password"
+              autocomplete="current-password"
+              :disabled="isChangingEmail"
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="profile-view__button"
+            :disabled="isChangingEmail"
+          >
+            {{ isChangingEmail ? 'Sending...' : 'Send Verification' }}
+          </button>
+        </form>
       </div>
 
       <!-- Profile Fields -->
@@ -554,6 +696,7 @@ async function handleChangePassword() {
   cursor: not-allowed;
 }
 
+.profile-view__name-form,
 .profile-view__field {
   margin-bottom: 1rem;
 }
@@ -585,6 +728,17 @@ async function handleChangePassword() {
   margin: 0 0 1rem 0;
   font-size: 0.875rem;
   color: var(--color-error-dark);
+}
+
+.profile-view__name-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-view__hint {
+  font-size: 0.875rem;
+  color: var(--brand-dark-2);
+  margin-bottom: 1rem;
 }
 
 .alert {

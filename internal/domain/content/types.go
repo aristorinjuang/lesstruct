@@ -282,8 +282,7 @@ func ValidateMetaDescription(value string) error {
 	if value == "" {
 		return nil
 	}
-	sanitized := defaultSanitizer.SanitizePlainText(value)
-	if strings.TrimSpace(sanitized) != strings.TrimSpace(value) {
+	if defaultSanitizer.ContainsHTML(value) {
 		return ErrHTMLInPlainText
 	}
 	return nil

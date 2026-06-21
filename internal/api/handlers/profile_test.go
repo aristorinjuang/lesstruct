@@ -640,6 +640,118 @@ func TestProfileHandler_UpdateCustomFields_InvalidJSON(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
+func TestProfileHandler_UpdateName_Success(t *testing.T) {
+	profileService := usermocks.NewMockProfileServiceInterface(t)
+	profileService.EXPECT().
+		UpdateName(mock.Anything, 123, "Jane Doe").
+		Return(nil)
+	profileService.EXPECT().
+		GetProfile(mock.Anything, 123).
+		Return(&user.Profile{
+			ID:       123,
+			Username: "testuser",
+			Name:     "Jane Doe",
+			Email:    "test@example.com",
+			Role:     "Author",
+		}, nil)
+	jwtManager := appauth.NewJWTManager("test-secret")
+	logger := util.NewLogger(os.Stdout)
+
+	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
+	handler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, logger, nil, nil)
+
+	reqBody := map[string]any{
+		"name": "Jane Doe",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/name", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	ctx := context.WithValue(req.Context(), appmiddleware.UserIDKey, "123")
+	ctx = context.WithValue(ctx, appmiddleware.UsernameKey, "testuser")
+	ctx = context.WithValue(ctx, appmiddleware.RoleKey, "Author")
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	handler.UpdateName(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var resp map[string]any
+	err := json.NewDecoder(rr.Body).Decode(&resp)
+	require.NoError(t, err)
+	data := resp["data"].(map[string]any)
+	profile := data["profile"].(map[string]any)
+	assert.Equal(t, float64(123), profile["id"])
+	assert.Equal(t, "Jane Doe", profile["name"])
+}
+
+func TestProfileHandler_UpdateName_Unauthorized(t *testing.T) {
+	profileService := usermocks.NewMockProfileServiceInterface(t)
+	jwtManager := appauth.NewJWTManager("test-secret")
+	logger := util.NewLogger(os.Stdout)
+
+	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
+	handler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, logger, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/name", bytes.NewBuffer([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.UpdateName(rr, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestProfileHandler_UpdateName_InvalidJSON(t *testing.T) {
+	profileService := usermocks.NewMockProfileServiceInterface(t)
+	jwtManager := appauth.NewJWTManager("test-secret")
+	logger := util.NewLogger(os.Stdout)
+
+	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
+	handler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, logger, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/name", bytes.NewBuffer([]byte("invalid json")))
+	req.Header.Set("Content-Type", "application/json")
+
+	ctx := context.WithValue(req.Context(), appmiddleware.UserIDKey, "123")
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	handler.UpdateName(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestProfileHandler_UpdateName_ServiceError(t *testing.T) {
+	profileService := usermocks.NewMockProfileServiceInterface(t)
+	profileService.EXPECT().
+		UpdateName(mock.Anything, 123, "Jane Doe").
+		Return(errors.New("boom"))
+	jwtManager := appauth.NewJWTManager("test-secret")
+	logger := util.NewLogger(os.Stdout)
+
+	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
+	handler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, logger, nil, nil)
+
+	reqBody := map[string]any{
+		"name": "Jane Doe",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/name", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	ctx := context.WithValue(req.Context(), appmiddleware.UserIDKey, "123")
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	handler.UpdateName(rr, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+}
+
 func TestProfileHandler_GetUserFields_Success(t *testing.T) {
 	profileService := usermocks.NewMockProfileServiceInterface(t)
 	jwtManager := appauth.NewJWTManager("test-secret")

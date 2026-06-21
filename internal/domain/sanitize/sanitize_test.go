@@ -244,6 +244,36 @@ func TestContainsHTML(t *testing.T) {
 			input: `<a href="https://example.com">link</a>`,
 			want:  true,
 		},
+		{
+			name:  "ampersand is plain text, not HTML",
+			input: "Install & first content",
+			want:  false,
+		},
+		{
+			name:  "straight apostrophe is plain text, not HTML",
+			input: "roaster's",
+			want:  false,
+		},
+		{
+			name:  "math less-than is plain text, not HTML",
+			input: "price < 5",
+			want:  false,
+		},
+		{
+			name:  "digit after less-than is plain text, not HTML",
+			input: "5 <3 you",
+			want:  false,
+		},
+		{
+			name:  "closing tag is HTML",
+			input: "text</b>",
+			want:  true,
+		},
+		{
+			name:  "HTML comment is HTML",
+			input: "<!-- comment -->",
+			want:  true,
+		},
 	}
 
 	for _, tt := range tests {

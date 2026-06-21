@@ -8,8 +8,13 @@
  */
 
 /* ----------------------------------------------------------------------- */
-/* Code blocks with line numbers (Hugo chroma, noClasses=false, lineNos=true) */
+/* Code blocks with line numbers (Hugo chroma, lineNos=true, noClasses=false) */
 /* ----------------------------------------------------------------------- */
+
+/* Chroma emits each line number / code line as a span that *contains* its
+   trailing newline, so the newlines themselves do the line breaking. Do NOT
+   force display:block/flex on those spans (it double-spaces the gutter) and do
+   NOT use table-layout:fixed (it starves the gutter column). */
 
 .markdown .highlight {
   /* Breathing room from surrounding prose. No outer border — the gutter
@@ -30,42 +35,32 @@
   border-collapse: collapse;
   border-spacing: 0;
   margin: 0;
-  display: table;
-  table-layout: fixed;
 }
 
-.markdown .highlight .lntable tr {
+.markdown .highlight .lntable td {
   border: 0;
-}
-
-.markdown .highlight .lntable tr td {
-  display: table-cell;
-  vertical-align: top;
   padding: 0;
-  border: 0;
+  vertical-align: top;
 }
 
-/* Line-number gutter. Same font-size, same line-height as the code so
-   the two columns line up row-by-row. The background tint is the only
-   separator — no vertical border. */
-.markdown .highlight .lntable tr td.lntd:first-child {
-  width: 1%;
-  white-space: nowrap;
+/* Line-number gutter. Auto layout sizes it to its content. */
+.markdown .highlight .lntable td.lntd:first-child {
   user-select: none;
   text-align: right;
   color: var(--gray-500);
   background: rgba(0, 0, 0, 0.025);
-  padding: 0.75rem 0.5rem 0.75rem 1rem;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
   font-variant-numeric: tabular-nums;
 }
 
 /* Code cell. */
-.markdown .highlight .lntable tr td.lntd:last-child {
+.markdown .highlight .lntable td.lntd:last-child {
   padding: 0.75rem 1rem;
 }
 
-/* Both <pre> elements share identical font metrics and no border. */
-.markdown .highlight .lntable tr td pre {
+/* Both <pre> elements share identical font metrics so the two columns line up
+   row-by-row. */
+.markdown .highlight .lntable td pre {
   margin: 0;
   padding: 0;
   background: transparent;
@@ -77,26 +72,22 @@
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
 }
 
-.markdown .highlight .lntable tr td pre code {
+.markdown .highlight .lntable td pre code {
   padding: 0;
   background: transparent;
   border: 0;
+  white-space: pre;
   font-size: inherit;
   line-height: inherit;
   font-family: inherit;
-  white-space: pre;
 }
 
-/* Each chroma `<span>` (one per line) becomes its own block so the
-   line-number gutter and the code gutter line up row-by-row. Without
-   `display: block` here, hugo-book's `code > span { display: flex }`
-   makes each line a one-line flex container and the two gutters drift
-   vertically. */
-.markdown .highlight .lntable tr td pre code > span,
-.markdown .highlight .lntable .lnt {
-  display: block;
-  font-size: inherit;
-  line-height: inherit;
+/* Neutralize hugo-book's `code > span { display: flex }` (_markdown.scss).
+   With flex or block the trailing newline inside each Chroma span adds a blank
+   line; inline lets the newlines break lines exactly once. This selector also
+   covers the gutter's `.lnt` spans (they are direct code>span children). */
+.markdown .highlight .lntable tr td pre code > span {
+  display: inline;
 }
 
 /* Line-number text — dim, never selectable. */
@@ -105,10 +96,10 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .markdown .highlight .lntable tr td.lntd:first-child {
+  .markdown .highlight .lntable td.lntd:first-child {
     background: rgba(255, 255, 255, 0.04);
   }
-  .markdown .highlight .lntable tr td.lntd:first-child,
+  .markdown .highlight .lntable td.lntd:first-child,
   .markdown .highlight .lntable .lnt {
     color: var(--gray-500);
   }

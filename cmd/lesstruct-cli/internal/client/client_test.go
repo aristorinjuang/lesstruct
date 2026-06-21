@@ -1096,7 +1096,7 @@ func TestClient_UploadMedia(t *testing.T) {
 			client.UploadMediaRequest{
 				File:     strings.NewReader("jpg"),
 				Filename: "photo.jpg",
-				Metadata: map[string]string{"altText": "a view"},
+				Metadata: map[string]any{"altText": "a view"},
 			},
 		)
 		require.NoError(t, err)

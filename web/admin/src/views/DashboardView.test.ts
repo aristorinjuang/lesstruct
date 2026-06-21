@@ -43,10 +43,6 @@ describe('DashboardView', () => {
             template: '<div class="stat-card-stub"><slot /></div>',
             props: ['label', 'count', 'icon', 'route', 'notificationBadge'],
           },
-          RecentActivity: {
-            template: '<div class="recent-activity-stub"><slot /></div>',
-            props: ['activities'],
-          },
           // Don't stub PendingRegistrationsAlert - we need to test its conditional rendering
           IconDocumentText: { template: '<span class="icon">IconDocumentText</span>' },
           IconDocument: { template: '<span class="icon">IconDocument</span>' },
@@ -97,29 +93,6 @@ describe('DashboardView', () => {
     // Should render stat cards
     const statCards = wrapper.findAll('.stat-card-stub')
     expect(statCards.length).toBeGreaterThan(0)
-  })
-
-  it('renders RecentActivity component', async () => {
-    dashboardStore.stats = {
-      publishedPosts: 42,
-      draftPosts: 8,
-      registeredUsers: 156,
-      pendingRegistrations: 0,
-      mediaItems: 234,
-    }
-    dashboardStore.activities = [
-      {
-        type: 'post_published',
-        title: 'Test Post',
-        actor: 'admin',
-        date: '2026-04-12T10:00:00Z',
-      },
-    ]
-
-    const wrapper = createWrapper()
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.find('.recent-activity-stub').exists()).toBe(true)
   })
 
   it('renders PendingRegistrationsAlert when there are pending registrations', async () => {

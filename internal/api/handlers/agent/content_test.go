@@ -19,6 +19,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -50,9 +51,11 @@ func mustConvert(t *testing.T, md string) string {
 }
 
 // newContentHandler builds a ContentHandler with a discard logger so handler unit
-// tests do not require stdout wiring.
+// tests do not require stdout wiring. The SystemFieldResolver is nil, so the
+// system-field-rejection check is skipped — tests that exercise it build the
+// handler via newContentHandlerWithSystemFields instead.
 func newContentHandler(svc agent.ContentService) *agent.ContentHandler {
-	return agent.NewContentHandler(svc, util.NewLogger(io.Discard))
+	return agent.NewContentHandler(svc, nil, util.NewLogger(io.Discard))
 }
 
 // newAuthenticatedRequest builds a request whose body is body, and — when withUser
@@ -201,6 +204,7 @@ func TestContentHandler_Create(t *testing.T) {
 		wantTags         []string
 		wantLanguage     string
 		wantPostType     string
+		wantTranslationGroupID int // non-zero asserts the forwarded translation group id (a content id, always > 0)
 	}{
 		{
 			name:     "success - tiptap body stored unchanged with draft status",
@@ -440,6 +444,24 @@ func TestContentHandler_Create(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 			wantCode:   "UNAUTHORIZED",
 		},
+		{
+			name:     "success - translationGroupId is forwarded into the domain request",
+			body:     marshalJSON(map[string]any{"title": "Tentang", "body": tiptapJSON, "translationGroupId": 4}),
+			withUser: true,
+			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+						*captured = req
+					}).
+					Return(&contentdomain.Content{ID: 16, Title: "Tentang"}, nil)
+			},
+			wantStatus:              http.StatusOK,
+			wantBodyContent:         tiptapJSON,
+			wantDomainStatus:        contentdomain.StatusDraft,
+			checkRequest:            true,
+			wantContentID:           16,
+			wantTranslationGroupID:  4,
+		},
 	}
 
 	for _, tt := range tests {
@@ -490,6 +512,10 @@ func TestContentHandler_Create(t *testing.T) {
 				assert.Equal(t, tt.wantLanguage, captured.Language, "Language mapping")
 				if tt.wantTags != nil {
 					assert.Equal(t, tt.wantTags, captured.Tags, "Tags mapping")
+				}
+				if tt.wantTranslationGroupID != 0 {
+					require.NotNil(t, captured.TranslationGroupID, "TranslationGroupID should be set")
+					assert.Equal(t, tt.wantTranslationGroupID, *captured.TranslationGroupID, "TranslationGroupID mapping")
 				}
 			}
 			if tt.wantContentID != 0 {
@@ -1550,4 +1576,224 @@ func TestContentHandler_Unpublish(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestContentHandler_SetSystemFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		id         string // path value for {id}
+		role       string // injected role; "" → no role in context (→ 403)
+		body       string
+		setup      func(svc *agentmocks.MockContentService)
+		wantStatus int
+		wantCode   string
+		wantID     int // expected data.content.id (0 = skip)
+	}{
+		{
+			name: "admin success - delegates to service and returns the projection",
+			id:   "5",
+			role: contentdomain.RoleAdmin,
+			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "published"}}),
+			setup: func(svc *agentmocks.MockContentService) {
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, map[string]any{"editorial_status": "published"}).
+					Return(&contentdomain.Content{ID: 5, Title: "Post"}, nil)
+			},
+			wantStatus: http.StatusOK,
+			wantID:     5,
+		},
+		{
+			name:       "non-admin role is forbidden",
+			id:         "5",
+			role:       "Author",
+			body:       marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "published"}}),
+			setup:      nil, // service must NOT be called
+			wantStatus: http.StatusForbidden,
+			wantCode:   "FORBIDDEN",
+		},
+		{
+			name:       "missing role is forbidden",
+			id:         "5",
+			role:       "",
+			body:       marshalJSON(map[string]any{"systemFields": map[string]any{}}),
+			setup:      nil,
+			wantStatus: http.StatusForbidden,
+			wantCode:   "FORBIDDEN",
+		},
+		{
+			name: "unknown system field key returns VALIDATION_ERROR",
+			id:   "5",
+			role: contentdomain.RoleAdmin,
+			body: marshalJSON(map[string]any{"systemFields": map[string]any{"bogus": "x"}}),
+			setup: func(svc *agentmocks.MockContentService) {
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything).
+					Return(nil, fmt.Errorf("%w: bogus", contentdomain.ErrUnknownSystemFieldKey))
+			},
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+		},
+		{
+			name: "invalid system field value returns VALIDATION_ERROR",
+			id:   "5",
+			role: contentdomain.RoleAdmin,
+			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "nope"}}),
+			setup: func(svc *agentmocks.MockContentService) {
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything).
+					Return(nil, fmt.Errorf("%w: Editorial Status: must be one of: draft, published", contentdomain.ErrSystemFieldValidation))
+			},
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+		},
+		{
+			name: "content not found returns NOT_FOUND",
+			id:   "5",
+			role: contentdomain.RoleAdmin,
+			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "published"}}),
+			setup: func(svc *agentmocks.MockContentService) {
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything).
+					Return(nil, contentdomain.ErrContentNotFound)
+			},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "NOT_FOUND",
+		},
+		{
+			name:       "invalid content id returns VALIDATION_ERROR",
+			id:         "abc",
+			role:       contentdomain.RoleAdmin,
+			body:       marshalJSON(map[string]any{"systemFields": map[string]any{}}),
+			setup:      nil,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+		},
+		{
+			name:       "malformed body returns VALIDATION_ERROR",
+			id:         "5",
+			role:       contentdomain.RoleAdmin,
+			body:       "{bad",
+			setup:      nil,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := agentmocks.NewMockContentService(t)
+			if tt.setup != nil {
+				tt.setup(svc)
+			}
+
+			handler := newContentHandler(svc)
+			r := newAuthenticatedRequestAs(http.MethodPut, "/api/v1/content/"+tt.id+"/system-fields", tt.body, testUserID, tt.role)
+			r.SetPathValue("id", tt.id)
+			w := httptest.NewRecorder()
+			handler.SetSystemFields(w, r)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantCode != "" {
+				assert.Equal(t, tt.wantCode, envelopeError(t, w))
+			}
+			if tt.wantID != 0 {
+				assert.Equal(t, tt.wantID, envelopeDataContentID(t, w), "envelope data.content.id")
+			}
+		})
+	}
+}
+
+// TestContentHandler_SystemFieldRejection covers F14c: agent-supplied system-field
+// keys in customFields are rejected with a helpful 400 (instead of being silently
+// dropped by the service's stripSystemFields). Create and Update share the check.
+func TestContentHandler_SystemFieldRejection(t *testing.T) {
+	tiptapJSON := `{"type":"doc","content":[{"type":"paragraph"}]}`
+	tutorialSystemFields := []customfield.FieldSchema{
+		{Name: "Editorial Status", Slug: "editorial_status", Type: customfield.FieldTypeSelect},
+	}
+
+	t.Run("create - system field key in customFields is rejected before Create", func(t *testing.T) {
+		svc := agentmocks.NewMockContentService(t)
+		resolver := agentmocks.NewMockSystemFieldResolver(t)
+		resolver.EXPECT().GetSystemFieldsByPostType("tutorial").Return(tutorialSystemFields, nil)
+
+		handler := agent.NewContentHandler(svc, resolver, util.NewLogger(io.Discard))
+		body := marshalJSON(map[string]any{
+			"title":        "T",
+			"body":         tiptapJSON,
+			"postType":     "tutorial",
+			"customFields": map[string]any{"editorial_status": "published"},
+		})
+		r := newAuthenticatedRequest(http.MethodPost, "/api/v1/content", body, true)
+		w := httptest.NewRecorder()
+		handler.Create(w, r)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, "VALIDATION_ERROR", envelopeError(t, w))
+		// Create must NOT have been called.
+	})
+
+	t.Run("create - non-system custom field passes through to Create", func(t *testing.T) {
+		svc := agentmocks.NewMockContentService(t)
+		resolver := agentmocks.NewMockSystemFieldResolver(t)
+		resolver.EXPECT().GetSystemFieldsByPostType("tutorial").Return(tutorialSystemFields, nil)
+		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+			Return(&contentdomain.Content{ID: 9, Title: "T"}, nil)
+
+		handler := agent.NewContentHandler(svc, resolver, util.NewLogger(io.Discard))
+		body := marshalJSON(map[string]any{
+			"title":        "T",
+			"body":         tiptapJSON,
+			"postType":     "tutorial",
+			"customFields": map[string]any{"difficulty": "beginner"},
+		})
+		r := newAuthenticatedRequest(http.MethodPost, "/api/v1/content", body, true)
+		w := httptest.NewRecorder()
+		handler.Create(w, r)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("create - nil resolver skips the check (Create proceeds)", func(t *testing.T) {
+		svc := agentmocks.NewMockContentService(t)
+		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+			Return(&contentdomain.Content{ID: 9, Title: "T"}, nil)
+
+		handler := newContentHandler(svc) // nil resolver
+		body := marshalJSON(map[string]any{
+			"title":        "T",
+			"body":         tiptapJSON,
+			"postType":     "tutorial",
+			"customFields": map[string]any{"editorial_status": "published"},
+		})
+		r := newAuthenticatedRequest(http.MethodPost, "/api/v1/content", body, true)
+		w := httptest.NewRecorder()
+		handler.Create(w, r)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("update - system field key rejected against the existing post type", func(t *testing.T) {
+		svc := agentmocks.NewMockContentService(t)
+		// Ownership pre-fetch (owner is the caller); Update must NOT be called.
+		svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
+			ID:      5,
+			UserID:  testUserID,
+			PostType: "tutorial",
+			Status:  contentdomain.StatusDraft,
+		}, nil)
+		resolver := agentmocks.NewMockSystemFieldResolver(t)
+		// req.PostType is empty → effective post type falls back to "tutorial".
+		resolver.EXPECT().GetSystemFieldsByPostType("tutorial").Return(tutorialSystemFields, nil)
+
+		handler := agent.NewContentHandler(svc, resolver, util.NewLogger(io.Discard))
+		body := marshalJSON(map[string]any{
+			"title":        "T",
+			"body":         tiptapJSON,
+			"customFields": map[string]any{"editorial_status": "published"},
+		})
+		r := newAuthenticatedRequestAs(http.MethodPut, "/api/v1/content/5", body, testUserID, "")
+		r.SetPathValue("id", "5")
+		w := httptest.NewRecorder()
+		handler.Update(w, r)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, "VALIDATION_ERROR", envelopeError(t, w))
+	})
 }
