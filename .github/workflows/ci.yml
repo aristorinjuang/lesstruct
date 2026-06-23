@@ -14,7 +14,9 @@ jobs:
     name: Go Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
@@ -24,7 +26,9 @@ jobs:
     name: Go Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
@@ -36,7 +40,9 @@ jobs:
     name: Go Vulnerability Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
@@ -46,7 +52,9 @@ jobs:
     name: Build Admin Panel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
