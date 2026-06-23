@@ -409,6 +409,125 @@ Returns the caller's own media, newest-first, using [cursor pagination](#paginat
 
 > **Shared path note.** `GET /api/v1/media` and `GET /api/v1/media/{id}` are shared with the browser admin panel; the server dispatches to the agent handler when the request presents a `lesstruct_`-prefixed Bearer token, and to the browser handler otherwise. For agent clients this is transparent — always send the Bearer key. `POST /api/v1/media` (upload) is agent/Bearer-only.
 
+## Comments
+
+Create, list, delete, and moderate comments on a content item. The agent comment surface is **nested under the content namespace** (`/api/v1/content/{id}/comments`) so it is collision-free with the browser admin's `/api/v1/content_items/.../comments` and `/api/v1/comments` routes, and consistent with the rest of the agent surface (which keys everything by content id). New comments always start in the `pending` moderation status.
+
+> **Browser-admin moderation queue.** The admin panel additionally exposes `GET /api/v1/comments/pending` (JWT + CSRF, **Admin only** — not part of the Bearer `/api/v1` agent surface). It returns every comment currently in the `pending` status across all content, each enriched with `contentId`, `contentTitle`, and `contentSlug` so the global moderation queue can link back to the originating post. The same response shape applies to the per-content admin route `GET /api/v1/content_items/{id}/comments`.
+
+### Comment object
+
+```json
+{
+  "id": 9,
+  "comment": "Great post!",
+  "author": "Alice",
+  "username": "alice",
+  "role": "admin",
+  "status": "pending",
+  "createdAt": "2026-06-23T12:00:00Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | int | Stable identifier. |
+| `comment` | string | The comment text (1–2000 chars, no HTML). |
+| `author` / `username` / `role` | string | Author display name / handle / role. Omitted when not applicable. |
+| `status` | string | Moderation status: `pending`, `approved`, `rejected`, `spam`. |
+| `createdAt` | string | ISO 8601 timestamp. |
+
+### Create comment
+
+```http
+POST /api/v1/content/{id}/comments
+Content-Type: application/json
+```
+
+```json
+{ "comment": "Great post!" }
+```
+
+Creates a comment on content `{id}` attributed to the API-key-owning user, in the `pending` status. The content must be visible to the caller (published, owned, or Admin) and have comments enabled.
+
+```bash
+curl -X POST -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
+  -H "Content-Type: application/json" \
+  -d '{"comment":"Great post!"}' \
+  "https://your-lesstruct.example/api/v1/content/5/comments"
+```
+
+**Response** `200 OK`: `{"data":{"comment":{…}}}`.
+
+| Status | Code | When |
+|---|---|---|
+| `200` | — | Created; the new comment is returned. |
+| `400` | `VALIDATION_ERROR` | Empty/oversized comment text (1–2000 chars), HTML in the text, invalid content id, malformed body. |
+| `403` | `FORBIDDEN` | Comments are disabled on this content (`allowComments=false`). |
+| `404` | `NOT_FOUND` | Content does not exist, or is a draft the caller may not see (existence not disclosed). |
+
+### List comments
+
+```http
+GET /api/v1/content/{id}/comments
+```
+
+Returns every comment on content `{id}` (any moderation status — the management view), scoped to content the caller may see (published, owned, or Admin). Envelope is a bare `data` array (always present, even when empty):
+
+```json
+{ "data": [ { "id": 1, "comment": "ok", "status": "approved", "createdAt": "…" }, { "id": 2, "comment": "waiting", "status": "pending", "createdAt": "…" } ] }
+```
+
+| Status | Code | When |
+|---|---|---|
+| `200` | — | The comment list (possibly empty). |
+| `400` | `VALIDATION_ERROR` | Invalid content id. |
+| `404` | `NOT_FOUND` | Content does not exist or is not visible to the caller. |
+
+### Delete comment
+
+```http
+DELETE /api/v1/content/{id}/comments/{commentId}
+```
+
+Deletes the comment. An Admin key may delete any comment; any other key only its own. The server returns `404` (no disclosure) when the comment is missing or belongs to someone else.
+
+**Response** `204 No Content` (empty body).
+
+| Status | Code | When |
+|---|---|---|
+| `204` | — | Deleted. |
+| `404` | `NOT_FOUND` | Comment does not exist, or is not yours (and you are not Admin). |
+
+### Moderate comment (admin only)
+
+```http
+PUT /api/v1/content/{id}/comments/{commentId}/status
+Content-Type: application/json
+```
+
+```json
+{ "status": "approved" }
+```
+
+Sets a comment's moderation status. `status` must be a valid value (`pending`, `approved`, `rejected`, `spam`). **Admin only** — a non-admin key gets `403 FORBIDDEN`. The updated comment is returned.
+
+```bash
+curl -X PUT -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"approved"}' \
+  "https://your-lesstruct.example/api/v1/content/5/comments/9/status"
+```
+
+**Response** `200 OK`: `{"data":{"comment":{…}}}`.
+
+| Status | Code | When |
+|---|---|---|
+| `200` | — | Updated; the comment is returned with its new status. |
+| `400` | `VALIDATION_ERROR` | Unknown `status`, invalid id, malformed body. |
+| `403` | `FORBIDDEN` | Caller is not an Admin. |
+| `404` | `NOT_FOUND` | Comment does not exist. |
+
 ## Errors
 
 Errors use the envelope's `error` object: `{"error":{"code":"…","message":"…"}}`. (A `details` field is reserved on the object but is not currently populated by the `/api/v1` handlers.)
@@ -582,7 +701,7 @@ paths:
         "429": { $ref: "#/components/responses/Error" }
 ```
 
-The same pattern extends to the remaining `/api/v1/content[/{id}]` and `/api/v1/media` operations described above. A complete OpenAPI document will be generated in a follow-up.
+The same pattern extends to the remaining `/api/v1/content[/{id}]`, `/api/v1/media`, and `/api/v1/content/{id}/comments[/{commentId}[/status]]` operations described above. A complete OpenAPI document will be generated in a follow-up.
 
 ## Public SEO endpoints (no auth)
 

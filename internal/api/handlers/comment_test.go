@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -437,6 +438,115 @@ func TestCommentHandler_GetCommentsForModeration(t *testing.T) {
 			req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 			handler.GetCommentsForModeration(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+			}
+
+			var resp map[string]any
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Errorf("failed to decode response: %v", err)
+				return
+			}
+
+			if tt.validateResp != nil {
+				tt.validateResp(t, resp)
+			}
+		})
+	}
+}
+
+func TestCommentHandler_GetPendingComments(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupService   func(*contentmocks.MockServiceInterface)
+		expectedStatus int
+		validateResp   func(*testing.T, map[string]any)
+	}{
+		{
+			name: "successful get pending comments with content context",
+			setupService: func(s *contentmocks.MockServiceInterface) {
+				s.EXPECT().GetCommentsByStatus(mock.Anything, contentdomain.CommentStatusPending).Return([]*contentdomain.Comment{
+					{
+						ID:           1,
+						ContentID:    10,
+						ContentTitle: "Getting Started with Go",
+						ContentSlug:  "getting-started-with-go",
+						Comment:      "Great article!",
+						Author:       "Jane Doe",
+						Username:     "janedoe",
+						Status:       contentdomain.CommentStatusPending,
+						CreatedAt:    "2026-04-19T10:30:00Z",
+					},
+				}, nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				data, ok := resp["data"].([]any)
+				if !ok {
+					t.Errorf("expected data field to be an array")
+					return
+				}
+				if len(data) != 1 {
+					t.Errorf("expected 1 pending comment, got %d", len(data))
+					return
+				}
+				first := data[0].(map[string]any)
+				if first["contentTitle"] != "Getting Started with Go" {
+					t.Errorf("expected contentTitle 'Getting Started with Go', got %v", first["contentTitle"])
+				}
+				if first["contentSlug"] != "getting-started-with-go" {
+					t.Errorf("expected contentSlug 'getting-started-with-go', got %v", first["contentSlug"])
+				}
+			},
+		},
+		{
+			name: "empty pending comments list",
+			setupService: func(s *contentmocks.MockServiceInterface) {
+				s.EXPECT().GetCommentsByStatus(mock.Anything, contentdomain.CommentStatusPending).Return([]*contentdomain.Comment{}, nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				data, ok := resp["data"].([]any)
+				if !ok {
+					t.Errorf("expected data field to be an array")
+					return
+				}
+				if len(data) != 0 {
+					t.Errorf("expected 0 comments, got %d", len(data))
+				}
+			},
+		},
+		{
+			name: "service error returns internal error",
+			setupService: func(s *contentmocks.MockServiceInterface) {
+				s.EXPECT().GetCommentsByStatus(mock.Anything, contentdomain.CommentStatusPending).Return(nil, errors.New("database error"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				err, ok := resp["error"].(map[string]any)
+				if !ok {
+					t.Errorf("expected error field")
+					return
+				}
+				if err["code"] != "internal_error" {
+					t.Errorf("expected code 'internal_error', got %v", err["code"])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := contentmocks.NewMockServiceInterface(t)
+			tt.setupService(mockService)
+
+			handler := handlers.NewCommentHandler(mockService)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/comments/pending", nil)
+			w := httptest.NewRecorder()
+
+			handler.GetPendingComments(w, req)
 
 			if w.Code != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)

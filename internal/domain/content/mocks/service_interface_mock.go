@@ -226,6 +226,74 @@ func (_c *MockServiceInterface_GetComment_Call) RunAndReturn(run func(ctx contex
 	return _c
 }
 
+// GetCommentsByStatus provides a mock function for the type MockServiceInterface
+func (_mock *MockServiceInterface) GetCommentsByStatus(ctx context.Context, status content.CommentStatus) ([]*content.Comment, error) {
+	ret := _mock.Called(ctx, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCommentsByStatus")
+	}
+
+	var r0 []*content.Comment
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, content.CommentStatus) ([]*content.Comment, error)); ok {
+		return returnFunc(ctx, status)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, content.CommentStatus) []*content.Comment); ok {
+		r0 = returnFunc(ctx, status)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*content.Comment)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, content.CommentStatus) error); ok {
+		r1 = returnFunc(ctx, status)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockServiceInterface_GetCommentsByStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetCommentsByStatus'
+type MockServiceInterface_GetCommentsByStatus_Call struct {
+	*mock.Call
+}
+
+// GetCommentsByStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - status content.CommentStatus
+func (_e *MockServiceInterface_Expecter) GetCommentsByStatus(ctx any, status any) *MockServiceInterface_GetCommentsByStatus_Call {
+	return &MockServiceInterface_GetCommentsByStatus_Call{Call: _e.mock.On("GetCommentsByStatus", ctx, status)}
+}
+
+func (_c *MockServiceInterface_GetCommentsByStatus_Call) Run(run func(ctx context.Context, status content.CommentStatus)) *MockServiceInterface_GetCommentsByStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 content.CommentStatus
+		if args[1] != nil {
+			arg1 = args[1].(content.CommentStatus)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockServiceInterface_GetCommentsByStatus_Call) Return(comments []*content.Comment, err error) *MockServiceInterface_GetCommentsByStatus_Call {
+	_c.Call.Return(comments, err)
+	return _c
+}
+
+func (_c *MockServiceInterface_GetCommentsByStatus_Call) RunAndReturn(run func(ctx context.Context, status content.CommentStatus) ([]*content.Comment, error)) *MockServiceInterface_GetCommentsByStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetCommentsByUserID provides a mock function for the type MockServiceInterface
 func (_mock *MockServiceInterface) GetCommentsByUserID(ctx context.Context, userID int) ([]*content.Comment, error) {
 	ret := _mock.Called(ctx, userID)

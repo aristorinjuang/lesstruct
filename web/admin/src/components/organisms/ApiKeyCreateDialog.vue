@@ -330,7 +330,7 @@ function handleClose() {
 
 .api-key-create-dialog__key {
   flex: 1;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem;
   background-color: var(--brand-light-1);
   border: 1px solid var(--brand-light-2);
   border-radius: 0.375rem;

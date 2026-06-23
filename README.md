@@ -110,10 +110,18 @@ Themes are a `themes/<name>/` directory containing CSS, optional JS, and optiona
 
 ## API & CLI
 
-A versioned, API-key-authenticated REST API at `/api/v1` covers Content and Media. The `lesstruct-cli` is a thin Cobra client over the same API — designed for AI agents and humans who live in the terminal. Markdown is accepted on create/update and converted to canonical Tiptap JSON server-side.
+A versioned, API-key-authenticated REST API at `/api/v1` covers Content and Media. Markdown is accepted on create/update and converted to canonical Tiptap JSON server-side.
+
+`lesstruct-cli` is a thin Cobra client over the same API — designed for AI agents and humans who live in the terminal. Install it with Go:
+
+```bash
+go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli@latest
+```
+
+Point it at a running server and create an API key from the admin panel to get started.
 
 - API reference: [`docs/api-reference.md`](docs/api-reference.md)
-- CLI builds via `make build-cli` → `bin/lesstruct-cli`
+- Build from source: `make build-cli` → `bin/lesstruct-cli`
 
 ## Support this project
 

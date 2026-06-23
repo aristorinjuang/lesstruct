@@ -136,27 +136,27 @@ func (s CommentStatus) IsSpam() bool {
 
 // Content represents a content item in the system
 type Content struct {
-	ID                  int            `json:"id"`
-	UserID              int            `json:"userId"`
-	Title               string         `json:"title"`
-	Slug                string         `json:"slug"`
-	Content             string         `json:"content"`
-	Tags                []string       `json:"tags"`
-	Status              Status         `json:"status"`
-	PostType            string         `json:"postType"`
-	MetaDescription     string         `json:"metaDescription,omitempty"`
-	OGTitle             string         `json:"ogTitle,omitempty"`
-	OGDescription       string         `json:"ogDescription,omitempty"`
-	Author              string         `json:"author,omitempty"`
-	Username            string         `json:"username,omitempty"`
-	AllowComments       bool           `json:"allowComments"`
-	CustomFields        map[string]any `json:"customFields,omitempty"`
-	UpdatedBy           int            `json:"updatedBy,omitempty"`
-	UpdatedByUsername   string         `json:"updatedByUsername,omitempty"`
-	Language            string         `json:"language"`
-	TranslationGroupID  *int           `json:"translationGroupId,omitempty"`
-	CreatedAt           string         `json:"createdAt"`
-	UpdatedAt           string         `json:"updatedAt"`
+	ID                 int            `json:"id"`
+	UserID             int            `json:"userId"`
+	Title              string         `json:"title"`
+	Slug               string         `json:"slug"`
+	Content            string         `json:"content"`
+	Tags               []string       `json:"tags"`
+	Status             Status         `json:"status"`
+	PostType           string         `json:"postType"`
+	MetaDescription    string         `json:"metaDescription,omitempty"`
+	OGTitle            string         `json:"ogTitle,omitempty"`
+	OGDescription      string         `json:"ogDescription,omitempty"`
+	Author             string         `json:"author,omitempty"`
+	Username           string         `json:"username,omitempty"`
+	AllowComments      bool           `json:"allowComments"`
+	CustomFields       map[string]any `json:"customFields,omitempty"`
+	UpdatedBy          int            `json:"updatedBy,omitempty"`
+	UpdatedByUsername  string         `json:"updatedByUsername,omitempty"`
+	Language           string         `json:"language"`
+	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
+	CreatedAt          string         `json:"createdAt"`
+	UpdatedAt          string         `json:"updatedAt"`
 }
 
 // FilterOperator represents the type of filter operation
@@ -312,16 +312,18 @@ func ValidateOGDescription(value string) error {
 
 // Comment represents a comment on a content item
 type Comment struct {
-	ID        int           `json:"id"`
-	ContentID int           `json:"contentId"`
-	UserID    int           `json:"userId"`
-	Comment   string        `json:"comment"`
-	Status    CommentStatus `json:"status"`
-	Author    string        `json:"author,omitempty"`
-	Username  string        `json:"username,omitempty"`
-	Role      string        `json:"role,omitempty"`
-	CreatedAt string        `json:"createdAt"`
-	UpdatedAt string        `json:"updatedAt"`
+	ID           int           `json:"id"`
+	ContentID    int           `json:"contentId"`
+	UserID       int           `json:"userId"`
+	Comment      string        `json:"comment"`
+	Status       CommentStatus `json:"status"`
+	Author       string        `json:"author,omitempty"`
+	Username     string        `json:"username,omitempty"`
+	Role         string        `json:"role,omitempty"`
+	ContentTitle string        `json:"contentTitle,omitempty"`
+	ContentSlug  string        `json:"contentSlug,omitempty"`
+	CreatedAt    string        `json:"createdAt"`
+	UpdatedAt    string        `json:"updatedAt"`
 }
 
 // ValidateCommentText validates the comment text field

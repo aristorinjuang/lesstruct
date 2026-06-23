@@ -11,6 +11,7 @@ type ServiceInterface interface {
 	GetCommentsForContent(ctx context.Context, contentID int) ([]*Comment, error)
 	GetCommentsForModeration(ctx context.Context, contentID int) ([]*Comment, error)
 	GetCommentsByUserID(ctx context.Context, userID int) ([]*Comment, error)
+	GetCommentsByStatus(ctx context.Context, status CommentStatus) ([]*Comment, error)
 	UpdateCommentStatus(ctx context.Context, commentID int, status CommentStatus) error
 	DeleteComment(ctx context.Context, commentID int) error
 	DeleteOwnComment(ctx context.Context, commentID int, userID int) error

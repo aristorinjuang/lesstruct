@@ -33,6 +33,20 @@ type CommentResponse struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// PendingCommentResponse is the admin-facing representation of a comment awaiting
+// moderation, enriched with the content item it belongs to.
+type PendingCommentResponse struct {
+	ID           int    `json:"id"`
+	ContentID    int    `json:"contentId"`
+	ContentTitle string `json:"contentTitle,omitempty"`
+	ContentSlug  string `json:"contentSlug,omitempty"`
+	Comment      string `json:"comment"`
+	Author       string `json:"author,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Status       string `json:"status,omitempty"`
+	CreatedAt    string `json:"createdAt"`
+}
+
 func handleCommentError(w http.ResponseWriter, err error) {
 	statusCode := http.StatusInternalServerError
 	code := "internal_error"
@@ -192,6 +206,31 @@ func (h *CommentHandler) GetCommentsForModeration(w http.ResponseWriter, r *http
 			"username":  comment.Username,
 			"status":    comment.Status,
 			"createdAt": comment.CreatedAt,
+		})
+	}
+
+	sendSuccessResponse(w, http.StatusOK, response)
+}
+
+func (h *CommentHandler) GetPendingComments(w http.ResponseWriter, r *http.Request) {
+	comments, err := h.contentService.GetCommentsByStatus(r.Context(), contentdomain.CommentStatusPending)
+	if err != nil {
+		handleCommentError(w, err)
+		return
+	}
+
+	response := make([]PendingCommentResponse, 0, len(comments))
+	for _, comment := range comments {
+		response = append(response, PendingCommentResponse{
+			ID:           comment.ID,
+			ContentID:    comment.ContentID,
+			ContentTitle: comment.ContentTitle,
+			ContentSlug:  comment.ContentSlug,
+			Comment:      comment.Comment,
+			Author:       comment.Author,
+			Username:     comment.Username,
+			Status:       string(comment.Status),
+			CreatedAt:    comment.CreatedAt,
 		})
 	}
 

@@ -1948,6 +1948,79 @@ func TestService_DeleteOwnComment(t *testing.T) {
 	}
 }
 
+func TestService_GetCommentsByStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		status      content.CommentStatus
+		setupMock   func(*mocks.MockCommentRepository)
+		expectedLen int
+		expectedErr error
+	}{
+		{
+			name:   "returns comments by status with content context",
+			status: content.CommentStatusPending,
+			setupMock: func(m *mocks.MockCommentRepository) {
+				m.On("GetByStatus", mock.Anything, content.CommentStatusPending).Return([]*content.Comment{
+					{
+						ID:           1,
+						ContentID:    10,
+						ContentTitle: "Getting Started with Go",
+						ContentSlug:  "getting-started-with-go",
+						Comment:      "Great article!",
+						Author:       "Jane Doe",
+						Status:       content.CommentStatusPending,
+						CreatedAt:    "2026-04-19T10:30:00Z",
+					},
+				}, nil)
+			},
+			expectedLen: 1,
+			expectedErr: nil,
+		},
+		{
+			name:   "returns empty list when no comments match status",
+			status: content.CommentStatusPending,
+			setupMock: func(m *mocks.MockCommentRepository) {
+				m.On("GetByStatus", mock.Anything, content.CommentStatusPending).Return([]*content.Comment{}, nil)
+			},
+			expectedLen: 0,
+			expectedErr: nil,
+		},
+		{
+			name:   "wraps repository error",
+			status: content.CommentStatusPending,
+			setupMock: func(m *mocks.MockCommentRepository) {
+				m.On("GetByStatus", mock.Anything, content.CommentStatusPending).Return(nil, errors.New("database error"))
+			},
+			expectedErr: errors.New("failed to get comments by status"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCommentRepo := mocks.NewMockCommentRepository(t)
+			tt.setupMock(mockCommentRepo)
+
+			s := content.NewServiceWithComments(nil, mockCommentRepo, nil, nil)
+			result, err := s.GetCommentsByStatus(context.Background(), tt.status)
+
+			if tt.expectedErr != nil {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr.Error())
+				mockCommentRepo.AssertExpectations(t)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, result, tt.expectedLen)
+			if tt.expectedLen > 0 {
+				assert.Equal(t, "Getting Started with Go", result[0].ContentTitle)
+				assert.Equal(t, "getting-started-with-go", result[0].ContentSlug)
+			}
+			mockCommentRepo.AssertExpectations(t)
+		})
+	}
+}
+
 func TestService_GetPublishedByTag(t *testing.T) {
 	tests := []struct {
 		name        string

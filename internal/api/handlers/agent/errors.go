@@ -18,7 +18,8 @@ import (
 //
 // Mapping (see story Dev Notes §Domain-error → envelope mapping):
 //   - ErrContentNotFound         → 404 NOT_FOUND
-//   - ErrUnauthorized (ownership)→ 403 FORBIDDEN
+//   - ErrCommentNotFound         → 404 NOT_FOUND
+//   - ErrUnauthorized (ownership / comments-disabled) → 403 FORBIDDEN
 //   - the validation sentinels   → 400 VALIDATION_ERROR
 //   - anything else              → 500 INTERNAL_ERROR
 //
@@ -30,6 +31,8 @@ func handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, contentdomain.ErrContentNotFound):
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Content not found", nil)
+	case errors.Is(err, contentdomain.ErrCommentNotFound):
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Comment not found", nil)
 	case errors.Is(err, contentdomain.ErrUnauthorized):
 		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have permission to access this content", nil)
 	case errors.Is(err, contentdomain.ErrInvalidTitle),
@@ -48,7 +51,9 @@ func handleError(w http.ResponseWriter, err error) {
 		errors.Is(err, contentdomain.ErrCustomFieldValidation),
 		errors.Is(err, contentdomain.ErrInvalidLanguage),
 		errors.Is(err, contentdomain.ErrTranslationGroupNotFound),
-		errors.Is(err, contentdomain.ErrTranslationAlreadyExists):
+		errors.Is(err, contentdomain.ErrTranslationAlreadyExists),
+		errors.Is(err, contentdomain.ErrInvalidCommentText),
+		errors.Is(err, contentdomain.ErrInvalidCommentStatus):
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), nil)
 	default:
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "An internal error occurred", nil)

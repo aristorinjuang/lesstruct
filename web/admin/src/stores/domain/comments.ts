@@ -79,11 +79,28 @@ export const useCommentsStore = defineStore('comments', () => {
     }
   }
 
+  async function fetchPending(): Promise<Comment[]> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await api.get<CommentsResponse>('/api/v1/comments/pending')
+      comments.value = response.data.data
+      return comments.value
+    } catch (err) {
+      error.value = err as Error
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   return {
     comments,
     isLoading,
     error,
     fetchForContent,
+    fetchPending,
     updateStatus,
     approve,
     reject,

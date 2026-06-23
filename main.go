@@ -259,6 +259,7 @@ func startServer(
 	apiKeyAuthMiddleware *middleware.APIKeyAuthMiddleware,
 	agentContentHandler *agent.ContentHandler,
 	agentMediaHandler *agent.MediaHandler,
+	agentCommentHandler *agent.CommentHandler,
 	adminMiddleware *middleware.AdminMiddleware,
 	corsMiddleware *middleware.CORSMiddleware,
 	noCookieMiddleware *middleware.NoCookieMiddleware,
@@ -291,6 +292,7 @@ func startServer(
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
+		agentCommentHandler,
 		adminMiddleware,
 		corsMiddleware,
 		noCookieMiddleware,
@@ -527,6 +529,10 @@ func main() {
 	// programmatic media upload/retrieval (Story 2.3). Reuses the same mediaService so
 	// hashing, dedup, WebP conversion, and thumbnail variants run identically to admin.
 	agentMediaHandler := agent.NewMediaHandler(mediaService, utilLogger)
+	// Initialize agent (Bearer) comment handler — reuses the same contentService so
+	// the comment domain logic (text validation, the AllowComments gate, moderation
+	// status transitions) runs identically to the browser comment surface.
+	agentCommentHandler := agent.NewCommentHandler(contentService, utilLogger)
 	var imageGenService mediadomain.ImageGenerationService
 	if cfg.IsImageGenerationEnabled() {
 		switch {
@@ -770,6 +776,7 @@ func main() {
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
+		agentCommentHandler,
 		adminMiddleware,
 		corsMiddleware,
 		noCookieMiddleware,

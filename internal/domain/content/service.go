@@ -1176,6 +1176,15 @@ func (s *Service) GetCommentsForModeration(ctx context.Context, contentID int) (
 	return comments, nil
 }
 
+func (s *Service) GetCommentsByStatus(ctx context.Context, status CommentStatus) ([]*Comment, error) {
+	comments, err := s.commentRepo.GetByStatus(ctx, status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get comments by status: %w", err)
+	}
+
+	return comments, nil
+}
+
 func (s *Service) ApproveComment(ctx context.Context, commentID int) error {
 	if err := s.commentRepo.UpdateStatus(ctx, commentID, CommentStatusApproved); err != nil {
 		return fmt.Errorf("failed to approve comment: %w", err)

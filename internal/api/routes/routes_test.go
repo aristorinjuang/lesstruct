@@ -140,6 +140,8 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	agentContentHandler := agent.NewContentHandler(contentSvc, nil, logger)
 	mediaSvc := agentmocks.NewMockMediaService(t)
 	agentMediaHandler := agent.NewMediaHandler(mediaSvc, logger)
+	commentSvc := agentmocks.NewMockCommentService(t)
+	agentCommentHandler := agent.NewCommentHandler(commentSvc, logger)
 
 	deps := bearerDeps{
 		verifier:   verifier,
@@ -167,6 +169,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
+		agentCommentHandler,
 		adminMiddleware,
 		corsMiddleware,
 		middleware.NewNoCookieMiddleware(logger),
@@ -251,6 +254,7 @@ func TestSetup(t *testing.T) {
 	)
 	agentContentHandler := agent.NewContentHandler(agentmocks.NewMockContentService(t), nil, logger)
 	agentMediaHandler := agent.NewMediaHandler(agentmocks.NewMockMediaService(t), logger)
+	agentCommentHandler := agent.NewCommentHandler(agentmocks.NewMockCommentService(t), logger)
 
 	r := routes.Setup(
 		authHandler,
@@ -270,6 +274,7 @@ func TestSetup(t *testing.T) {
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
+		agentCommentHandler,
 		adminMiddleware,
 		corsMiddleware,
 		middleware.NewNoCookieMiddleware(logger),

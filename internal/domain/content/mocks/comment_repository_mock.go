@@ -413,6 +413,74 @@ func (_c *MockCommentRepository_GetByID_Call) RunAndReturn(run func(ctx context.
 	return _c
 }
 
+// GetByStatus provides a mock function for the type MockCommentRepository
+func (_mock *MockCommentRepository) GetByStatus(ctx context.Context, status content.CommentStatus) ([]*content.Comment, error) {
+	ret := _mock.Called(ctx, status)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetByStatus")
+	}
+
+	var r0 []*content.Comment
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, content.CommentStatus) ([]*content.Comment, error)); ok {
+		return returnFunc(ctx, status)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, content.CommentStatus) []*content.Comment); ok {
+		r0 = returnFunc(ctx, status)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*content.Comment)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, content.CommentStatus) error); ok {
+		r1 = returnFunc(ctx, status)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockCommentRepository_GetByStatus_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetByStatus'
+type MockCommentRepository_GetByStatus_Call struct {
+	*mock.Call
+}
+
+// GetByStatus is a helper method to define mock.On call
+//   - ctx context.Context
+//   - status content.CommentStatus
+func (_e *MockCommentRepository_Expecter) GetByStatus(ctx any, status any) *MockCommentRepository_GetByStatus_Call {
+	return &MockCommentRepository_GetByStatus_Call{Call: _e.mock.On("GetByStatus", ctx, status)}
+}
+
+func (_c *MockCommentRepository_GetByStatus_Call) Run(run func(ctx context.Context, status content.CommentStatus)) *MockCommentRepository_GetByStatus_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 content.CommentStatus
+		if args[1] != nil {
+			arg1 = args[1].(content.CommentStatus)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockCommentRepository_GetByStatus_Call) Return(comments []*content.Comment, err error) *MockCommentRepository_GetByStatus_Call {
+	_c.Call.Return(comments, err)
+	return _c
+}
+
+func (_c *MockCommentRepository_GetByStatus_Call) RunAndReturn(run func(ctx context.Context, status content.CommentStatus) ([]*content.Comment, error)) *MockCommentRepository_GetByStatus_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetByUserID provides a mock function for the type MockCommentRepository
 func (_mock *MockCommentRepository) GetByUserID(ctx context.Context, userID int) ([]*content.Comment, error) {
 	ret := _mock.Called(ctx, userID)

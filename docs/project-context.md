@@ -30,9 +30,9 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **wazero** 1.11.0 — WebAssembly runtime (plugin system)
 - **google.golang.org/genai** 1.59.0 — Google Imagen image generation
 - **openai/openai-go** 1.12.0 — text generation (OpenAI-compatible APIs via `AI_TEXT_GENERATION_BASE_URL`)
-- **deepteams/webp** 1.2.1 + **golang.org/x/image** 0.39.0 — image transcoding for media uploads
+- **deepteams/webp** 1.2.1 + **golang.org/x/image** 0.41.0 — image transcoding for media uploads
 - **spf13/cobra** 1.10.2 — CLI framework (`cmd/lesstruct-cli`)
-- **golang.org/x/crypto** 0.51.0, **golang.org/x/net** 0.55.0
+- **golang.org/x/crypto** 0.52.0, **golang.org/x/net** 0.55.0
 - **stretchr/testify** 1.11.1 — test assertions
 - **mockery** — mock generation (`make mock`)
 - **govulncheck** — vulnerability scanning (`make vulncheck`)

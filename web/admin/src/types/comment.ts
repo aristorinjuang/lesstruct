@@ -8,6 +8,8 @@ export interface Comment {
   status: CommentStatus
   author: string
   username: string | null
+  contentTitle?: string
+  contentSlug?: string
   createdAt: string
   updatedAt: string
 }

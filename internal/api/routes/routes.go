@@ -72,6 +72,7 @@ func Setup(
 	apiKeyAuthMiddleware *middleware.APIKeyAuthMiddleware,
 	agentContentHandler *agent.ContentHandler,
 	agentMediaHandler *agent.MediaHandler,
+	agentCommentHandler *agent.CommentHandler,
 	adminMiddleware *middleware.AdminMiddleware,
 	corsMiddleware *middleware.CORSMiddleware,
 	noCookieMiddleware *middleware.NoCookieMiddleware,
@@ -181,6 +182,16 @@ func Setup(
 		// rate limit + API-key auth apply on the same footing as Update/Delete.
 		r.Post("/api/v1/content/{id}/publish", agentContentHandler.Publish)
 		r.Post("/api/v1/content/{id}/unpublish", agentContentHandler.Unpublish)
+		// Agent comment surface — nested under the content-keyed namespace so it is
+		// collision-free vs the browser realm's /api/v1/content_items/.../comments and
+		// /api/v1/comments routes (Chi routes by path, not auth realm). Create/List are
+		// any authenticated caller (scoped to visible content); Delete is own-or-admin;
+		// UpdateStatus is admin-only moderation. Reuses the existing content domain
+		// comment methods via agent.CommentHandler.
+		r.Post("/api/v1/content/{id}/comments", agentCommentHandler.Create)
+		r.Get("/api/v1/content/{id}/comments", agentCommentHandler.List)
+		r.Delete("/api/v1/content/{id}/comments/{commentId}", agentCommentHandler.Delete)
+		r.Put("/api/v1/content/{id}/comments/{commentId}/status", agentCommentHandler.UpdateStatus)
 		// Media upload is exempted from the root-level 1MB body limit (raised to 10MB) so
 		// legitimate image uploads are not rejected — mirroring the admin media-upload
 		// pattern. The exemption applies ONLY to the POST upload route, not the GETs.
@@ -360,6 +371,7 @@ func Setup(
 
 			// Admin comment moderation routes (require authentication + admin role) - Story 4.7
 			r.With(adminMiddleware.ModerationOnly).Get("/content_items/{id}/comments", commentHandler.GetCommentsForModeration)
+			r.With(adminMiddleware.ModerationOnly).Get("/comments/pending", commentHandler.GetPendingComments)
 			r.With(adminMiddleware.ModerationOnly).Put("/comments/{id}/status", commentHandler.UpdateCommentStatus)
 			r.With(adminMiddleware.ModerationOnly).Delete("/comments/{id}", commentHandler.DeleteComment)
 

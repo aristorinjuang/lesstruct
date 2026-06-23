@@ -28,6 +28,12 @@ func mapCommentItemToDomain(item *CommentItem) *contentdomain.Comment {
 	if item.Role.Valid {
 		comment.Role = item.Role.String
 	}
+	if item.ContentTitle.Valid {
+		comment.ContentTitle = item.ContentTitle.String
+	}
+	if item.ContentSlug.Valid {
+		comment.ContentSlug = item.ContentSlug.String
+	}
 	return comment
 }
 
@@ -62,16 +68,18 @@ func scanCommentRows(rows *sql.Rows) ([]*contentdomain.Comment, error) {
 
 // CommentItem represents a comment in the database
 type CommentItem struct {
-	ID        int            `json:"id"`
-	ContentID int            `json:"contentId"`
-	UserID    int            `json:"userId"`
-	Comment   string         `json:"comment"`
-	Status    string         `json:"status"`
-	Author    sql.NullString `json:"author"`
-	Username  sql.NullString `json:"username"`
-	Role      sql.NullString `json:"role"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	ID           int            `json:"id"`
+	ContentID    int            `json:"contentId"`
+	UserID       int            `json:"userId"`
+	Comment      string         `json:"comment"`
+	Status       string         `json:"status"`
+	Author       sql.NullString `json:"author"`
+	Username     sql.NullString `json:"username"`
+	Role         sql.NullString `json:"role"`
+	ContentTitle sql.NullString `json:"contentTitle"`
+	ContentSlug  sql.NullString `json:"contentSlug"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
 }
 
 // CommentRepository handles comment data operations
@@ -188,6 +196,54 @@ func (r *CommentRepository) GetByUserID(ctx context.Context, userID int) ([]*con
 	defer func() { _ = rows.Close() }()
 
 	return scanCommentRows(rows)
+}
+
+func (r *CommentRepository) GetByStatus(ctx context.Context, status contentdomain.CommentStatus) ([]*contentdomain.Comment, error) {
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.id, c.content_id, c.user_id, c.comment, c.status, c.created_at, c.updated_at,
+		       COALESCE(u.name, u.username) AS author, u.username, u.role,
+		       ci.title, ci.slug
+		FROM comments c
+		LEFT JOIN users u ON c.user_id = u.id
+		LEFT JOIN content_items ci ON c.content_id = ci.id
+		WHERE c.status = ?
+		ORDER BY c.created_at DESC
+	`, status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get comments by status: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var items []*contentdomain.Comment
+	for rows.Next() {
+		var item CommentItem
+
+		err := rows.Scan(
+			&item.ID,
+			&item.ContentID,
+			&item.UserID,
+			&item.Comment,
+			&item.Status,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+			&item.Author,
+			&item.Username,
+			&item.Role,
+			&item.ContentTitle,
+			&item.ContentSlug,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan comment: %w", err)
+		}
+
+		items = append(items, mapCommentItemToDomain(&item))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating comment rows: %w", err)
+	}
+
+	return items, nil
 }
 
 func (r *CommentRepository) UpdateStatus(ctx context.Context, id int, status contentdomain.CommentStatus) error {

@@ -120,6 +120,43 @@ type UpdateContentRequest struct {
 	CustomFields map[string]any `json:"customFields,omitempty"`
 }
 
+// ListContentFilters is the cmd-layer projection of contentdomain.ContentFilters
+// for the agent List endpoint. The CLI re-declares the shape (it cannot import
+// server-internal types) so the wire contract is the source of truth, and only
+// the fields used by the agent v1 surface are exposed here. Tags is intentionally
+// a slice — the wire format uses repeated ?tag= keys (one per tag, AND-of-tags
+// on the server). An empty / zero struct produces a no-filter call (server returns
+// the unfiltered list).
+type ListContentFilters struct {
+	Tags     []string
+	Language string
+	Status   string
+	PostType string
+	Author   string
+	Search   string
+}
+
+// UploadMediaRequest is the multipart payload sent to POST /api/v1/media. It
+// is built in memory by UploadMedia — callers supply the file reader + filename
+// and an optional metadata map (the server reads `altText` today; the map
+// values are passed through as typed JSON so non-string values such as numbers
+// or booleans are accepted, even though the server currently persists only
+// `altText`). The client validates that File is non-nil and Filename is
+// non-empty so a bad call site fails fast with a clear error instead of a
+// runtime panic.
+type UploadMediaRequest struct {
+	File     io.Reader
+	Filename string
+	Metadata map[string]any
+}
+
+// CreateCommentRequest is the agent comment-create payload. It mirrors the
+// {data, error, meta} contract documented in docs/api-reference.md — the client
+// hard-codes it (it cannot import the server's DTO types).
+type CreateCommentRequest struct {
+	Comment string `json:"comment"`
+}
+
 // Client is a typed HTTP client over the /api/v1 surface. It depends only on
 // the JSON contract (stdlib) — it imports no server internals — which is what
 // lets a future MCP server reuse it. Construct it with New.
@@ -281,22 +318,6 @@ func (c *Client) GetContent(
 	return c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/content/%d", id), nil, nil)
 }
 
-// ListContentFilters is the cmd-layer projection of contentdomain.ContentFilters
-// for the agent List endpoint. The CLI re-declares the shape (it cannot import
-// server-internal types) so the wire contract is the source of truth, and only
-// the fields used by the agent v1 surface are exposed here. Tags is intentionally
-// a slice — the wire format uses repeated ?tag= keys (one per tag, AND-of-tags
-// on the server). An empty / zero struct produces a no-filter call (server returns
-// the unfiltered list).
-type ListContentFilters struct {
-	Tags     []string
-	Language string
-	Status   string
-	PostType string
-	Author   string
-	Search   string
-}
-
 // ListContent sends GET /api/v1/content?limit=&cursor=&tag=&language=&status=&post_type=&author=&search=
 // and returns the decoded data (a bare array of content projections) and meta
 // (with pagination), or an *APIError on failure. A limit of 0 (or negative) is
@@ -407,20 +428,6 @@ func (c *Client) SetSystemFields(
 	return c.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/content/%d/system-fields", id), nil, body)
 }
 
-// UploadMediaRequest is the multipart payload sent to POST /api/v1/media. It
-// is built in memory by UploadMedia — callers supply the file reader + filename
-// and an optional metadata map (the server reads `altText` today; the map
-// values are passed through as typed JSON so non-string values such as numbers
-// or booleans are accepted, even though the server currently persists only
-// `altText`). The client validates that File is non-nil and Filename is
-// non-empty so a bad call site fails fast with a clear error instead of a
-// runtime panic.
-type UploadMediaRequest struct {
-	File     io.Reader
-	Filename string
-	Metadata map[string]any
-}
-
 // UploadMedia sends POST /api/v1/media as multipart/form-data with a `file`
 // part and an optional `metadata` JSON part, then returns the decoded data
 // and meta payloads (the server returns 200 with the media projection in the
@@ -523,6 +530,53 @@ func (c *Client) ListMedia(
 		query.Set("cursor", cursor)
 	}
 	return c.do(ctx, http.MethodGet, "/api/v1/media", query, nil)
+}
+
+// CreateComment POSTs a comment to /api/v1/content/{id}/comments and returns the
+// decoded data and meta payloads, or an *APIError on failure.
+func (c *Client) CreateComment(
+	ctx context.Context,
+	contentID int,
+	req CreateCommentRequest,
+) (json.RawMessage, json.RawMessage, error) {
+	return c.do(ctx, http.MethodPost, fmt.Sprintf("/api/v1/content/%d/comments", contentID), nil, req)
+}
+
+// ListComments sends GET /api/v1/content/{id}/comments and returns the decoded
+// data (a bare array of comment projections) and meta, or an *APIError on failure.
+func (c *Client) ListComments(
+	ctx context.Context,
+	contentID int,
+) (json.RawMessage, json.RawMessage, error) {
+	return c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/content/%d/comments", contentID), nil, nil)
+}
+
+// DeleteComment sends DELETE /api/v1/content/{id}/comments/{commentId}. A 204 No
+// Content success returns (nil, nil, nil); a 404 or other 4xx/5xx returns an
+// *APIError. An admin key may delete any comment; a non-admin key only its own
+// (the server returns 404 for a comment the caller does not own, no disclosure).
+func (c *Client) DeleteComment(
+	ctx context.Context,
+	contentID int,
+	commentID int,
+) (json.RawMessage, json.RawMessage, error) {
+	return c.do(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/content/%d/comments/%d", contentID, commentID), nil, nil)
+}
+
+// UpdateCommentStatus sends PUT /api/v1/content/{id}/comments/{commentId}/status
+// with the given status (approved/rejected/spam) and returns the decoded data
+// and meta payloads, or an *APIError on failure. Admin only: the server returns
+// 403 FORBIDDEN to a non-admin key.
+func (c *Client) UpdateCommentStatus(
+	ctx context.Context,
+	contentID int,
+	commentID int,
+	status string,
+) (json.RawMessage, json.RawMessage, error) {
+	body := struct {
+		Status string `json:"status"`
+	}{Status: status}
+	return c.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/content/%d/comments/%d/status", contentID, commentID), nil, body)
 }
 
 // New builds a Client targeting baseURL authenticated with apiKey. The base URL
