@@ -41,4 +41,12 @@ type Repository interface {
 	TranslationGroupExists(ctx context.Context, id int) (bool, error)
 	// GetPublishedBySlugAny finds published content by slug regardless of language.
 	GetPublishedBySlugAny(ctx context.Context, slug string) (*Content, error)
+	// GetRelatedByTags returns published content of the same post type and language
+	// that shares at least one tag with the given tags, excluding excludeID. Results
+	// are ranked by the number of shared tags (descending) then by created_at
+	// (descending). An empty tags slice yields no rows.
+	GetRelatedByTags(ctx context.Context, excludeID int, tags []string, postType string, language string, limit int) ([]*Content, error)
+	// GetLatestByPostType returns the most recently created published content of the
+	// given post type and language, excluding excludeID, ordered by created_at desc.
+	GetLatestByPostType(ctx context.Context, excludeID int, postType string, language string, limit int) ([]*Content, error)
 }

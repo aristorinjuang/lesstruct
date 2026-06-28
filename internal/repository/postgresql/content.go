@@ -1108,6 +1108,87 @@ func (r *ContentRepository) SearchPublished(ctx context.Context, query string, l
 	return scanContentRowsWithAuthorAndUsername(rows)
 }
 
+func (r *ContentRepository) GetRelatedByTags(ctx context.Context, excludeID int, tags []string, postType string, language string, limit int) ([]*contentdomain.Content, error) {
+	if len(tags) == 0 {
+		return []*contentdomain.Content{}, nil
+	}
+
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	if len(tags) > 10 {
+		tags = tags[:10]
+	}
+
+	lowerTags := make([]string, len(tags))
+	for i, t := range tags {
+		lowerTags[i] = strings.ToLower(t)
+	}
+
+	placeholders := make([]string, len(lowerTags))
+	for i := range lowerTags {
+		placeholders[i] = fmt.Sprintf("$%d", 5+i)
+	}
+	inList := "(" + strings.Join(placeholders, ",") + ")"
+	limitArg := 5 + len(lowerTags)
+
+	args := []any{contentdomain.StatusPublished, postType, language, excludeID}
+	for _, t := range lowerTags {
+		args = append(args, t)
+	}
+	args = append(args, limit)
+
+	query := fmt.Sprintf(`
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		       COALESCE(u.name, u.username) as author, u.username
+		FROM content_items c
+		LEFT JOIN users u ON c.user_id = u.id
+		WHERE c.status = $1 AND c.post_type = $2 AND c.language = $3 AND c.id <> $4
+		  AND c.tags IS NOT NULL AND jsonb_array_length(c.tags) > 0
+		  AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(c.tags) AS elem WHERE LOWER(elem) IN %s)
+		ORDER BY (SELECT COUNT(*) FROM jsonb_array_elements_text(c.tags) AS elem WHERE LOWER(elem) IN %s) DESC,
+		         c.created_at DESC
+		LIMIT $%d
+	`, inList, inList, limitArg)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get related content by tags: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanContentRowsWithAuthorAndUsername(rows)
+}
+
+func (r *ContentRepository) GetLatestByPostType(ctx context.Context, excludeID int, postType string, language string, limit int) ([]*contentdomain.Content, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		       COALESCE(u.name, u.username) as author, u.username
+		FROM content_items c
+		LEFT JOIN users u ON c.user_id = u.id
+		WHERE c.status = $1 AND c.post_type = $2 AND c.language = $3 AND c.id <> $4
+		ORDER BY c.created_at DESC
+		LIMIT $5
+	`, contentdomain.StatusPublished, postType, language, excludeID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest content by post type: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanContentRowsWithAuthorAndUsername(rows)
+}
+
 // NewContentRepository creates a new content repository
 func NewContentRepository(db *sql.DB) *ContentRepository {
 	return &ContentRepository{

@@ -1249,3 +1249,96 @@ func TestContentRepository_ListByFilters_WithSearch(t *testing.T) {
 		})
 	}
 }
+
+func TestContentRepository_GetRelatedByTags(t *testing.T) {
+	db := setupContentTestDB(t)
+	defer teardownContentTestDB(t, db)
+
+	_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+		INSERT INTO content_items (id, user_id, title, slug, content, tags, status, post_type, language) VALUES
+		(1, 1, 'Source', 'source', 'body', '["go","web"]', 'published', 'post', 'en'),
+		(2, 1, 'OneShared', 'one-shared', 'body', '["go","tutorial"]', 'published', 'post', 'en'),
+		(3, 1, 'TwoShared', 'two-shared', 'body', '["go","web","tutorial"]', 'published', 'post', 'en'),
+		(4, 1, 'NoShared', 'no-shared', 'body', '["python"]', 'published', 'post', 'en'),
+		(5, 1, 'WrongType', 'wrong-type', 'body', '["go","web"]', 'published', 'page', 'en'),
+		(6, 1, 'WrongLang', 'wrong-lang', 'body', '["go","web"]', 'published', 'post', 'id')
+	`)
+	require.NoError(t, err)
+
+	repo := sqlite.NewContentRepository(db)
+
+	contents, err := repo.GetRelatedByTags(context.Background(), 1, []string{"go", "web"}, "post", "en", 10)
+	require.NoError(t, err)
+	require.Len(t, contents, 2)
+	assert.Equal(t, "TwoShared", contents[0].Title, "post with most shared tags ranks first")
+	assert.Equal(t, "OneShared", contents[1].Title, "post with fewer shared tags ranks after")
+}
+
+func TestContentRepository_GetRelatedByTags_EmptyTags(t *testing.T) {
+	db := setupContentTestDB(t)
+	defer teardownContentTestDB(t, db)
+
+	_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type, language) VALUES (1, 'A', 'a', 'body', '["go"]', 'published', 'post', 'en')`)
+	require.NoError(t, err)
+
+	repo := sqlite.NewContentRepository(db)
+	contents, err := repo.GetRelatedByTags(context.Background(), 1, []string{}, "post", "en", 10)
+
+	require.NoError(t, err)
+	assert.Empty(t, contents)
+}
+
+func TestContentRepository_GetRelatedByTags_NullTags(t *testing.T) {
+	db := setupContentTestDB(t)
+	defer teardownContentTestDB(t, db)
+
+	_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+		INSERT INTO content_items (id, user_id, title, slug, content, tags, status, post_type, language) VALUES
+		(1, 1, 'NullTags', 'null-tags', 'body', NULL, 'published', 'post', 'en'),
+		(2, 1, 'Tagged', 'tagged', 'body', '["go"]', 'published', 'post', 'en')
+	`)
+	require.NoError(t, err)
+
+	repo := sqlite.NewContentRepository(db)
+	contents, err := repo.GetRelatedByTags(context.Background(), 1, []string{"go"}, "post", "en", 10)
+
+	require.NoError(t, err)
+	assert.Len(t, contents, 1)
+	assert.Equal(t, "Tagged", contents[0].Title)
+}
+
+func TestContentRepository_GetLatestByPostType(t *testing.T) {
+	db := setupContentTestDB(t)
+	defer teardownContentTestDB(t, db)
+
+	_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+		INSERT INTO content_items (id, user_id, title, slug, content, tags, status, post_type, language, created_at) VALUES
+		(1, 1, 'Source', 'source', 'body', '["go"]', 'published', 'post', 'en', '2026-01-05T00:00:00Z'),
+		(2, 1, 'Newer', 'newer', 'body', '["go"]', 'published', 'post', 'en', '2026-01-04T00:00:00Z'),
+		(3, 1, 'Oldest', 'oldest', 'body', '["go"]', 'published', 'post', 'en', '2026-01-01T00:00:00Z'),
+		(4, 1, 'WrongType', 'wrong-type', 'body', '["go"]', 'published', 'page', 'en', '2026-01-03T00:00:00Z'),
+		(5, 1, 'WrongLang', 'wrong-lang', 'body', '["go"]', 'published', 'post', 'id', '2026-01-03T00:00:00Z'),
+		(6, 1, 'Draft', 'draft', 'body', '["go"]', 'draft', 'post', 'en', '2026-01-03T00:00:00Z')
+	`)
+	require.NoError(t, err)
+
+	repo := sqlite.NewContentRepository(db)
+	contents, err := repo.GetLatestByPostType(context.Background(), 1, "post", "en", 10)
+
+	require.NoError(t, err)
+	require.Len(t, contents, 2)
+	assert.Equal(t, "Newer", contents[0].Title, "newest published first")
+	assert.Equal(t, "Oldest", contents[1].Title)
+}

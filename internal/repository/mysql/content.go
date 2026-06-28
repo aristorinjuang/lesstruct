@@ -1149,6 +1149,119 @@ func (r *ContentRepository) TranslationGroupExists(
 	return exists, nil
 }
 
+// GetRelatedByTags returns published content of the same post type and language
+// that shares at least one tag with tags, excluding excludeID. Results are ranked
+// by the number of shared tags (descending) then by recency. An empty tags slice
+// yields no rows.
+func (r *ContentRepository) GetRelatedByTags(
+	ctx context.Context,
+	excludeID int,
+	tags []string,
+	postType string,
+	language string,
+	limit int,
+) ([]*contentdomain.Content, error) {
+	if len(tags) == 0 {
+		return []*contentdomain.Content{}, nil
+	}
+
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	if len(tags) > 10 {
+		tags = tags[:10]
+	}
+
+	tagJSONs := make([]string, len(tags))
+	for i, t := range tags {
+		tagJSONs[i] = fmt.Sprintf("%q", t)
+	}
+
+	orClauses := make([]string, len(tagJSONs))
+	for i := range tagJSONs {
+		orClauses[i] = "JSON_CONTAINS(ci.tags, ?)"
+	}
+	ifTerms := make([]string, len(tagJSONs))
+	for i := range tagJSONs {
+		ifTerms[i] = "IF(JSON_CONTAINS(ci.tags, ?),1,0)"
+	}
+
+	whereTags := "(" + strings.Join(orClauses, " OR ") + ")"
+	overlapExpr := strings.Join(ifTerms, " + ")
+
+	query := `
+		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
+		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
+		       ci.created_at, ci.updated_at,
+		       COALESCE(u.name, u.username) as author, u.username
+		FROM content_items ci
+		LEFT JOIN users u ON ci.user_id = u.id
+		WHERE ` + whereTags + `
+		  AND ci.status = 'published' AND ci.post_type = ? AND ci.language = ? AND ci.id <> ?
+		ORDER BY (` + overlapExpr + `) DESC, ci.created_at DESC
+		LIMIT ?
+	`
+
+	args := make([]any, 0, len(tagJSONs)*2+4)
+	for _, tj := range tagJSONs {
+		args = append(args, tj)
+	}
+	args = append(args, postType, language, excludeID)
+	for _, tj := range tagJSONs {
+		args = append(args, tj)
+	}
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get related content by tags: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanContentRows(rows)
+}
+
+// GetLatestByPostType returns the most recently created published content of the
+// given post type and language, excluding excludeID.
+func (r *ContentRepository) GetLatestByPostType(
+	ctx context.Context,
+	excludeID int,
+	postType string,
+	language string,
+	limit int,
+) ([]*contentdomain.Content, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
+		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
+		       ci.created_at, ci.updated_at,
+		       COALESCE(u.name, u.username) as author, u.username
+		FROM content_items ci
+		LEFT JOIN users u ON ci.user_id = u.id
+		WHERE ci.status = 'published' AND ci.post_type = ? AND ci.language = ? AND ci.id <> ?
+		ORDER BY ci.created_at DESC
+		LIMIT ?
+	`, postType, language, excludeID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest content by post type: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanContentRows(rows)
+}
+
 // NewContentRepository creates a new content repository.
 func NewContentRepository(db *sql.DB) *ContentRepository {
 	return &ContentRepository{

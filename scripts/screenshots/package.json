@@ -1,0 +1,13 @@
+{
+  "name": "lesstruct-docs-screenshots",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Captures Lesstruct admin and content-site screenshots (light + dark) for the docs site and README.",
+  "scripts": {
+    "capture": "node capture.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

@@ -135,6 +135,7 @@ type ContentService interface {
 	GetPublishedByTag(ctx context.Context, tag string, limit int, offset int) ([]*contentdomain.Content, error)
 	GetCommentsForContent(ctx context.Context, contentID int) ([]*contentdomain.Comment, error)
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
+	GetRelated(ctx context.Context, id int, limit int) ([]*contentdomain.Content, error)
 }
 
 var languageNames = map[string]string{
@@ -335,37 +336,13 @@ func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) 
 	posts := make([]tpl.PostItem, 0, len(contents))
 	var ogImage string
 	for _, c := range contents {
-		if c.PostType != "post" {
+		if c.PostType != "post" || c.Language != primaryLang {
 			continue
 		}
-		if c.Language != primaryLang {
-			continue
-		}
-		imageURL := seo.ExtractImageURL(c.Content)
-		if imageURL != "" && ogImage == "" {
+		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
-		thumbURL, imageSrcset, imageSizes := h.resolvePostImage(imageURL)
-
-		var postAuthorAvatarURL string
-		if h.userProvider != nil && c.Username != "" {
-			if user, userErr := h.userProvider.GetUserByUsername(r.Context(), c.Username); userErr == nil && user != nil {
-				postAuthorAvatarURL = user.ProfilePicture
-			}
-		}
-
-		posts = append(posts, tpl.PostItem{
-			Slug:            c.Slug,
-			Title:           c.Title,
-			MetaDescription: c.MetaDescription,
-			ImageURL:        thumbURL,
-			ImageSrcset:     imageSrcset,
-			ImageSizes:      imageSizes,
-			Author:          c.Author,
-			Username:        c.Username,
-			AuthorAvatarURL: postAuthorAvatarURL,
-			CreatedAt:       formatDate(c.CreatedAt),
-		})
+		posts = append(posts, h.buildPostItem(r.Context(), c))
 	}
 
 	currentPath := "/"
@@ -385,6 +362,31 @@ func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.templates.RenderIndex(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (h *ContentPageHandler) buildPostItem(ctx context.Context, c *contentdomain.Content) tpl.PostItem {
+	imageURL := seo.ExtractImageURL(c.Content)
+	thumbURL, imageSrcset, imageSizes := h.resolvePostImage(imageURL)
+
+	var authorAvatarURL string
+	if h.userProvider != nil && c.Username != "" {
+		if user, err := h.userProvider.GetUserByUsername(ctx, c.Username); err == nil && user != nil {
+			authorAvatarURL = user.ProfilePicture
+		}
+	}
+
+	return tpl.PostItem{
+		Slug:            c.Slug,
+		Title:           c.Title,
+		MetaDescription: c.MetaDescription,
+		ImageURL:        thumbURL,
+		ImageSrcset:     imageSrcset,
+		ImageSizes:      imageSizes,
+		Author:          c.Author,
+		Username:        c.Username,
+		AuthorAvatarURL: authorAvatarURL,
+		CreatedAt:       formatDate(c.CreatedAt),
 	}
 }
 
@@ -446,6 +448,15 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	relatedItems := make([]tpl.PostItem, 0)
+	if related, err := h.contentService.GetRelated(r.Context(), content.ID, 5); err != nil {
+		log.Printf("failed to get related content for content %d: %v", content.ID, err)
+	} else {
+		for _, c := range related {
+			relatedItems = append(relatedItems, h.buildPostItem(r.Context(), c))
+		}
+	}
+
 	var authorAvatarURL string
 	if h.userProvider != nil && content.Username != "" {
 		if user, userErr := h.userProvider.GetUserByUsername(r.Context(), content.Username); userErr == nil && user != nil {
@@ -478,6 +489,7 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 		AllowComments:         content.AllowComments,
 		CustomFields:          content.CustomFields,
 		CustomFieldsFormatted: formattedFields,
+		Related:               relatedItems,
 		Comments:              commentItems,
 	}
 

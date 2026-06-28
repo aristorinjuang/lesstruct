@@ -1,0 +1,96 @@
+{{- /*
+   landing.html — project override of hugo-book's landing layout.
+
+   Inherited block structure from the theme's landing.html: the sidebar
+   (menu-container), TOC, and footer are blanked; the header carries the home
+   nav. Only `main` is redefined, to render a hero + a curated Features grid
+   above the page's markdown content (the Quick start / CLI / Where to go next
+   sections that live in site/content/_index.md).
+
+   The Features grid is a curated subset of docs/features.md (the canonical
+   catalog). Each card links to the matching features.md section. When feature
+   wording changes in features.md, update the card copy here too.
+*/ -}}
+
+{{ define "menu-container" }}
+<!-- -->
+{{ end }}
+{{ define "toc-container" }}
+<!-- -->
+{{ end }}
+{{ define "footer" }}
+<!-- -->
+{{ end }}
+
+{{ define "header" }}
+<nav class="landing-nav">
+  {{ partial "docs/menu-hugo" (dict "Page" .Page "Menu" .Site.Menus.home) }}
+</nav>
+{{ end }}
+
+{{ define "main" }}
+<section class="landing-hero">
+  <div class="landing-hero-inner">
+    <p class="landing-eyebrow">Open-source CMS powered by Go</p>
+    <h1>{{ .Title | default .Site.Title }}</h1>
+    <p class="landing-tagline">{{ .Description | default .Site.Params.description }}</p>
+    <div class="landing-cta">
+      <a class="landing-btn landing-btn--primary" href="#quick-start">Quick start</a>
+      <a class="landing-btn" href="/docs/features/">Features</a>
+      <a class="landing-btn" href="/tour/">See it in action</a>
+    </div>
+    {{ partial "screenshot.html" (dict "src" "admin-hero" "alt" "The Lesstruct admin panel: rich-text editor with custom fields and an SEO panel." "class" "hero" "Page" .) }}
+  </div>
+</section>
+
+<section class="landing-features" id="features">
+  <h2>Features</h2>
+  <p class="landing-section-lede">
+    A single binary runs the whole CMS. Configure content types and fields in <code>config.toml</code>,
+    extend with WebAssembly, and drive it from the terminal.
+    <a href="/docs/features/">See the full list&nbsp;&rarr;</a>
+  </p>
+  <div class="landing-feature-grid">
+    <a class="feature-card" href="/docs/features/#deploy-run">
+      <h3>One binary, no Docker</h3>
+      <p>A static Go binary plus embedded SQLite. No runtime, no container, no <code>node_modules</code> in production.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#content-authoring">
+      <h3>Custom post types &amp; fields</h3>
+      <p>Define post types and fields in <code>config.toml</code>. The admin form, storage, and queries all read from it.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#extensibility">
+      <h3>WebAssembly plugins</h3>
+      <p>Drop a <code>.wasm</code> into <code>plugins/</code> to hook <code>before_save</code>, <code>after_create</code>, <code>after_publish</code>.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#media-images">
+      <h3>Media &amp; WebP</h3>
+      <p>A media library with automatic WebP conversion, configurable thumbnail variants, and dedup.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#ai">
+      <h3>AI built in</h3>
+      <p>Image generation, text enhancement, and translation surfaced as buttons. Bring your own key.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#internationalization">
+      <h3>i18n by default</h3>
+      <p>Multilingual content with translation groups and <code>hreflang</code> in the sitemap.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#themes-rendering">
+      <h3>SSR &amp; one default theme</h3>
+      <p>Server-rendered and SEO-friendly out of the box; customize via <code>THEME_DIR</code>.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#api-automation">
+      <h3>REST API &amp; CLI</h3>
+      <p>A versioned <code>/api/v1</code> with API keys, plus <code>lesstruct-cli</code> for agents and terminals.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#users-roles-security">
+      <h3>Roles &amp; security</h3>
+      <p>Three roles, JWT auth, failed-login lockout, Argon2id, rate limits, and security headers.</p>
+    </a>
+  </div>
+</section>
+
+<article class="markdown book-article landing-content">
+  {{- .Content -}}
+</article>
+{{ end }}

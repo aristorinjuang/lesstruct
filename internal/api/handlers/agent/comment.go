@@ -40,6 +40,7 @@ type updateCommentStatusRequest struct {
 type CommentService interface {
 	GetByID(ctx context.Context, id int) (*contentdomain.Content, error)
 	SubmitComment(ctx context.Context, contentID int, userID int, req contentdomain.CreateCommentRequest) (*contentdomain.Comment, error)
+	GetCommentsForContent(ctx context.Context, contentID int) ([]*contentdomain.Comment, error)
 	GetCommentsForModeration(ctx context.Context, contentID int) ([]*contentdomain.Comment, error)
 	GetComment(ctx context.Context, commentID int) (*contentdomain.Comment, error)
 	UpdateCommentStatus(ctx context.Context, commentID int, status contentdomain.CommentStatus) error
@@ -164,10 +165,13 @@ func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, NewCommentResponse(comment))
 }
 
-// List handles GET /api/v1/content/{id}/comments. It returns every comment on
-// the content (any moderation status — the management view), scoped by the same
-// visibility model as Create (published, or owned by the caller, or Admin; else
-// 404). The data array is always present, even when empty.
+// List handles GET /api/v1/content/{id}/comments. An Admin sees the moderation
+// view (every comment, any status — mirroring the browser realm's admin-gated
+// moderation queue); any other caller sees only approved comments, mirroring the
+// public GET /api/v1/public/content_items/{slug}/comments. Both are scoped by the
+// same visibility model as Create (published, or owned by the caller, or Admin;
+// else 404). Comments-disabled content yields an empty list for non-admins
+// (admins still moderate); the data array is always present, even when empty.
 func (h *CommentHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID, ok := authenticatedUserID(r)
 	if !ok {
@@ -194,7 +198,25 @@ func (h *CommentHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	comments, err := h.commentService.GetCommentsForModeration(r.Context(), contentID)
+	// Comments are disabled: non-moderators see no queue — mirrors the public
+	// GET /api/v1/public/content_items/{slug}/comments, which short-circuits to an
+	// empty list when !AllowComments. Admins still moderate regardless, matching the
+	// browser realm's moderation view (which ignores AllowComments).
+	if !content.AllowComments && role != contentdomain.RoleAdmin {
+		response.SuccessList(w, []CommentProjection{}, nil)
+		return
+	}
+
+	// Admin sees the full moderation queue (every status); a non-admin sees only
+	// approved comments, so the pending/spam/rejected queue and its author/role
+	// metadata are never leaked to a Commentator-level key. Mirrors the browser
+	// realm, where the moderation queue sits behind ModerationOnly (admin-only).
+	var comments []*contentdomain.Comment
+	if role == contentdomain.RoleAdmin {
+		comments, err = h.commentService.GetCommentsForModeration(r.Context(), contentID)
+	} else {
+		comments, err = h.commentService.GetCommentsForContent(r.Context(), contentID)
+	}
 	if err != nil {
 		h.logger.Error("agent list comments failed: contentID=%d err=%v", contentID, err)
 		handleError(w, err)
@@ -209,14 +231,13 @@ func (h *CommentHandler) List(w http.ResponseWriter, r *http.Request) {
 	response.SuccessList(w, projections, nil)
 }
 
-// Delete handles DELETE /api/v1/content/{id}/comments/{commentId}. An Admin may
-// delete any comment (DeleteComment); any other caller may delete only their own
-// (DeleteOwnComment, which returns ErrCommentNotFound — a clean 404 with no
+// Delete handles DELETE /api/v1/content/{id}/comments/{commentId}. The path
+// content id is bound to the comment (a mismatch — the comment belongs to other
+// content — is rejected with a clean 404, no disclosure), then an Admin may
+// delete any comment (DeleteComment) while any other caller may delete only
+// their own (DeleteOwnComment, which returns ErrCommentNotFound — a 404 with no
 // ownership disclosure — when the comment is missing or belongs to someone
-// else). The content id is path context (the route is nested to avoid colliding
-// with the browser realm's /api/v1/comments/{id}); the delete operates by
-// comment id, matching the domain's comment-keyed operations and the browser
-// moderation surface. Success is 204 No Content.
+// else). Success is 204 No Content.
 func (h *CommentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID, ok := authenticatedUserID(r)
 	if !ok {
@@ -233,6 +254,25 @@ func (h *CommentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	commentID, err := strconv.Atoi(r.PathValue("commentId"))
 	if err != nil || commentID <= 0 {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid comment ID", nil)
+		return
+	}
+
+	// Bind the path content id to the comment so the /content/{id}/comments/{commentId}
+	// nesting is honest: a comment that belongs to different content yields a clean 404
+	// (no disclosure), the same way DeleteOwnComment hides ownership below.
+	existing, err := h.commentService.GetComment(r.Context(), commentID)
+	if err != nil {
+		h.logger.Error(
+			"agent delete comment bind failed: contentID=%d commentID=%d err=%v",
+			contentID,
+			commentID,
+			err,
+		)
+		handleError(w, err)
+		return
+	}
+	if existing.ContentID != contentID {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Comment not found", nil)
 		return
 	}
 
@@ -258,12 +298,12 @@ func (h *CommentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateStatus handles PUT /api/v1/content/{id}/comments/{commentId}/status. It
-// is admin-only (a non-admin API key gets 403 FORBIDDEN) and delegates to
+// is admin-only (a non-admin API key gets 403 FORBIDDEN). The path content id is
+// bound to the comment (a mismatch yields a clean 404), then it delegates to
 // UpdateCommentStatus, which validates the status (a valid
 // contentdomain.CommentStatus — pending/approved/rejected/spam; an unknown value
 // returns ErrInvalidCommentStatus → 400 VALIDATION_ERROR). The updated comment
-// is returned so the caller sees the new status. As with Delete, the content id
-// is path context and the update operates by comment id.
+// is returned so the caller sees the new status.
 func (h *CommentHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	role := authenticatedRole(r)
 	if role != contentdomain.RoleAdmin {
@@ -285,6 +325,24 @@ func (h *CommentHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	var req updateCommentStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid request body", nil)
+		return
+	}
+
+	// Bind the path content id to the comment (see Delete): a comment that belongs to
+	// other content is rejected with a clean 404 before the status is changed.
+	existing, err := h.commentService.GetComment(r.Context(), commentID)
+	if err != nil {
+		h.logger.Error(
+			"agent update comment status bind failed: contentID=%d commentID=%d err=%v",
+			contentID,
+			commentID,
+			err,
+		)
+		handleError(w, err)
+		return
+	}
+	if existing.ContentID != contentID {
+		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Comment not found", nil)
 		return
 	}
 

@@ -34,6 +34,7 @@ func setupHandler(t *testing.T, mockService *mocks.MockContentService) *contentp
 
 func setupHandlerWithLanguages(t *testing.T, mockService *mocks.MockContentService, languages []string) *contentpage.ContentPageHandler {
 	t.Helper()
+	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
@@ -42,12 +43,14 @@ func setupHandlerWithLanguages(t *testing.T, mockService *mocks.MockContentServi
 
 func setupHandlerWithResolver(t *testing.T, mockService *mocks.MockContentService, mockResolver *mocks.MockPostTypeResolver) *contentpage.ContentPageHandler {
 	t.Helper()
+	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
 	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"})
 }
 
 func setupHandlerWithLanguagesAndResolver(t *testing.T, mockService *mocks.MockContentService, languages []string, mockResolver *mocks.MockPostTypeResolver) *contentpage.ContentPageHandler {
 	t.Helper()
+	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
 	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages)
 }
@@ -2261,6 +2264,7 @@ func TestServeContent_SystemFieldSelectFormatting(t *testing.T) {
 
 func setupAuthorHandler(t *testing.T, mockService *mocks.MockContentService, mockUserProvider *mocks.MockUserProvider, mockUserFieldResolver *mocks.MockUserFieldResolver) *contentpage.ContentPageHandler {
 	t.Helper()
+	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
@@ -2777,4 +2781,67 @@ func TestResolvePostImage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServeContent_RelatedPosts(t *testing.T) {
+	tiptapJSON := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`
+	mockService := new(mocks.MockContentService)
+	mockService.On("GetPublishedBySlugAny", mock.Anything, "source-post").Return(&contentdomain.Content{
+		ID:       7,
+		Slug:     "source-post",
+		Title:    "Source Post",
+		Content:  tiptapJSON,
+		Tags:     []string{"go", "web"},
+		PostType: "post",
+		Language: "en",
+	}, nil)
+	mockService.On("GetRelated", mock.Anything, 7, 5).Return([]*contentdomain.Content{
+		{Slug: "related-one", Title: "Related One", Content: tiptapJSON, Language: "en"},
+		{Slug: "related-two", Title: "Related Two", Content: tiptapJSON, Language: "en"},
+	}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandler(t, mockService)
+
+	req := httptest.NewRequest(http.MethodGet, "/source-post", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, `class="related-posts`)
+	assert.Contains(t, body, `aria-label="ui.related_posts"`)
+	assert.Contains(t, body, ">ui.related_posts<")
+	assert.Contains(t, body, `href="/related-one"`)
+	assert.Contains(t, body, ">Related One<")
+	assert.Contains(t, body, `href="/related-two"`)
+	assert.Contains(t, body, ">Related Two<")
+	mockService.AssertExpectations(t)
+}
+
+func TestServeContent_RelatedPostsEmpty(t *testing.T) {
+	tiptapJSON := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`
+	mockService := new(mocks.MockContentService)
+	mockService.On("GetPublishedBySlugAny", mock.Anything, "lonely-post").Return(&contentdomain.Content{
+		ID:      8,
+		Slug:    "lonely-post",
+		Title:   "Lonely Post",
+		Content: tiptapJSON,
+		Tags:    []string{},
+	}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandler(t, mockService)
+
+	req := httptest.NewRequest(http.MethodGet, "/lonely-post", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.NotContains(t, body, `class="related-posts`)
+	assert.NotContains(t, body, "ui.related_posts")
+	mockService.AssertExpectations(t)
 }

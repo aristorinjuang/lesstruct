@@ -1,0 +1,18 @@
+{{- /*
+   inject/head.html — hugo-book's head injection hook (called from baseof.html
+   after docs/html-head). We add OpenGraph + Twitter Card image tags pointing
+   at the shared OG card, so shared links on GitHub/Twitter/HN preview the
+   product instead of showing no preview. The theme's html-head already emits
+   the basic og:title/og:type via _internal/opengraph.html; we only add the
+   image and twitter:card here. No theme override, no drift on upgrade.
+*/ -}}
+
+{{- $ogImage := "/screenshots/og-card.png" -}}
+{{- $url := .Permalink -}}
+
+<meta property="og:image" content="{{ $ogImage | absURL }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="{{ $url }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="{{ $ogImage | absURL }}">

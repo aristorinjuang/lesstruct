@@ -228,11 +228,13 @@ The docs under `docs/` are contracts, not afterthoughts. When you change code th
 | `internal/api/template/`, `internal/api/contentpage/`, theme CSS/JS contracts | `docs/theme-development.md` AND `skills/lesstruct-theme-development/references/theme-development.md` (user-facing snapshot) |
 | `internal/plugin/` (SDK/hooks/capabilities), `pkg/sdk/` | `docs/plugin-development.md`, `docs/plugin-capabilities.md` AND the matching snapshots under `skills/lesstruct-plugin-development/references/` |
 | `internal/api/handlers/agent/`, `internal/api/middleware/apikey.go`, `/api/v1` route shape, response envelope | `docs/api-reference.md` |
+| A user-facing feature added, removed, or behavior-changed (UI, CLI, or config) | `docs/features.md` (canonical catalog) AND, if it is in the homepage's curated subset, the card copy in `site/layouts/landing.html` |
 | `site/`, `site/themes/hugo-book/`, `.github/workflows/docs.yml` | the `site/` build (the docs site renders from `docs/` and `skills/*/references/` via Hugo mounts — see "Docs site" below) |
 
 Rules:
 - If you cannot tell whether a doc applies, read its first section — each doc states its scope at the top.
 - For theme/plugin docs, the `docs/` copy is developer-facing (source-tree paths) and the `skills/.../references/` copy is user-facing (binary install paths). Keep both in sync.
+- `docs/features.md` is the canonical feature catalog. The homepage grid (`site/layouts/landing.html`) and `README.md` curate subsets from it — keep the three in sync when feature wording changes.
 - If the change is large enough to need its own commit, the doc update goes in the SAME commit as the code change.
 
 ### Docs site
@@ -240,6 +242,8 @@ Rules:
 The `site/` directory is the Hugo project that publishes the docs at `lesstruct.dev` (GitHub Pages). It does **not** duplicate the source — `site/hugo.yaml` mounts `docs/*.md` and `skills/<name>/references/*.md` directly, so editing a file in `docs/` is the only edit needed for the rendered site.
 
 Before pushing changes that affect `docs/`, `skills/`, or `site/`, run `make docs-serve` locally to spot-check rendering. CI (`/.github/workflows/docs.yml`) builds and deploys the site on every push to `main` that touches the relevant paths.
+
+Screenshots in docs are rendered with the `screenshot` shortcode (`{{< screenshot src="name" alt="..." caption="..." >}}`), which emits a `<picture>` with light + dark variants. The PNGs live in `site/static/screenshots/` (served at `/screenshots/`), with a `docs/assets/screenshots/` mirror for the GitHub `README.md`. Regenerate them with `make screenshots` against a running instance (see `scripts/screenshots/README.md`). The shortcode fails the docs build if a referenced PNG is missing — so after any admin-UI or default-theme change, re-run `make screenshots` and commit the new PNGs in the same change.
 
 Do not edit files inside `site/themes/hugo-book/` — they are a vendored copy of [`alex-shpak/hugo-book`](https://github.com/alex-shpak/hugo-book) at tag `v12.0.0`. To upgrade the theme, replace the directory contents from a newer release tag.
 

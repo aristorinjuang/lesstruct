@@ -812,7 +812,11 @@ textarea.form-control {
 
 .custom-fields-list {
   display: grid;
-  gap: var(--space-3) var(--space-5);
+  gap: 0;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .custom-fields-list dt {
@@ -822,6 +826,16 @@ textarea.form-control {
 
 .custom-fields-list dd {
   color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.custom-fields-list dd:last-of-type {
+  border-bottom: none;
+}
+
+.custom-fields-list dt,
+.custom-fields-list dd {
+  padding: var(--space-3) var(--space-4);
 }
 
 .comments-section {
@@ -1002,6 +1016,18 @@ textarea.form-control {
 @media (min-width: 768px) {
   .custom-fields-list {
     grid-template-columns: auto 1fr;
+  }
+
+  .custom-fields-list dt {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .custom-fields-list dt:last-of-type {
+    border-bottom: none;
+  }
+
+  .custom-fields-list dd {
+    border-left: 1px solid var(--color-border);
   }
 }
 

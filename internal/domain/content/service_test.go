@@ -4833,3 +4833,205 @@ func TestService_Create_PublishedRunsPublishPipeline(t *testing.T) {
 		assert.Contains(t, fired, plugin.HookAfterCreate, "AfterCreate fires for draft")
 	})
 }
+
+func TestService_GetRelated(t *testing.T) {
+	tests := []struct {
+		name        string
+		id          int
+		limit       int
+		setupMock   func(*mocks.MockRepository)
+		expectedIDs []int
+		expectedErr error
+	}{
+		{
+			name:  "tag overlap returns enough, no fallback",
+			id:    1,
+			limit: 3,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     []string{"go", "tutorial"},
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go", "tutorial"}, "post", "en", 3).Return([]*content.Content{
+					{ID: 2, Title: "Related 2"},
+					{ID: 3, Title: "Related 3"},
+					{ID: 4, Title: "Related 4"},
+				}, nil)
+			},
+			expectedIDs: []int{2, 3, 4},
+			expectedErr: nil,
+		},
+		{
+			name:  "tag overlap under-filled, backfill dedupes and fills to limit",
+			id:    1,
+			limit: 5,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     []string{"go"},
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*content.Content{
+					{ID: 2, Title: "Related 2"},
+				}, nil)
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return([]*content.Content{
+					{ID: 2, Title: "Related 2"},
+					{ID: 1, Title: "Source"},
+					{ID: 3, Title: "Latest 3"},
+					{ID: 4, Title: "Latest 4"},
+					{ID: 5, Title: "Latest 5"},
+					{ID: 6, Title: "Latest 6"},
+				}, nil)
+			},
+			expectedIDs: []int{2, 3, 4, 5, 6},
+			expectedErr: nil,
+		},
+		{
+			name:  "source has no tags, backfill fills entirely",
+			id:    1,
+			limit: 5,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     nil,
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, mock.Anything, "post", "en", 5).Return([]*content.Content{}, nil)
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return([]*content.Content{
+					{ID: 2, Title: "Latest 2"},
+					{ID: 3, Title: "Latest 3"},
+					{ID: 4, Title: "Latest 4"},
+					{ID: 5, Title: "Latest 5"},
+					{ID: 6, Title: "Latest 6"},
+				}, nil)
+			},
+			expectedIDs: []int{2, 3, 4, 5, 6},
+			expectedErr: nil,
+		},
+		{
+			name:  "limit clamped to default 5 when zero",
+			id:    1,
+			limit: 0,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     []string{"go"},
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*content.Content{
+					{ID: 2, Title: "Related 2"},
+					{ID: 3, Title: "Related 3"},
+					{ID: 4, Title: "Related 4"},
+					{ID: 5, Title: "Related 5"},
+					{ID: 6, Title: "Related 6"},
+				}, nil)
+			},
+			expectedIDs: []int{2, 3, 4, 5, 6},
+			expectedErr: nil,
+		},
+		{
+			name:  "limit clamped to max 20 when above",
+			id:    1,
+			limit: 100,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     []string{"go"},
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 20).Return([]*content.Content{
+					{ID: 2, Title: "Related 2"},
+				}, nil)
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 20).Return([]*content.Content{}, nil)
+			},
+			expectedIDs: []int{2},
+			expectedErr: nil,
+		},
+		{
+			name:  "GetByID error propagates",
+			id:    999,
+			limit: 5,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 999).Return(nil, content.ErrContentNotFound)
+			},
+			expectedIDs: nil,
+			expectedErr: content.ErrContentNotFound,
+		},
+		{
+			name:  "GetRelatedByTags error propagates",
+			id:    1,
+			limit: 5,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     []string{"go"},
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return(nil, errors.New("db failure"))
+			},
+			expectedIDs: nil,
+			expectedErr: errors.New("failed to get related content by tags"),
+		},
+		{
+			name:  "GetLatestByPostType error propagates",
+			id:    1,
+			limit: 5,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     []string{"go"},
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*content.Content{
+					{ID: 2, Title: "Related 2"},
+				}, nil)
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return(nil, errors.New("db failure"))
+			},
+			expectedIDs: nil,
+			expectedErr: errors.New("failed to get latest content by post type"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &mocks.MockRepository{}
+			tt.setupMock(mockRepo)
+
+			service := content.NewService(mockRepo, nil, nil)
+			result, err := service.GetRelated(context.Background(), tt.id, tt.limit)
+
+			if tt.expectedErr != nil {
+				require.Error(t, err, "Service.GetRelated() expected error, got nil")
+				assert.True(t, errors.Is(err, tt.expectedErr) || containsErrorSubstring(err.Error(), tt.expectedErr.Error()), "Service.GetRelated() error = %v, wantErr %v", err, tt.expectedErr)
+				mockRepo.AssertExpectations(t)
+				return
+			}
+
+			require.NoError(t, err, "Service.GetRelated() unexpected error")
+			require.Len(t, result, len(tt.expectedIDs), "Service.GetRelated() result length")
+
+			actualIDs := make([]int, len(result))
+			for i, c := range result {
+				actualIDs[i] = c.ID
+			}
+			assert.Equal(t, tt.expectedIDs, actualIDs, "Service.GetRelated() result IDs")
+
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}

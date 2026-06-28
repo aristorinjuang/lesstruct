@@ -19,12 +19,30 @@
 {{.Body}}
 </div>
 {{if .CustomFieldsFormatted}}
-<section class="custom-fields" aria-label="Custom Fields">
+<section class="custom-fields content-wrapper" aria-label="Custom Fields">
 <dl class="custom-fields-list">
 {{range .CustomFieldsFormatted}}<dt>{{.Label}}</dt>
 <dd>{{.Value}}</dd>
 {{end}}
 </dl>
+</section>
+{{end}}
+{{if .Related}}
+<section class="related-posts content-wrapper" aria-label="{{t .Lang "ui.related_posts"}}">
+<h2>{{t .Lang "ui.related_posts"}}</h2>
+<div class="posts-grid">
+{{range .Related}}
+<article class="post-card">
+<a href="/{{.Slug}}">
+{{if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+<h3>{{.Title}}</h3>
+{{if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
+<time>{{.CreatedAt}}</time>
+{{if .Author}}{{if .AuthorAvatarURL}}<img src="{{.AuthorAvatarURL}}" class="author-avatar" alt="{{.Author}}">{{end}}<span class="author">{{t $.Lang "ui.by_author"}} {{.Author}}</span>{{end}}
+</a>
+</article>
+{{end}}
+</div>
 </section>
 {{end}}
 {{if .AllowComments}}

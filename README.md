@@ -8,6 +8,35 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/aristorinjuang/lesstruct/ci.yml?branch=main)](https://github.com/aristorinjuang/lesstruct/actions)
 [![Docs](https://img.shields.io/badge/docs-lesstruct.dev-blue)](https://lesstruct.dev/)
 
+<table>
+  <tr>
+    <td width="33.3%" align="center">
+      <a href="https://lesstruct.dev/tour/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/admin-hero-dark.png">
+          <img alt="The Lesstruct admin panel" src="docs/assets/screenshots/admin-hero-light.png" width="100%">
+        </picture>
+      </a>
+      <br><sub>Admin panel</sub>
+    </td>
+    <td width="33.3%" align="center">
+      <a href="https://lesstruct.dev/tour/">
+        <img alt="The rendered content site" src="docs/assets/screenshots/content-site-hero-light.png" width="100%">
+      </a>
+      <br><sub>Content site</sub>
+    </td>
+    <td width="33.3%" align="center">
+      <a href="https://lesstruct.dev/docs/features/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dashboard-dark.png">
+          <img alt="The admin dashboard" src="docs/assets/screenshots/dashboard-light.png" width="100%">
+        </picture>
+      </a>
+      <br><sub>Dashboard</sub>
+    </td>
+  </tr>
+</table>
+
 ## Why Lesstruct?
 
 - **One binary, no Docker.** A single static Go binary runs the whole CMS. SQLite is built in. No runtime, no container, no `node_modules` in production.
@@ -25,7 +54,7 @@ export JWT_SECRET="$(head -c 48 /dev/urandom | base64)"
 lesstruct
 ```
 
-Open <http://localhost:8080/admin>, register the first account, and start publishing. The full configuration split between `config.toml` (content schema) and `.env` (deployment) is in [`docs/configuration.md`](docs/configuration.md).
+Open <http://localhost:8080/admin>, **sign in as `admin` / `admin`** and set a new password on first login, then start publishing. (Self-registration creates pending accounts an admin approves — it does not create the first admin.) The full configuration split between `config.toml` (content schema) and `.env` (deployment) is in [`docs/configuration.md`](docs/configuration.md).
 
 ## Installation
 

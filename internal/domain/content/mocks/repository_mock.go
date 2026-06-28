@@ -649,6 +649,92 @@ func (_c *MockRepository_GetByUser_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// GetLatestByPostType provides a mock function for the type MockRepository
+func (_mock *MockRepository) GetLatestByPostType(ctx context.Context, excludeID int, postType string, language string, limit int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, excludeID, postType, language, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetLatestByPostType")
+	}
+
+	var r0 []*content.Content
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, string, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, excludeID, postType, language, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, string, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, excludeID, postType, language, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*content.Content)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, string, string, int) error); ok {
+		r1 = returnFunc(ctx, excludeID, postType, language, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_GetLatestByPostType_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetLatestByPostType'
+type MockRepository_GetLatestByPostType_Call struct {
+	*mock.Call
+}
+
+// GetLatestByPostType is a helper method to define mock.On call
+//   - ctx context.Context
+//   - excludeID int
+//   - postType string
+//   - language string
+//   - limit int
+func (_e *MockRepository_Expecter) GetLatestByPostType(ctx any, excludeID any, postType any, language any, limit any) *MockRepository_GetLatestByPostType_Call {
+	return &MockRepository_GetLatestByPostType_Call{Call: _e.mock.On("GetLatestByPostType", ctx, excludeID, postType, language, limit)}
+}
+
+func (_c *MockRepository_GetLatestByPostType_Call) Run(run func(ctx context.Context, excludeID int, postType string, language string, limit int)) *MockRepository_GetLatestByPostType_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 int
+		if args[4] != nil {
+			arg4 = args[4].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetLatestByPostType_Call) Return(contents []*content.Content, err error) *MockRepository_GetLatestByPostType_Call {
+	_c.Call.Return(contents, err)
+	return _c
+}
+
+func (_c *MockRepository_GetLatestByPostType_Call) RunAndReturn(run func(ctx context.Context, excludeID int, postType string, language string, limit int) ([]*content.Content, error)) *MockRepository_GetLatestByPostType_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetPublished provides a mock function for the type MockRepository
 func (_mock *MockRepository) GetPublished(ctx context.Context, limit int, offset int) ([]*content.Content, error) {
 	ret := _mock.Called(ctx, limit, offset)
@@ -1225,6 +1311,98 @@ func (_c *MockRepository_GetPublishedPages_Call) Return(contents []*content.Cont
 }
 
 func (_c *MockRepository_GetPublishedPages_Call) RunAndReturn(run func(ctx context.Context) ([]*content.Content, error)) *MockRepository_GetPublishedPages_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetRelatedByTags provides a mock function for the type MockRepository
+func (_mock *MockRepository) GetRelatedByTags(ctx context.Context, excludeID int, tags []string, postType string, language string, limit int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, excludeID, tags, postType, language, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRelatedByTags")
+	}
+
+	var r0 []*content.Content
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, []string, string, string, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, excludeID, tags, postType, language, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, []string, string, string, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, excludeID, tags, postType, language, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*content.Content)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, []string, string, string, int) error); ok {
+		r1 = returnFunc(ctx, excludeID, tags, postType, language, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_GetRelatedByTags_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRelatedByTags'
+type MockRepository_GetRelatedByTags_Call struct {
+	*mock.Call
+}
+
+// GetRelatedByTags is a helper method to define mock.On call
+//   - ctx context.Context
+//   - excludeID int
+//   - tags []string
+//   - postType string
+//   - language string
+//   - limit int
+func (_e *MockRepository_Expecter) GetRelatedByTags(ctx any, excludeID any, tags any, postType any, language any, limit any) *MockRepository_GetRelatedByTags_Call {
+	return &MockRepository_GetRelatedByTags_Call{Call: _e.mock.On("GetRelatedByTags", ctx, excludeID, tags, postType, language, limit)}
+}
+
+func (_c *MockRepository_GetRelatedByTags_Call) Run(run func(ctx context.Context, excludeID int, tags []string, postType string, language string, limit int)) *MockRepository_GetRelatedByTags_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 []string
+		if args[2] != nil {
+			arg2 = args[2].([]string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 string
+		if args[4] != nil {
+			arg4 = args[4].(string)
+		}
+		var arg5 int
+		if args[5] != nil {
+			arg5 = args[5].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetRelatedByTags_Call) Return(contents []*content.Content, err error) *MockRepository_GetRelatedByTags_Call {
+	_c.Call.Return(contents, err)
+	return _c
+}
+
+func (_c *MockRepository_GetRelatedByTags_Call) RunAndReturn(run func(ctx context.Context, excludeID int, tags []string, postType string, language string, limit int) ([]*content.Content, error)) *MockRepository_GetRelatedByTags_Call {
 	_c.Call.Return(run)
 	return _c
 }

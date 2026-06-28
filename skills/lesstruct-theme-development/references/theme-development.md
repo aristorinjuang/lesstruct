@@ -331,6 +331,7 @@ the fields below.
 | `.AllowComments` | `bool` | Whether comments are enabled |
 | `.CustomFields` | `map[string]any` | Raw custom-field values keyed by name |
 | `.CustomFieldsFormatted` | `[]FormattedField` | Display-formatted custom fields (`.Label`, `.Value`) |
+| `.Related` | `[]PostItem` | Related posts (same post type & language, ranked by shared tags), rendered above the comments section; empty slice when none |
 | `.Comments` | `[]CommentItem` | Comments (`.Author`, `.Text`, `.CreatedAt`) |
 | `.LanguageLinks` | `[]LanguageLink` | Inherited via `LayoutData`; also rendered inside the article for translated posts |
 

@@ -75,6 +75,12 @@ outputFormats:
 
 menu:
   after:
+    - name: "Features"
+      url: "/docs/features/"
+      weight: 1
+    - name: "Tour"
+      url: "/tour/"
+      weight: 2
     - name: "GitHub"
       url: "https://github.com/aristorinjuang/lesstruct"
       weight: 10

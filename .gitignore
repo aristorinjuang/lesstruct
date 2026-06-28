@@ -7,5 +7,16 @@ data/
 node_modules/
 bin/
 .env
+.env.local
+.env.*.local
 *.cov
 *.out
+
+# Screenshot capture pipeline (Playwright). The captured PNGs themselves are
+# committed (site/static/screenshots/ and docs/assets/screenshots/) so the site
+# and README build without a capture run; only tooling state is ignored.
+scripts/screenshots/node_modules/
+scripts/screenshots/.auth/
+scripts/screenshots/.env.local
+scripts/screenshots/.env.*.local
+.playwright-mcp/

@@ -260,6 +260,7 @@ func TestCommentHandler_List(t *testing.T) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
 					ID: 5, UserID: 999, Status: contentdomain.StatusPublished, AllowComments: true,
 				}, nil)
+				// Admin sees the moderation queue: every status.
 				svc.EXPECT().GetCommentsForModeration(mock.Anything, 5).Return([]*contentdomain.Comment{
 					buildComment(1, 5, 11, contentdomain.CommentStatusApproved, "ok"),
 					buildComment(2, 5, 12, contentdomain.CommentStatusPending, "waiting"),
@@ -267,6 +268,25 @@ func TestCommentHandler_List(t *testing.T) {
 			},
 			wantStatus: http.StatusOK,
 			wantLen:    2,
+		},
+		{
+			name:      "success - non-admin sees only approved comments (no moderation queue)",
+			contentID: "5",
+			userID:    testUserID,
+			role:      "Commentator",
+			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
+					ID: 5, UserID: 999, Status: contentdomain.StatusPublished, AllowComments: true,
+				}, nil)
+				// GetCommentsForModeration must NOT be called — the non-admin path uses the
+				// approved-only reader, so the pending/spam queue and its author/role metadata
+				// are never exposed to a Commentator-level key.
+				svc.EXPECT().GetCommentsForContent(mock.Anything, 5).Return([]*contentdomain.Comment{
+					buildComment(1, 5, 11, contentdomain.CommentStatusApproved, "ok"),
+				}, nil)
+			},
+			wantStatus: http.StatusOK,
+			wantLen:    1,
 		},
 		{
 			name:      "success - empty list renders data as an empty array",
@@ -277,11 +297,44 @@ func TestCommentHandler_List(t *testing.T) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
 					ID: 5, UserID: testUserID, Status: contentdomain.StatusPublished, AllowComments: true,
 				}, nil)
-				svc.EXPECT().GetCommentsForModeration(mock.Anything, 5).Return([]*contentdomain.Comment{}, nil)
+				svc.EXPECT().GetCommentsForContent(mock.Anything, 5).Return([]*contentdomain.Comment{}, nil)
 			},
 			wantStatus: http.StatusOK,
 			wantLen:    0,
 			wantBody:   `"data":[]`,
+		},
+		{
+			name:      "success - non-admin on comments-disabled content gets an empty list",
+			contentID: "4",
+			userID:    testUserID,
+			role:      "Commentator",
+			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetByID(mock.Anything, 4).Return(&contentdomain.Content{
+					ID: 4, UserID: 999, Status: contentdomain.StatusPublished, AllowComments: false,
+				}, nil)
+				// No comment reader must be called — AllowComments=false short-circuits to empty.
+			},
+			wantStatus: http.StatusOK,
+			wantLen:    0,
+			wantBody:   `"data":[]`,
+		},
+		{
+			name:      "success - admin still sees the moderation queue on comments-disabled content",
+			contentID: "4",
+			userID:    testUserID,
+			role:      contentdomain.RoleAdmin,
+			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetByID(mock.Anything, 4).Return(&contentdomain.Content{
+					ID: 4, UserID: 999, Status: contentdomain.StatusPublished, AllowComments: false,
+				}, nil)
+				// Admin bypasses the AllowComments gate and moderates regardless.
+				svc.EXPECT().GetCommentsForModeration(mock.Anything, 4).Return([]*contentdomain.Comment{
+					buildComment(1, 4, 11, contentdomain.CommentStatusApproved, "ok"),
+					buildComment(2, 4, 12, contentdomain.CommentStatusPending, "waiting"),
+				}, nil)
+			},
+			wantStatus: http.StatusOK,
+			wantLen:    2,
 		},
 		{
 			name:      "error - content not found returns NOT_FOUND",
@@ -303,7 +356,7 @@ func TestCommentHandler_List(t *testing.T) {
 				svc.EXPECT().GetByID(mock.Anything, 7).Return(&contentdomain.Content{
 					ID: 7, UserID: 999, Status: contentdomain.StatusDraft, AllowComments: true,
 				}, nil)
-				// GetCommentsForModeration must NOT be called.
+				// No comment reader must be called.
 			},
 			wantStatus: http.StatusNotFound,
 			wantCode:   "NOT_FOUND",
@@ -367,6 +420,8 @@ func TestCommentHandler_Delete(t *testing.T) {
 			userID:    testUserID,
 			role:      contentdomain.RoleAdmin,
 			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetComment(mock.Anything, 9).
+					Return(buildComment(9, 5, 11, contentdomain.CommentStatusPending, "hi"), nil)
 				svc.EXPECT().DeleteComment(mock.Anything, 9).Return(nil)
 			},
 			wantStatus: http.StatusNoContent,
@@ -378,6 +433,8 @@ func TestCommentHandler_Delete(t *testing.T) {
 			userID:    testUserID,
 			role:      "",
 			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetComment(mock.Anything, 9).
+					Return(buildComment(9, 5, testUserID, contentdomain.CommentStatusPending, "hi"), nil)
 				svc.EXPECT().DeleteOwnComment(mock.Anything, 9, testUserID).Return(nil)
 			},
 			wantStatus: http.StatusNoContent,
@@ -389,6 +446,8 @@ func TestCommentHandler_Delete(t *testing.T) {
 			userID:    testUserID,
 			role:      "",
 			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetComment(mock.Anything, 9).
+					Return(buildComment(9, 5, 999, contentdomain.CommentStatusPending, "hi"), nil)
 				svc.EXPECT().DeleteOwnComment(mock.Anything, 9, testUserID).Return(contentdomain.ErrCommentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -401,7 +460,22 @@ func TestCommentHandler_Delete(t *testing.T) {
 			userID:    testUserID,
 			role:      contentdomain.RoleAdmin,
 			setup: func(svc *agentmocks.MockCommentService) {
-				svc.EXPECT().DeleteComment(mock.Anything, 9).Return(contentdomain.ErrCommentNotFound)
+				// The missing comment fails the binding fetch before DeleteComment is reached.
+				svc.EXPECT().GetComment(mock.Anything, 9).Return(nil, contentdomain.ErrCommentNotFound)
+			},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "NOT_FOUND",
+		},
+		{
+			name:      "error - comment bound to different content returns NOT_FOUND (no disclosure)",
+			contentID: "5",
+			commentID: "9",
+			userID:    testUserID,
+			role:      contentdomain.RoleAdmin,
+			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetComment(mock.Anything, 9).
+					Return(buildComment(9, 8, 11, contentdomain.CommentStatusPending, "hi"), nil)
+				// DeleteComment must NOT be called — the path content id does not match.
 			},
 			wantStatus: http.StatusNotFound,
 			wantCode:   "NOT_FOUND",
@@ -412,7 +486,7 @@ func TestCommentHandler_Delete(t *testing.T) {
 			commentID:  "0",
 			userID:     testUserID,
 			role:       "",
-			setup:      nil, // Delete must NOT be reached
+			setup:      nil, // GetComment must NOT be reached
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "VALIDATION_ERROR",
 		},
@@ -483,10 +557,28 @@ func TestCommentHandler_UpdateStatus(t *testing.T) {
 			wantCommID:        9,
 			wantCommentStatus: "approved",
 			setup: func(svc *agentmocks.MockCommentService) {
-				svc.EXPECT().UpdateCommentStatus(mock.Anything, 9, contentdomain.CommentStatusApproved).Return(nil)
+				// Binding fetch (must match the path content id) …
 				svc.EXPECT().GetComment(mock.Anything, 9).
-					Return(buildComment(9, 5, 11, contentdomain.CommentStatusApproved, "ok"), nil)
+					Return(buildComment(9, 5, 11, contentdomain.CommentStatusPending, "ok"), nil).Once()
+				svc.EXPECT().UpdateCommentStatus(mock.Anything, 9, contentdomain.CommentStatusApproved).Return(nil)
+				// … then the authoritative re-fetch for the response.
+				svc.EXPECT().GetComment(mock.Anything, 9).
+					Return(buildComment(9, 5, 11, contentdomain.CommentStatusApproved, "ok"), nil).Once()
 			},
+		},
+		{
+			name:       "error - comment bound to different content returns NOT_FOUND (no disclosure)",
+			contentID:  "5",
+			commentID:  "9",
+			role:       contentdomain.RoleAdmin,
+			body:       marshalJSON(map[string]any{"status": "approved"}),
+			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetComment(mock.Anything, 9).
+					Return(buildComment(9, 8, 11, contentdomain.CommentStatusPending, "ok"), nil)
+				// UpdateCommentStatus must NOT be called — the path content id does not match.
+			},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "NOT_FOUND",
 		},
 		{
 			name:       "non-admin role is forbidden",
@@ -515,6 +607,8 @@ func TestCommentHandler_UpdateStatus(t *testing.T) {
 			role:       contentdomain.RoleAdmin,
 			body:       marshalJSON(map[string]any{"status": "bogus"}),
 			setup: func(svc *agentmocks.MockCommentService) {
+				svc.EXPECT().GetComment(mock.Anything, 9).
+					Return(buildComment(9, 5, 11, contentdomain.CommentStatusPending, "ok"), nil)
 				svc.EXPECT().UpdateCommentStatus(mock.Anything, 9, contentdomain.CommentStatus("bogus")).
 					Return(contentdomain.ErrInvalidCommentStatus)
 			},

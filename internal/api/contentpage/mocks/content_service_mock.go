@@ -746,6 +746,80 @@ func (_c *MockContentService_GetPublishedPages_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
+// GetRelated provides a mock function for the type MockContentService
+func (_mock *MockContentService) GetRelated(ctx context.Context, id int, limit int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, id, limit)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRelated")
+	}
+
+	var r0 []*content.Content
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, id, limit)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, id, limit)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*content.Content)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
+		r1 = returnFunc(ctx, id, limit)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockContentService_GetRelated_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRelated'
+type MockContentService_GetRelated_Call struct {
+	*mock.Call
+}
+
+// GetRelated is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id int
+//   - limit int
+func (_e *MockContentService_Expecter) GetRelated(ctx any, id any, limit any) *MockContentService_GetRelated_Call {
+	return &MockContentService_GetRelated_Call{Call: _e.mock.On("GetRelated", ctx, id, limit)}
+}
+
+func (_c *MockContentService_GetRelated_Call) Run(run func(ctx context.Context, id int, limit int)) *MockContentService_GetRelated_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockContentService_GetRelated_Call) Return(contents []*content.Content, err error) *MockContentService_GetRelated_Call {
+	_c.Call.Return(contents, err)
+	return _c
+}
+
+func (_c *MockContentService_GetRelated_Call) RunAndReturn(run func(ctx context.Context, id int, limit int) ([]*content.Content, error)) *MockContentService_GetRelated_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetTranslations provides a mock function for the type MockContentService
 func (_mock *MockContentService) GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*content.Content, error) {
 	ret := _mock.Called(ctx, translationGroupID, excludeID)

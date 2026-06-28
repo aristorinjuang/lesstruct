@@ -54,3 +54,12 @@ docs-clean:
 	rm -rf site/public site/resources site/.hugo_build.lock
 
 docs: docs-build
+
+screenshots-install:
+	cd scripts/screenshots && npm install && npx playwright install chromium
+
+screenshots:
+	cd scripts/screenshots && node capture.mjs
+
+screenshots-clean:
+	rm -f site/static/screenshots/*.png docs/assets/screenshots/*.png

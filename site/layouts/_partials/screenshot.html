@@ -1,0 +1,54 @@
+{{- /*
+   screenshot.html partial — the single source of truth for rendering a
+   screenshot figure. Shared by:
+
+     - the `screenshot` shortcode (used inside markdown docs), and
+     - the landing layout (site/layouts/landing.html), which calls it directly.
+
+   Inputs (dict): src (required), alt, caption, class, Page (for error locus).
+
+   Expects site/static/screenshots/<src>-light.png (captured by `make screenshots`).
+   A matching <src>-dark.png is OPTIONAL: when present, a <picture> with a
+   prefers-color-scheme dark source is emitted (admin-panel scenes, which have a
+   real dark theme); when absent, a plain <img> is emitted (content-site scenes,
+   whose default theme is light-only). The build fails (errorf) if the light
+   variant is missing — the rot-prevention contract.
+*/ -}}
+{{- $src := .src -}}
+{{- $light := printf "/screenshots/%s-light.png" $src -}}
+{{- $dark := printf "/screenshots/%s-dark.png" $src -}}
+{{- $alt := .alt | default (printf "Lesstruct screenshot: %s" $src) -}}
+{{- $caption := .caption -}}
+{{- $class := .class -}}
+{{- $page := .Page -}}
+
+{{- /* One scan of static/screenshots/: light is required, dark is optional. */ -}}
+{{- $lightName := printf "%s-light.png" $src -}}
+{{- $darkName := printf "%s-dark.png" $src -}}
+{{- $lightExists := false -}}
+{{- $darkExists := false -}}
+{{- with os.ReadDir "static/screenshots" -}}
+  {{- range . -}}
+    {{- if eq .Name $lightName -}}{{- $lightExists = true -}}{{- end -}}
+    {{- if eq .Name $darkName -}}{{- $darkExists = true -}}{{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- if not $lightExists -}}
+  {{- $where := "a layout" -}}
+  {{- with $page }}{{ with .File }}{{ $where = .Path }}{{ end }}{{ end -}}
+  {{- errorf "screenshot: missing site/static/screenshots/%s (referenced in %s). Run `make screenshots`." $lightName $where -}}
+{{- end -}}
+
+<figure class="screenshot{{ with $class }} screenshot--{{ . }}{{ end }}">
+  {{- if $darkExists -}}
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="{{ $dark }}">
+    <img src="{{ $light }}" alt="{{ $alt }}" loading="lazy" decoding="async" />
+  </picture>
+  {{- else -}}
+  <img src="{{ $light }}" alt="{{ $alt }}" loading="lazy" decoding="async" />
+  {{- end -}}
+  {{- with $caption -}}
+    <figcaption>{{ . }}</figcaption>
+  {{- end -}}
+</figure>

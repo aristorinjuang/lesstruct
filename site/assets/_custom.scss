@@ -122,3 +122,246 @@
   font-size: 0.875em;
   line-height: 1.6;
 }
+
+/* ----------------------------------------------------------------------- */
+/* Landing page (layout: landing — site/layouts/landing.html)              */
+/* ----------------------------------------------------------------------- */
+
+/* Gray stops hugo-book does not ship (it only defines 100/200/500). Several
+   landing + screenshot rules reference 300/600/800, so define them for both
+   themes. These land after hugo-book's theme import, so they cascade cleanly. */
+:root {
+  --gray-300: #ced4da;
+  --gray-600: #495057;
+  --gray-800: #343a40;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gray-300: #4a4f55;
+    --gray-600: #adb5bd;
+    --gray-800: #1f2328;
+  }
+}
+
+.landing-nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.landing-hero {
+  padding: 3rem 0 2rem;
+  border-bottom: 1px solid var(--gray-200);
+  text-align: center;
+}
+
+.landing-hero-inner {
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.landing-eyebrow {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gray-500);
+}
+
+.landing-hero h1 {
+  margin: 0 0 0.75rem;
+  font-size: 2.4rem;
+  line-height: 1.1;
+}
+
+.landing-tagline {
+  margin: 0 0 1.5rem;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: var(--body-font-color);
+  max-width: 60ch;
+  margin-inline: auto;
+}
+
+.landing-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+/* Scoped under .landing-hero so specificity (0,2,0) beats hugo-book's global
+   `a[href] { color: var(--color-link) }` (0,1,1); otherwise the primary button
+   text would inherit the link color and vanish against its link-colored
+   background. Also `flex: 0 0 auto` overrides hugo-book's `a { flex: auto }`
+   which would otherwise stretch the buttons across the row. */
+.landing-hero .landing-btn {
+  flex: 0 0 auto;
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--gray-300);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--body-font-color);
+  background: var(--body-background);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.landing-hero .landing-btn:hover {
+  border-color: var(--color-link);
+  text-decoration: none;
+}
+
+.landing-hero .landing-btn--primary {
+  background: #0055bb;
+  border-color: #0055bb;
+  color: #fff;
+}
+
+.landing-hero .landing-btn--primary:hover {
+  filter: brightness(1.08);
+}
+
+.landing-features {
+  padding: 2.5rem 0;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.landing-features h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.6rem;
+}
+
+.landing-section-lede {
+  margin: 0 0 1.75rem;
+  max-width: 70ch;
+  color: var(--gray-600);
+}
+
+.landing-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+/* 9 cards = 3x3 on wide screens; collapse gracefully on smaller ones. */
+@media (max-width: 900px) {
+  .landing-feature-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .landing-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.feature-card {
+  display: block;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.5rem;
+  background: var(--body-background);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.feature-card:hover {
+  border-color: var(--color-link);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+
+.feature-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.02rem;
+  color: var(--body-font-color);
+}
+
+.feature-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--gray-600);
+}
+
+.feature-card code {
+  font-size: 0.85em;
+}
+
+.landing-content {
+  padding-top: 2.5rem;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Screenshot figures (screenshot shortcode / partial)                     */
+/* ----------------------------------------------------------------------- */
+
+.screenshot {
+  margin: 1.5rem 0;
+}
+
+.screenshot picture {
+  display: block;
+  border: 1px solid var(--gray-200);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--gray-100);
+}
+
+.screenshot picture img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.screenshot figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--gray-500);
+  line-height: 1.4;
+}
+
+/* Hero variant: full-bleed within the hero, bigger shadow. */
+.screenshot--hero {
+  margin: 0;
+}
+
+.screenshot--hero picture {
+  border-color: var(--gray-300);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  border-radius: 0.6rem;
+}
+
+/* Wide variant: for large feature shots inside docs. */
+.screenshot--wide {
+  margin: 2rem -1rem;
+}
+
+@media (max-width: 768px) {
+  .screenshot--wide {
+    margin: 1.5rem 0;
+  }
+
+  .landing-hero h1 {
+    font-size: 1.9rem;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .screenshot picture {
+    background: var(--gray-800);
+  }
+
+  .feature-card:hover {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  }
+}

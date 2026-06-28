@@ -817,6 +817,66 @@ func (s *Service) SearchPublished(ctx context.Context, query string, limit int) 
 	return contents, nil
 }
 
+const (
+	// defaultRelatedLimit is the number of related posts returned when no limit is requested.
+	defaultRelatedLimit = 5
+	// maxRelatedLimit caps the number of related posts to keep queries bounded.
+	maxRelatedLimit = 20
+)
+
+// GetRelated returns up to limit related posts for the content identified by id.
+// Related posts share at least one tag, the same post type, and the same language
+// as the source, ranked by the number of shared tags then by recency. When there
+// are not enough tag-overlap matches (or the source has no tags), the result is
+// backfilled with the latest published posts of the same post type and language.
+// The source post is always excluded.
+func (s *Service) GetRelated(ctx context.Context, id int, limit int) ([]*Content, error) {
+	if limit <= 0 {
+		limit = defaultRelatedLimit
+	}
+	if limit > maxRelatedLimit {
+		limit = maxRelatedLimit
+	}
+
+	source, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get content: %w", err)
+	}
+
+	related, err := s.repo.GetRelatedByTags(ctx, id, source.Tags, source.PostType, source.Language, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get related content by tags: %w", err)
+	}
+
+	if len(related) >= limit {
+		return related, nil
+	}
+
+	latest, err := s.repo.GetLatestByPostType(ctx, id, source.PostType, source.Language, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest content by post type: %w", err)
+	}
+
+	seen := make(map[int]bool, len(related)+1)
+	seen[id] = true
+	for _, c := range related {
+		seen[c.ID] = true
+	}
+
+	for _, c := range latest {
+		if len(related) >= limit {
+			break
+		}
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		related = append(related, c)
+	}
+
+	return related, nil
+}
+
 func (s *Service) Update(ctx context.Context, id int, userID int, role string, req UpdateContentRequest) (*Content, error) {
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {

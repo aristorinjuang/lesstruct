@@ -1,0 +1,17 @@
+{{- /*
+   `screenshot` shortcode — thin wrapper around the screenshot partial so the
+   same <picture> markup is used by markdown docs and the landing layout.
+
+   Usage (in any markdown page under content/ or the mounted docs/):
+     {{< screenshot src="admin-hero" alt="Admin post editor" caption="..." class="wide" >}}
+
+   See site/layouts/_partials/screenshot.html for the rendering contract and
+   the missing-file error.
+*/ -}}
+{{- partial "screenshot.html" (dict
+    "src"     (.Get "src")
+    "alt"     (.Get "alt")
+    "caption" (.Get "caption")
+    "class"   (.Get "class")
+    "Page"    .Page)
+-}}

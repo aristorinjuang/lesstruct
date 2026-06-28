@@ -82,6 +82,7 @@ type ContentData struct {
 	AllowComments         bool
 	CustomFields          map[string]any
 	CustomFieldsFormatted []FormattedField
+	Related               []PostItem
 	Comments              []CommentItem
 }
 

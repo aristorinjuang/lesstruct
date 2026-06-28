@@ -415,6 +415,8 @@ Create, list, delete, and moderate comments on a content item. The agent comment
 
 > **Browser-admin moderation queue.** The admin panel additionally exposes `GET /api/v1/comments/pending` (JWT + CSRF, **Admin only** — not part of the Bearer `/api/v1` agent surface). It returns every comment currently in the `pending` status across all content, each enriched with `contentId`, `contentTitle`, and `contentSlug` so the global moderation queue can link back to the originating post. The same response shape applies to the per-content admin route `GET /api/v1/content_items/{id}/comments`.
 
+> **Rendering comment text.** Comment text is validated on input (1–2000 chars, no HTML) and the built-in Go `html/template` theme auto-escapes it on output. It is, however, returned **verbatim** in the JSON API's `comment` field. Any consumer that renders it — a custom theme, or an agent frontend (React/Vue/Angular) — must HTML-escape it on output: never bind it with `v-html`, `[innerHTML]`, or `dangerouslySetInnerHTML`. The server's input validation is a first layer, not a guarantee that a downstream renderer is safe.
+
 ### Comment object
 
 ```json
@@ -472,11 +474,13 @@ curl -X POST -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
 GET /api/v1/content/{id}/comments
 ```
 
-Returns every comment on content `{id}` (any moderation status — the management view), scoped to content the caller may see (published, owned, or Admin). Envelope is a bare `data` array (always present, even when empty):
+Returns the comments on content `{id}`, scoped to content the caller may see (published, owned, or Admin). **What is returned depends on the key's role:** an Admin key gets the full moderation queue (every status, including `pending`/`rejected`/`spam`), while a non-Admin key gets only `approved` comments — mirroring the public `GET /api/v1/public/content_items/{slug}/comments`, so the pre-moderation queue is never exposed to a Commentator-level key. Comments-disabled content (`allowComments=false`) returns an empty list for non-Admin keys; an Admin key still sees the queue so it can moderate. Envelope is a bare `data` array (always present, even when empty):
 
 ```json
 { "data": [ { "id": 1, "comment": "ok", "status": "approved", "createdAt": "…" }, { "id": 2, "comment": "waiting", "status": "pending", "createdAt": "…" } ] }
 ```
+
+> The `pending`/`rejected`/`spam` items in the example above are only visible to an Admin key.
 
 | Status | Code | When |
 |---|---|---|
@@ -490,14 +494,15 @@ Returns every comment on content `{id}` (any moderation status — the managemen
 DELETE /api/v1/content/{id}/comments/{commentId}
 ```
 
-Deletes the comment. An Admin key may delete any comment; any other key only its own. The server returns `404` (no disclosure) when the comment is missing or belongs to someone else.
+Deletes the comment. The path `{id}` must be the comment's actual content — a mismatch (the comment belongs to different content) returns `404` with no disclosure. An Admin key may delete any comment; any other key only its own, and a missing or someone else's comment also returns `404` (no disclosure).
 
 **Response** `204 No Content` (empty body).
 
 | Status | Code | When |
 |---|---|---|
 | `204` | — | Deleted. |
-| `404` | `NOT_FOUND` | Comment does not exist, or is not yours (and you are not Admin). |
+| `400` | `VALIDATION_ERROR` | Invalid content or comment id. |
+| `404` | `NOT_FOUND` | Comment does not exist, is bound to different content, or is not yours (and you are not Admin). |
 
 ### Moderate comment (admin only)
 
@@ -510,7 +515,7 @@ Content-Type: application/json
 { "status": "approved" }
 ```
 
-Sets a comment's moderation status. `status` must be a valid value (`pending`, `approved`, `rejected`, `spam`). **Admin only** — a non-admin key gets `403 FORBIDDEN`. The updated comment is returned.
+Sets a comment's moderation status. The path `{id}` must be the comment's actual content — a mismatch returns `404` with no disclosure. `status` must be a valid value (`pending`, `approved`, `rejected`, `spam`). **Admin only** — a non-admin key gets `403 FORBIDDEN`. The updated comment is returned.
 
 ```bash
 curl -X PUT -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
@@ -526,7 +531,7 @@ curl -X PUT -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
 | `200` | — | Updated; the comment is returned with its new status. |
 | `400` | `VALIDATION_ERROR` | Unknown `status`, invalid id, malformed body. |
 | `403` | `FORBIDDEN` | Caller is not an Admin. |
-| `404` | `NOT_FOUND` | Comment does not exist. |
+| `404` | `NOT_FOUND` | Comment does not exist or is bound to different content. |
 
 ## Errors
 
