@@ -499,10 +499,15 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
+	primaryLang := config.PrimaryLanguage(h.languages)
+
 	posts := make([]tpl.PostItem, 0, len(contents))
 	authorName := ""
 	var ogImage string
 	for _, c := range contents {
+		if c.Language != primaryLang {
+			continue
+		}
 		if authorName == "" {
 			authorName = c.Author
 		}
@@ -558,7 +563,7 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
-			Lang:            config.PrimaryLanguage(h.languages),
+			Lang:            primaryLang,
 		},
 		AuthorName:             authorName,
 		Username:               username,
@@ -584,9 +589,14 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 		return
 	}
 
+	primaryLang := config.PrimaryLanguage(h.languages)
+
 	posts := make([]tpl.PostItem, 0, len(contents))
 	var ogImage string
 	for _, c := range contents {
+		if c.Language != primaryLang {
+			continue
+		}
 		imageURL := seo.ExtractImageURL(c.Content)
 		if imageURL != "" && ogImage == "" {
 			ogImage = imageURL
@@ -626,7 +636,7 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
-			Lang:            config.PrimaryLanguage(h.languages),
+			Lang:            primaryLang,
 		},
 		TagName: tag,
 		Posts:   posts,
@@ -671,9 +681,14 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 		pageTitle = resolved.Name
 	}
 
+	primaryLang := config.PrimaryLanguage(h.languages)
+
 	posts := make([]tpl.PostItem, 0, len(contents))
 	var ogImage string
 	for _, c := range contents {
+		if c.Language != primaryLang {
+			continue
+		}
 		imageURL := seo.ExtractImageURL(c.Content)
 		if imageURL != "" && ogImage == "" {
 			ogImage = imageURL
@@ -713,7 +728,7 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
-			Lang:            config.PrimaryLanguage(h.languages),
+			Lang:            primaryLang,
 		},
 		Posts: posts,
 	}
