@@ -27,7 +27,7 @@ func TestParse_SampleExport(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { _ = f.Close() }()
 
-			doc, err := wordpress.Parse(f)
+			doc, err := wordpress.Parse(f, map[string]bool{"post": true, "page": true})
 			require.NoError(t, err)
 
 			// Site metadata parsed from channel
@@ -104,7 +104,7 @@ func TestParse_StatusMapping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc, err := wordpress.Parse(strings.NewReader(tt.xml))
+			doc, err := wordpress.Parse(strings.NewReader(tt.xml), map[string]bool{"post": true, "page": true})
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -144,10 +144,129 @@ func TestParse_TagsCollected(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc, err := wordpress.Parse(strings.NewReader(tt.xml))
+			doc, err := wordpress.Parse(strings.NewReader(tt.xml), map[string]bool{"post": true, "page": true})
 			require.NoError(t, err)
 			require.NotEmpty(t, doc.Items)
 			assert.Equal(t, []string{"first", "test", "Test Category"}, doc.Items[0].Tags)
+		})
+	}
+}
+
+func TestParse_CustomPostType(t *testing.T) {
+	tests := []struct {
+		name         string
+		xml          string
+		allowedTypes map[string]bool
+		wantItems    int
+		wantPostType string
+	}{
+		{
+			name: "success - custom post type imported when in allowlist",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Annual Ride</title>
+<content:encoded><![CDATA[<p>Ride</p>]]></content:encoded>
+<wp:post_name>annual-ride</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>event</wp:post_type>
+</item>
+</channel>
+</rss>`,
+			allowedTypes: map[string]bool{"post": true, "page": true, "event": true},
+			wantItems:    1,
+			wantPostType: "event",
+		},
+		{
+			name: "filtered - custom post type dropped when not in allowlist",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Annual Ride</title>
+<content:encoded><![CDATA[<p>Ride</p>]]></content:encoded>
+<wp:post_name>annual-ride</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>event</wp:post_type>
+</item>
+</channel>
+</rss>`,
+			allowedTypes: map[string]bool{"post": true, "page": true},
+			wantItems:    0,
+			wantPostType: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := wordpress.Parse(strings.NewReader(tt.xml), tt.allowedTypes)
+			require.NoError(t, err)
+			assert.Len(t, doc.Items, tt.wantItems)
+			if tt.wantItems > 0 {
+				assert.Equal(t, tt.wantPostType, doc.Items[0].PostType)
+			}
+		})
+	}
+}
+
+func TestParse_PostMeta(t *testing.T) {
+	tests := []struct {
+		name     string
+		xml      string
+		wantMeta map[string]string
+	}{
+		{
+			name: "success - custom fields and ACF internals collected",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Annual Ride</title>
+<content:encoded><![CDATA[<p>Ride</p>]]></content:encoded>
+<wp:post_name>annual-ride</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>event</wp:post_type>
+<wp:postmeta>
+<wp:meta_key><![CDATA[start]]></wp:meta_key>
+<wp:meta_value><![CDATA[2018-10-27 00:00:00]]></wp:meta_value>
+</wp:postmeta>
+<wp:postmeta>
+<wp:meta_key><![CDATA[_start]]></wp:meta_key>
+<wp:meta_value><![CDATA[field_5c569cea1f6b3]]></wp:meta_value>
+</wp:postmeta>
+<wp:postmeta>
+<wp:meta_key><![CDATA[location]]></wp:meta_key>
+<wp:meta_value><![CDATA[Pontianak]]></wp:meta_value>
+</wp:postmeta>
+<wp:postmeta>
+<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+<wp:meta_value><![CDATA[2244]]></wp:meta_value>
+</wp:postmeta>
+</item>
+</channel>
+</rss>`,
+			wantMeta: map[string]string{
+				"start":         "2018-10-27 00:00:00",
+				"_start":        "field_5c569cea1f6b3",
+				"location":      "Pontianak",
+				"_thumbnail_id": "2244",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := wordpress.Parse(
+				strings.NewReader(tt.xml),
+				map[string]bool{"event": true},
+			)
+			require.NoError(t, err)
+			require.Len(t, doc.Items, 1)
+			assert.Equal(t, tt.wantMeta, doc.Items[0].Meta)
 		})
 	}
 }

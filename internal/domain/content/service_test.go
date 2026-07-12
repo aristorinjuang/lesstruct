@@ -2025,30 +2025,33 @@ func TestService_GetPublishedByTag(t *testing.T) {
 	tests := []struct {
 		name        string
 		tag         string
+		language    string
 		limit       int
 		offset      int
 		setupMock   func(*mocks.MockRepository)
 		expectedErr error
 	}{
 		{
-			name:   "successful retrieval",
-			tag:    "golang",
-			limit:  10,
-			offset: 0,
+			name:     "successful retrieval",
+			tag:      "golang",
+			language: "",
+			limit:    10,
+			offset:   0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByTag", mock.Anything, "golang", 10, 0).Return([]*content.Content{
+				m.On("GetPublishedByTag", mock.Anything, "golang", "", 10, 0).Return([]*content.Content{
 					{ID: 1, Title: "Go Basics", Tags: []string{"golang", "tutorial"}},
 				}, nil)
 			},
 			expectedErr: nil,
 		},
 		{
-			name:   "repository error",
-			tag:    "golang",
-			limit:  10,
-			offset: 0,
+			name:     "repository error",
+			tag:      "golang",
+			language: "",
+			limit:    10,
+			offset:   0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByTag", mock.Anything, "golang", 10, 0).Return(nil, errors.New("database error"))
+				m.On("GetPublishedByTag", mock.Anything, "golang", "", 10, 0).Return(nil, errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to get published content by tag"),
 		},
@@ -2060,7 +2063,7 @@ func TestService_GetPublishedByTag(t *testing.T) {
 			tt.setupMock(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			result, err := service.GetPublishedByTag(context.Background(), tt.tag, tt.limit, tt.offset)
+			result, err := service.GetPublishedByTag(context.Background(), tt.tag, tt.language, tt.limit, tt.offset)
 
 			if tt.expectedErr != nil {
 				require.Error(t, err)
@@ -2556,6 +2559,270 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, "2026-05-17", result.CustomFields["release_date"])
+	})
+
+	t.Run("create with valid datetime", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Starts At", Slug: "starts_at", Type: customfield.FieldTypeDatetime},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"starts_at": "2026-05-17T14:30:00Z",
+			},
+		}
+
+		result, err := service.Create(context.Background(), 1, req)
+
+		require.NoError(t, err)
+		assert.Equal(t, "2026-05-17T14:30:00Z", result.CustomFields["starts_at"])
+	})
+
+	t.Run("create with empty datetime value", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Starts At", Slug: "starts_at", Type: customfield.FieldTypeDatetime},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"starts_at": "",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a datetime string")
+	})
+
+	t.Run("create fails when datetime string is not valid RFC 3339", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Starts At", Slug: "starts_at", Type: customfield.FieldTypeDatetime},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"starts_at": "not-a-datetime",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a valid datetime")
+	})
+
+	t.Run("create with valid email", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Contact", Slug: "contact", Type: customfield.FieldTypeEmail},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"contact": "hello@example.com",
+			},
+		}
+
+		result, err := service.Create(context.Background(), 1, req)
+
+		require.NoError(t, err)
+		assert.Equal(t, "hello@example.com", result.CustomFields["contact"])
+	})
+
+	t.Run("create with empty email value", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Contact", Slug: "contact", Type: customfield.FieldTypeEmail},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"contact": "",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be an email string")
+	})
+
+	t.Run("create fails when email is invalid", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Contact", Slug: "contact", Type: customfield.FieldTypeEmail},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"contact": "not-an-email",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a valid email address")
+	})
+
+	t.Run("create fails when email has display name form", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Contact", Slug: "contact", Type: customfield.FieldTypeEmail},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"contact": "Alice <alice@example.com>",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a valid email address")
+	})
+
+	t.Run("create with valid url", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Website", Slug: "website", Type: customfield.FieldTypeUrl},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"website": "https://example.com",
+			},
+		}
+
+		result, err := service.Create(context.Background(), 1, req)
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://example.com", result.CustomFields["website"])
+	})
+
+	t.Run("create with empty url value", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Website", Slug: "website", Type: customfield.FieldTypeUrl},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"website": "",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a URL string")
+	})
+
+	t.Run("create fails when url has non-http scheme", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Website", Slug: "website", Type: customfield.FieldTypeUrl},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"website": "ftp://example.com",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a valid http(s) URL")
+	})
+
+	t.Run("create fails when url is invalid", func(t *testing.T) {
+		mockRepo, mockPostType := setupCreateMocks()
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Website", Slug: "website", Type: customfield.FieldTypeUrl},
+		}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+		req := content.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{"test"},
+			Status:   content.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"website": "not a url",
+			},
+		}
+
+		_, err := service.Create(context.Background(), 1, req)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "must be a valid http(s) URL")
 	})
 
 	t.Run("create with nil custom field value", func(t *testing.T) {

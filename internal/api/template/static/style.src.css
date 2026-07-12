@@ -40,7 +40,7 @@
   --color-text-muted: #6b7280;
   --color-primary: #22d3ee;
   --color-primary-hover: #06b6d4;
-  --color-secondary: #2536eb;
+  --color-secondary: #2563eb;
   --color-accent: #8b5cf6;
   --color-border: #e5e7eb;
   --color-card-bg: #f9fafb;
@@ -562,6 +562,50 @@ textarea.form-control {
   margin: calc(-1 * var(--space-5)) calc(-1 * var(--space-5)) var(--space-2);
   aspect-ratio: 16 / 10;
   object-fit: cover;
+}
+
+/* ============================================================
+   6b. Homepage sections & pagination
+   ============================================================ */
+.home-section {
+  margin-top: var(--space-8);
+}
+
+.home-section__header {
+  margin-bottom: var(--space-4);
+}
+
+.home-section__header h2 {
+  font-size: 1.5rem;
+}
+
+.home-section__desc {
+  margin-top: var(--space-1);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.pagination a {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.pagination a:hover {
+  background: var(--color-card-bg);
+  border-color: var(--color-primary);
 }
 
 /* ============================================================

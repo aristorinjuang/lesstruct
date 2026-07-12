@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/mail"
+	"net/url"
 	"reflect"
 	"slices"
 	"strings"
@@ -66,6 +68,35 @@ func validateFieldValue(
 		}
 		if _, err := time.Parse("2006-01-02", str); err != nil {
 			return fmt.Errorf("must be a valid date in YYYY-MM-DD format")
+		}
+
+	case customfield.FieldTypeDatetime:
+		str, ok := value.(string)
+		if !ok || strings.TrimSpace(str) == "" {
+			return fmt.Errorf("must be a datetime string")
+		}
+		if _, err := time.Parse(time.RFC3339, str); err != nil {
+			return fmt.Errorf("must be a valid datetime in RFC 3339 format")
+		}
+
+	case customfield.FieldTypeEmail:
+		str, ok := value.(string)
+		if !ok || strings.TrimSpace(str) == "" {
+			return fmt.Errorf("must be an email string")
+		}
+		addr, err := mail.ParseAddress(str)
+		if err != nil || addr.Name != "" {
+			return fmt.Errorf("must be a valid email address")
+		}
+
+	case customfield.FieldTypeUrl:
+		str, ok := value.(string)
+		if !ok || strings.TrimSpace(str) == "" {
+			return fmt.Errorf("must be a URL string")
+		}
+		u, err := url.Parse(str)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("must be a valid http(s) URL")
 		}
 
 	case customfield.FieldTypeSelect:
@@ -761,8 +792,8 @@ func (s *Service) GetPublishedByID(ctx context.Context, id int) (*Content, error
 	return content, nil
 }
 
-func (s *Service) GetPublishedByAuthorUsername(ctx context.Context, username string, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByAuthorUsername(ctx, username, limit, offset)
+func (s *Service) GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByAuthorUsername(ctx, username, language, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by author: %w", err)
 	}
@@ -773,8 +804,8 @@ func (s *Service) AuthorExists(ctx context.Context, username string) (bool, erro
 	return s.repo.AuthorExists(ctx, username)
 }
 
-func (s *Service) GetPublishedByTag(ctx context.Context, tag string, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByTag(ctx, tag, limit, offset)
+func (s *Service) GetPublishedByTag(ctx context.Context, tag string, language string, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByTag(ctx, tag, language, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by tag: %w", err)
 	}
@@ -797,12 +828,28 @@ func (s *Service) GetPublishedCustomPostTypes(ctx context.Context) ([]string, er
 	return postTypes, nil
 }
 
-func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByPostType(ctx, postType, limit, offset)
+func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, language string, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByPostType(ctx, postType, language, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by post type: %w", err)
 	}
 	return contents, nil
+}
+
+func (s *Service) GetPublishedTags(ctx context.Context) ([]string, error) {
+	tags, err := s.repo.GetPublishedTags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published tags: %w", err)
+	}
+	return tags, nil
+}
+
+func (s *Service) GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*PublishedAuthor, error) {
+	authors, err := s.repo.GetPublishedAuthors(ctx, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published authors: %w", err)
+	}
+	return authors, nil
 }
 
 func (s *Service) SearchPublished(ctx context.Context, query string, limit int) ([]*Content, error) {

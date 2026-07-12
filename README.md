@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/brand/lesstruct.webp" width="200" alt="Lesstruct">
+</p>
+
 # Lesstruct
 
 > An open-source CMS powered by Go. Fast, configurable, customizable. Built for humans and AI agents, extended with WebAssembly plugins. One binary, no Docker required.
@@ -44,7 +48,7 @@
 - **Custom fields, no plugins needed.** Define post types, user profile fields, and validation rules in `config.toml`. The admin form, storage, and queries all read from that file.
 - **Extend with WebAssembly plugins.** Drop a compiled `.wasm` into `plugins/` and it hooks into `before_save`, `after_create`, and `after_publish`. Plugins are sandboxed, immutable, and can call host functions for HTTP, DB, and logging.
 - **AI integrations are opt-in.** Bring your own OpenAI-compatible key for text, or a Google / OpenAI key for image generation. The admin panel surfaces them as buttons; nothing else changes.
-- **Built for humans AND AI agents.** A versioned REST API at `/api/v1`, a `lesstruct-cli` client, Markdown as a first-class ingest format, and skills for Claude Code / OpenCode / Hermes / OpenClaw.
+- **Built for humans AND AI agents.** A versioned REST API at `/api/v1`, a `lesstruct-cli` client, Markdown as a first-class ingest format, and installable agent skills (`npx skills add aristorinjuang/lesstruct`).
 
 ## Quick start
 
@@ -108,14 +112,15 @@ The only required value is `JWT_SECRET` (≥ 32 characters). Everything else has
 Lesstruct ships two skills that turn your AI agent into a Lesstruct expert. They work from your installed site (themes/ and plugins/ directories) — no access to the source tree required.
 
 ```bash
-# Theme development — CSS, JS, HTML template overrides
-cp -r skills/lesstruct-theme-development ~/.claude/skills/lesstruct-theme-development
+# Install both skills — the CLI auto-detects your agent(s) and their skill paths
+npx skills add aristorinjuang/lesstruct
 
-# Plugin development — WASM hooks, host functions, capability manifests
-cp -r skills/lesstruct-plugin-development ~/.claude/skills/lesstruct-plugin-development
+# Or install just one
+npx skills add aristorinjuang/lesstruct --skill lesstruct-theme-development
+npx skills add aristorinjuang/lesstruct --skill lesstruct-plugin-development
 ```
 
-Supported agents include Claude Code, OpenCode, OpenClaw, and Hermes. Per-agent install paths are in each skill's `references/install-paths.md`. Restart your agent after copying.
+This works with **30+ agents** — Claude Code, OpenCode, Cursor, Codex, Gemini CLI, GitHub Copilot, Cline, Roo Code, Windsurf, and more. The CLI detects which are installed and installs to the right path for each; pass `-g` for a global (user-wide) install, or `-a <agent>` to target a specific one. See each skill's `references/install-paths.md` for manual `cp -r` fallbacks and the full agent list.
 
 Once installed, ask your agent things like:
 

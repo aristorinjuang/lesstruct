@@ -124,7 +124,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *repository.User) 
 		name = user.Username
 	}
 
-	customFieldsJSON, cErr := marshalCustomFields(user.CustomFields)
+	customFieldsJSON, cErr := repository.MarshalCustomFields(user.CustomFields)
 	if cErr != nil {
 		return fmt.Errorf("failed to marshal custom fields: %w", cErr)
 	}

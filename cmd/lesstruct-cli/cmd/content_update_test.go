@@ -577,6 +577,9 @@ func TestContentUpdate_CustomFieldsFlag(t *testing.T) {
 				"content", "update", "7", "# Hi",
 				"--field", "minutes=45",
 				"--field", "has_video=false",
+				"--field", "event_at=2026-05-10T14:30:00Z",
+				"--field", "contact=hello@example.com",
+				"--field", "website=https://example.com",
 				"--base-url", srv.URL, "--api-key", "k",
 			},
 			strings.NewReader(""),
@@ -588,6 +591,9 @@ func TestContentUpdate_CustomFieldsFlag(t *testing.T) {
 		require.True(t, ok, "customFields must be a JSON object on the wire")
 		assert.Equal(t, float64(45), fields["minutes"])
 		assert.Equal(t, false, fields["has_video"])
+		assert.Equal(t, "2026-05-10T14:30:00Z", fields["event_at"], "datetime RFC 3339 value stays a string")
+		assert.Equal(t, "hello@example.com", fields["contact"], "email value stays a string")
+		assert.Equal(t, "https://example.com", fields["website"], "url value stays a string")
 	})
 
 	t.Run("omitted sends nothing on the wire (preserves existing)", func(t *testing.T) {

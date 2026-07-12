@@ -11,7 +11,7 @@ import (
 var (
 	ErrFieldNameRequired    = errors.New("field name is required and must be between 1 and 200 characters")
 	ErrFieldSlugInvalid     = errors.New("field slug must be between 1 and 200 characters and contain only lowercase letters, numbers, and underscores")
-	ErrFieldTypeInvalid     = errors.New("field type must be one of: text, textarea, number, date, select, checkbox")
+	ErrFieldTypeInvalid     = errors.New("field type must be one of: text, textarea, number, date, datetime, email, url, select, checkbox")
 	ErrSelectRequiresOpts   = errors.New("select fields require an options list")
 	ErrSelectEmptyOption    = errors.New("select field options must not contain empty or blank strings")
 	ErrNumberMinGTMax       = errors.New("min cannot be greater than max")
@@ -28,6 +28,9 @@ const (
 	FieldTypeTextarea FieldType = "textarea"
 	FieldTypeNumber   FieldType = "number"
 	FieldTypeDate     FieldType = "date"
+	FieldTypeDatetime FieldType = "datetime"
+	FieldTypeEmail    FieldType = "email"
+	FieldTypeUrl      FieldType = "url"
 	FieldTypeSelect   FieldType = "select"
 	FieldTypeCheckbox FieldType = "checkbox"
 )
@@ -37,6 +40,9 @@ var validFieldTypes = map[FieldType]bool{
 	FieldTypeTextarea: true,
 	FieldTypeNumber:   true,
 	FieldTypeDate:     true,
+	FieldTypeDatetime: true,
+	FieldTypeEmail:    true,
+	FieldTypeUrl:      true,
 	FieldTypeSelect:   true,
 	FieldTypeCheckbox: true,
 }

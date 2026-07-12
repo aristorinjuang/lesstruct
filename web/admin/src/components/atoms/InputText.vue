@@ -8,6 +8,7 @@ interface Props {
   size?: 'small' | 'medium' | 'large'
   multiline?: boolean
   maxLength?: number
+  inputType?: string
 }
 
 interface Emits {
@@ -18,7 +19,8 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '',
   disabled: false,
   size: 'medium',
-  multiline: false
+  multiline: false,
+  inputType: 'text'
 })
 
 const emit = defineEmits<Emits>()
@@ -49,6 +51,7 @@ function onInput(event: Event) {
     <input
       v-else
       :class="classes"
+      :type="inputType"
       :placeholder="placeholder"
       :disabled="disabled"
       :maxlength="maxLength"

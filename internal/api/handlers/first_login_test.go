@@ -7,7 +7,9 @@ import (
 	"os"
 	"testing"
 
+	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
 	appresponse "github.com/aristorinjuang/lesstruct/internal/api/response"
+	"github.com/aristorinjuang/lesstruct/internal/constants"
 	authdomain "github.com/aristorinjuang/lesstruct/internal/domain/auth"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 	repomocks "github.com/aristorinjuang/lesstruct/internal/repository/mocks"
@@ -20,8 +22,9 @@ import (
 )
 
 func TestGetStatus(t *testing.T) {
-	defaultHash := "$2a$12$testdefaultpasswordhash"
-	service := authdomain.NewFirstLoginService(defaultHash)
+	defaultHash, err := appauth.HashPassword(constants.DefaultPassword)
+	require.NoError(t, err, "Failed to hash default password")
+	service := authdomain.NewFirstLoginService()
 
 	mockRepo := repomocks.NewMockUserRepo(t)
 	mockRepo.EXPECT().
@@ -44,7 +47,7 @@ func TestGetStatus(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, "Status")
 
 	var resp appresponse.Response
-	err := json.NewDecoder(w.Body).Decode(&resp)
+	err = json.NewDecoder(w.Body).Decode(&resp)
 	require.NoError(t, err, "Failed to decode response")
 
 	assert.NotNil(t, resp.Data, "Response data should not be nil")
@@ -59,11 +62,11 @@ func TestGetStatus(t *testing.T) {
 }
 
 func TestGetStatus_AfterComplete(t *testing.T) {
-	defaultHash := "$2a$12$testdefaultpasswordhash"
-	service := authdomain.NewFirstLoginService(defaultHash)
+	service := authdomain.NewFirstLoginService()
 
 	// Admin password has been changed from default -> setup is complete
-	changedHash := "$2a$12$changedpasswordhash"
+	changedHash, err := appauth.HashPassword("ChangedPassword456!")
+	require.NoError(t, err, "Failed to hash changed password")
 	mockRepo := repomocks.NewMockUserRepo(t)
 	mockRepo.EXPECT().
 		GetAdminUser(mock.Anything).
@@ -83,7 +86,7 @@ func TestGetStatus_AfterComplete(t *testing.T) {
 	handler.GetStatus(w, req)
 
 	var resp appresponse.Response
-	err := json.NewDecoder(w.Body).Decode(&resp)
+	err = json.NewDecoder(w.Body).Decode(&resp)
 	require.NoError(t, err, "Failed to decode response")
 
 	dataBytes, _ := json.Marshal(resp.Data)

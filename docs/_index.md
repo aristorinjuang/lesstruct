@@ -22,6 +22,7 @@ section — each doc states its scope at the top._
 | Writing a WASM plugin (hooks, lifecycle, build) | [plugin-development.md](plugin-development.md) |
 | Plugin capabilities / host functions | [plugin-capabilities.md](plugin-capabilities.md) |
 | Building or overriding a theme (CSS, templates, JS) | [theme-development.md](theme-development.md) |
+| Brand assets (logo, colors, typography) | [brands.md](brands.md) |
 
 ## Cross-cutting references
 

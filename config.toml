@@ -11,6 +11,13 @@
 # The first entry is the primary language (default for admin panel and content site).
 languages = ["en"]
 
+# ── Site Identity (optional) ────────────────────────────────────────
+# [site_config]
+# name = "My Site"           # drives the <title> suffix, og:site_name, logo text, footer
+# logo = "/uploads/logo.png" # optional image; omit to render the name as text
+# When omitted entirely, the name defaults to "Lesstruct".
+# Everything else (social links, analytics, footer copy) is a theme concern.
+
 # ── User Profile Fields ─────────────────────────────────────────────
 # Global user profile fields — custom fields for user-editable metadata,
 # system fields for internal-only metadata (read-only in admin panel).

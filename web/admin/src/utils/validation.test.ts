@@ -94,7 +94,7 @@ describe('validateCustomField', () => {
   describe('date type', () => {
     it('returns error for invalid date format', () => {
       const field: FieldSchema = { name: 'Start Date', slug: 'startDate', type: 'date' }
-      expect(validateCustomField(field, 'not-a-date')).toBe('Start Date must be a valid date')
+      expect(validateCustomField(field, 'not-a-date')).toBe('Start Date must be a valid date in YYYY-MM-DD format')
     })
 
     it('returns null for valid date', () => {
@@ -102,9 +102,80 @@ describe('validateCustomField', () => {
       expect(validateCustomField(field, '2026-05-10')).toBeNull()
     })
 
-    it('returns null for ISO date string', () => {
+    it('returns error for ISO datetime string (date type is strict YYYY-MM-DD)', () => {
       const field: FieldSchema = { name: 'Start Date', slug: 'startDate', type: 'date' }
+      expect(validateCustomField(field, '2026-05-10T12:00:00Z')).toBe('Start Date must be a valid date in YYYY-MM-DD format')
+    })
+  })
+
+  describe('datetime type', () => {
+    it('returns error for non-RFC 3339 value', () => {
+      const field: FieldSchema = { name: 'Event At', slug: 'eventAt', type: 'datetime' }
+      expect(validateCustomField(field, 'not-a-datetime')).toBe('Event At must be a valid datetime in RFC 3339 format')
+    })
+
+    it('returns error for naive datetime (missing timezone offset)', () => {
+      const field: FieldSchema = { name: 'Event At', slug: 'eventAt', type: 'datetime' }
+      expect(validateCustomField(field, '2026-05-10T12:00')).toBe('Event At must be a valid datetime in RFC 3339 format')
+    })
+
+    it('returns null for valid RFC 3339 with Z suffix', () => {
+      const field: FieldSchema = { name: 'Event At', slug: 'eventAt', type: 'datetime' }
       expect(validateCustomField(field, '2026-05-10T12:00:00Z')).toBeNull()
+    })
+
+    it('returns null for valid RFC 3339 with numeric offset', () => {
+      const field: FieldSchema = { name: 'Event At', slug: 'eventAt', type: 'datetime' }
+      expect(validateCustomField(field, '2026-05-10T12:00:00+08:00')).toBeNull()
+    })
+
+    it('returns null for empty optional datetime field', () => {
+      const field: FieldSchema = { name: 'Event At', slug: 'eventAt', type: 'datetime' }
+      expect(validateCustomField(field, null)).toBeNull()
+    })
+  })
+
+  describe('email type', () => {
+    it('returns error for invalid email', () => {
+      const field: FieldSchema = { name: 'Contact', slug: 'contact', type: 'email' }
+      expect(validateCustomField(field, 'not-an-email')).toBe('Contact must be a valid email address')
+    })
+
+    it('returns null for valid email', () => {
+      const field: FieldSchema = { name: 'Contact', slug: 'contact', type: 'email' }
+      expect(validateCustomField(field, 'hello@example.com')).toBeNull()
+    })
+
+    it('returns null for empty optional email field', () => {
+      const field: FieldSchema = { name: 'Contact', slug: 'contact', type: 'email' }
+      expect(validateCustomField(field, null)).toBeNull()
+    })
+  })
+
+  describe('url type', () => {
+    it('returns error for non-http scheme', () => {
+      const field: FieldSchema = { name: 'Website', slug: 'website', type: 'url' }
+      expect(validateCustomField(field, 'ftp://example.com')).toBe('Website must be a valid http(s) URL')
+    })
+
+    it('returns error for value without scheme', () => {
+      const field: FieldSchema = { name: 'Website', slug: 'website', type: 'url' }
+      expect(validateCustomField(field, 'example.com')).toBe('Website must be a valid http(s) URL')
+    })
+
+    it('returns null for valid https URL', () => {
+      const field: FieldSchema = { name: 'Website', slug: 'website', type: 'url' }
+      expect(validateCustomField(field, 'https://example.com')).toBeNull()
+    })
+
+    it('returns null for valid http URL', () => {
+      const field: FieldSchema = { name: 'Website', slug: 'website', type: 'url' }
+      expect(validateCustomField(field, 'http://example.com/path')).toBeNull()
+    })
+
+    it('returns null for empty optional url field', () => {
+      const field: FieldSchema = { name: 'Website', slug: 'website', type: 'url' }
+      expect(validateCustomField(field, null)).toBeNull()
     })
   })
 

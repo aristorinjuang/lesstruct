@@ -27,6 +27,17 @@ type LanguageLink struct {
 	URL  string
 }
 
+// SiteConfig carries the site-wide identity (name + optional logo) read from
+// the optional [site_config] block in config.toml. It is the same on every
+// page, so it lives on LayoutData rather than per-page data. Name is always
+// populated (the handler defaults it to the application name); Logo is empty
+// unless the operator configures one, in which case themes render an <img>
+// (using Name as the alt text) instead of the name as text.
+type SiteConfig struct {
+	Name string
+	Logo string
+}
+
 type LayoutData struct {
 	Title              string
 	Description        string
@@ -38,6 +49,7 @@ type LayoutData struct {
 	CurrentPath        string
 	Lang               string
 	LanguageLinks      []LanguageLink
+	SiteConfig         SiteConfig
 }
 
 type PostItem struct {
@@ -50,13 +62,40 @@ type PostItem struct {
 	Author          string
 	Username        string
 	AuthorAvatarURL string
-	CreatedAt       string
+	CreatedAt string
+	PostType  string
+	Tags      []string
+}
+
+// HomeSection is a per-post-type grouping rendered on the homepage. It is only
+// populated when [[homepage_section]] blocks are configured in config.toml; an
+// empty slice means the theme should fall back to the flat .Posts list.
+type HomeSection struct {
+	PostTypeSlug string
+	Title        string
+	Description  string
+	URL          string
+	Posts        []PostItem
+}
+
+// PaginationData carries prev/next state for paginated public listings. It is
+// embedded in IndexData, AuthorData, and TagData so templates reach the fields
+// directly (e.g. {{.NextURL}}). HasNext is derived from the fetch-limit+1
+// trick, so no COUNT query is required.
+type PaginationData struct {
+	CurrentPage int
+	HasPrev     bool
+	HasNext     bool
+	PrevURL     string
+	NextURL     string
 }
 
 type IndexData struct {
 	LayoutData
-	Posts []PostItem
-	Tags  []string
+	Posts     []PostItem
+	Tags      []string
+	Sections  []HomeSection
+	PaginationData
 }
 
 type FormattedField struct {
@@ -84,6 +123,7 @@ type ContentData struct {
 	CustomFieldsFormatted []FormattedField
 	Related               []PostItem
 	Comments              []CommentItem
+	PostType              string
 }
 
 type AuthorData struct {
@@ -92,13 +132,15 @@ type AuthorData struct {
 	Username               string
 	AuthorAvatarURL        string
 	Posts                  []PostItem
-	CustomFieldsFormatted []FormattedField
+	CustomFieldsFormatted  []FormattedField
+	PaginationData
 }
 
 type TagData struct {
 	LayoutData
 	TagName string
 	Posts   []PostItem
+	PaginationData
 }
 
 type AuthPageData struct {

@@ -63,7 +63,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	mockUserRepo := repomocks.NewMockUserRepo(t)
@@ -110,7 +110,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	adminMiddleware := middleware.NewAdminMiddleware(authMiddleware)
 
 	// Initialize content handler with mock service (Story 2.1)
-	contentHandler := handlers.NewContentHandler(mocks.NewMockContentServiceInterface(t), logger, "http://localhost:3000")
+	contentHandler := handlers.NewContentHandler(mocks.NewMockContentServiceInterface(t), logger, "http://localhost:3000", nil)
 
 	// Initialize media handler with mock service (Story 2.3)
 	mediaHandler := handlers.NewMediaHandler(mocks.NewMockMediaServiceInterface(t), nil, logger)
@@ -193,7 +193,7 @@ func TestSetup(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	mockUserRepo := repomocks.NewMockUserRepo(t)
@@ -228,7 +228,7 @@ func TestSetup(t *testing.T) {
 	csrfMiddleware := middleware.NewCSRFMiddleware(logger, nil, nil)
 
 	// Initialize content handler with mock service (Story 2.1)
-	contentHandler := handlers.NewContentHandler(mocks.NewMockContentServiceInterface(t), logger, "http://localhost:3000")
+	contentHandler := handlers.NewContentHandler(mocks.NewMockContentServiceInterface(t), logger, "http://localhost:3000", nil)
 
 	// Initialize media handler with mock service (Story 2.3)
 	mediaHandler := handlers.NewMediaHandler(mocks.NewMockMediaServiceInterface(t), nil, logger)

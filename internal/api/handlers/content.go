@@ -179,6 +179,18 @@ type SearchResult struct {
 	MetaDescription string `json:"metaDescription"`
 }
 
+// PublicAuthorResponse is the safe, public-facing shape for a published author.
+// It deliberately omits email, role, status, and custom fields — those stay
+// behind authentication (per Lesstruct's no-enumeration model).
+type PublicAuthorResponse struct {
+	Username     string   `json:"username"`
+	DisplayName  string   `json:"displayName"`
+	AvatarURL    string   `json:"avatarURL"`
+	ProfileURL   string   `json:"profileURL"`
+	ContentCount int      `json:"contentCount"`
+	PostTypes    []string `json:"postTypes"`
+}
+
 type CreateContentRequest struct {
 	Title              string         `json:"title"`
 	Content            string         `json:"content"`
@@ -227,17 +239,19 @@ type ContentServiceInterface interface {
 	GetPublished(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	GetPublishedBySlug(ctx context.Context, slug string, language string) (*contentdomain.Content, error)
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
-	GetPublishedByAuthorUsername(ctx context.Context, username string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*contentdomain.Content, error)
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*contentdomain.Content, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
+	GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*contentdomain.PublishedAuthor, error)
 }
 
 type ContentHandler struct {
-	contentService ContentServiceInterface
-	logger         *util.Logger
-	baseURL        string
+	contentService            ContentServiceInterface
+	logger                    *util.Logger
+	baseURL                   string
+	profilePictureURLResolver func(string) string
 }
 
 func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
@@ -750,7 +764,7 @@ func (h *ContentHandler) GetPublishedContentByAuthor(w http.ResponseWriter, r *h
 		}
 	}
 
-	contents, err := h.contentService.GetPublishedByAuthorUsername(r.Context(), username, limit, offset)
+	contents, err := h.contentService.GetPublishedByAuthorUsername(r.Context(), username, "", limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list published content by author: %v", err)
 		handleContentError(w, err)
@@ -758,6 +772,56 @@ func (h *ContentHandler) GetPublishedContentByAuthor(w http.ResponseWriter, r *h
 	}
 
 	sendSuccessResponse(w, http.StatusOK, contents)
+}
+
+// ListPublishedAuthors returns the users who have published at least one
+// content item, with only safe public fields (username, display name, avatar,
+// profile URL, published-content count, and the distinct post types they
+// publish under). No email, role, or custom fields are exposed. Ordered by
+// published-content count (desc) then username (asc) — useful for "most active
+// contributors" widgets and author directories.
+func (h *ContentHandler) ListPublishedAuthors(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if limitQuery := r.URL.Query().Get("limit"); limitQuery != "" {
+		if l, err := strconv.Atoi(limitQuery); err == nil && l > 0 {
+			limit = l
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	offset := 0
+	if offsetQuery := r.URL.Query().Get("offset"); offsetQuery != "" {
+		if o, err := strconv.Atoi(offsetQuery); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	authors, err := h.contentService.GetPublishedAuthors(r.Context(), limit, offset)
+	if err != nil {
+		h.logger.Error("Failed to list published authors: %v", err)
+		sendErrorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to list published authors", nil)
+		return
+	}
+
+	responses := make([]PublicAuthorResponse, 0, len(authors))
+	for _, a := range authors {
+		var avatarURL string
+		if a.ProfilePicture != "" && h.profilePictureURLResolver != nil {
+			avatarURL = h.profilePictureURLResolver(a.ProfilePicture)
+		}
+		responses = append(responses, PublicAuthorResponse{
+			Username:     a.Username,
+			DisplayName:  a.DisplayName,
+			AvatarURL:    avatarURL,
+			ProfileURL:   h.baseURL + "/authors/" + a.Username,
+			ContentCount: a.ContentCount,
+			PostTypes:    a.PostTypes,
+		})
+	}
+
+	sendSuccessResponse(w, http.StatusOK, responses)
 }
 
 func (h *ContentHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
@@ -868,10 +932,16 @@ func (h *ContentHandler) SearchPublished(w http.ResponseWriter, r *http.Request)
 	sendSuccessResponse(w, http.StatusOK, results)
 }
 
-func NewContentHandler(contentService ContentServiceInterface, logger *util.Logger, baseURL string) *ContentHandler {
+func NewContentHandler(
+	contentService ContentServiceInterface,
+	logger *util.Logger,
+	baseURL string,
+	profilePictureURLResolver func(string) string,
+) *ContentHandler {
 	return &ContentHandler{
-		contentService: contentService,
-		logger:         logger,
-		baseURL:        strings.TrimRight(baseURL, "/"),
+		contentService:            contentService,
+		logger:                    logger,
+		baseURL:                   strings.TrimRight(baseURL, "/"),
+		profilePictureURLResolver: profilePictureURLResolver,
 	}
 }

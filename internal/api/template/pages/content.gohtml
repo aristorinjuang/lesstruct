@@ -1,5 +1,5 @@
 {{define "body"}}
-<article class="content-article">
+<article class="content-article" data-post-type="{{.PostType}}">
 <h1 class="content-wrapper">{{.Title}}</h1>
 <div class="content-meta content-wrapper">
 {{if .AuthorAvatarURL}}<img src="{{.AuthorAvatarURL}}" class="author-avatar" alt="{{.Author}}">{{end}}<time>{{.CreatedAt}}</time>

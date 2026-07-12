@@ -5,6 +5,7 @@ import CustomFieldRenderer from './CustomFieldRenderer.vue'
 import InputText from '@/components/atoms/InputText.vue'
 import NumberInput from '@/components/atoms/NumberInput.vue'
 import DateInput from '@/components/atoms/DateInput.vue'
+import DateTimeInput from '@/components/atoms/DateTimeInput.vue'
 import Select from '@/components/atoms/Select.vue'
 import SwitchToggle from '@/components/atoms/SwitchToggle.vue'
 import FormField from './FormField.vue'
@@ -50,6 +51,28 @@ describe('CustomFieldRenderer', () => {
       const wrapper = createWrapper({ ...baseField, type: 'date' })
 
       expect(wrapper.findComponent(DateInput).exists()).toBe(true)
+    })
+
+    it('renders DateTimeInput for datetime field type', () => {
+      const wrapper = createWrapper({ ...baseField, type: 'datetime' })
+
+      expect(wrapper.findComponent(DateTimeInput).exists()).toBe(true)
+    })
+
+    it('renders InputText with inputType email for email field type', () => {
+      const wrapper = createWrapper({ ...baseField, type: 'email' })
+
+      const inputText = wrapper.findComponent(InputText)
+      expect(inputText.exists()).toBe(true)
+      expect(inputText.props('inputType')).toBe('email')
+    })
+
+    it('renders InputText with inputType url for url field type', () => {
+      const wrapper = createWrapper({ ...baseField, type: 'url' })
+
+      const inputText = wrapper.findComponent(InputText)
+      expect(inputText.exists()).toBe(true)
+      expect(inputText.props('inputType')).toBe('url')
     })
 
     it('renders Select for select field type', () => {
@@ -238,6 +261,16 @@ describe('CustomFieldRenderer', () => {
 
       const dateInput = wrapper.findComponent(DateInput)
       expect(dateInput.props('disabled')).toBe(true)
+    })
+
+    it('passes disabled prop to DateTimeInput', () => {
+      const wrapper = createWrapper(
+        { ...baseField, type: 'datetime' },
+        { disabled: true }
+      )
+
+      const dateTimeInput = wrapper.findComponent(DateTimeInput)
+      expect(dateTimeInput.props('disabled')).toBe(true)
     })
 
     it('passes disabled prop to Select', () => {

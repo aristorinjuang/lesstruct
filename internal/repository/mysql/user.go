@@ -129,7 +129,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *repository.User) 
 	if name == "" {
 		name = user.Username
 	}
-	customFieldsJSON, cErr := marshalCustomFields(user.CustomFields)
+	customFieldsJSON, cErr := repository.MarshalCustomFields(user.CustomFields)
 	if cErr != nil {
 		return fmt.Errorf("failed to marshal custom fields: %w", cErr)
 	}
@@ -532,7 +532,7 @@ func (r *UserRepository) UpdateProfile(
 	}
 	email = strings.TrimSpace(email)
 	email = strings.ToLower(email)
-	customFieldsJSON, err := marshalCustomFields(customFields)
+	customFieldsJSON, err := repository.MarshalCustomFields(customFields)
 	if err != nil {
 		return err
 	}
@@ -559,7 +559,7 @@ func (r *UserRepository) UpdateCustomFields(ctx context.Context, userID int, cus
 	if err := r.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database connection lost: %w", err)
 	}
-	customFieldsJSON, err := marshalCustomFields(customFields)
+	customFieldsJSON, err := repository.MarshalCustomFields(customFields)
 	if err != nil {
 		return err
 	}

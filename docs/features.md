@@ -48,7 +48,10 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   bodies; the server converts them to canonical TipTap JSON. Raw Markdown is
   never persisted.
 - **WordPress importer.** Upload a WordPress WXR export to migrate posts, pages,
-  and media into Lesstruct.
+  custom post types (and their custom fields), media, and authors into
+  Lesstruct. Authors are auto-created as Contributor users and their posts are
+  assigned to them. Custom post types and field schemas are read from
+  `config.toml`; items whose post type is not registered are silently skipped.
 
 ## Media & images {#media-images}
 
@@ -87,8 +90,9 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   designed for AI agents and terminal-first humans. Markdown ingest, cursor
   pagination, and a standard response envelope make it easy to script.
 - **Agent skills.** Lesstruct ships installable skills for theme and plugin
-  development that work from your installed site (no source tree needed), for
-  Claude Code, OpenCode, OpenClaw, and Hermes.
+  development that work from your installed site (no source tree needed).
+  Install them with `npx skills add aristorinjuang/lesstruct` — works with
+  Claude Code, OpenCode, Cursor, Codex, and 25+ other agents.
 - **Crawlable docs.** This site publishes `/llms.txt` (page index),
   `/llms-full.txt` (every page concatenated), and a per-page Markdown mirror for
   retrieval pipelines.
@@ -103,6 +107,22 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   CSS, JS, and HTML templates. The contract (CSS variables, layout blocks, JS DOM
   ids, CDN assets) is documented so fork-and-modify is safe. See
   [theme-development.md](theme-development.md).
+- **Multi-type aware.** Every post card and single-page template receives the
+  item's `.PostType`, so a theme can branch layouts for articles, events, and any
+  custom post type from one template set.
+- **Magazine homepages.** Optional `[[homepage_section]]` blocks in `config.toml`
+  render per-post-type groupings (latest articles, upcoming events, …) alongside
+  the latest-posts list — backward compatible (omitted = flat list).
+- **Site identity from config.** An optional `[site_config]` block in
+  `config.toml` sets the site `name` and an optional `logo`, which drive the
+  browser-tab title suffix, `og:site_name`, the default logo text, and the
+  footer. This is the one branding surface a theme override cannot reach (the
+  name is baked into handler-side `PageTitle` strings); everything else
+  (social links, analytics, custom `<head>`, image/multi-logo layouts) stays a
+  `THEME_DIR` theme concern.
+- **Paginated listings.** Homepage, author, tag, and post-type listing pages
+  accept `?page=N` and expose prev/next state to templates. Page size is tuned
+  via `POSTS_PER_PAGE`.
 - **SEO built in.** `sitemap.xml`, `robots.txt`, JSON sitemap, and `hreflang` are
   generated for you.
 
@@ -135,6 +155,10 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **`lesstruct-cli`.** A Cobra client for the same API — `content`, `media`,
   `comment`, and `config` subcommands; `--output text|json`; auth via `--api-key`,
   env, or config file.
+- **Public content & author APIs.** Unauthenticated `/api/v1/public/*` endpoints
+  serve rendered content, search, post types, and a **published-authors listing**
+  (`/v1/public/authors`) for author directories and "most active contributors"
+  widgets — only safe fields, never email/role/custom-fields.
 
 ## Users, roles & security {#users-roles-security}
 

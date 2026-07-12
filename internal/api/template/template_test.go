@@ -45,6 +45,34 @@ func TestRenderIndex(t *testing.T) {
 	assert.Contains(t, body, `<link rel="stylesheet" href="/static/style.css">`)
 }
 
+func TestRenderIndex_PostItemTagsAccepted(t *testing.T) {
+	templates, err := template.NewTemplates(nil, nil)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	data := template.IndexData{
+		LayoutData: template.LayoutData{
+			Title:     "Test Site",
+			PageTitle: "Test Site",
+			Lang:      "en",
+		},
+		Posts: []template.PostItem{
+			{
+				Slug:  "hello-world",
+				Title: "Hello World",
+				Tags:  []string{"go", "tutorial"},
+			},
+		},
+	}
+
+	renderErr := templates.RenderIndex(w, data)
+	require.NoError(t, renderErr)
+
+	body := w.Body.String()
+	assert.Contains(t, body, "Hello World")
+	assert.Contains(t, body, `href="/hello-world"`)
+}
+
 func TestRenderIndex_Empty(t *testing.T) {
 	templates, err := template.NewTemplates(nil, nil)
 	require.NoError(t, err)

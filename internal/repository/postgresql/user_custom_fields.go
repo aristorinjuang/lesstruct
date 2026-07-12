@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/aristorinjuang/lesstruct/internal/repository"
 )
 
 // UpdateProfile updates a user's profile fields (name, email, role, custom_fields)
@@ -23,7 +25,7 @@ func (r *UserRepository) UpdateProfile(
 	email = strings.TrimSpace(email)
 	email = strings.ToLower(email)
 
-	customFieldsJSON, err := marshalCustomFields(customFields)
+	customFieldsJSON, err := repository.MarshalCustomFields(customFields)
 	if err != nil {
 		return err
 	}
@@ -60,7 +62,7 @@ func (r *UserRepository) UpdateCustomFields(
 	}
 
 
-	customFieldsJSON, err := marshalCustomFields(customFields)
+	customFieldsJSON, err := repository.MarshalCustomFields(customFields)
 	if err != nil {
 		return err
 	}

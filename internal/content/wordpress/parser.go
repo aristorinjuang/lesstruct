@@ -39,12 +39,34 @@ func collectTags(categories []itemCategory) []string {
 	return tags
 }
 
+// collectMeta builds a raw key→value map from an item's postmeta entries. All
+// entries are preserved (including ACF internal keys prefixed with "_") so that
+// downstream consumers (e.g. featured-image resolution) can access them.
+func collectMeta(postmeta []postMeta) map[string]string {
+	if len(postmeta) == 0 {
+		return nil
+	}
+	meta := make(map[string]string, len(postmeta))
+	for _, pm := range postmeta {
+		key := strings.TrimSpace(pm.Key)
+		if key == "" {
+			continue
+		}
+		meta[key] = pm.Value
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return meta
+}
+
 // Parse reads a WordPress eXtended RSS (WXR) stream and returns a normalized
-// document containing only post and page items. Statuses are mapped to the
-// Lesstruct vocabulary ("publish" → "published", everything else → "draft").
-// Tags are collected from item-level category elements with domain "post_tag"
-// or "category".
-func Parse(r io.Reader) (*WXRDocument, error) {
+// document containing only items whose post type is in allowedTypes. Statuses
+// are mapped to the Lesstruct vocabulary ("publish" → "published", everything
+// else → "draft"). Tags are collected from item-level category elements with
+// domain "post_tag" or "category". Custom field values (<wp:postmeta>) are
+// collected into each item's Meta map.
+func Parse(r io.Reader, allowedTypes map[string]bool) (*WXRDocument, error) {
 	var root rss
 	decoder := xml.NewDecoder(r)
 	decoder.Strict = false
@@ -55,12 +77,25 @@ func Parse(r io.Reader) (*WXRDocument, error) {
 	doc := &WXRDocument{
 		SiteTitle: strings.TrimSpace(root.Channel.Title),
 		SiteURL:   strings.TrimSpace(root.Channel.BaseBlogURL),
+		Authors:   make([]ParsedAuthor, 0, len(root.Channel.Authors)),
 		Items:     make([]ParsedItem, 0, len(root.Channel.Items)),
+	}
+
+	for _, a := range root.Channel.Authors {
+		login := strings.TrimSpace(a.Login)
+		if login == "" {
+			continue
+		}
+		doc.Authors = append(doc.Authors, ParsedAuthor{
+			Login:       login,
+			Email:       strings.TrimSpace(a.Email),
+			DisplayName: strings.TrimSpace(a.DisplayName),
+		})
 	}
 
 	for _, it := range root.Channel.Items {
 		postType := strings.TrimSpace(it.PostType)
-		if postType != "post" && postType != "page" {
+		if !allowedTypes[postType] {
 			continue
 		}
 
@@ -72,6 +107,8 @@ func Parse(r io.Reader) (*WXRDocument, error) {
 			PostType: postType,
 			Tags:     collectTags(it.Categories),
 			PubDate:  strings.TrimSpace(it.PubDate),
+			Creator:  strings.TrimSpace(it.Creator),
+			Meta:     collectMeta(it.PostMeta),
 		})
 	}
 

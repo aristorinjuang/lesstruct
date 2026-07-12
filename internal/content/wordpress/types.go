@@ -61,7 +61,14 @@ type item struct {
 	Status         string `xml:"http://wordpress.org/export/1.2/ status"`
 	PostParent     int    `xml:"http://wordpress.org/export/1.2/ post_parent"`
 	PostType       string `xml:"http://wordpress.org/export/1.2/ post_type"`
+	PostMeta       []postMeta     `xml:"http://wordpress.org/export/1.2/ postmeta"`
 	Categories     []itemCategory `xml:"category"`
+}
+
+// postMeta is a single WordPress custom field entry (<wp:postmeta>).
+type postMeta struct {
+	Key   string `xml:"http://wordpress.org/export/1.2/ meta_key"`
+	Value string `xml:"http://wordpress.org/export/1.2/ meta_value"`
 }
 
 // itemCategory is a category or tag assigned to an item. The Domain attribute
@@ -72,12 +79,21 @@ type itemCategory struct {
 	Value    string `xml:",chardata"`
 }
 
+// ParsedAuthor is a normalized WordPress author ready for user resolution.
+type ParsedAuthor struct {
+	Login       string
+	Email       string
+	DisplayName string
+}
+
 // WXRDocument is the parsed, normalized representation of a WXR export.
-// Only post and page items are retained; other post types (attachment,
-// wp_navigation, wp_global_styles, revisions) are filtered out during parsing.
+// Only items whose post type is in the caller-supplied allowlist are retained;
+// other post types (attachment, wp_navigation, wp_global_styles, revisions) are
+// filtered out during parsing.
 type WXRDocument struct {
 	SiteTitle string
 	SiteURL   string
+	Authors   []ParsedAuthor
 	Items     []ParsedItem
 }
 
@@ -87,7 +103,9 @@ type ParsedItem struct {
 	Content  string
 	Slug     string
 	Status   string // mapped to "published" or "draft"
-	PostType string // "post" or "page"
+	PostType string
 	Tags     []string
 	PubDate  string
+	Creator  string // WordPress author login (<dc:creator>)
+	Meta     map[string]string
 }

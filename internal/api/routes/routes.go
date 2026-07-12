@@ -52,7 +52,6 @@ func dispatchByAuth(agentChain, browserChain http.Handler) http.HandlerFunc {
 	}
 }
 
-
 // Setup configures and returns the HTTP router
 func Setup(
 	authHandler *handlers.AuthHandler,
@@ -109,8 +108,11 @@ func Setup(
 		})
 	})
 
-	// Limit request body size to 1MB
-	r.Use(maxBodySizeMiddleware(1 << 20)) // 1MB
+	// Body-size limits are applied per-route-group below, NOT globally. A global
+	// MaxBytesReader would run before any per-route exemption and silently cap
+	// upload routes at the global value (the inner, smaller reader always wins),
+	// which is what broke the WordPress importer. Each group applies exactly one
+	// limit: 1MB for JSON endpoints, higher for upload endpoints.
 
 	// Health endpoint is NOT rate-limited
 	// SEO discovery endpoints live at the router ROOT (not under /api) so crawlers
@@ -167,43 +169,43 @@ func Setup(
 	r.Group(func(r chi.Router) {
 		r.Use(rateLimitMiddleware.APIKeyHandler)
 		r.Use(apiKeyAuthMiddleware.Handler)
-		r.Post("/api/v1/content", agentContentHandler.Create)
-		r.Get("/api/v1/content", agentContentHandler.List)
-		r.Get("/api/v1/content/{id}", agentContentHandler.Get)
-		r.Put("/api/v1/content/{id}", agentContentHandler.Update)
-		// Admin-only (a non-admin API key gets 403): lets the CLI set the
-		// admin-managed system fields for a content item (mirror of the browser
-		// admin's system-fields endpoint, in the Bearer/agent realm).
-		r.Put("/api/v1/content/{id}/system-fields", agentContentHandler.SetSystemFields)
-		r.Delete("/api/v1/content/{id}", agentContentHandler.Delete)
-		// Standalone status-toggle actions — let agents flip published/draft
-		// without resending the body. Both accept an empty request body and
-		// are idempotent. Sharing the Bearer-only group above so the per-key
-		// rate limit + API-key auth apply on the same footing as Update/Delete.
-		r.Post("/api/v1/content/{id}/publish", agentContentHandler.Publish)
-		r.Post("/api/v1/content/{id}/unpublish", agentContentHandler.Unpublish)
-		// Agent comment surface — nested under the content-keyed namespace so it is
-		// collision-free vs the browser realm's /api/v1/content_items/.../comments and
-		// /api/v1/comments routes (Chi routes by path, not auth realm). Create/List are
-		// any authenticated caller (scoped to visible content); Delete is own-or-admin;
-		// UpdateStatus is admin-only moderation. Reuses the existing content domain
-		// comment methods via agent.CommentHandler.
-		r.Post("/api/v1/content/{id}/comments", agentCommentHandler.Create)
-		r.Get("/api/v1/content/{id}/comments", agentCommentHandler.List)
-		r.Delete("/api/v1/content/{id}/comments/{commentId}", agentCommentHandler.Delete)
-		r.Put("/api/v1/content/{id}/comments/{commentId}/status", agentCommentHandler.UpdateStatus)
-		// Media upload is exempted from the root-level 1MB body limit (raised to 10MB) so
-		// legitimate image uploads are not rejected — mirroring the admin media-upload
-		// pattern. The exemption applies ONLY to the POST upload route, not the GETs.
-		r.With(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB
-				next.ServeHTTP(w, r)
-			})
-		}).Post("/api/v1/media", agentMediaHandler.Upload)
+
+		// JSON endpoints — 1MB body limit.
+		r.Group(func(r chi.Router) {
+			r.Use(maxBodySizeMiddleware(1 << 20))
+			r.Post("/api/v1/content", agentContentHandler.Create)
+			r.Get("/api/v1/content", agentContentHandler.List)
+			r.Get("/api/v1/content/{id}", agentContentHandler.Get)
+			r.Put("/api/v1/content/{id}", agentContentHandler.Update)
+			// Admin-only (a non-admin API key gets 403): lets the CLI set the
+			// admin-managed system fields for a content item (mirror of the browser
+			// admin's system-fields endpoint, in the Bearer/agent realm).
+			r.Put("/api/v1/content/{id}/system-fields", agentContentHandler.SetSystemFields)
+			r.Delete("/api/v1/content/{id}", agentContentHandler.Delete)
+			// Standalone status-toggle actions — let agents flip published/draft
+			// without resending the body. Both accept an empty request body and
+			// are idempotent. Sharing the Bearer-only group above so the per-key
+			// rate limit + API-key auth apply on the same footing as Update/Delete.
+			r.Post("/api/v1/content/{id}/publish", agentContentHandler.Publish)
+			r.Post("/api/v1/content/{id}/unpublish", agentContentHandler.Unpublish)
+			// Agent comment surface — nested under the content-keyed namespace so it is
+			// collision-free vs the browser realm's /api/v1/content_items/.../comments and
+			// /api/v1/comments routes (Chi routes by path, not auth realm). Create/List are
+			// any authenticated caller (scoped to visible content); Delete is own-or-admin;
+			// UpdateStatus is admin-only moderation. Reuses the existing content domain
+			// comment methods via agent.CommentHandler.
+			r.Post("/api/v1/content/{id}/comments", agentCommentHandler.Create)
+			r.Get("/api/v1/content/{id}/comments", agentCommentHandler.List)
+			r.Delete("/api/v1/content/{id}/comments/{commentId}", agentCommentHandler.Delete)
+			r.Put("/api/v1/content/{id}/comments/{commentId}/status", agentCommentHandler.UpdateStatus)
+		})
+
+		// Media upload — 10MB (sibling of the 1MB group so the higher limit is not
+		// silently capped by a competing smaller MaxBytesReader).
 		// NOTE: GET /api/v1/media and GET /api/v1/media/{id} are registered BELOW as shared
 		// dual-auth dispatch routes (the browser admin media list/get co-owns the same path;
 		// Chi routes by path, not auth realm, so a single registration dispatches by credential).
+		r.With(maxBodySizeMiddleware(10<<20)).Post("/api/v1/media", agentMediaHandler.Upload)
 	})
 
 	// Shared /api/v1/media GET routes — co-owned by the agent (Bearer API key) and browser
@@ -246,38 +248,33 @@ func Setup(
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(csrfMiddleware.Handler)
 			r.Use(adminMiddleware.AdminOnly)
-			r.Get("/pending-users", userManagementHandler.GetPendingUsers)
-			r.Post("/users/{id}/approve", userManagementHandler.ApproveUser)
-			r.Post("/users/{id}/reject", userManagementHandler.RejectUser)
-			r.Post("/users/{id}/mark-spam", userManagementHandler.MarkUserAsSpam)
-			// Account administration routes (Story 1.6)
-			r.Post("/users", userManagementHandler.CreateUser)
-			r.Get("/users", userManagementHandler.GetAllUsers)
-			r.Post("/users/{id}/suspend", userManagementHandler.SuspendUser)
-			r.Post("/users/{id}/unsuspend", userManagementHandler.UnsuspendUser)
-			r.Post("/users/{id}/soft-delete", userManagementHandler.SoftDeleteUser)
-			r.Put("/users/{id}", userManagementHandler.UpdateUser)
-			r.Get("/users/{id}/deleted-content", userManagementHandler.GetSoftDeletedContent)
-			r.Post("/content/{id}/restore", userManagementHandler.RestoreContent)
-			r.Put("/content/{id}/system-fields", contentHandler.SetSystemFields)
 
-			// Admin profile picture routes (require Admin role) - Story 12.8
-			r.With(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB
-					next.ServeHTTP(w, r)
-				})
-			}).Put("/users/{id}/picture", profilePictureHandler.AdminUploadUserPicture)
-			r.Delete("/users/{id}/picture", profilePictureHandler.AdminDeleteUserPicture)
+			// JSON endpoints — 1MB body limit.
+			r.Group(func(r chi.Router) {
+				r.Use(maxBodySizeMiddleware(1 << 20))
+				r.Get("/pending-users", userManagementHandler.GetPendingUsers)
+				r.Post("/users/{id}/approve", userManagementHandler.ApproveUser)
+				r.Post("/users/{id}/reject", userManagementHandler.RejectUser)
+				r.Post("/users/{id}/mark-spam", userManagementHandler.MarkUserAsSpam)
+				// Account administration routes (Story 1.6)
+				r.Post("/users", userManagementHandler.CreateUser)
+				r.Get("/users", userManagementHandler.GetAllUsers)
+				r.Post("/users/{id}/suspend", userManagementHandler.SuspendUser)
+				r.Post("/users/{id}/unsuspend", userManagementHandler.UnsuspendUser)
+				r.Post("/users/{id}/soft-delete", userManagementHandler.SoftDeleteUser)
+				r.Put("/users/{id}", userManagementHandler.UpdateUser)
+				r.Get("/users/{id}/deleted-content", userManagementHandler.GetSoftDeletedContent)
+				r.Post("/content/{id}/restore", userManagementHandler.RestoreContent)
+				r.Put("/content/{id}/system-fields", contentHandler.SetSystemFields)
+				r.Delete("/users/{id}/picture", profilePictureHandler.AdminDeleteUserPicture)
+			})
 
-			// WordPress import (admin only) - Story: WP Import
-			// Exempt from the global 1MB body limit; WXR files can be large.
-			r.With(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					r.Body = http.MaxBytesReader(w, r.Body, 50<<20) // 50MB
-					next.ServeHTTP(w, r)
-				})
-			}).Post("/wordpress/import", wordPressHandler.Import)
+			// Admin profile picture upload — 10MB (Story 12.8).
+			r.With(maxBodySizeMiddleware(10<<20)).Put("/users/{id}/picture", profilePictureHandler.AdminUploadUserPicture)
+
+			// WordPress import (admin only) — the handler applies MaxBytesReader at
+			// IMPORT_MAX_SIZE_MB, so no route-level wrapper is needed here.
+			r.Post("/wordpress/import", wordPressHandler.Import)
 		})
 
 		// API key management routes (browser-realm, any authenticated role) - Story 1.1 + 1.2
@@ -285,6 +282,7 @@ func Setup(
 		// can manage their own keys. CSRF + RequireAuth protect these browser-realm endpoints.
 		r.Group(func(r chi.Router) {
 			r.Use(csrfMiddleware.Handler, authMiddleware.RequireAuth)
+			r.Use(maxBodySizeMiddleware(1 << 20))
 			r.Post("/admin/api-keys", apiKeyHandler.CreateAPIKey)
 			r.Get("/admin/api-keys", apiKeyHandler.ListAPIKeys)
 			r.Delete("/admin/api-keys/{id}", apiKeyHandler.RevokeAPIKey)
@@ -294,24 +292,23 @@ func Setup(
 		r.Route("/profile", func(r chi.Router) {
 			r.Use(csrfMiddleware.Handler)
 			r.Use(authMiddleware.RequireAuth)
-			r.Get("/", profileHandler.GetProfile)
-			r.Put("/email", profileHandler.UpdateEmail)
-			r.Put("/password", profileHandler.ChangePassword)
-			r.Get("/export", profileHandler.ExportUserData)
-			r.Put("/custom-fields", profileHandler.UpdateCustomFields)
-			r.Put("/name", profileHandler.UpdateName)
-			r.Get("/user-fields", profileHandler.GetUserFields)
-			r.Delete("/account", profileHandler.DeleteAccount)
 
-			// Profile picture routes (require authentication) - Story 12.8
-			// Upload is exempt from the global 1MB body limit; it needs up to 10MB
-			r.With(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB
-					next.ServeHTTP(w, r)
-				})
-			}).Put("/picture", profilePictureHandler.UploadProfilePicture)
-			r.Delete("/picture", profilePictureHandler.DeleteProfilePicture)
+			// JSON endpoints — 1MB body limit.
+			r.Group(func(r chi.Router) {
+				r.Use(maxBodySizeMiddleware(1 << 20))
+				r.Get("/", profileHandler.GetProfile)
+				r.Put("/email", profileHandler.UpdateEmail)
+				r.Put("/password", profileHandler.ChangePassword)
+				r.Get("/export", profileHandler.ExportUserData)
+				r.Put("/custom-fields", profileHandler.UpdateCustomFields)
+				r.Put("/name", profileHandler.UpdateName)
+				r.Get("/user-fields", profileHandler.GetUserFields)
+				r.Delete("/account", profileHandler.DeleteAccount)
+				r.Delete("/picture", profilePictureHandler.DeleteProfilePicture)
+			})
+
+			// Profile picture upload — 10MB (Story 12.8).
+			r.With(maxBodySizeMiddleware(10<<20)).Put("/picture", profilePictureHandler.UploadProfilePicture)
 		})
 
 		// Email update verification route (public, token-based) - Story 1.7
@@ -324,6 +321,7 @@ func Setup(
 			r.Use(rateLimitMiddleware.PublicHandler)
 			r.Get("/content_items", contentHandler.ListPublishedContents)
 			r.Get("/content_items/{slug}", contentHandler.GetPublishedContent)
+			r.Get("/authors", contentHandler.ListPublishedAuthors)
 			r.Get("/authors/{username}/content_items", contentHandler.GetPublishedContentByAuthor)
 			r.Get("/content_items/{slug}/comments", commentHandler.GetComments)
 			r.Get("/post_types", postTypeHandler.GetPublicPostTypes)
@@ -338,53 +336,52 @@ func Setup(
 		r.Route("/v1", func(r chi.Router) {
 			r.Use(csrfMiddleware.Handler)
 			r.Use(authMiddleware.RequireAuth)
-			r.Post("/content_items", contentHandler.CreateContent)
-			r.Get("/content_items", contentHandler.ListContents)
-			r.Get("/content_items/{id}", contentHandler.GetContent)
-			r.Put("/content_items/{id}", contentHandler.UpdateContent)
-			r.Delete("/content_items/{id}", contentHandler.DeleteContent)
-			r.Post("/content/slug", contentHandler.GenerateSlug)
-			r.Get("/content_items/{id}/seo", contentHandler.GetSEO)
-			r.Post("/content_items/{slug}/comments", commentHandler.CreateComment)
 
-			// Post types routes (require authentication) - Story 2.6
-			r.Get("/post_types", postTypeHandler.GetPostTypes)
+			// JSON endpoints — 1MB body limit.
+			r.Group(func(r chi.Router) {
+				r.Use(maxBodySizeMiddleware(1 << 20))
+				r.Post("/content_items", contentHandler.CreateContent)
+				r.Get("/content_items", contentHandler.ListContents)
+				r.Get("/content_items/{id}", contentHandler.GetContent)
+				r.Put("/content_items/{id}", contentHandler.UpdateContent)
+				r.Delete("/content_items/{id}", contentHandler.DeleteContent)
+				r.Post("/content/slug", contentHandler.GenerateSlug)
+				r.Get("/content_items/{id}/seo", contentHandler.GetSEO)
+				r.Post("/content_items/{slug}/comments", commentHandler.CreateComment)
 
-			// User field schemas route (require authentication + admin role)
-			r.With(adminMiddleware.AdminOnly).Get("/user_fields", postTypeHandler.GetUserFieldsEndpoint)
+				// Post types routes (require authentication) - Story 2.6
+				r.Get("/post_types", postTypeHandler.GetPostTypes)
 
-			// Media routes (require authentication) - Story 2.3
-			// Upload is exempt from the global 1MB body limit; it needs up to 10MB
-			r.With(func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					r.Body = http.MaxBytesReader(w, r.Body, 10<<20) // 10MB
-					next.ServeHTTP(w, r)
-				})
-			}).Post("/media/upload", mediaHandler.Upload)
-			r.Post("/media/generate", mediaHandler.GenerateImage)
-			// GET /media (list) and GET /media/{id} are served by the shared dual-auth
-			// dispatch at the root (above) — the agent and browser admin co-own these paths.
-			r.Delete("/media/{id}", mediaHandler.DeleteMedia)
+				// User field schemas route (require authentication + admin role)
+				r.With(adminMiddleware.AdminOnly).Get("/user_fields", postTypeHandler.GetUserFieldsEndpoint)
 
-			// Dashboard routes (require authentication + admin role) - Story 2.8
-			r.With(adminMiddleware.AdminOnly).Get("/dashboard/stats", dashboardHandler.GetStats)
+				r.Post("/media/generate", mediaHandler.GenerateImage)
+				// GET /media (list) and GET /media/{id} are served by the shared dual-auth
+				// dispatch at the root (above) — the agent and browser admin co-own these paths.
+				r.Delete("/media/{id}", mediaHandler.DeleteMedia)
 
-			// Admin comment moderation routes (require authentication + admin role) - Story 4.7
-			r.With(adminMiddleware.ModerationOnly).Get("/content_items/{id}/comments", commentHandler.GetCommentsForModeration)
-			r.With(adminMiddleware.ModerationOnly).Get("/comments/pending", commentHandler.GetPendingComments)
-			r.With(adminMiddleware.ModerationOnly).Put("/comments/{id}/status", commentHandler.UpdateCommentStatus)
-			r.With(adminMiddleware.ModerationOnly).Delete("/comments/{id}", commentHandler.DeleteComment)
+				// Dashboard routes (require authentication + admin role) - Story 2.8
+				r.With(adminMiddleware.AdminOnly).Get("/dashboard/stats", dashboardHandler.GetStats)
 
-			// Commentator user's own comments (require authentication)
-			r.Get("/my-comments", commentHandler.GetMyComments)
-			r.Delete("/my-comments/{id}", commentHandler.DeleteOwnComment)
+				// Admin comment moderation routes (require authentication + admin role) - Story 4.7
+				r.With(adminMiddleware.ModerationOnly).Get("/content_items/{id}/comments", commentHandler.GetCommentsForModeration)
+				r.With(adminMiddleware.ModerationOnly).Get("/comments/pending", commentHandler.GetPendingComments)
+				r.With(adminMiddleware.ModerationOnly).Put("/comments/{id}/status", commentHandler.UpdateCommentStatus)
+				r.With(adminMiddleware.ModerationOnly).Delete("/comments/{id}", commentHandler.DeleteComment)
 
-			// AI text generation routes (require authentication + feature enabled)
-			if textGenEnabled && textGenHandler != nil {
-				r.Post("/text/enhance", textGenHandler.Enhance)
-				r.Post("/text/translate", textGenHandler.Translate)
-			}
+				// Commentator user's own comments (require authentication)
+				r.Get("/my-comments", commentHandler.GetMyComments)
+				r.Delete("/my-comments/{id}", commentHandler.DeleteOwnComment)
 
+				// AI text generation routes (require authentication + feature enabled)
+				if textGenEnabled && textGenHandler != nil {
+					r.Post("/text/enhance", textGenHandler.Enhance)
+					r.Post("/text/translate", textGenHandler.Translate)
+				}
+			})
+
+			// Media upload — 10MB (Story 2.3).
+			r.With(maxBodySizeMiddleware(10<<20)).Post("/media/upload", mediaHandler.Upload)
 		})
 	})
 

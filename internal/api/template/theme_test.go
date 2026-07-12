@@ -149,14 +149,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-				data := template.IndexData{
-					LayoutData: template.LayoutData{
-						Title:     "Test Site",
-						PageTitle: "Test Site",
+			data := template.IndexData{
+				LayoutData: template.LayoutData{
+					Title:     "Test Site",
+					PageTitle: "Test Site",
+					SiteConfig: template.SiteConfig{
+						Name: "Lesstruct",
 					},
-					Posts: []template.PostItem{},
-				}
-				require.NoError(t, templates.RenderIndex(w, data))
+				},
+				Posts: []template.PostItem{},
+			}
+			require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "Lesstruct",
@@ -168,14 +171,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-				data := template.IndexData{
-					LayoutData: template.LayoutData{
-						Title:     "Test Site",
-						PageTitle: "Test Site",
+			data := template.IndexData{
+				LayoutData: template.LayoutData{
+					Title:     "Test Site",
+					PageTitle: "Test Site",
+					SiteConfig: template.SiteConfig{
+						Name: "Lesstruct",
 					},
-					Posts: []template.PostItem{},
-				}
-				require.NoError(t, templates.RenderIndex(w, data))
+				},
+				Posts: []template.PostItem{},
+			}
+			require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "Lesstruct",
@@ -209,14 +215,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-				data := template.IndexData{
-					LayoutData: template.LayoutData{
-						Title:     "Test Site",
-						PageTitle: "Test Site",
+			data := template.IndexData{
+				LayoutData: template.LayoutData{
+					Title:     "Test Site",
+					PageTitle: "Test Site",
+					SiteConfig: template.SiteConfig{
+						Name: "Lesstruct",
 					},
-					Posts: []template.PostItem{},
-				}
-				require.NoError(t, templates.RenderIndex(w, data))
+				},
+				Posts: []template.PostItem{},
+			}
+			require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "CustomTheme",
@@ -251,14 +260,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-				data := template.IndexData{
-					LayoutData: template.LayoutData{
-						Title:     "Test Site",
-						PageTitle: "Test Site",
+			data := template.IndexData{
+				LayoutData: template.LayoutData{
+					Title:     "Test Site",
+					PageTitle: "Test Site",
+					SiteConfig: template.SiteConfig{
+						Name: "Lesstruct",
 					},
-					Posts: []template.PostItem{},
-				}
-				require.NoError(t, templates.RenderIndex(w, data))
+				},
+				Posts: []template.PostItem{},
+			}
+			require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "ui.no_posts",
@@ -286,14 +298,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-				data := template.IndexData{
-					LayoutData: template.LayoutData{
-						Title:     "Test Site",
-						PageTitle: "Test Site",
+			data := template.IndexData{
+				LayoutData: template.LayoutData{
+					Title:     "Test Site",
+					PageTitle: "Test Site",
+					SiteConfig: template.SiteConfig{
+						Name: "Lesstruct",
 					},
-					Posts: []template.PostItem{},
-				}
-				require.NoError(t, templates.RenderIndex(w, data))
+				},
+				Posts: []template.PostItem{},
+			}
+			require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "Custom Index Page",

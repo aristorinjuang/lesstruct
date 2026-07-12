@@ -70,6 +70,7 @@ type Config struct {
 	DevMode            bool
 	AdminDevURL        string
 	ThemeDir           string
+	PostPerPage        int
 
 	RateLimitEnabled         bool
 	RateLimitAuthPerMinute   int
@@ -86,6 +87,11 @@ type Config struct {
 	AITextGenerationModel   string
 
 	APIKeyPepper string
+
+	// ImportMaxSizeMB is the ceiling (in megabytes) for any importer upload
+	// (WordPress WXR now; future importers reuse the same cap). Read via
+	// IMPORT_MAX_SIZE_MB. Use ImportMaxSize() for the byte value.
+	ImportMaxSizeMB int
 }
 
 // Load loads configuration from environment variables
@@ -115,6 +121,7 @@ func Load() (*Config, error) {
 		DevMode:            getEnvBool("DEV_MODE", false),
 		AdminDevURL:        getEnv("ADMIN_DEV_URL", "http://localhost:5173"),
 		ThemeDir:           getEnv("THEME_DIR", ""),
+		PostPerPage:        getEnvInt("POSTS_PER_PAGE", 50),
 
 		RateLimitEnabled:         getEnvBool("RATE_LIMIT_ENABLED", true),
 		RateLimitAuthPerMinute:   getEnvInt("RATE_LIMIT_AUTH_PER_MINUTE", 5),
@@ -131,6 +138,8 @@ func Load() (*Config, error) {
 		AITextGenerationModel:   getEnv("AI_TEXT_GENERATION_MODEL", "gpt-5-mini"),
 
 		APIKeyPepper: getEnv("API_KEY_PEPPER", ""),
+
+		ImportMaxSizeMB: getEnvInt("IMPORT_MAX_SIZE_MB", 100),
 	}
 
 	// Validate JWT secret
@@ -174,7 +183,26 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("PORT must be between 1 and 65535, got %d", cfg.Port)
 	}
 
+	// Validate public listing page size (0 falls back to the handler default at
+	// render time, but a negative or huge value is rejected up front).
+	if cfg.PostPerPage < 0 {
+		return nil, fmt.Errorf("POSTS_PER_PAGE must be between 0 (use default) and 100, got %d", cfg.PostPerPage)
+	}
+	if cfg.PostPerPage > 100 {
+		return nil, fmt.Errorf("POSTS_PER_PAGE must be between 0 (use default) and 100, got %d", cfg.PostPerPage)
+	}
+
+	// Validate import max size
+	if cfg.ImportMaxSizeMB < 1 {
+		return nil, fmt.Errorf("IMPORT_MAX_SIZE_MB must be at least 1, got %d", cfg.ImportMaxSizeMB)
+	}
+
 	return cfg, nil
+}
+
+// ImportMaxSize returns the importer upload ceiling in bytes.
+func (c *Config) ImportMaxSize() int64 {
+	return int64(c.ImportMaxSizeMB) << 20
 }
 
 // IsImageGenerationEnabled returns true if the Google Imagen API key is configured

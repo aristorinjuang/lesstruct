@@ -93,6 +93,7 @@ menu:
 
 params:
   BookTheme: "auto"
+  BookLogo: "/brand/lesstruct.webp"
   BookSection: "docs"
   BookSearch: true
   BookComments: false

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +33,17 @@ func formatDate(rfc3339 string) string {
 		return rfc3339
 	}
 	return t.Format("January 2, 2006")
+}
+
+func formatDateTime(rfc3339 string) string {
+	if rfc3339 == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, rfc3339)
+	if err != nil {
+		return rfc3339
+	}
+	return t.Format("January 2, 2006 at 3:04 PM")
 }
 
 func isEmptyValue(val any) bool {
@@ -56,6 +68,10 @@ func formatFieldValue(fieldType customfield.FieldType, val any) string {
 	case customfield.FieldTypeDate:
 		if s, ok := val.(string); ok {
 			return formatDate(s)
+		}
+	case customfield.FieldTypeDatetime:
+		if s, ok := val.(string); ok {
+			return formatDateTime(s)
 		}
 	}
 	return fmt.Sprintf("%v", val)
@@ -104,6 +120,58 @@ func buildImageSrcset(variants map[string]mediadomain.MediaVariant) string {
 	return sb.String()
 }
 
+// defaultPostsPerPage is the page size used when the configured POSTS_PER_PAGE
+// is zero or invalid. Public listings fetch postsPerPage+1 rows so they can
+// detect HasNext without a COUNT query, then trim back to postsPerPage.
+const defaultPostsPerPage = 50
+
+// defaultHomeSectionLimit is the number of items shown in a homepage section
+// when its [[homepage_section]] limit is unset.
+const defaultHomeSectionLimit = 6
+
+// parsePage extracts a 1-based page number from the ?page= query parameter,
+// clamped to a minimum of 1. Missing or invalid values default to page 1.
+func parsePage(r *http.Request) int {
+	raw := r.URL.Query().Get("page")
+	if raw == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// buildPagination assembles prev/next state from the current page and the
+// HasNext flag produced by the fetch-limit+1 probe. baseURL is the bare path
+// (e.g. "/authors/admin"); page 1 always links to the bare URL.
+func buildPagination(currentPage int, hasNext bool, baseURL string) tpl.PaginationData {
+	pd := tpl.PaginationData{CurrentPage: currentPage}
+	if currentPage > 1 {
+		pd.HasPrev = true
+		if currentPage == 2 {
+			pd.PrevURL = baseURL
+		} else {
+			pd.PrevURL = fmt.Sprintf("%s?page=%d", baseURL, currentPage-1)
+		}
+	}
+	if hasNext {
+		pd.HasNext = true
+		pd.NextURL = fmt.Sprintf("%s?page=%d", baseURL, currentPage+1)
+	}
+	return pd
+}
+
+// trimToPage applies the fetch-limit+1 HasNext probe: if more than perPage rows
+// were returned, there is another page and the extra row is dropped.
+func trimToPage(items []*contentdomain.Content, perPage int) ([]*contentdomain.Content, bool) {
+	if len(items) > perPage {
+		return items[:perPage], true
+	}
+	return items, false
+}
+
 type UserBasicInfo struct {
 	Name           string
 	Username       string
@@ -127,12 +195,13 @@ type ContentService interface {
 	GetPublished(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	GetPublishedBySlugAny(ctx context.Context, slug string) (*contentdomain.Content, error)
 	GetPublishedByID(ctx context.Context, id int) (*contentdomain.Content, error)
-	GetPublishedByAuthorUsername(ctx context.Context, username string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*contentdomain.Content, error)
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	GetPublishedPages(ctx context.Context) ([]*contentdomain.Content, error)
 	GetPublishedCustomPostTypes(ctx context.Context) ([]string, error)
-	GetPublishedByPostType(ctx context.Context, postType string, limit int, offset int) ([]*contentdomain.Content, error)
-	GetPublishedByTag(ctx context.Context, tag string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByPostType(ctx context.Context, postType string, language string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByTag(ctx context.Context, tag string, language string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedTags(ctx context.Context) ([]string, error)
 	GetCommentsForContent(ctx context.Context, contentID int) ([]*contentdomain.Comment, error)
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
 	GetRelated(ctx context.Context, id int, limit int) ([]*contentdomain.Content, error)
@@ -187,6 +256,18 @@ type ContentPageHandler struct {
 	renderer          tiptap.Renderer
 	mediaRepo         mediadomain.Repository
 	languages         []string
+	homepageSections  []config.HomepageSection
+	siteConfig        tpl.SiteConfig
+	postsPerPage      int
+}
+
+// effectivePerPage returns the configured page size, falling back to the
+// default when it is unset or nonsensical.
+func (h *ContentPageHandler) effectivePerPage() int {
+	if h.postsPerPage <= 0 {
+		return defaultPostsPerPage
+	}
+	return h.postsPerPage
 }
 
 func (h *ContentPageHandler) resolvePostImage(imageURL string) (thumbURL, srcset, sizes string) {
@@ -325,44 +406,115 @@ func (h *ContentPageHandler) buildLanguageLinks(ctx context.Context, content *co
 }
 
 func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
-	contents, err := h.contentService.GetPublished(r.Context(), 50, 0)
+	primaryLang := config.PrimaryLanguage(h.languages)
+	perPage := h.effectivePerPage()
+	page := parsePage(r)
+	offset := (page - 1) * perPage
+
+	// Latest posts scoped to type "post" and the primary language at the query
+	// level (no Go-level filtering, no wasted rows). Fetch perPage+1 to probe
+	// for a next page without a COUNT query.
+	contents, err := h.contentService.GetPublishedByPostType(r.Context(), "post", primaryLang, perPage+1, offset)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	contents, hasNext := trimToPage(contents, perPage)
 
-	primaryLang := config.PrimaryLanguage(h.languages)
-
-	posts := make([]tpl.PostItem, 0, len(contents))
 	var ogImage string
+	posts := make([]tpl.PostItem, 0, len(contents))
 	for _, c := range contents {
-		if c.PostType != "post" || c.Language != primaryLang {
-			continue
-		}
 		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
 		posts = append(posts, h.buildPostItem(r.Context(), c))
 	}
 
+	// Tags for the homepage tag cloud (Tier 1.2 — the field was dead before).
+	tags, tagsErr := h.contentService.GetPublishedTags(r.Context())
+	if tagsErr != nil {
+		log.Printf("failed to get published tags for index: %v", tagsErr)
+		tags = nil
+	}
+
+	// Optional per-post-type sections (Tier 2.1). Only built when the operator
+	// configures [[homepage_section]] blocks; otherwise the homepage renders
+	// the flat latest-posts list above, fully backward compatible.
+	sections := h.buildHomeSections(r.Context(), primaryLang)
+
 	currentPath := "/"
 	navItems := h.buildNavigationItems(r.Context(), currentPath)
 
 	data := tpl.IndexData{
 		LayoutData: tpl.LayoutData{
-			Title:           "Lesstruct",
-			PageTitle:       "Lesstruct",
+			Title:           h.siteConfig.Name,
+			PageTitle:       h.siteConfig.Name,
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
+			SiteConfig:      h.siteConfig,
 		},
-		Posts: posts,
+		Posts:           posts,
+		Tags:            tags,
+		Sections:        sections,
+		PaginationData:  buildPagination(page, hasNext, currentPath),
 	}
 
 	if err := h.templates.RenderIndex(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+// buildHomeSections assembles the configured [[homepage_section]] blocks for
+// the homepage. Each section fetches its post type scoped to the primary
+// language and resolves its display name via the post-type resolver. Returns
+// nil when no sections are configured (the caller then renders a flat list).
+func (h *ContentPageHandler) buildHomeSections(ctx context.Context, primaryLang string) []tpl.HomeSection {
+	if len(h.homepageSections) == 0 {
+		return nil
+	}
+	sections := make([]tpl.HomeSection, 0, len(h.homepageSections))
+	for _, hs := range h.homepageSections {
+		limit := hs.Limit
+		if limit <= 0 {
+			limit = defaultHomeSectionLimit
+		}
+		contents, err := h.contentService.GetPublishedByPostType(ctx, hs.PostType, primaryLang, limit, 0)
+		if err != nil {
+			log.Printf("failed to get homepage section %q: %v", hs.PostType, err)
+			continue
+		}
+		if len(contents) == 0 {
+			continue
+		}
+		title := hs.Title
+		description := ""
+		url := "/" + hs.PostType
+		if h.postTypeResolver != nil {
+			if resolved, resolveErr := h.postTypeResolver.GetBySlug(hs.PostType); resolveErr == nil {
+				if title == "" {
+					title = resolved.Name
+				}
+				description = resolved.Description
+			}
+		}
+		if title == "" {
+			title = hs.PostType
+		}
+		posts := make([]tpl.PostItem, 0, len(contents))
+		for _, c := range contents {
+			posts = append(posts, h.buildPostItem(ctx, c))
+		}
+		sections = append(sections, tpl.HomeSection{
+			PostTypeSlug: hs.PostType,
+			Title:        title,
+			Description:  description,
+			URL:          url,
+			Posts:        posts,
+		})
+	}
+	return sections
 }
 
 func (h *ContentPageHandler) buildPostItem(ctx context.Context, c *contentdomain.Content) tpl.PostItem {
@@ -387,6 +539,8 @@ func (h *ContentPageHandler) buildPostItem(ctx context.Context, c *contentdomain
 		Username:        c.Username,
 		AuthorAvatarURL: authorAvatarURL,
 		CreatedAt:       formatDate(c.CreatedAt),
+		PostType:        c.PostType,
+		Tags:            c.Tags,
 	}
 }
 
@@ -470,7 +624,7 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 		LayoutData: tpl.LayoutData{
 			Title:           content.Title,
 			Description:     content.MetaDescription,
-			PageTitle:       content.Title + " - Lesstruct",
+			PageTitle:       fmt.Sprintf("%s - %s", content.Title, h.siteConfig.Name),
 			OGTitle:         ogTitle,
 			OGDesc:          ogDesc,
 			OGImage:         featuredImage,
@@ -478,6 +632,7 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 			CurrentPath:     currentPath,
 			Lang:            lang,
 			LanguageLinks:   languageLinks,
+			SiteConfig:      h.siteConfig,
 		},
 		Slug:                  content.Slug,
 		Body:                  template.HTML(bodyHTML),
@@ -491,6 +646,7 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 		CustomFieldsFormatted: formattedFields,
 		Related:               relatedItems,
 		Comments:              commentItems,
+		PostType:              content.PostType,
 	}
 
 	if err := h.templates.RenderContent(w, data); err != nil {
@@ -505,40 +661,29 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	contents, err := h.contentService.GetPublishedByAuthorUsername(r.Context(), username, 50, 0)
+	primaryLang := config.PrimaryLanguage(h.languages)
+	perPage := h.effectivePerPage()
+	page := parsePage(r)
+	offset := (page - 1) * perPage
+
+	contents, err := h.contentService.GetPublishedByAuthorUsername(r.Context(), username, primaryLang, perPage+1, offset)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	contents, hasNext := trimToPage(contents, perPage)
 
-	primaryLang := config.PrimaryLanguage(h.languages)
-
-	posts := make([]tpl.PostItem, 0, len(contents))
 	authorName := ""
 	var ogImage string
+	posts := make([]tpl.PostItem, 0, len(contents))
 	for _, c := range contents {
-		if c.Language != primaryLang {
-			continue
-		}
 		if authorName == "" {
 			authorName = c.Author
 		}
-		imageURL := seo.ExtractImageURL(c.Content)
-		if imageURL != "" && ogImage == "" {
+		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
-		thumbURL, imageSrcset, imageSizes := h.resolvePostImage(imageURL)
-		posts = append(posts, tpl.PostItem{
-			Slug:            c.Slug,
-			Title:           c.Title,
-			MetaDescription: c.MetaDescription,
-			ImageURL:        thumbURL,
-			ImageSrcset:     imageSrcset,
-			ImageSizes:      imageSizes,
-			Author:          c.Author,
-			Username:        c.Username,
-			CreatedAt:       formatDate(c.CreatedAt),
-		})
+		posts = append(posts, h.buildPostItem(r.Context(), c))
 	}
 
 	if authorName == "" {
@@ -569,19 +714,21 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 	data := tpl.AuthorData{
 		LayoutData: tpl.LayoutData{
 			Title:           authorName,
-			PageTitle:       authorName + " - Lesstruct",
+			PageTitle:       fmt.Sprintf("%s - %s", authorName, h.siteConfig.Name),
 			Description:     fmt.Sprintf("Posts by %s.", authorName),
 			OGDesc:          fmt.Sprintf("Posts by %s.", authorName),
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
+			SiteConfig:      h.siteConfig,
 		},
 		AuthorName:             authorName,
 		Username:               username,
 		AuthorAvatarURL:        authorAvatarURL,
 		Posts:                  posts,
-		CustomFieldsFormatted: formattedFields,
+		CustomFieldsFormatted:  formattedFields,
+		PaginationData:         buildPagination(page, hasNext, currentPath),
 	}
 
 	if err := h.templates.RenderAuthor(w, data); err != nil {
@@ -595,45 +742,25 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 		return
 	}
 
-	contents, err := h.contentService.GetPublishedByTag(r.Context(), tag, 50, 0)
+	primaryLang := config.PrimaryLanguage(h.languages)
+	perPage := h.effectivePerPage()
+	page := parsePage(r)
+	offset := (page - 1) * perPage
+
+	contents, err := h.contentService.GetPublishedByTag(r.Context(), tag, primaryLang, perPage+1, offset)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-
-	primaryLang := config.PrimaryLanguage(h.languages)
+	contents, hasNext := trimToPage(contents, perPage)
 
 	posts := make([]tpl.PostItem, 0, len(contents))
 	var ogImage string
 	for _, c := range contents {
-		if c.Language != primaryLang {
-			continue
-		}
-		imageURL := seo.ExtractImageURL(c.Content)
-		if imageURL != "" && ogImage == "" {
+		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
-		thumbURL, imageSrcset, imageSizes := h.resolvePostImage(imageURL)
-
-		var postAuthorAvatarURL string
-		if h.userProvider != nil && c.Username != "" {
-			if user, userErr := h.userProvider.GetUserByUsername(r.Context(), c.Username); userErr == nil && user != nil {
-				postAuthorAvatarURL = user.ProfilePicture
-			}
-		}
-
-		posts = append(posts, tpl.PostItem{
-			Slug:            c.Slug,
-			Title:           c.Title,
-			MetaDescription: c.MetaDescription,
-			ImageURL:        thumbURL,
-			ImageSrcset:     imageSrcset,
-			ImageSizes:      imageSizes,
-			Author:          c.Author,
-			Username:        c.Username,
-			AuthorAvatarURL: postAuthorAvatarURL,
-			CreatedAt:       formatDate(c.CreatedAt),
-		})
+		posts = append(posts, h.buildPostItem(r.Context(), c))
 	}
 
 	currentPath := "/tags/" + tag
@@ -642,16 +769,18 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 	data := tpl.TagData{
 		LayoutData: tpl.LayoutData{
 			Title:           tag,
-			PageTitle:       tag + " - Lesstruct",
+			PageTitle:       fmt.Sprintf("%s - %s", tag, h.siteConfig.Name),
 			Description:     fmt.Sprintf("Posts tagged %q.", tag),
 			OGDesc:          fmt.Sprintf("Posts tagged %q.", tag),
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
+			SiteConfig:      h.siteConfig,
 		},
-		TagName: tag,
-		Posts:   posts,
+		TagName:         tag,
+		Posts:           posts,
+		PaginationData:  buildPagination(page, hasNext, currentPath),
 	}
 
 	if err := h.templates.RenderTag(w, data); err != nil {
@@ -665,9 +794,10 @@ func (h *ContentPageHandler) serveNotFound(w http.ResponseWriter, r *http.Reques
 	data := tpl.NotFoundData{
 		LayoutData: tpl.LayoutData{
 			Title:           "Not Found",
-			PageTitle:       "Not Found - Lesstruct",
+			PageTitle:       fmt.Sprintf("Not Found - %s", h.siteConfig.Name),
 			NavigationItems: navItems,
 			Lang:            config.PrimaryLanguage(h.languages),
+			SiteConfig:      h.siteConfig,
 		},
 	}
 
@@ -677,11 +807,17 @@ func (h *ContentPageHandler) serveNotFound(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http.Request, postTypeSlug string) {
-	contents, err := h.contentService.GetPublishedByPostType(r.Context(), postTypeSlug, 50, 0)
+	primaryLang := config.PrimaryLanguage(h.languages)
+	perPage := h.effectivePerPage()
+	page := parsePage(r)
+	offset := (page - 1) * perPage
+
+	contents, err := h.contentService.GetPublishedByPostType(r.Context(), postTypeSlug, primaryLang, perPage+1, offset)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	contents, hasNext := trimToPage(contents, perPage)
 
 	var resolved posttype.PostType
 	resolveErr := error(nil)
@@ -693,39 +829,13 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 		pageTitle = resolved.Name
 	}
 
-	primaryLang := config.PrimaryLanguage(h.languages)
-
 	posts := make([]tpl.PostItem, 0, len(contents))
 	var ogImage string
 	for _, c := range contents {
-		if c.Language != primaryLang {
-			continue
-		}
-		imageURL := seo.ExtractImageURL(c.Content)
-		if imageURL != "" && ogImage == "" {
+		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
-		thumbURL, imageSrcset, imageSizes := h.resolvePostImage(imageURL)
-
-		var postAuthorAvatarURL string
-		if h.userProvider != nil && c.Username != "" {
-			if user, userErr := h.userProvider.GetUserByUsername(r.Context(), c.Username); userErr == nil && user != nil {
-				postAuthorAvatarURL = user.ProfilePicture
-			}
-		}
-
-		posts = append(posts, tpl.PostItem{
-			Slug:            c.Slug,
-			Title:           c.Title,
-			MetaDescription: c.MetaDescription,
-			ImageURL:        thumbURL,
-			ImageSrcset:     imageSrcset,
-			ImageSizes:      imageSizes,
-			Author:          c.Author,
-			Username:        c.Username,
-			AuthorAvatarURL: postAuthorAvatarURL,
-			CreatedAt:       formatDate(c.CreatedAt),
-		})
+		posts = append(posts, h.buildPostItem(r.Context(), c))
 	}
 
 	currentPath := "/" + postTypeSlug
@@ -734,15 +844,17 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 	data := tpl.IndexData{
 		LayoutData: tpl.LayoutData{
 			Title:           pageTitle,
-			PageTitle:       pageTitle + " - Lesstruct",
+			PageTitle:       fmt.Sprintf("%s - %s", pageTitle, h.siteConfig.Name),
 			Description:     fmt.Sprintf("Browse %s.", pageTitle),
 			OGDesc:          fmt.Sprintf("Browse %s.", pageTitle),
 			OGImage:         ogImage,
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
+			SiteConfig:      h.siteConfig,
 		},
-		Posts: posts,
+		Posts:          posts,
+		PaginationData: buildPagination(page, hasNext, currentPath),
 	}
 
 	if err := h.templates.RenderIndex(w, data); err != nil {
@@ -755,10 +867,11 @@ func (h *ContentPageHandler) serveLogin(w http.ResponseWriter, r *http.Request) 
 	data := tpl.AuthPageData{
 		LayoutData: tpl.LayoutData{
 			Title:           "Login",
-			PageTitle:       "Login - Lesstruct",
+			PageTitle:       fmt.Sprintf("Login - %s", h.siteConfig.Name),
 			NavigationItems: navItems,
 			CurrentPath:     "/login",
 			Lang:            config.PrimaryLanguage(h.languages),
+			SiteConfig:      h.siteConfig,
 		},
 	}
 	if err := h.templates.RenderLogin(w, data); err != nil {
@@ -771,10 +884,11 @@ func (h *ContentPageHandler) serveRegister(w http.ResponseWriter, r *http.Reques
 	data := tpl.AuthPageData{
 		LayoutData: tpl.LayoutData{
 			Title:           "Register",
-			PageTitle:       "Register - Lesstruct",
+			PageTitle:       fmt.Sprintf("Register - %s", h.siteConfig.Name),
 			NavigationItems: navItems,
 			CurrentPath:     "/register",
 			Lang:            config.PrimaryLanguage(h.languages),
+			SiteConfig:      h.siteConfig,
 		},
 	}
 	if err := h.templates.RenderRegister(w, data); err != nil {
@@ -787,10 +901,11 @@ func (h *ContentPageHandler) serveForgotPassword(w http.ResponseWriter, r *http.
 	data := tpl.AuthPageData{
 		LayoutData: tpl.LayoutData{
 			Title:           "Forgot Password",
-			PageTitle:       "Forgot Password - Lesstruct",
+			PageTitle:       fmt.Sprintf("Forgot Password - %s", h.siteConfig.Name),
 			NavigationItems: navItems,
 			CurrentPath:     "/forgot-password",
 			Lang:            config.PrimaryLanguage(h.languages),
+			SiteConfig:      h.siteConfig,
 		},
 	}
 	if err := h.templates.RenderForgotPassword(w, data); err != nil {
@@ -803,10 +918,11 @@ func (h *ContentPageHandler) serveVerifyEmail(w http.ResponseWriter, r *http.Req
 	data := tpl.VerifyEmailData{
 		LayoutData: tpl.LayoutData{
 			Title:           "Verify Email",
-			PageTitle:       "Verify Email - Lesstruct",
+			PageTitle:       fmt.Sprintf("Verify Email - %s", h.siteConfig.Name),
 			NavigationItems: navItems,
 			CurrentPath:     "/verify-email",
 			Lang:            config.PrimaryLanguage(h.languages),
+			SiteConfig:      h.siteConfig,
 		},
 	}
 	if err := h.templates.RenderVerifyEmail(w, data); err != nil {
@@ -819,10 +935,11 @@ func (h *ContentPageHandler) serveResetPassword(w http.ResponseWriter, r *http.R
 	data := tpl.ResetPasswordData{
 		LayoutData: tpl.LayoutData{
 			Title:           "Reset Password",
-			PageTitle:       "Reset Password - Lesstruct",
+			PageTitle:       fmt.Sprintf("Reset Password - %s", h.siteConfig.Name),
 			NavigationItems: navItems,
 			CurrentPath:     "/reset-password",
 			Lang:            config.PrimaryLanguage(h.languages),
+			SiteConfig:      h.siteConfig,
 		},
 	}
 	if err := h.templates.RenderResetPassword(w, data); err != nil {
@@ -887,6 +1004,11 @@ func ExtractHashFromURL(rawURL string) string {
 	return name
 }
 
+// defaultSiteName is the site name used when [site_config].name is not
+// configured. It keeps the embedded theme's branding stable for an
+// out-of-the-box install; operators override it via config.toml.
+const defaultSiteName = "Lesstruct"
+
 func NewContentPageHandler(
 	contentService ContentService,
 	postTypeResolver PostTypeResolver,
@@ -896,7 +1018,13 @@ func NewContentPageHandler(
 	renderer tiptap.Renderer,
 	mediaRepo mediadomain.Repository,
 	languages []string,
+	homepageSections []config.HomepageSection,
+	siteConfig config.SiteConfig,
+	postsPerPage int,
 ) *ContentPageHandler {
+	if siteConfig.Name == "" {
+		siteConfig.Name = defaultSiteName
+	}
 	return &ContentPageHandler{
 		contentService:    contentService,
 		postTypeResolver:  postTypeResolver,
@@ -906,5 +1034,11 @@ func NewContentPageHandler(
 		renderer:          renderer,
 		mediaRepo:         mediaRepo,
 		languages:         languages,
+		homepageSections:  homepageSections,
+		siteConfig: tpl.SiteConfig{
+			Name: siteConfig.Name,
+			Logo: siteConfig.Logo,
+		},
+		postsPerPage: postsPerPage,
 	}
 }

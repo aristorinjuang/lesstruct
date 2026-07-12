@@ -1,55 +1,48 @@
 # Install Paths
 
-> **Path note.** The exact skill directory location depends on the agent. The
-> patterns below are based on common conventions; if your agent uses a
-> different path, adjust accordingly. The `README.md` of this skill is the
-> canonical install guide; this file is a quick reference.
-
-## Claude Code
+> **Recommended.** Use the open agent-skills CLI — it auto-detects which
+> agents you have installed and writes the skill to the correct path for
+> each, so you do not need the table below.
 
 ```bash
-# Copy the skill into Claude Code's skill directory.
+# Install just this skill (interactive — pick your agent(s))
+npx skills add aristorinjuang/lesstruct --skill lesstruct-theme-development
+
+# Non-interactive examples
+npx skills add aristorinjuang/lesstruct --skill lesstruct-theme-development -a claude-code -y   # project scope
+npx skills add aristorinjuang/lesstruct --skill lesstruct-theme-development -g -a opencode -y   # global scope
+```
+
+The CLI supports **30+ agents** — Claude Code, OpenCode, Cursor, Codex, Gemini
+CLI, GitHub Copilot, Cline, Roo Code, Windsurf, Goose, Amp, and more. See the
+[agent skills CLI](https://github.com/antfu/skills-cli#supported-agents) for
+the full, up-to-date list.
+
+## Manual install (fallback)
+
+If you cannot run `npx` (air-gapped host, pinned toolchain, etc.), copy the
+skill directory into your agent's skills folder. The path depends on the
+agent and the scope:
+
+| Agent | Project scope | Global scope |
+|---|---|---|
+| Claude Code | `.claude/skills/` | `~/.claude/skills/` |
+| OpenCode | `.opencode/skills/` | `~/.config/opencode/skills/` |
+| Cursor | `.cursor/skills/` | `~/.cursor/skills/` |
+| Codex | `.codex/skills/` | `~/.codex/skills/` |
+| Gemini CLI | `.gemini/skills/` | `~/.gemini/skills/` |
+| GitHub Copilot | `.github/skills/` | `~/.copilot/skills/` |
+
+```bash
+# Example — Claude Code, global scope
 cp -r lesstruct-theme-development ~/.claude/skills/lesstruct-theme-development
+
+# Example — OpenCode, project scope
+cp -r lesstruct-theme-development .opencode/skills/lesstruct-theme-development
 ```
 
-Claude Code loads skills from `~/.claude/skills/` by default. If you have
-configured a custom path, substitute it.
-
-## OpenCode
-
-```bash
-# OpenCode uses the same skills directory as Claude Code.
-cp -r lesstruct-theme-development ~/.claude/skills/lesstruct-theme-development
-```
-
-If you have multiple agents, you can symlink instead:
-
-```bash
-ln -s "$(pwd)/lesstruct-theme-development" ~/.claude/skills/lesstruct-theme-development
-```
-
-## OpenClaw
-
-> **Note:** OpenClaw's skill directory path is hypothetical; check the OpenClaw
-> documentation for the actual location.
-
-```bash
-cp -r lesstruct-theme-development ~/.openclaw/skills/lesstruct-theme-development
-```
-
-## Hermes
-
-> **Note:** Hermes' skill directory path is hypothetical; check the Hermes
-> documentation for the actual location.
-
-```bash
-cp -r lesstruct-theme-development ~/.hermes/skills/lesstruct-theme-development
-```
-
-## Generic agent
-
-Any agent that loads Markdown files with YAML frontmatter from a `skills/`
-directory should work. The minimum contract the agent must support:
+For any other agent that loads Markdown files with YAML frontmatter from a
+`skills/` directory, the minimum contract the agent must support is:
 
 ```yaml
 ---
@@ -58,13 +51,8 @@ description: <one-paragraph description>
 ---
 ```
 
-Plus a `SKILL.md` filename (case-insensitive on most filesystems).
-
-To install for a generic agent whose skill directory you know:
-
-```bash
-cp -r lesstruct-theme-development "<agent-config-dir>/skills/lesstruct-theme-development"
-```
+…plus a `SKILL.md` filename. Copy the directory into that agent's
+`<config-dir>/skills/` folder.
 
 ## Optional: `customize.toml`
 

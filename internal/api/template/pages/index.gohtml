@@ -1,7 +1,7 @@
 {{define "body"}}
 <div class="posts-grid container">
 {{range .Posts}}
-<article class="post-card">
+<article class="post-card" data-post-type="{{.PostType}}">
 <a href="/{{.Slug}}">
 {{if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
 <h2>{{.Title}}</h2>
@@ -14,4 +14,30 @@
 <p class="empty">{{t .Lang "ui.no_posts"}}</p>
 {{end}}
 </div>
+{{range .Sections}}
+<section class="home-section container" data-post-type="{{.PostTypeSlug}}">
+<header class="home-section__header">
+<h2>{{if .URL}}<a href="{{.URL}}">{{end}}{{.Title}}{{if .URL}}</a>{{end}}</h2>
+{{if .Description}}<p class="home-section__desc">{{.Description}}</p>{{end}}
+</header>
+<div class="posts-grid">
+{{range .Posts}}
+<article class="post-card" data-post-type="{{.PostType}}">
+<a href="/{{.Slug}}">
+{{if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+<h2>{{.Title}}</h2>
+{{if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
+<time>{{.CreatedAt}}</time>
+</a>
+</article>
+{{end}}
+</div>
+</section>
+{{end}}
+{{if or .HasPrev .HasNext}}
+<nav class="pagination container" aria-label="Pagination">
+{{if .HasPrev}}<a rel="prev" href="{{.PrevURL}}">{{t .Lang "ui.prev_page"}}</a>{{end}}
+{{if .HasNext}}<a rel="next" href="{{.NextURL}}">{{t .Lang "ui.next_page"}}</a>{{end}}
+</nav>
+{{end}}
 {{end}}

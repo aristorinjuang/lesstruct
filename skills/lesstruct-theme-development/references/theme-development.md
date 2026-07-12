@@ -130,7 +130,7 @@ The full set of custom properties the default theme defines.
 | `--color-text-muted` | `#6b7280` | Secondary / muted text |
 | `--color-primary` | `#22d3ee` | Primary brand color (links, buttons, focus rings) |
 | `--color-primary-hover` | `#06b6d4` | Primary color on hover |
-| `--color-secondary` | `#2536eb` | Secondary brand color (logo, active nav, headings) |
+| `--color-secondary` | `#2563eb` | Secondary brand color (logo, active nav, headings) |
 | `--color-accent` | `#8b5cf6` | Accent color (tags, highlights) |
 | `--color-border` | `#e5e7eb` | Border and divider color |
 | `--color-card-bg` | `#f9fafb` | Card and elevated surface background |
@@ -294,13 +294,47 @@ the fields below.
 | `.CurrentPath` | `string` | Current request path |
 | `.Lang` | `string` | Current language code (e.g. `"en"`, `"fr"`); **required** by `<html lang="…">` and `{{t}}` calls |
 | `.LanguageLinks` | `[]LanguageLink` | Alternate-language links (`.Code`, `.Name`, `.URL`); empty if no translations exist |
+| `.SiteConfig` | `SiteConfig` | Site-wide identity (see below); same on every page |
 
-**`IndexData`** — landing page:
+**`SiteConfig`** — site-wide identity (from the optional `[site_config]` block in `config.toml`; see the configuration docs):
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `.Posts` | `[]PostItem` | Post cards |
-| `.Tags` | `[]string` | All available tags |
+| `.Name` | `string` | Site name. Always populated (defaults to `"Lesstruct"` when unconfigured). Drives `og:site_name` and the `PageTitle` suffix; use it as the logo text and the logo `alt`. |
+| `.Logo` | `string` | Optional logo image URL/path (e.g. `/uploads/logo.png`). Empty means no image — render `.Name` as text. |
+
+**`IndexData`** — landing page (also used by post-type listing pages):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `.Posts` | `[]PostItem` | Latest posts (homepage) or posts of the listed type. Paginated via `?page=N` |
+| `.Tags` | `[]string` | Distinct tags across all published content; populated on the homepage for tag clouds (empty on post-type listings) |
+| `.Sections` | `[]HomeSection` | Per-post-type homepage sections; **only populated when `[[homepage_section]]` blocks are configured** in `config.toml`. Empty otherwise — fall back to `.Posts` |
+| `.HasPrev` / `.HasNext` | `bool` | Pagination state (see `PaginationData` below) |
+| `.PrevURL` / `.NextURL` | `string` | Prev/next page URLs; empty when the corresponding flag is false |
+| `.CurrentPage` | `int` | 1-based current page number |
+
+**`HomeSection`** — one per `[[homepage_section]]` block (homepage only):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `.PostTypeSlug` | `string` | The post-type slug (e.g. `"article"`) |
+| `.Title` | `string` | Display title (from the block's `title`, else the post type's name) |
+| `.Description` | `string` | Post-type description (may be empty) |
+| `.URL` | `string` | Link to the post-type listing (e.g. `/article`) |
+| `.Posts` | `[]PostItem` | Items in this section |
+
+**`PaginationData`** — embedded in `IndexData`, `AuthorData`, and `TagData`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `.CurrentPage` | `int` | 1-based page number from `?page=N` (defaults to 1) |
+| `.HasPrev` | `bool` | True when not on page 1 |
+| `.HasNext` | `bool` | True when another page exists |
+| `.PrevURL` | `string` | URL of the previous page; page 1 links to the bare path |
+| `.NextURL` | `string` | URL of the next page |
+
+Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Render `<nav class="pagination">` with `{{if or .HasPrev .HasNext}}…{{end}}`.
 
 **`PostItem`** — a card in the post grid:
 
@@ -316,6 +350,8 @@ the fields below.
 | `.Username` | `string` | Author username (for `/authors/<username>` links) |
 | `.AuthorAvatarURL` | `string` | Avatar URL (may be empty) |
 | `.CreatedAt` | `string` | Pre-formatted creation date |
+| `.PostType` | `string` | Post type (e.g. `post`, `article`, `event`); use it to branch card layouts, render type badges, or build type-aware links. Emitted as `data-post-type="…"` on the default cards |
+| `.Tags` | `[]string` | Post tags; render with `{{range .Tags}}<a href="/tags/{{. \| urlpath}}" class="tag">{{.}}</a>{{end}}` (empty when none). Not rendered on the default card — override `index.html` to show them |
 
 **`ContentData`** — single post page:
 
@@ -333,6 +369,7 @@ the fields below.
 | `.CustomFieldsFormatted` | `[]FormattedField` | Display-formatted custom fields (`.Label`, `.Value`) |
 | `.Related` | `[]PostItem` | Related posts (same post type & language, ranked by shared tags), rendered above the comments section; empty slice when none |
 | `.Comments` | `[]CommentItem` | Comments (`.Author`, `.Text`, `.CreatedAt`) |
+| `.PostType` | `string` | Post type; branch the single-page template to show type-specific metadata (e.g. event start/end vs. article link). Emitted as `data-post-type="…"` on the default `<article>` |
 | `.LanguageLinks` | `[]LanguageLink` | Inherited via `LayoutData`; also rendered inside the article for translated posts |
 
 **`AuthorData`** — author page:
@@ -342,15 +379,17 @@ the fields below.
 | `.AuthorName` | `string` | Author display name |
 | `.Username` | `string` | Author username |
 | `.AuthorAvatarURL` | `string` | Avatar URL |
-| `.Posts` | `[]PostItem` | Author's posts |
+| `.Posts` | `[]PostItem` | Author's posts (paginated via `?page=N`) |
 | `.CustomFieldsFormatted` | `[]FormattedField` | Author "About" custom fields |
+| `.HasPrev` / `.HasNext` / `.PrevURL` / `.NextURL` / `.CurrentPage` | | Embedded `PaginationData` |
 
 **`TagData`** — tag page:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `.TagName` | `string` | Tag display name |
-| `.Posts` | `[]PostItem` | Posts with this tag |
+| `.Posts` | `[]PostItem` | Posts with this tag (paginated via `?page=N`) |
+| `.HasPrev` / `.HasNext` / `.PrevURL` / `.NextURL` / `.CurrentPage` | | Embedded `PaginationData` |
 
 **`AuthPageData`** (`login.html`, `register.html`, `forgot_password.html`),
 **`NotFoundData`** (`not_found.html`),
@@ -371,19 +410,20 @@ without breaking the layout contract.
 <meta name="description" content="{{.Description}}">
 <meta property="og:title" content="{{.OGTitle}}">
 <meta property="og:description" content="{{.OGDesc}}">
+<meta property="og:site_name" content="{{.SiteConfig.Name}}">
 {{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="site-header">
 <div class="container">
-<a href="/" class="site-logo">My Custom Site</a>
+<a href="/" class="site-logo">{{if .SiteConfig.Logo}}<img src="{{.SiteConfig.Logo}}" alt="{{.SiteConfig.Name}}">{{else}}{{.SiteConfig.Name}}{{end}}</a>
 </div>
 </header>
 <main class="container">{{template "body" .}}</main>
 <footer class="site-footer">
 <div class="container">
-<p>Custom footer text</p>
+<p>&copy; {{.SiteConfig.Name}}</p>
 </div>
 </footer>
 </body>

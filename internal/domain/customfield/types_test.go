@@ -57,6 +57,33 @@ func TestValidateField(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name: "valid datetime field",
+			field: customfield.FieldSchema{
+				Name: "Starts At",
+				Slug: "starts_at",
+				Type: customfield.FieldTypeDatetime,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid email field",
+			field: customfield.FieldSchema{
+				Name: "Contact",
+				Slug: "contact",
+				Type: customfield.FieldTypeEmail,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid url field",
+			field: customfield.FieldSchema{
+				Name: "Website",
+				Slug: "website",
+				Type: customfield.FieldTypeUrl,
+			},
+			wantErr: nil,
+		},
+		{
 			name: "valid select field with options",
 			field: customfield.FieldSchema{
 				Name:    "Category",
@@ -325,6 +352,9 @@ func TestValidateFieldType(t *testing.T) {
 		{"textarea type", customfield.FieldTypeTextarea, nil},
 		{"number type", customfield.FieldTypeNumber, nil},
 		{"date type", customfield.FieldTypeDate, nil},
+		{"datetime type", customfield.FieldTypeDatetime, nil},
+		{"email type", customfield.FieldTypeEmail, nil},
+		{"url type", customfield.FieldTypeUrl, nil},
 		{"select type", customfield.FieldTypeSelect, nil},
 		{"checkbox type", customfield.FieldTypeCheckbox, nil},
 		{"invalid type", customfield.FieldType("invalid"), customfield.ErrFieldTypeInvalid},
@@ -420,6 +450,9 @@ func TestValidateMaxLength(t *testing.T) {
 		{"nil max_length is valid", customfield.FieldTypeText, nil, nil},
 		{"number with max_length rejected", customfield.FieldTypeNumber, &validLen, customfield.ErrMaxLengthInvalid},
 		{"date with max_length rejected", customfield.FieldTypeDate, &validLen, customfield.ErrMaxLengthInvalid},
+		{"datetime with max_length rejected", customfield.FieldTypeDatetime, &validLen, customfield.ErrMaxLengthInvalid},
+		{"email with max_length rejected", customfield.FieldTypeEmail, &validLen, customfield.ErrMaxLengthInvalid},
+		{"url with max_length rejected", customfield.FieldTypeUrl, &validLen, customfield.ErrMaxLengthInvalid},
 		{"select with max_length rejected", customfield.FieldTypeSelect, &validLen, customfield.ErrMaxLengthInvalid},
 		{"checkbox with max_length rejected", customfield.FieldTypeCheckbox, &validLen, customfield.ErrMaxLengthInvalid},
 		{"zero max_length rejected", customfield.FieldTypeText, &zeroLen, customfield.ErrMaxLengthInvalid},

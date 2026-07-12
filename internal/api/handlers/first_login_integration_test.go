@@ -54,10 +54,10 @@ func setupIntegrationTestDB(t *testing.T) (*sql.DB, string) {
 }
 
 func TestCompleteSetup_Integration(t *testing.T) {
-	db, defaultPasswordHash := setupIntegrationTestDB(t)
+	db, _ := setupIntegrationTestDB(t)
 
 	userRepo := repository.NewUserRepository(db)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	logger := util.NewLogger(os.Stdout)
 	handler := handlers.NewFirstLoginHandler(firstLoginService, userRepo, logger)
 
@@ -113,10 +113,10 @@ func TestCompleteSetup_Integration(t *testing.T) {
 }
 
 func TestCompleteSetup_InvalidPassword(t *testing.T) {
-	db, defaultPasswordHash := setupIntegrationTestDB(t)
+	db, _ := setupIntegrationTestDB(t)
 
 	userRepo := repository.NewUserRepository(db)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	logger := util.NewLogger(os.Stdout)
 	handler := handlers.NewFirstLoginHandler(firstLoginService, userRepo, logger)
 
@@ -149,10 +149,10 @@ func TestCompleteSetup_InvalidPassword(t *testing.T) {
 }
 
 func TestCompleteSetup_InvalidEmail(t *testing.T) {
-	db, defaultPasswordHash := setupIntegrationTestDB(t)
+	db, _ := setupIntegrationTestDB(t)
 
 	userRepo := repository.NewUserRepository(db)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	logger := util.NewLogger(os.Stdout)
 	handler := handlers.NewFirstLoginHandler(firstLoginService, userRepo, logger)
 
@@ -185,10 +185,10 @@ func TestCompleteSetup_InvalidEmail(t *testing.T) {
 }
 
 func TestCompleteSetup_AlreadyComplete(t *testing.T) {
-	db, defaultPasswordHash := setupIntegrationTestDB(t)
+	db, _ := setupIntegrationTestDB(t)
 
 	userRepo := repository.NewUserRepository(db)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	logger := util.NewLogger(os.Stdout)
 	handler := handlers.NewFirstLoginHandler(firstLoginService, userRepo, logger)
 
@@ -222,13 +222,12 @@ func TestCompleteSetup_AlreadyComplete(t *testing.T) {
 }
 
 func TestGetStatus_AfterSetupComplete(t *testing.T) {
-	defaultPasswordHash, err := appauth.HashPassword(constants.DefaultPassword)
+	firstLoginService := authdomain.NewFirstLoginService()
+	// Simulate setup completion: admin password has been changed from default
+	changedHash, err := appauth.HashPassword("AlreadyChanged789!")
 	if err != nil {
-		t.Fatalf("Failed to hash default password: %v", err)
+		t.Fatalf("Failed to hash changed password: %v", err)
 	}
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
-	// Simulate setup completion: admin password differs from default
-	changedHash := "$2a$12$changedpasswordhash"
 	mockRepo := repomocks.NewMockUserRepo(t)
 	mockRepo.EXPECT().
 		GetAdminUser(mock.Anything).

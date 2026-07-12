@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatDate } from '@/utils/date'
+import { formatDate, formatDateTime } from '@/utils/date'
 import { useConfirmationDialog } from '@/composables/useConfirmationDialog'
 import type { UserTableProps } from '@/types/user'
 import type { FieldSchema } from '@/types/customfield'
@@ -32,6 +32,7 @@ function formatFieldValue(field: FieldSchema, value: any): string {
   switch (field.type) {
     case 'checkbox': return value ? 'Yes' : 'No'
     case 'date': return formatDate(String(value))
+    case 'datetime': return formatDateTime(String(value))
     default: return String(value)
   }
 }

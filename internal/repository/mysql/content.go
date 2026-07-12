@@ -9,6 +9,7 @@ import (
 	"time"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/internal/repository"
 )
 
 // ---------------------------------------------------------------------------
@@ -212,7 +213,7 @@ func (r *ContentRepository) Create(
 		return fmt.Errorf("failed to marshal tags: %w", err)
 	}
 
-	customFieldsJSON, err := marshalCustomFields(content.CustomFields)
+	customFieldsJSON, err := repository.MarshalCustomFields(content.CustomFields)
 	if err != nil {
 		return err
 	}
@@ -539,7 +540,7 @@ func (r *ContentRepository) Update(
 		return fmt.Errorf("failed to marshal tags: %w", err)
 	}
 
-	customFieldsJSON, err := marshalCustomFields(content.CustomFields)
+	customFieldsJSON, err := repository.MarshalCustomFields(content.CustomFields)
 	if err != nil {
 		return err
 	}
@@ -711,9 +712,11 @@ func (r *ContentRepository) GetPublishedBySlugAny(
 }
 
 // GetPublishedByAuthorUsername retrieves published content by author username.
+// When language is non-empty, results are restricted to that language.
 func (r *ContentRepository) GetPublishedByAuthorUsername(
 	ctx context.Context,
 	username string,
+	language string,
 	limit int,
 	offset int,
 ) ([]*contentdomain.Content, error) {
@@ -726,7 +729,7 @@ func (r *ContentRepository) GetPublishedByAuthorUsername(
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	query := `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
 		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
@@ -735,9 +738,15 @@ func (r *ContentRepository) GetPublishedByAuthorUsername(
 		FROM content_items ci
 		LEFT JOIN users u ON ci.user_id = u.id
 		WHERE u.username = ? AND ci.status = 'published'
-		ORDER BY ci.created_at DESC
-		LIMIT ? OFFSET ?
-	`, username, limit, offset)
+	`
+	args := []any{username}
+	if language != "" {
+		query += ` AND ci.language = ?`
+		args = append(args, language)
+	}
+	query += ` ORDER BY ci.created_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published by author username: %w", err)
 	}
@@ -1000,9 +1009,11 @@ func (r *ContentRepository) GetPublishedCustomPostTypes(
 }
 
 // GetPublishedByPostType returns published content for a given post type.
+// When language is non-empty, results are restricted to that language.
 func (r *ContentRepository) GetPublishedByPostType(
 	ctx context.Context,
 	postType string,
+	language string,
 	limit int,
 	offset int,
 ) ([]*contentdomain.Content, error) {
@@ -1015,7 +1026,7 @@ func (r *ContentRepository) GetPublishedByPostType(
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := r.db.QueryContext(ctx, `
+	query := `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
 		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
@@ -1024,9 +1035,15 @@ func (r *ContentRepository) GetPublishedByPostType(
 		FROM content_items ci
 		LEFT JOIN users u ON ci.user_id = u.id
 		WHERE ci.post_type = ? AND ci.status = 'published'
-		ORDER BY ci.created_at DESC
-		LIMIT ? OFFSET ?
-	`, postType, limit, offset)
+	`
+	args := []any{postType}
+	if language != "" {
+		query += ` AND ci.language = ?`
+		args = append(args, language)
+	}
+	query += ` ORDER BY ci.created_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published by post type: %w", err)
 	}
@@ -1036,9 +1053,11 @@ func (r *ContentRepository) GetPublishedByPostType(
 }
 
 // GetPublishedByTag returns published content with a specific tag.
+// When language is non-empty, results are restricted to that language.
 func (r *ContentRepository) GetPublishedByTag(
 	ctx context.Context,
 	tag string,
+	language string,
 	limit int,
 	offset int,
 ) ([]*contentdomain.Content, error) {
@@ -1053,7 +1072,7 @@ func (r *ContentRepository) GetPublishedByTag(
 	}
 	// MySQL JSON_CONTAINS for tag search
 	tagJSON := fmt.Sprintf(`"%s"`, tag)
-	rows, err := r.db.QueryContext(ctx, `
+	query := `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
 		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
@@ -1062,9 +1081,15 @@ func (r *ContentRepository) GetPublishedByTag(
 		FROM content_items ci
 		LEFT JOIN users u ON ci.user_id = u.id
 		WHERE JSON_CONTAINS(ci.tags, ?) AND ci.status = 'published'
-		ORDER BY ci.created_at DESC
-		LIMIT ? OFFSET ?
-	`, tagJSON, limit, offset)
+	`
+	args := []any{tagJSON}
+	if language != "" {
+		query += ` AND ci.language = ?`
+		args = append(args, language)
+	}
+	query += ` ORDER BY ci.created_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published by tag: %w", err)
 	}
@@ -1073,7 +1098,85 @@ func (r *ContentRepository) GetPublishedByTag(
 	return scanContentRows(rows)
 }
 
-// SearchPublished searches published content by query string.
+// GetPublishedTags returns the distinct set of tags used by published content.
+func (r *ContentRepository) GetPublishedTags(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT jt.tag
+		FROM content_items ci,
+		     JSON_TABLE(ci.tags, '$[*]'
+		         COLUMNS (tag VARCHAR(255) PATH '$')) jt
+		WHERE ci.status = 'published'
+		  AND ci.tags IS NOT NULL
+		  AND JSON_LENGTH(ci.tags) > 0
+		ORDER BY jt.tag ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published tags: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	tags := make([]string, 0)
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, fmt.Errorf("failed to scan tag: %w", err)
+		}
+		tags = append(tags, tag)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating tag rows: %w", err)
+	}
+
+	return tags, nil
+}
+
+// GetPublishedAuthors returns users with at least one published content item,
+// aggregated with their published count and distinct post types.
+func (r *ContentRepository) GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*contentdomain.PublishedAuthor, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT u.username,
+		       COALESCE(u.name, u.username) AS display_name,
+		       COALESCE(u.profile_picture, '') AS profile_picture,
+		       COUNT(ci.id) AS content_count,
+		       GROUP_CONCAT(DISTINCT ci.post_type) AS post_types
+		FROM content_items ci
+		JOIN users u ON ci.user_id = u.id
+		WHERE ci.status = 'published'
+		GROUP BY u.id, u.username, u.name, u.profile_picture
+		ORDER BY content_count DESC, u.username ASC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published authors: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	authors := make([]*contentdomain.PublishedAuthor, 0)
+	for rows.Next() {
+		var a contentdomain.PublishedAuthor
+		var postTypes string
+		if err := rows.Scan(&a.Username, &a.DisplayName, &a.ProfilePicture, &a.ContentCount, &postTypes); err != nil {
+			return nil, fmt.Errorf("failed to scan published author: %w", err)
+		}
+		a.PostTypes = repository.SplitCSV(postTypes)
+		authors = append(authors, &a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating published author rows: %w", err)
+	}
+
+	return authors, nil
+}
+
 func (r *ContentRepository) SearchPublished(
 	ctx context.Context,
 	query string,

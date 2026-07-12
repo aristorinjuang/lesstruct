@@ -5,6 +5,7 @@ import type { FieldType, FieldSchema } from '@/types/customfield'
 import InputText from '@/components/atoms/InputText.vue'
 import NumberInput from '@/components/atoms/NumberInput.vue'
 import DateInput from '@/components/atoms/DateInput.vue'
+import DateTimeInput from '@/components/atoms/DateTimeInput.vue'
 import Select from '@/components/atoms/Select.vue'
 import SwitchToggle from '@/components/atoms/SwitchToggle.vue'
 import FormField from '@/components/molecules/FormField.vue'
@@ -38,6 +39,9 @@ function getFieldComponent(type: FieldType): Component {
     textarea: InputText,
     number: NumberInput,
     date: DateInput,
+    datetime: DateTimeInput,
+    email: InputText,
+    url: InputText,
     select: Select,
     checkbox: SwitchToggle,
   }
@@ -63,6 +67,12 @@ function getFieldProps(field: FieldSchema): Record<string, any> {
     }
     case 'date':
       return base
+    case 'datetime':
+      return base
+    case 'email':
+      return { ...base, inputType: 'email' }
+    case 'url':
+      return { ...base, inputType: 'url' }
     case 'select':
       return { ...base, options: (field.options ?? []).map(o => ({ value: o, label: o })) }
     case 'checkbox':

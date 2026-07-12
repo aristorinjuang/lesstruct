@@ -98,6 +98,7 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 | `DEV_MODE` | `false` | When `true`, the admin panel is served from the Vite dev server (`ADMIN_DEV_URL`) instead of the embedded build. **Same env var enables plugin hot-reload** — see the plugin skill. |
 | `ADMIN_DEV_URL` | `http://localhost:5173` | URL of the Vite dev server (only used when `DEV_MODE=true`). |
 | `THEME_DIR` | empty | Path to a custom theme directory. Empty uses the embedded theme. See the theme skill. |
+| `POSTS_PER_PAGE` | `50` | Number of posts per page on public listing pages (homepage, author, tag, and post-type listings). Must be between `1` and `100`; `0` falls back to the default. Pagination links (`?page=N`) appear automatically. |
 
 ### Rate limits
 
@@ -107,6 +108,12 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 | `RATE_LIMIT_AUTH_PER_MINUTE` | `5` | Per-IP cap on auth endpoints (login, register, forgot-password, reset-password). |
 | `RATE_LIMIT_API_PER_MINUTE` | `100` | Per-token cap on authenticated API endpoints. |
 | `RATE_LIMIT_PUBLIC_PER_MINUTE` | `60` | Per-IP cap on public endpoints (search, content listing, etc.). |
+
+### Imports
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IMPORT_MAX_SIZE_MB` | `100` | Max upload size (in megabytes) for any importer. Shared by all import types — today the WordPress WXR importer; future importers reuse the same cap. WordPress exports commonly reach tens or hundreds of MB for real sites, so the default is generous; raise it for very large sites. |
 
 ### Logging
 
@@ -155,8 +162,10 @@ The first line is silently overridden by the empty second line — Lesstruct end
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `languages` | `[]string` | `["en"]` | ISO 639-1 language codes. The first is the primary language. Used by the i18n catalog, the admin language switcher, and the content language switcher. |
+| `[site_config]` | table | empty | Site-wide identity: `name` and `logo`. See below. |
 | `[user_fields]` | table | empty | Global user profile fields. Applies to all users. |
 | `[[post_type]]` | array of tables | four built-in types | Custom post types, or extensions to built-in types (see below). Add as many as needed. |
+| `[[homepage_section]]` | array of tables | empty | Per-post-type groupings rendered on the homepage in addition to the latest-posts list. See below. |
 | `[[thumbnail]]` | array of tables | `[{max_width=370, suffix="_thumb"}]` | Image processing variants. See below. |
 
 ### `[user_fields]`
@@ -167,6 +176,23 @@ The first line is silently overridden by the empty second line — Lesstruct end
 | `system_fields` | `[]FieldSchema` | Read-only fields managed by plugins or operators. |
 
 The schema for each field is the same as post-type fields (below).
+
+### `[site_config]`
+
+Optional site-wide identity. Two fields, both optional:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `name` | `string` | The site name. Drives the browser-tab title suffix (e.g. `My Post - <name>`), the `og:site_name` meta tag, the default logo text, and the footer. When unset, defaults to `Lesstruct`. |
+| `logo` | `string` | Optional logo image URL or path (e.g. `/uploads/logo.png`). When set, the default theme renders `<img src="…" alt="{name}">`; when empty, it renders `name` as text. |
+
+```toml
+[site_config]
+name = "Astra Motor Kalbar"
+logo = "/uploads/logo.png"
+```
+
+`[site_config]` exists because the site name is otherwise baked into the binary's `PageTitle` strings (which a `THEME_DIR` override cannot reach). Everything beyond identity — social links, Google Analytics, site-verification meta tags, footer copyright text, custom `<head>` injection, image/multi-logo layouts — is a **theme concern**: override `layout.html` in your `THEME_DIR` for those. See `docs/theme-development.md`.
 
 ### `[[post_type]]`
 
@@ -189,12 +215,37 @@ Used in `[user_fields].fields`, `[user_fields].system_fields`, `[[post_type]].fi
 |-----|------|----------|-------------|
 | `name` | `string` | yes | Display name. 1-200 characters. |
 | `slug` | `string` | yes | Identifier. 1-200 characters, snake_case (regex-enforced). Must be unique within the parent (user fields or a post type). |
-| `type` | `string` | yes | One of `text`, `textarea`, `number`, `date`, `select`, `checkbox`. |
+| `type` | `string` | yes | One of `text`, `textarea`, `number`, `date`, `datetime`, `email`, `url`, `select`, `checkbox`. |
 | `required` | `bool` | no | When `true`, the field must have a value when saving. |
 | `options` | `[]string` | for `select` | The list of allowed values. Required and non-empty for `select`. |
 | `min` | `float` | for `number` | Minimum allowed value. |
 | `max` | `float` | for `number` | Maximum allowed value. |
 | `max_length` | `int` | for `text`/`textarea` | Maximum character count. |
+
+### `[[homepage_section]]`
+
+Each entry tells the public homepage to render a per-post-type grouping (for example, a magazine-style "Latest Articles" or "Upcoming Events" block) **in addition to** the flat latest-posts list. Sections are opt-in: when no `[[homepage_section]]` blocks are configured, the homepage renders only the latest-posts list (fully backward compatible).
+
+The latest-posts list and each section are both scoped to the primary language and the post type at the database level. Section items use the same `PostItem` shape as the post grid, and the homepage template exposes them via `.Sections` (see the theme development guide).
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `post_type` | `string` | yes | The post-type slug to feature (e.g. `"article"`). Must match a configured post type. |
+| `limit` | `int` | no | Number of items to show. Defaults to `6`. |
+| `title` | `string` | no | Override the section heading. When omitted, the post type's display `name` is used. |
+
+Example:
+
+```toml
+[[homepage_section]]
+post_type = "article"
+limit = 6
+title = "Artikel Pilihan"
+
+[[homepage_section]]
+post_type = "event"
+limit = 3
+```
 
 ### `[[thumbnail]]`
 
@@ -222,7 +273,7 @@ These are enforced at startup by the runtime. Violations cause the server to fai
 
 - `name` must be 1-200 characters (`internal/domain/customfield/types.go:98-104`).
 - `slug` must be 1-200 characters and match the snake-case regex (`types.go:106-115`).
-- `type` must be one of: `text`, `textarea`, `number`, `date`, `select`, `checkbox` (`types.go:35-41`, `118-123`).
+- `type` must be one of: `text`, `textarea`, `number`, `date`, `datetime`, `email`, `url`, `select`, `checkbox` (`types.go:35-44`, `118-123`).
 - `select` fields must have a non-empty `options` list (`types.go:125-128`).
 - `number` fields can have `min` and `max`; `text` and `textarea` fields can have `max_length`. Other combinations are rejected (`types.go:141-159`).
 - Duplicate field slugs within the same parent (user fields or a single post type) are rejected (`types.go:90-93`).
@@ -275,7 +326,7 @@ languages = ["en", "id"]
 fields = [
   { name = "Job Title",  slug = "job_title",  type = "text" },
   { name = "Company",    slug = "company",    type = "text" },
-  { name = "Website",    slug = "website",    type = "text" },
+  { name = "Website",    slug = "website",    type = "url" },
   { name = "Bio",        slug = "bio",        type = "textarea", max_length = 500 },
 ]
 system_fields = [
@@ -313,7 +364,7 @@ languages = ["en"]
 fields = [
   { name = "Job Title", slug = "job_title", type = "text" },
   { name = "Company",   slug = "company",   type = "text" },
-  { name = "Website",   slug = "website",   type = "text" },
+  { name = "Website",   slug = "website",   type = "url" },
 ]
 system_fields = [
   { name = "Points",        slug = "points",        type = "number", min = 0, max = 100000 },
@@ -567,7 +618,7 @@ Same fix as above — the `multiStatements=true` parameter is required for golan
 
 Two fields in the same parent (user fields, or a single post type) have the same `slug`. Slugs must be unique within a parent.
 
-### `field type must be one of: text, textarea, number, date, select, checkbox`
+### `field type must be one of: text, textarea, number, date, datetime, email, url, select, checkbox`
 
 Typo in the `type` field, or a new field type that this version of Lesstruct doesn't support. Check the [Field schema](#field-schema-fieldschema) table for the current list.
 
@@ -619,6 +670,7 @@ RATE_LIMIT_ENABLED=true
 RATE_LIMIT_AUTH_PER_MINUTE=5
 RATE_LIMIT_API_PER_MINUTE=100
 RATE_LIMIT_PUBLIC_PER_MINUTE=60
+IMPORT_MAX_SIZE_MB=100
 AI_IMAGE_GENERATION_API_KEY=
 AI_IMAGE_GENERATION_MODEL=imagen-4.0-fast-generate-001
 AI_IMAGE_GENERATION_SIZE=
@@ -632,6 +684,10 @@ AI_TEXT_GENERATION_MODEL=gpt-5-mini
 
 ```
 languages = ["en"]
+
+[site_config]
+name = ""                        # optional; defaults to "Lesstruct"
+logo = ""                        # optional; image URL/path, empty = render name as text
 
 [user_fields]
 fields = [{ name, slug, type, required, ... }]
@@ -658,6 +714,9 @@ suffix = "_thumb"                # unique
 | `textarea` | `name`, `slug`, `type` | `required`, `max_length` |
 | `number` | `name`, `slug`, `type` | `required`, `min`, `max` |
 | `date` | `name`, `slug`, `type` | `required` |
+| `datetime` | `name`, `slug`, `type` | `required` |
+| `email` | `name`, `slug`, `type` | `required` |
+| `url` | `name`, `slug`, `type` | `required` |
 | `select` | `name`, `slug`, `type`, `options` (non-empty) | `required` |
 | `checkbox` | `name`, `slug`, `type` | `required` |
 

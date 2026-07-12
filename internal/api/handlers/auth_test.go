@@ -32,7 +32,7 @@ func TestLogin_ValidCredentials(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
@@ -134,7 +134,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
@@ -185,7 +185,7 @@ func TestLogin_InvalidRequestBody(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -218,7 +218,7 @@ func TestLogin_DefaultCredentialsAfterFirstLogin(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	// Simulate setup completion: admin password has been changed from default
@@ -282,7 +282,7 @@ func TestVerifyEmail_ValidToken(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 
 	// Create user to verify
@@ -395,7 +395,7 @@ func TestVerifyEmail_EmptyToken(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
@@ -439,7 +439,7 @@ func TestVerifyEmail_InvalidToken(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
@@ -486,7 +486,7 @@ func TestVerifyEmail_ExpiredToken(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 
 	// Configure user mock
@@ -544,7 +544,7 @@ func TestRegisterUser_Success(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	userRepo.EXPECT().
@@ -619,7 +619,7 @@ func TestRegisterUser_DuplicateUsername(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	userRepo.EXPECT().
@@ -679,7 +679,7 @@ func TestRegisterUser_DuplicateEmail(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	userRepo.EXPECT().
@@ -742,7 +742,7 @@ func TestRegisterUser_InvalidPassword(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
@@ -791,7 +791,7 @@ func TestRegisterUser_MissingFields(t *testing.T) {
 	authService := authdomain.NewAuthService(hash)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(hash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)

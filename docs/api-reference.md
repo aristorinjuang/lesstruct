@@ -726,3 +726,54 @@ GET /robots.txt
 
 Returns a permissive `robots.txt` that allows all crawlers, disallows `/admin`, and points at the sitemap: `Sitemap: <site URL>/sitemap.xml`.
 
+## Public content endpoints (no auth)
+
+Lesstruct also exposes a family of **unauthenticated** JSON endpoints under `/api/v1/public/*` for content delivery, search, post-type discovery, and published-author listings. These exist *outside* the Bearer API documented above — no API key, no `Authorization` header, rate-limited by the public per-IP bucket (`RATE_LIMIT_PUBLIC_PER_MINUTE`, default 60).
+
+> **Envelope divergence from the Bearer API.** The public endpoints use a slightly different response shape than the Bearer `/api/v1` surface above. Where the Bearer API emits `meta.pagination` (cursor) and `UPPER_SNAKE` error codes, the public endpoints emit `meta: {"timestamp": "…"}` only (no pagination metadata — use `limit`/`offset`) and `lower_snake` error codes. Mirror this exactly when writing a client.
+
+```http
+GET /api/v1/public/authors
+```
+
+Returns the users who have published at least one content item, with **only safe, public fields** — never email, role, status, or custom fields (per the no-enumeration model). Ordered by published-content count (desc) then username (asc), so the first entries are the most active contributors — useful for author directories and "most active" widgets.
+
+**Query parameters:**
+
+| Parameter | Default | Range | Notes |
+|---|---|---|---|
+| `limit` | `100` | `1`–`100` | Missing/invalid/negative → `100`; over `100` → clamped to `100`. |
+| `offset` | `0` | `≥ 0` | Standard offset pagination (use `limit` + `offset` to page through). |
+
+**Response** (`200`):
+
+```json
+{
+  "data": [
+    {
+      "username": "johndoe",
+      "displayName": "John Doe",
+      "avatarURL": "http://your-lesstruct.example/uploads/profile_pictures/abc.jpg",
+      "profileURL": "http://your-lesstruct.example/authors/johndoe",
+      "contentCount": 42,
+      "postTypes": ["article", "event"]
+    }
+  ],
+  "error": null,
+  "meta": { "timestamp": "2026-07-12T09:30:00Z" }
+}
+```
+
+| Field | Description |
+|---|---|
+| `username` | Author username. |
+| `displayName` | `users.name`, falling back to `username` when name is unset. |
+| `avatarURL` | Absolute profile-picture URL; empty string when the author has no picture. |
+| `profileURL` | Absolute URL of the server-rendered author page (`<baseURL>/authors/<username>`), which renders profile custom fields server-side. |
+| `contentCount` | Number of published content items by the author. |
+| `postTypes` | Distinct post types the author publishes under. Always a non-nil array (renders `[]` when single-type). |
+
+An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"Failed to list published authors"}}`.
+
+**Related public endpoints** (same envelope, same rate-limit bucket): `GET /api/v1/public/content_items`, `GET /api/v1/public/content_items/{slug}`, `GET /api/v1/public/authors/{username}/content_items`, `GET /api/v1/public/content_items/{slug}/comments`, `GET /api/v1/public/post_types`, `GET /api/v1/public/search`.
+

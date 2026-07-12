@@ -46,9 +46,9 @@
   --brand-primary-light: rgba(34, 211, 238, 0.1);
 
   /* Secondary Color - indigo */
-  --brand-secondary: #2536eb;
+  --brand-secondary: #2563eb;
   --brand-secondary-hover: #1e3a8a;
-  --brand-secondary-light: rgba(37, 54, 235, 0.1);
+  --brand-secondary-light: rgba(37, 99, 235, 0.1);
 
   /* Accent/Third Color - violet */
   --brand-accent: #8b5cf6;
@@ -127,7 +127,7 @@
 
   /* Slightly increase light variant opacities for dark backgrounds */
   --brand-primary-light: rgba(34, 211, 238, 0.15);
-  --brand-secondary-light: rgba(37, 54, 235, 0.15);
+  --brand-secondary-light: rgba(37, 99, 235, 0.15);
   --brand-accent-light: rgba(139, 92, 246, 0.15);
 
   /* Brighten secondary hover for visibility in dark mode */

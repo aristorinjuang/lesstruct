@@ -404,6 +404,9 @@ func TestContentCreate_CustomFieldsFlag(t *testing.T) {
 			"--field", "minutes=30",
 			"--field", "has_video=true",
 			"--field", "rating=4.5",
+			"--field", "event_at=2026-05-10T14:30:00Z",
+			"--field", "contact=hello@example.com",
+			"--field", "website=https://example.com",
 			"--base-url", srv.URL, "--api-key", "k",
 		},
 		strings.NewReader(""),
@@ -418,6 +421,9 @@ func TestContentCreate_CustomFieldsFlag(t *testing.T) {
 	assert.Equal(t, float64(30), fields["minutes"], "integer-looking value is typed as a number")
 	assert.Equal(t, true, fields["has_video"], "'true' is typed as a bool")
 	assert.Equal(t, float64(4.5), fields["rating"], "float value is typed as a number")
+	assert.Equal(t, "2026-05-10T14:30:00Z", fields["event_at"], "datetime RFC 3339 value stays a string")
+	assert.Equal(t, "hello@example.com", fields["contact"], "email value stays a string")
+	assert.Equal(t, "https://example.com", fields["website"], "url value stays a string")
 }
 
 func TestContentCreate_TranslationOfFlag(t *testing.T) {

@@ -1,28 +1,31 @@
 # lesstruct-theme-development
 
-A skill for AI agents (Claude Code, OpenCode, OpenClaw, Hermes, and others)
-that helps Lesstruct users build, modify, audit, or repair custom themes for
-their Lesstruct installation.
+A skill for AI agents that helps Lesstruct users build, modify, audit, or
+repair custom themes for their Lesstruct installation. It works entirely from
+your `themes/<name>/` directory and the running public site; it does not
+require access to the Lesstruct source tree.
 
-The skill is developed in the [Lesstruct](https://github.com/aristorinjuang/lesstruct)
-repository and ships as a copy-paste directory. It works entirely from your
-`themes/<name>/` directory and the running public site; it does not require
-access to the Lesstruct source tree.
+## Quick start
 
-## Quick start (Claude Code / OpenCode)
+Install with the open agent-skills CLI — it auto-detects your agent
+(Claude Code, OpenCode, Cursor, Codex, Gemini CLI, Copilot, and 25+ others)
+and writes the skill to the correct path:
 
 ```bash
-# From a clone of the Lesstruct repo, or after downloading this directory
-# from a Lesstruct release:
-cp -r skills/lesstruct-theme-development ~/.claude/skills/lesstruct-theme-development
+# Install just this skill
+npx skills add aristorinjuang/lesstruct --skill lesstruct-theme-development
+
+# Or, to install all Lesstruct skills at once
+npx skills add aristorinjuang/lesstruct
 ```
 
-Restart your agent. The skill is now available. To invoke it, ask your agent
-something like:
+Add `-g` for a global (user-wide) install, or `-a <agent>` to target a
+specific one. Restart your agent, then invoke the skill:
 
 > "Help me build a dark theme for my Lesstruct site."
 
-For other agents, see [`references/install-paths.md`](references/install-paths.md).
+For manual `cp -r` fallbacks and the full per-agent path table, see
+[`references/install-paths.md`](references/install-paths.md).
 
 ## What it does
 
@@ -57,9 +60,11 @@ lesstruct-theme-development/
 
 ## Uninstall
 
-Remove the directory from your agent's skills folder:
-
 ```bash
+# If installed via the CLI
+npx skills remove lesstruct-theme-development
+
+# Or remove the directory manually
 rm -rf ~/.claude/skills/lesstruct-theme-development
 ```
 

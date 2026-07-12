@@ -135,7 +135,7 @@ func TestContentHandler_DeleteContent(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
 			r := chi.NewRouter()
 			r.Delete("/api/v1/content_items/{id}", handler.DeleteContent)

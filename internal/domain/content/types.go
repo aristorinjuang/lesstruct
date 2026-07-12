@@ -159,6 +159,18 @@ type Content struct {
 	UpdatedAt          string         `json:"updatedAt"`
 }
 
+// PublishedAuthor is a read-model aggregating a user's published-content
+// footprint. It is shaped by the repository (which owns the content↔user join)
+// and re-shaped into a public DTO by the handler. It intentionally carries no
+// email, role, or custom-field data — those stay behind authentication.
+type PublishedAuthor struct {
+	Username       string
+	DisplayName    string
+	ProfilePicture string
+	ContentCount   int
+	PostTypes      []string
+}
+
 // FilterOperator represents the type of filter operation
 type FilterOperator string
 

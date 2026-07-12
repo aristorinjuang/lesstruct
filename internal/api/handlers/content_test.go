@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -144,7 +145,7 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/content_items", bytes.NewReader([]byte(tt.requestBody)))
 			req.Header.Set("Content-Type", "application/json")
@@ -239,7 +240,7 @@ func TestContentHandler_GenerateSlug(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/content/slug", bytes.NewReader([]byte(tt.requestBody)))
 			req.Header.Set("Content-Type", "application/json")
@@ -521,7 +522,7 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
 			r := chi.NewRouter()
 			r.Put("/api/v1/content_items/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -679,6 +680,7 @@ func TestContentHandler_GetPublishedContent(t *testing.T) {
 				mockService,
 				util.NewLogger(os.Stdout),
 				"http://localhost:3000",
+				nil,
 			)
 
 			r := chi.NewRouter()
@@ -812,7 +814,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items"+tt.queryParams, nil)
 			req.Header.Set("Content-Type", "application/json")
@@ -907,7 +909,7 @@ func TestContentHandler_ListContents_WithSearch(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items"+tt.queryParams, nil)
 			req.Header.Set("Content-Type", "application/json")
@@ -1100,7 +1102,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
 			r := chi.NewRouter()
 			r.Put("/api/admin/content/{id}/system-fields", handler.SetSystemFields)
@@ -1285,29 +1287,179 @@ func TestContentHandler_SearchPublished(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000")
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
 
-			r := chi.NewRouter()
-			r.Get("/api/v1/public/search", handler.SearchPublished)
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/search", handler.SearchPublished)
 
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/public/search"+tt.queryString, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/search"+tt.queryString, nil)
 
-			w := httptest.NewRecorder()
-			r.ServeHTTP(w, req)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
 
-			if w.Code != tt.expectedStatus {
-				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
-			}
+		if w.Code != tt.expectedStatus {
+			t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+		}
 
-			var resp map[string]any
-			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-				t.Errorf("failed to decode response: %v", err)
-				return
-			}
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Errorf("failed to decode response: %v", err)
+			return
+		}
 
-			if tt.validateResp != nil {
-				tt.validateResp(t, resp)
-			}
-		})
-	}
+		if tt.validateResp != nil {
+			tt.validateResp(t, resp)
+		}
+	})
+}
+}
+
+func TestContentHandler_ListPublishedAuthors(t *testing.T) {
+	t.Run("returns published authors with resolved avatar and profile URLs", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublishedAuthors(
+			mock.Anything,
+			100,
+			0,
+		).Return([]*contentdomain.PublishedAuthor{
+			{Username: "jane", DisplayName: "Jane Doe", ProfilePicture: "jane.webp", ContentCount: 5, PostTypes: []string{"article", "event"}},
+			{Username: "bob", DisplayName: "bob", ProfilePicture: "", ContentCount: 1, PostTypes: []string{"post"}},
+		}, nil)
+
+		resolver := func(filename string) string { return "http://cdn.test/uploads/profile_pictures/" + filename }
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", resolver)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/authors", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status %d, got %d (body=%s)", http.StatusOK, w.Code, w.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp["error"] != nil {
+			t.Fatalf("expected null error, got %v", resp["error"])
+		}
+
+		data, ok := resp["data"].([]any)
+		if !ok {
+			t.Fatalf("expected data to be array, got %T", resp["data"])
+		}
+		if len(data) != 2 {
+			t.Fatalf("expected 2 authors, got %d", len(data))
+		}
+
+		jane := data[0].(map[string]any)
+		if jane["username"] != "jane" {
+			t.Errorf("expected username 'jane', got %v", jane["username"])
+		}
+		if jane["displayName"] != "Jane Doe" {
+			t.Errorf("expected displayName 'Jane Doe', got %v", jane["displayName"])
+		}
+		if jane["avatarURL"] != "http://cdn.test/uploads/profile_pictures/jane.webp" {
+			t.Errorf("expected resolved avatarURL, got %v", jane["avatarURL"])
+		}
+		if jane["profileURL"] != "http://localhost:3000/authors/jane" {
+			t.Errorf("expected profileURL, got %v", jane["profileURL"])
+		}
+		if jane["contentCount"] != float64(5) {
+			t.Errorf("expected contentCount 5, got %v", jane["contentCount"])
+		}
+		if fmt.Sprint(jane["postTypes"]) != "[article event]" {
+			t.Errorf("expected postTypes [article event], got %v", jane["postTypes"])
+		}
+
+		// No profile picture → empty avatar URL, not the resolver's prefix.
+		bob := data[1].(map[string]any)
+		if bob["avatarURL"] != "" {
+			t.Errorf("expected empty avatarURL for pictureless author, got %v", bob["avatarURL"])
+		}
+	})
+
+	t.Run("empty result renders data: []", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
+			Return([]*contentdomain.PublishedAuthor{}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/authors", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status %d, got %d", http.StatusOK, w.Code)
+		}
+		if body := w.Body.String(); !strings.Contains(body, `"data":[]`) {
+			t.Errorf("expected data:[] in response, got %s", body)
+		}
+	})
+
+	t.Run("service error returns 500", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
+			Return(nil, fmt.Errorf("database down"))
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/authors", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d", w.Code)
+		}
+	})
+
+	t.Run("limit clamped to 100 and offset parsed", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		// Caller asks for limit=500; handler must clamp to 100.
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 40).
+			Return([]*contentdomain.PublishedAuthor{}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/authors?limit=500&offset=40", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("invalid limit and offset fall back to defaults", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
+			Return([]*contentdomain.PublishedAuthor{}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/authors?limit=garbage&offset=-5", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+	})
 }

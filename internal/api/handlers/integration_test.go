@@ -34,7 +34,7 @@ func TestCompleteLoginFlow(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
@@ -151,7 +151,7 @@ func TestLoginWithEmptyCredentials(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
@@ -219,7 +219,7 @@ func TestLoginWithInvalidJSON(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
@@ -267,7 +267,7 @@ func TestLoginResponseStructure(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(nil)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
@@ -394,7 +394,7 @@ func TestCompleteRegistrationFlow(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	// Store created user for verification (with mutex for race condition)
 	var createdUser *repository.User
@@ -533,7 +533,7 @@ func TestCompleteVerificationFlow(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	// Create user to verify
 	testUser := &repository.User{
@@ -659,7 +659,7 @@ func TestExpiredTokenFlow(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	// Configure user repository mock
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -736,7 +736,7 @@ func TestResendVerificationFlow(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	// Create pending user
 	pendingUser := &repository.User{
@@ -846,7 +846,7 @@ func TestForgotPasswordAndResetFlow(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	newPasswordHash, _ := auth.HashPassword("NewP@ssw0rd!12345")
 
@@ -1019,7 +1019,7 @@ func TestForgotPasswordNonexistentEmail(t *testing.T) {
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)

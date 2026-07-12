@@ -31,11 +31,30 @@ export function validateCustomField(field: FieldSchema, value: unknown): string 
         return `${field.name} must be at most ${field.max}`
       }
       break
-    case 'date':
-      if (isNaN(Date.parse(String(value)))) {
-        return `${field.name} must be a valid date`
+    case 'date': {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) {
+        return `${field.name} must be a valid date in YYYY-MM-DD format`
       }
       break
+    }
+    case 'datetime': {
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(String(value))) {
+        return `${field.name} must be a valid datetime in RFC 3339 format`
+      }
+      break
+    }
+    case 'email': {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value))) {
+        return `${field.name} must be a valid email address`
+      }
+      break
+    }
+    case 'url': {
+      if (!/^https?:\/\/\S+$/.test(String(value))) {
+        return `${field.name} must be a valid http(s) URL`
+      }
+      break
+    }
     case 'select':
       if (field.options && !field.options.includes(String(value))) {
         return `${field.name} must be one of: ${field.options.join(', ')}`

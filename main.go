@@ -438,7 +438,7 @@ func main() {
 	}
 
 	authService := authdomain.NewAuthService(defaultPasswordHash)
-	firstLoginService := authdomain.NewFirstLoginService(defaultPasswordHash)
+	firstLoginService := authdomain.NewFirstLoginService()
 	registrationService := authdomain.NewRegistrationService(userRepo)
 	verificationService := authdomain.NewVerificationService(userRepo, tokenRepo, 24)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, utilLogger)
@@ -510,7 +510,7 @@ func main() {
 		postTypeAdapter,
 		pluginadapter.NewHookExecutorAdapter(pluginSys.Registry()),
 	)
-	contentHandler := handlers.NewContentHandler(contentService, utilLogger, baseURL)
+	contentHandler := handlers.NewContentHandler(contentService, utilLogger, baseURL, profilePictureStorage.GetURL)
 
 	// Initialize agent (Bearer) content handler — the streamlined API surface for
 	// programmatic publishing (Story 2.1). Reuses the same contentService so custom
@@ -621,8 +621,19 @@ func main() {
 		&http.Client{Timeout: 30 * time.Second},
 		mediaService,
 	)
-	wordpressImporter := wordpress.NewImporter(contentService, wordpressDownloader, utilLogger)
-	wordPressHandler := handlers.NewWordPressHandler(wordpressImporter, utilLogger)
+	wordpressResolver := wordpress.NewUserResolver(userRepo, utilLogger)
+	wordpressImporter := wordpress.NewImporter(
+		contentService,
+		wordpressDownloader,
+		wordpressResolver,
+		postTypeService,
+		utilLogger,
+	)
+	wordPressHandler := handlers.NewWordPressHandler(
+		wordpressImporter,
+		utilLogger,
+		cfg.ImportMaxSize(),
+	)
 
 	// Initialize API key service and handler (Story 1.1)
 	apiKeyRepo := newAPIKeyRepo(cfg.DBDriver, db.DB())
@@ -734,6 +745,18 @@ func main() {
 		}, nil
 	})
 
+	homepageSections, err := config.LoadHomepageSections(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load homepage sections config, continuing without sections: %v", err)
+		homepageSections = nil
+	}
+
+	siteConfig, err := config.LoadSiteConfig(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load site config, continuing with defaults: %v", err)
+		siteConfig = config.SiteConfig{}
+	}
+
 	contentPageHandler := contentpage.NewContentPageHandler(
 		contentService,
 		postTypeService,
@@ -743,6 +766,9 @@ func main() {
 		tiptapRenderer,
 		mediaRepo,
 		languages,
+		homepageSections,
+		siteConfig,
+		cfg.PostPerPage,
 	)
 
 	// Initialize static file server for admin panel and content site

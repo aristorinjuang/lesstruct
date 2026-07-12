@@ -8,6 +8,7 @@ import Toast from '@/components/molecules/Toast.vue'
 interface ImportResult {
   imported: number
   skipped: number
+  usersImported: number
   errors?: string[]
 }
 
@@ -198,6 +199,10 @@ function resetForm() {
         <div class="stat stat--success">
           <span class="stat-value">{{ result.imported }}</span>
           <span class="stat-label">Imported</span>
+        </div>
+        <div class="stat stat--success">
+          <span class="stat-value">{{ result.usersImported }}</span>
+          <span class="stat-label">Users Created</span>
         </div>
         <div class="stat stat--warning">
           <span class="stat-value">{{ result.skipped }}</span>

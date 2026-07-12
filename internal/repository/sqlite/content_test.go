@@ -970,7 +970,7 @@ func TestContentRepository_GetPublishedByTag(t *testing.T) {
 			require.NoError(t, tt.setupDB(db))
 
 			repo := sqlite.NewContentRepository(db)
-			contents, err := repo.GetPublishedByTag(context.Background(), tt.tag, 10, 0)
+			contents, err := repo.GetPublishedByTag(context.Background(), tt.tag, "", 10, 0)
 
 			require.NoError(t, err)
 			assert.Len(t, contents, tt.wantLen)
@@ -998,11 +998,47 @@ func TestContentRepository_GetPublishedByTag_NullTags(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := sqlite.NewContentRepository(db)
-	contents, err := repo.GetPublishedByTag(context.Background(), "golang", 10, 0)
+	contents, err := repo.GetPublishedByTag(context.Background(), "golang", "", 10, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, contents, 1)
 	assert.Equal(t, "Tagged Post", contents[0].Title)
+}
+
+func TestContentRepository_GetPublishedTags(t *testing.T) {
+	t.Run("returns distinct tags from published content", func(t *testing.T) {
+		db := setupContentTestDB(t)
+		defer teardownContentTestDB(t, db)
+
+		_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+		require.NoError(t, err)
+
+		_, err = db.Exec(`
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES
+			(1, 'Post One', 'post-one', 'body', '["golang","tutorial"]', 'published', 'post'),
+			(1, 'Post Two', 'post-two', 'body', '["tutorial","web"]', 'published', 'post'),
+			(1, 'Draft', 'draft', 'body', '["secret"]', 'draft', 'post'),
+			(1, 'No Tags', 'no-tags', 'body', '[]', 'published', 'post')
+		`)
+		require.NoError(t, err)
+
+		repo := sqlite.NewContentRepository(db)
+		tags, err := repo.GetPublishedTags(context.Background())
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"golang", "tutorial", "web"}, tags)
+	})
+
+	t.Run("returns empty when no published content has tags", func(t *testing.T) {
+		db := setupContentTestDB(t)
+		defer teardownContentTestDB(t, db)
+
+		repo := sqlite.NewContentRepository(db)
+		tags, err := repo.GetPublishedTags(context.Background())
+
+		require.NoError(t, err)
+		assert.Empty(t, tags)
+	})
 }
 
 func TestContentRepository_SearchPublished(t *testing.T) {
