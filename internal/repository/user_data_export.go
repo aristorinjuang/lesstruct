@@ -17,39 +17,39 @@ type UserDataExportRepo interface {
 
 // UserContentItem represents a content item (post/page) created by a user
 type UserContentItem struct {
-	ID        int    `json:"id"`
-	Type      string `json:"type"`
-	Title     string `json:"title"`
-	Slug      string `json:"slug"`
-	Content   string `json:"content"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID        int       `json:"id"`
+	Type      string    `json:"type"`
+	Title     string    `json:"title"`
+	Slug      string    `json:"slug"`
+	Content   string    `json:"content"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // UserCommentItem represents a comment posted by a user
 type UserCommentItem struct {
-	ID            int    `json:"id"`
-	ContentItemID int    `json:"contentItemId"`
-	Content       string `json:"content"`
-	CreatedAt     string `json:"createdAt"`
-	UpdatedAt     string `json:"updatedAt"`
+	ID            int       `json:"id"`
+	ContentItemID int       `json:"contentItemId"`
+	Content       string    `json:"content"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 // UserMediaItem represents a media file uploaded by a user
 type UserMediaItem struct {
-	ID               int    `json:"id"`
-	Filename         string `json:"filename"`
-	OriginalFilename string `json:"originalFilename"`
-	FilePath         string `json:"filePath"`
-	FileSize         int    `json:"fileSize"`
-	MimeType         string `json:"mimeType"`
-	CreatedAt        string `json:"createdAt"`
+	ID               int       `json:"id"`
+	Filename         string    `json:"filename"`
+	OriginalFilename string    `json:"originalFilename"`
+	FilePath         string    `json:"filePath"`
+	FileSize         int       `json:"fileSize"`
+	MimeType         string    `json:"mimeType"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 // UserDataExport represents all user data for export
 type UserDataExport struct {
-	ExportDate string             `json:"exportDate"`
+	ExportDate time.Time          `json:"exportDate"`
 	User       *User              `json:"user"`
 	Content    []*UserContentItem `json:"content"`
 	Comments   []*UserCommentItem `json:"comments"`
@@ -229,7 +229,7 @@ func (r *UserDataExportRepository) GetUserDataForExport(ctx context.Context, use
 		Content:    content,
 		Comments:   comments,
 		Media:      media,
-		ExportDate: time.Now().Format(time.RFC3339),
+		ExportDate: time.Now().UTC(),
 	}, nil
 }
 

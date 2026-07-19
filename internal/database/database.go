@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratedb "github.com/golang-migrate/migrate/v4/database"
@@ -118,6 +119,19 @@ func (d *Database) detectOldSchemaMigrations() error {
 	return nil
 }
 
+// normalizeMySQLDSN ensures the MySQL DSN includes clientFoundRows=true so that
+// RowsAffected() returns the number of rows matched by the WHERE clause
+// rather than the number of rows whose values were actually changed.
+func normalizeMySQLDSN(dsn string) string {
+	if strings.Contains(dsn, "clientFoundRows=true") || strings.Contains(dsn, "clientFoundRows=1") {
+		return dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&clientFoundRows=true"
+	}
+	return dsn + "?clientFoundRows=true"
+}
+
 // Open opens a database connection for the specified driver and DSN.
 // For SQLite, the DSN is a file path (parent directories are created).
 // For PostgreSQL, the DSN is a connection string.
@@ -139,6 +153,15 @@ func Open(driver, dsn string, poolMaxConns int) (*Database, error) {
 		driverName = "mysql"
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedDriver, driver)
+	}
+
+	// For MySQL, inject clientFoundRows=true so RowsAffected() returns the number of
+	// rows matched by the WHERE clause (not just rows whose values actually
+	// changed). Without this flag, an UPDATE that writes identical data within
+	// the same second reports 0 rows affected, which the repository layer
+	// incorrectly interprets as "row not found" and returns ErrContentNotFound.
+	if driver == "mysql" {
+		dsn = normalizeMySQLDSN(dsn)
 	}
 
 	// Open database connection

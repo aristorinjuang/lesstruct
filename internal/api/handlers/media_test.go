@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
@@ -358,8 +359,8 @@ func TestMediaHandler_GetMediaByID_Variants(t *testing.T) {
 				Hash:             "abc123def456789a",
 				Variants:         tt.variants,
 				UploadedBy:       "Test User",
-				CreatedAt:        "2026-05-27T10:00:00Z",
-				UpdatedAt:        "2026-05-27T10:00:00Z",
+				CreatedAt:        time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
+				UpdatedAt:        time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
 			}
 
 			mockService := handlersmocks.NewMockMediaServiceInterface(t)
@@ -441,8 +442,8 @@ func TestMediaHandler_GetMedia_Variants(t *testing.T) {
 						},
 					},
 					UploadedBy: "Test User",
-					CreatedAt:  "2026-05-27T10:00:00Z",
-					UpdatedAt:  "2026-05-27T10:00:00Z",
+					CreatedAt:  time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
+					UpdatedAt:  time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
 				},
 				{
 					ID:               2,
@@ -460,8 +461,8 @@ func TestMediaHandler_GetMedia_Variants(t *testing.T) {
 					Hash:             "def456abc7890",
 					Variants:         map[string]media.MediaVariant{},
 					UploadedBy:       "Test User 2",
-					CreatedAt:        "2026-05-26T10:00:00Z",
-					UpdatedAt:        "2026-05-26T10:00:00Z",
+					CreatedAt:        time.Date(2026, 5, 26, 10, 0, 0, 0, time.UTC),
+					UpdatedAt:        time.Date(2026, 5, 26, 10, 0, 0, 0, time.UTC),
 				},
 			}
 

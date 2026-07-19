@@ -61,8 +61,8 @@ type ProfileInfo struct {
 	Email          string         `json:"email"`
 	Role           string         `json:"role"`
 	ProfilePicture string         `json:"profilePicture,omitempty"`
-	CreatedAt      string         `json:"createdAt"`
-	UpdatedAt      string         `json:"updatedAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt,omitempty"`
 	CustomFields   map[string]any `json:"customFields,omitempty"`
 }
 

@@ -40,6 +40,7 @@ func setupAuthorsTestDB(t *testing.T) *sql.DB {
 			content TEXT,
 			tags TEXT,
 			status TEXT DEFAULT 'draft',
+			format TEXT DEFAULT 'tiptap',
 			post_type TEXT DEFAULT 'post',
 			meta_description TEXT,
 			og_title TEXT,
@@ -131,7 +132,7 @@ func TestContentRepository_GetPublishedAuthors(t *testing.T) {
 		defer func() { _ = db.Close() }()
 		_, err = db.Exec(`
 			CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, password_hash TEXT, name TEXT, role TEXT, status TEXT, profile_picture TEXT);
-			CREATE TABLE content_items (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, slug TEXT, status TEXT, post_type TEXT);
+			CREATE TABLE content_items (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, slug TEXT, status TEXT, format TEXT DEFAULT 'tiptap', post_type TEXT);
 		`)
 		require.NoError(t, err)
 

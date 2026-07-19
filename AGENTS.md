@@ -119,7 +119,7 @@ func (n Name) Full() string {
 - Always use packages that end with `_test` for all test files. Do not test private functions directly, but through the public ones.
 - Always use `github.com/stretchr/testify` for writing unit tests.
 - Make sure the domain layer ( @internal/domain/ ) has 100% test coverage! Remove unreachable code or skip errors using `_` variables if needed.
-- Ensure your works pass `make lint`, `make test`, and `make vulncheck`!
+- Ensure your works pass `make lint`, `make test`, and `make vulncheck`! Run `make test-race` before opening a PR, before merging, or whenever you touch concurrency code (`goroutine`, `sync`, channels, `http.Handler`).
 
 ### Before Touching Any Test File
 - **Read the entire test file first.** Never edit based on partial context.
@@ -226,6 +226,7 @@ The docs under `docs/` are contracts, not afterthoughts. When you change code th
 | `go.mod`, `internal/domain/`, `internal/api/`, `internal/repository/`, `internal/content/`, `internal/plugin/` (architecture-level), `web/admin/src/` (architecture-level), `cmd/lesstruct-cli/` (architecture-level) | `docs/project-context.md` |
 | `internal/config/`, `config.toml`, `.env.example` | `docs/configuration.md` |
 | `internal/api/template/`, `internal/api/contentpage/`, theme CSS/JS contracts | `docs/theme-development.md` AND `skills/lesstruct-theme-development/references/theme-development.md` (user-facing snapshot) |
+| `internal/api/template/pages/*.gohtml` (formatting/whitespace) | `docs/coding-standards/html.md` |
 | `internal/plugin/` (SDK/hooks/capabilities), `pkg/sdk/` | `docs/plugin-development.md`, `docs/plugin-capabilities.md` AND the matching snapshots under `skills/lesstruct-plugin-development/references/` |
 | `internal/api/handlers/agent/`, `internal/api/middleware/apikey.go`, `/api/v1` route shape, response envelope | `docs/api-reference.md` |
 | A user-facing feature added, removed, or behavior-changed (UI, CLI, or config) | `docs/features.md` (canonical catalog) AND, if it is in the homepage's curated subset, the card copy in `site/layouts/landing.html` |

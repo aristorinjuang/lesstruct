@@ -30,11 +30,11 @@ type contentSummary struct {
 // the parsed values at execution time.
 func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 	var (
-		file, title, postType, language string
-		tags                            []string
-		fields                          []string
-		translationOf                   int
-		published                       bool
+		file, title, postType, language, format string
+		tags                                    []string
+		fields                                  []string
+		translationOf                           int
+		published                               bool
 	)
 
 	content := &cobra.Command{
@@ -73,6 +73,7 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 				title:              title,
 				published:          published,
 				postType:           postType,
+				format:             format,
 				tags:               tags,
 				language:           language,
 				fields:             fields,
@@ -129,12 +130,18 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		0,
 		"id of content this item translates (joins its translation group; the server validates the id exists)",
 	)
+	create.Flags().StringVar(
+		&format,
+		"format",
+		"",
+		"content format: tiptap (default), markdown, or html",
+	)
 
 	var (
-		updateFile, updateTitle, updatePostType, updateLanguage string
-		updateFields                                            []string
-		updateTags                                              []string
-		updatePublished                                         bool
+		updateFile, updateTitle, updatePostType, updateLanguage, updateFormat string
+		updateFields                                                          []string
+		updateTags                                                            []string
+		updatePublished                                                       bool
 	)
 	update := &cobra.Command{
 		Use:   "update <id> [markdown]",
@@ -163,6 +170,7 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 				title:     updateTitle,
 				published: updatePublished,
 				postType:  updatePostType,
+				format:    updateFormat,
 				tags:      updateTags,
 				language:  updateLanguage,
 				fields:    updateFields,
@@ -216,6 +224,12 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		"field",
 		nil,
 		"custom field as key=value (repeatable; REPLACES all custom fields). Auto-typed: \"true\"/\"false\"→bool, numbers→number, else string. Omit to preserve existing fields",
+	)
+	update.Flags().StringVar(
+		&updateFormat,
+		"format",
+		"",
+		"content format: tiptap (default), markdown, or html",
 	)
 
 	var (
@@ -434,6 +448,7 @@ type contentCreateOptions struct {
 	title              string
 	published          bool
 	postType           string
+	format             string
 	tags               []string
 	language           string
 	fields             []string
@@ -463,6 +478,7 @@ type contentUpdateOptions struct {
 	title     string
 	published bool
 	postType  string
+	format    string
 	tags      []string
 	language  string
 	fields    []string
@@ -477,6 +493,10 @@ func runContentCreate(cmd *cobra.Command, args []string, opts contentCreateOptio
 			code: client.ExitUsage,
 			msg:  fmt.Sprintf("lesstruct-cli: invalid --output %q (want \"text\" or \"json\")", output),
 		}
+	}
+
+	if err := validateFormatFlag(opts.format); err != nil {
+		return err
 	}
 
 	apiKey, baseURL, err := resolveCredentials(opts.apiKey, opts.baseURL)
@@ -513,7 +533,7 @@ func runContentCreate(cmd *cobra.Command, args []string, opts contentCreateOptio
 	data, meta, err := cl.CreateContent(cmd.Context(), client.CreateContentRequest{
 		Title:              title,
 		Body:               body,
-		Format:             "markdown",
+		Format:             opts.format,
 		PostType:           opts.postType,
 		Tags:               normalizeTags(opts.tags),
 		Language:           opts.language,
@@ -548,6 +568,10 @@ func runContentCreate(cmd *cobra.Command, args []string, opts contentCreateOptio
 // surface flags for them, consistent with the agent v1 surface.
 func runContentUpdate(cmd *cobra.Command, args []string, opts contentUpdateOptions) error {
 	if err := validateOutput(opts.output); err != nil {
+		return err
+	}
+
+	if err := validateFormatFlag(opts.format); err != nil {
 		return err
 	}
 
@@ -652,7 +676,7 @@ func runContentUpdate(cmd *cobra.Command, args []string, opts contentUpdateOptio
 	data, meta, err := cl.UpdateContent(cmd.Context(), id, client.UpdateContentRequest{
 		Title:        title,
 		Body:         body,
-		Format:       "markdown",
+		Format:       opts.format,
 		PostType:     postType,
 		Tags:         tags,
 		Language:     language,
@@ -940,6 +964,21 @@ func validateOutput(output string) error {
 		}
 	}
 	return nil
+}
+
+func validateFormatFlag(format string) error {
+	if format == "" {
+		return nil
+	}
+	switch format {
+	case "tiptap", "markdown", "html":
+		return nil
+	default:
+		return &exitError{
+			code: client.ExitValidation,
+			msg:  fmt.Sprintf("lesstruct-cli: invalid --format %q (want \"tiptap\", \"markdown\", or \"html\")", format),
+		}
+	}
 }
 
 // runContentGet implements `lesstruct-cli content get <id>`.

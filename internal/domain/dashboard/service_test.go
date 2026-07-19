@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -37,7 +38,7 @@ func TestService_GetStats(t *testing.T) {
 							Title:     "Latest Post",
 							Slug:      "latest-post",
 							Status:    "published",
-							CreatedAt: "2026-04-10T10:30:00Z",
+							CreatedAt: time.Date(2026, 4, 10, 10, 30, 0, 0, time.UTC),
 						},
 					},
 				}
@@ -55,7 +56,7 @@ func TestService_GetStats(t *testing.T) {
 						Title:     "Latest Post",
 						Slug:      "latest-post",
 						Status:    "published",
-						CreatedAt: "2026-04-10T10:30:00Z",
+						CreatedAt: time.Date(2026, 4, 10, 10, 30, 0, 0, time.UTC),
 					},
 				},
 			},

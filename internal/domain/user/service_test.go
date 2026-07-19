@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/user"
 	"github.com/aristorinjuang/lesstruct/internal/domain/user/mocks"
@@ -908,7 +909,7 @@ func TestUserManagementService_UpdateUserProfile_Success(t *testing.T) {
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "new@example.com",
-			Name: "New Name", Role: "Contributor", Status: "verified", CreatedAt: "2025-01-01",
+			Name: "New Name", Role: "Contributor", Status: "verified", CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		}, nil).Once()
 
 	updated, err := service.UpdateUserProfile(context.Background(), 1, "New Name", "new@example.com", "Contributor", nil)

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/aristorinjuang/lesstruct/internal/email"
@@ -51,8 +52,8 @@ type Profile struct {
 	Email          string
 	Role           string
 	ProfilePicture string
-	CreatedAt      string
-	UpdatedAt      string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 	CustomFields   map[string]any
 }
 

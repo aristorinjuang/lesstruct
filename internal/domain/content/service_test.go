@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
@@ -175,7 +176,7 @@ func TestService_Create(t *testing.T) {
 				Status:  content.StatusDraft,
 			},
 			setupMock:    func(m *mocks.MockRepository) {},
-			wantErr:      content.ErrInvalidContent,
+			wantErr:      content.ErrContentTooLong,
 			validateSlug: false,
 		},
 		{
@@ -285,6 +286,63 @@ func TestService_Create(t *testing.T) {
 				assert.Equal(t, tt.expectedSlug, result.Slug, "Service.Create() Slug")
 			}
 
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_Create_DefaultLanguage(t *testing.T) {
+	tests := []struct {
+		name           string
+		defaultLang    string
+		reqLanguage    string
+		wantLanguage   string
+	}{
+		{
+			name:         "success - WithDefaultLanguage sets empty request language",
+			defaultLang:  "id",
+			reqLanguage:  "",
+			wantLanguage: "id",
+		},
+		{
+			name:         "success - explicit request language overrides default",
+			defaultLang:  "id",
+			reqLanguage:  "en",
+			wantLanguage: "en",
+		},
+		{
+			name:         "success - default is en when no option provided",
+			defaultLang:  "",
+			reqLanguage:  "",
+			wantLanguage: "en",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &mocks.MockRepository{}
+			mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", tt.wantLanguage).Return(true, nil)
+			mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+				c := args.Get(1).(*content.Content)
+				c.ID = 1
+			})
+
+			var opts []content.Option
+			if tt.defaultLang != "" {
+				opts = append(opts, content.WithDefaultLanguage(tt.defaultLang))
+			}
+			service := content.NewService(mockRepo, nil, nil, opts...)
+			result, err := service.Create(context.Background(), 1, content.CreateContentRequest{
+				Title:   "Test Title",
+				Content: testTipTapJSON("test"),
+				Tags:    []string{},
+				Status:  content.StatusDraft,
+				Language: tt.reqLanguage,
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, tt.wantLanguage, result.Language)
 			mockRepo.AssertExpectations(t)
 		})
 	}
@@ -670,7 +728,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Original content",
 					Tags:      []string{"original"},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 				m.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
@@ -700,7 +758,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -728,7 +786,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusPublished,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -756,7 +814,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusPublished,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 				m.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
@@ -786,7 +844,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
@@ -826,7 +884,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
@@ -851,11 +909,11 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
-			wantErr: content.ErrInvalidContent,
+			wantErr: content.ErrContentTooLong,
 		},
 		{
 			name:   "validation fails with invalid status",
@@ -876,7 +934,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
@@ -901,7 +959,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(errors.New("database error"))
@@ -942,7 +1000,7 @@ func TestService_Update(t *testing.T) {
 					Content:   "Content",
 					Tags:      []string{},
 					Status:    content.StatusDraft,
-					UpdatedAt: "2026-04-08T00:00:00Z",
+					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
@@ -1969,7 +2027,7 @@ func TestService_GetCommentsByStatus(t *testing.T) {
 						Comment:      "Great article!",
 						Author:       "Jane Doe",
 						Status:       content.CommentStatusPending,
-						CreatedAt:    "2026-04-19T10:30:00Z",
+						CreatedAt:    time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
 					},
 				}, nil)
 			},
@@ -2038,7 +2096,7 @@ func TestService_GetPublishedByTag(t *testing.T) {
 			limit:    10,
 			offset:   0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByTag", mock.Anything, "golang", "", 10, 0).Return([]*content.Content{
+				m.On("GetPublishedByTag", mock.Anything, "golang", "", 0, 0, 10, 0).Return([]*content.Content{
 					{ID: 1, Title: "Go Basics", Tags: []string{"golang", "tutorial"}},
 				}, nil)
 			},
@@ -2051,7 +2109,7 @@ func TestService_GetPublishedByTag(t *testing.T) {
 			limit:    10,
 			offset:   0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByTag", mock.Anything, "golang", "", 10, 0).Return(nil, errors.New("database error"))
+				m.On("GetPublishedByTag", mock.Anything, "golang", "", 0, 0, 10, 0).Return(nil, errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to get published content by tag"),
 		},
@@ -2063,7 +2121,7 @@ func TestService_GetPublishedByTag(t *testing.T) {
 			tt.setupMock(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			result, err := service.GetPublishedByTag(context.Background(), tt.tag, tt.language, tt.limit, tt.offset)
+			result, err := service.GetPublishedByTag(context.Background(), tt.tag, tt.language, 0, 0, tt.limit, tt.offset)
 
 			if tt.expectedErr != nil {
 				require.Error(t, err)
@@ -4160,7 +4218,7 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			Content:   testTipTapJSON("Content"),
 			PostType:  "product",
 			Status:    content.StatusDraft,
-			UpdatedAt: "2026-04-08T00:00:00Z",
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -4213,7 +4271,7 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			Content:   testTipTapJSON("Content"),
 			PostType:  "product",
 			Status:    content.StatusDraft,
-			UpdatedAt: "2026-04-08T00:00:00Z",
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 			CustomFields: map[string]any{
 				"price":        10.99,
 				"internal_sku": "SKU-OLD",
@@ -4270,7 +4328,7 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
 			Status:    content.StatusDraft,
-			UpdatedAt: "2026-04-08T00:00:00Z",
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -4315,7 +4373,7 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
 			Status:    content.StatusDraft,
-			UpdatedAt: "2026-04-08T00:00:00Z",
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -4360,7 +4418,7 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
 			Status:    content.StatusDraft,
-			UpdatedAt: "2026-04-08T00:00:00Z",
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -4396,7 +4454,7 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			Content:   testTipTapJSON("Content"),
 			PostType:  "product",
 			Status:    content.StatusDraft,
-			UpdatedAt: "2026-04-08T00:00:00Z",
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 			CustomFields: map[string]any{
 				"price": 10.99,
 			},
@@ -4698,7 +4756,7 @@ func TestService_Publish_HookFiresOnTransition(t *testing.T) {
 		Content:   testTipTapJSON("Content"),
 		PostType:  "post",
 		Status:    content.StatusDraft,
-		UpdatedAt: "2026-04-08T00:00:00Z",
+		UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -4729,7 +4787,7 @@ func TestService_Publish_HookDoesNotFireOnNoOp(t *testing.T) {
 		Content:   testTipTapJSON("Content"),
 		PostType:  "post",
 		Status:    content.StatusPublished,
-		UpdatedAt: "2026-04-08T00:00:00Z",
+		UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -4986,7 +5044,7 @@ func TestService_Unpublish_HookNeverFires(t *testing.T) {
 		Content:   testTipTapJSON("Content"),
 		PostType:  "post",
 		Status:    content.StatusPublished,
-		UpdatedAt: "2026-04-08T00:00:00Z",
+		UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -5183,7 +5241,7 @@ func TestService_GetRelated(t *testing.T) {
 			expectedErr: nil,
 		},
 		{
-			name:  "limit clamped to default 5 when zero",
+			name:  "limit clamped to default 4 when zero",
 			id:    1,
 			limit: 0,
 			setupMock: func(m *mocks.MockRepository) {
@@ -5194,15 +5252,14 @@ func TestService_GetRelated(t *testing.T) {
 					PostType: "post",
 					Language: "en",
 				}, nil)
-				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*content.Content{
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 4).Return([]*content.Content{
 					{ID: 2, Title: "Related 2"},
 					{ID: 3, Title: "Related 3"},
 					{ID: 4, Title: "Related 4"},
 					{ID: 5, Title: "Related 5"},
-					{ID: 6, Title: "Related 6"},
 				}, nil)
 			},
-			expectedIDs: []int{2, 3, 4, 5, 6},
+			expectedIDs: []int{2, 3, 4, 5},
 			expectedErr: nil,
 		},
 		{

@@ -57,8 +57,8 @@ func TestCompleteProfileViewFlow(t *testing.T) {
 			Username:  "testuser",
 			Email:     "test@example.com",
 			Role:      "Author",
-			CreatedAt: "2026-03-28T10:30:00Z",
-			UpdatedAt: "2026-03-30T12:00:00Z",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
 		}, nil)
 
 	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
@@ -243,13 +243,13 @@ func TestCompleteDataExportFlow(t *testing.T) {
 	profileService.EXPECT().
 		ExportUserData(mock.Anything, 123).
 		Return(&repository.UserDataExport{
-			ExportDate: "2026-03-31T12:00:00Z",
+			ExportDate: time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC),
 			User: &repository.User{
 				ID:        123,
 				Username:  "testuser",
 				Email:     "test@example.com",
 				Role:      "Author",
-				CreatedAt: "2026-03-28T10:30:00Z",
+				CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 			},
 			Content: []*repository.UserContentItem{
 				{
@@ -259,8 +259,8 @@ func TestCompleteDataExportFlow(t *testing.T) {
 					Slug:      "my-first-post",
 					Content:   "<p>Post content here...</p>",
 					Status:    "published",
-					CreatedAt: "2026-03-29T10:00:00Z",
-					UpdatedAt: "2026-03-29T10:30:00Z",
+					CreatedAt: time.Date(2026, 3, 29, 10, 0, 0, 0, time.UTC),
+					UpdatedAt: time.Date(2026, 3, 29, 10, 30, 0, 0, time.UTC),
 				},
 			},
 			Comments: []*repository.UserCommentItem{
@@ -268,8 +268,8 @@ func TestCompleteDataExportFlow(t *testing.T) {
 					ID:            1,
 					ContentItemID: 1,
 					Content:       "Great post!",
-					CreatedAt:     "2026-03-29T14:00:00Z",
-					UpdatedAt:     "2026-03-29T14:00:00Z",
+					CreatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
+					UpdatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
 				},
 			},
 			Media: []*repository.UserMediaItem{
@@ -280,7 +280,7 @@ func TestCompleteDataExportFlow(t *testing.T) {
 					FilePath:         "/uploads/media/2026/03/29/image1.webp",
 					FileSize:         102400,
 					MimeType:         "image/webp",
-					CreatedAt:        "2026-03-29T12:00:00Z",
+					CreatedAt:        time.Date(2026, 3, 29, 12, 0, 0, 0, time.UTC),
 				},
 			},
 		}, nil)
@@ -612,13 +612,13 @@ func TestExportDataForUserWithNoContent(t *testing.T) {
 	profileService.EXPECT().
 		ExportUserData(mock.Anything, 123).
 		Return(&repository.UserDataExport{
-			ExportDate: "2026-03-31T12:00:00Z",
+			ExportDate: time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC),
 			User: &repository.User{
 				ID:        123,
 				Username:  "testuser",
 				Email:     "test@example.com",
 				Role:      "Author",
-				CreatedAt: "2026-03-28T10:30:00Z",
+				CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 			},
 			Content:  []*repository.UserContentItem{},
 			Comments: []*repository.UserCommentItem{},
@@ -667,8 +667,8 @@ func TestProfileResponseStructure(t *testing.T) {
 			Username:  "testuser",
 			Email:     "test@example.com",
 			Role:      "Author",
-			CreatedAt: "2026-03-28T10:30:00Z",
-			UpdatedAt: "2026-03-30T12:00:00Z",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
 		}, nil)
 
 	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
@@ -712,7 +712,7 @@ func TestProfileResponseStructure(t *testing.T) {
 	if respWrapper.Data.Profile.Role == "" {
 		t.Error("Expected profile role to be set")
 	}
-	if respWrapper.Data.Profile.CreatedAt == "" {
+	if respWrapper.Data.Profile.CreatedAt.IsZero() {
 		t.Error("Expected profile createdAt to be set")
 	}
 	if respWrapper.Data.Meta.Timestamp == "" {
@@ -780,7 +780,7 @@ func TestProfileHandlerWithMiddlewareIntegration(t *testing.T) {
 			Username:  "testuser",
 			Email:     "test@example.com",
 			Role:      "Author",
-			CreatedAt: "2026-03-28T10:30:00Z",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 		}, nil)
 
 	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
@@ -823,13 +823,13 @@ func TestDataExportJSONStructure(t *testing.T) {
 	profileService.EXPECT().
 		ExportUserData(mock.Anything, 123).
 		Return(&repository.UserDataExport{
-			ExportDate: "2026-03-31T12:00:00Z",
+			ExportDate: time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC),
 			User: &repository.User{
 				ID:        123,
 				Username:  "testuser",
 				Email:     "test@example.com",
 				Role:      "Author",
-				CreatedAt: "2026-03-28T10:30:00Z",
+				CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 			},
 			Content: []*repository.UserContentItem{
 				{
@@ -839,8 +839,8 @@ func TestDataExportJSONStructure(t *testing.T) {
 					Slug:      "my-first-post",
 					Content:   "<p>Post content here...</p>",
 					Status:    "published",
-					CreatedAt: "2026-03-29T10:00:00Z",
-					UpdatedAt: "2026-03-29T10:30:00Z",
+					CreatedAt: time.Date(2026, 3, 29, 10, 0, 0, 0, time.UTC),
+					UpdatedAt: time.Date(2026, 3, 29, 10, 30, 0, 0, time.UTC),
 				},
 			},
 			Comments: []*repository.UserCommentItem{
@@ -848,8 +848,8 @@ func TestDataExportJSONStructure(t *testing.T) {
 					ID:            1,
 					ContentItemID: 1,
 					Content:       "Great post!",
-					CreatedAt:     "2026-03-29T14:00:00Z",
-					UpdatedAt:     "2026-03-29T14:00:00Z",
+					CreatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
+					UpdatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
 				},
 			},
 			Media: []*repository.UserMediaItem{
@@ -860,7 +860,7 @@ func TestDataExportJSONStructure(t *testing.T) {
 					FilePath:         "/uploads/media/2026/03/29/image1.webp",
 					FileSize:         102400,
 					MimeType:         "image/webp",
-					CreatedAt:        "2026-03-29T12:00:00Z",
+					CreatedAt:        time.Date(2026, 3, 29, 12, 0, 0, 0, time.UTC),
 				},
 			},
 		}, nil)

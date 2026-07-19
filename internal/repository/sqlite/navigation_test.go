@@ -104,7 +104,7 @@ func TestContentRepository_GetPublishedByPostType(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := sqlite.NewContentRepository(db)
-		items, err := repo.GetPublishedByPostType(context.Background(), "menu-item", "", 50, 0)
+		items, err := repo.GetPublishedByPostType(context.Background(), "menu-item", "", 0, 0, 50, 0)
 
 		require.NoError(t, err)
 		require.Len(t, items, 2)
@@ -117,9 +117,37 @@ func TestContentRepository_GetPublishedByPostType(t *testing.T) {
 		defer teardownContentTestDB(t, db)
 
 		repo := sqlite.NewContentRepository(db)
-		items, err := repo.GetPublishedByPostType(context.Background(), "nonexistent", "", 50, 0)
+		items, err := repo.GetPublishedByPostType(context.Background(), "nonexistent", "", 0, 0, 50, 0)
 
 		require.NoError(t, err)
 		assert.Empty(t, items)
+	})
+
+	t.Run("preserves format column", func(t *testing.T) {
+		db := setupContentTestDB(t)
+		defer teardownContentTestDB(t, db)
+
+		_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+		require.NoError(t, err)
+
+		_, err = db.Exec(`
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, language) VALUES
+			(1, 'Tiptap Item', 'tiptap-item', 'Body', '[]', 'published', 'tiptap', 'menu-item', 'en'),
+			(1, 'HTML Item', 'html-item', '<p>Body</p>', '[]', 'published', 'html', 'menu-item', 'en')
+		`)
+		require.NoError(t, err)
+
+		repo := sqlite.NewContentRepository(db)
+		items, err := repo.GetPublishedByPostType(context.Background(), "menu-item", "en", 0, 0, 50, 0)
+
+		require.NoError(t, err)
+		require.Len(t, items, 2)
+
+		formats := map[string]string{}
+		for _, item := range items {
+			formats[item.Slug] = string(item.Format)
+		}
+		assert.Equal(t, "tiptap", formats["tiptap-item"])
+		assert.Equal(t, "html", formats["html-item"])
 	})
 }

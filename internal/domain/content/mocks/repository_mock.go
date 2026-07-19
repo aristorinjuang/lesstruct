@@ -809,6 +809,80 @@ func (_c *MockRepository_GetPublished_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// GetPublishedArchive provides a mock function for the type MockRepository
+func (_mock *MockRepository) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*content.ArchiveMonth, error) {
+	ret := _mock.Called(ctx, postType, language)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPublishedArchive")
+	}
+
+	var r0 []*content.ArchiveMonth
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) ([]*content.ArchiveMonth, error)); ok {
+		return returnFunc(ctx, postType, language)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) []*content.ArchiveMonth); ok {
+		r0 = returnFunc(ctx, postType, language)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*content.ArchiveMonth)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, postType, language)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_GetPublishedArchive_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPublishedArchive'
+type MockRepository_GetPublishedArchive_Call struct {
+	*mock.Call
+}
+
+// GetPublishedArchive is a helper method to define mock.On call
+//   - ctx context.Context
+//   - postType string
+//   - language string
+func (_e *MockRepository_Expecter) GetPublishedArchive(ctx any, postType any, language any) *MockRepository_GetPublishedArchive_Call {
+	return &MockRepository_GetPublishedArchive_Call{Call: _e.mock.On("GetPublishedArchive", ctx, postType, language)}
+}
+
+func (_c *MockRepository_GetPublishedArchive_Call) Run(run func(ctx context.Context, postType string, language string)) *MockRepository_GetPublishedArchive_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_GetPublishedArchive_Call) Return(archiveMonths []*content.ArchiveMonth, err error) *MockRepository_GetPublishedArchive_Call {
+	_c.Call.Return(archiveMonths, err)
+	return _c
+}
+
+func (_c *MockRepository_GetPublishedArchive_Call) RunAndReturn(run func(ctx context.Context, postType string, language string) ([]*content.ArchiveMonth, error)) *MockRepository_GetPublishedArchive_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetPublishedAuthors provides a mock function for the type MockRepository
 func (_mock *MockRepository) GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*content.PublishedAuthor, error) {
 	ret := _mock.Called(ctx, limit, offset)
@@ -970,8 +1044,8 @@ func (_c *MockRepository_GetPublishedByAuthorUsername_Call) RunAndReturn(run fun
 }
 
 // GetPublishedByPostType provides a mock function for the type MockRepository
-func (_mock *MockRepository) GetPublishedByPostType(ctx context.Context, postType string, language string, limit int, offset int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, postType, language, limit, offset)
+func (_mock *MockRepository) GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, postType, language, year, month, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedByPostType")
@@ -979,18 +1053,18 @@ func (_mock *MockRepository) GetPublishedByPostType(ctx context.Context, postTyp
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, postType, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, postType, language, year, month, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, postType, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, postType, language, year, month, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int) error); ok {
-		r1 = returnFunc(ctx, postType, language, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int, int, int) error); ok {
+		r1 = returnFunc(ctx, postType, language, year, month, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1006,13 +1080,15 @@ type MockRepository_GetPublishedByPostType_Call struct {
 //   - ctx context.Context
 //   - postType string
 //   - language string
+//   - year int
+//   - month int
 //   - limit int
 //   - offset int
-func (_e *MockRepository_Expecter) GetPublishedByPostType(ctx any, postType any, language any, limit any, offset any) *MockRepository_GetPublishedByPostType_Call {
-	return &MockRepository_GetPublishedByPostType_Call{Call: _e.mock.On("GetPublishedByPostType", ctx, postType, language, limit, offset)}
+func (_e *MockRepository_Expecter) GetPublishedByPostType(ctx any, postType any, language any, year any, month any, limit any, offset any) *MockRepository_GetPublishedByPostType_Call {
+	return &MockRepository_GetPublishedByPostType_Call{Call: _e.mock.On("GetPublishedByPostType", ctx, postType, language, year, month, limit, offset)}
 }
 
-func (_c *MockRepository_GetPublishedByPostType_Call) Run(run func(ctx context.Context, postType string, language string, limit int, offset int)) *MockRepository_GetPublishedByPostType_Call {
+func (_c *MockRepository_GetPublishedByPostType_Call) Run(run func(ctx context.Context, postType string, language string, year int, month int, limit int, offset int)) *MockRepository_GetPublishedByPostType_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1034,12 +1110,22 @@ func (_c *MockRepository_GetPublishedByPostType_Call) Run(run func(ctx context.C
 		if args[4] != nil {
 			arg4 = args[4].(int)
 		}
+		var arg5 int
+		if args[5] != nil {
+			arg5 = args[5].(int)
+		}
+		var arg6 int
+		if args[6] != nil {
+			arg6 = args[6].(int)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
 			arg4,
+			arg5,
+			arg6,
 		)
 	})
 	return _c
@@ -1050,7 +1136,7 @@ func (_c *MockRepository_GetPublishedByPostType_Call) Return(contents []*content
 	return _c
 }
 
-func (_c *MockRepository_GetPublishedByPostType_Call) RunAndReturn(run func(ctx context.Context, postType string, language string, limit int, offset int) ([]*content.Content, error)) *MockRepository_GetPublishedByPostType_Call {
+func (_c *MockRepository_GetPublishedByPostType_Call) RunAndReturn(run func(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockRepository_GetPublishedByPostType_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1198,8 +1284,8 @@ func (_c *MockRepository_GetPublishedBySlugAny_Call) RunAndReturn(run func(ctx c
 }
 
 // GetPublishedByTag provides a mock function for the type MockRepository
-func (_mock *MockRepository) GetPublishedByTag(ctx context.Context, tag string, language string, limit int, offset int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, tag, language, limit, offset)
+func (_mock *MockRepository) GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, tag, language, year, month, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedByTag")
@@ -1207,18 +1293,18 @@ func (_mock *MockRepository) GetPublishedByTag(ctx context.Context, tag string, 
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, tag, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, tag, language, year, month, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, tag, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, tag, language, year, month, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int) error); ok {
-		r1 = returnFunc(ctx, tag, language, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int, int, int) error); ok {
+		r1 = returnFunc(ctx, tag, language, year, month, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1234,13 +1320,15 @@ type MockRepository_GetPublishedByTag_Call struct {
 //   - ctx context.Context
 //   - tag string
 //   - language string
+//   - year int
+//   - month int
 //   - limit int
 //   - offset int
-func (_e *MockRepository_Expecter) GetPublishedByTag(ctx any, tag any, language any, limit any, offset any) *MockRepository_GetPublishedByTag_Call {
-	return &MockRepository_GetPublishedByTag_Call{Call: _e.mock.On("GetPublishedByTag", ctx, tag, language, limit, offset)}
+func (_e *MockRepository_Expecter) GetPublishedByTag(ctx any, tag any, language any, year any, month any, limit any, offset any) *MockRepository_GetPublishedByTag_Call {
+	return &MockRepository_GetPublishedByTag_Call{Call: _e.mock.On("GetPublishedByTag", ctx, tag, language, year, month, limit, offset)}
 }
 
-func (_c *MockRepository_GetPublishedByTag_Call) Run(run func(ctx context.Context, tag string, language string, limit int, offset int)) *MockRepository_GetPublishedByTag_Call {
+func (_c *MockRepository_GetPublishedByTag_Call) Run(run func(ctx context.Context, tag string, language string, year int, month int, limit int, offset int)) *MockRepository_GetPublishedByTag_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1262,12 +1350,22 @@ func (_c *MockRepository_GetPublishedByTag_Call) Run(run func(ctx context.Contex
 		if args[4] != nil {
 			arg4 = args[4].(int)
 		}
+		var arg5 int
+		if args[5] != nil {
+			arg5 = args[5].(int)
+		}
+		var arg6 int
+		if args[6] != nil {
+			arg6 = args[6].(int)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
 			arg4,
+			arg5,
+			arg6,
 		)
 	})
 	return _c
@@ -1278,7 +1376,7 @@ func (_c *MockRepository_GetPublishedByTag_Call) Return(contents []*content.Cont
 	return _c
 }
 
-func (_c *MockRepository_GetPublishedByTag_Call) RunAndReturn(run func(ctx context.Context, tag string, language string, limit int, offset int) ([]*content.Content, error)) *MockRepository_GetPublishedByTag_Call {
+func (_c *MockRepository_GetPublishedByTag_Call) RunAndReturn(run func(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockRepository_GetPublishedByTag_Call {
 	_c.Call.Return(run)
 	return _c
 }

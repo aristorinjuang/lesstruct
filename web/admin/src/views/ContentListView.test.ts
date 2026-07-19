@@ -12,7 +12,6 @@ type ContentListViewInstance = ComponentPublicInstance & {
   getStatusBadgeClass: (status: string) => string
   loadContents: () => Promise<void>
   editContent: (content: Content) => void
-  handleSaved: (content: Content, redirectTo?: string) => Promise<void>
 }
 function vm(wrapper: VueWrapper<ComponentPublicInstance>): ContentListViewInstance {
   return wrapper.vm as unknown as ContentListViewInstance
@@ -259,43 +258,7 @@ describe('ContentListView', () => {
 
       vm(wrapper).editContent(mockContents[0])
 
-      expect(mockPush).toHaveBeenCalledWith('/content/1/edit')
-    })
-  })
-
-  describe('Navigation After Publish', () => {
-    it('redirects to content list after publish', async () => {
-      const contentStore = useContentStore()
-      const mockContent: Content = {
-        id: 1,
-        userId: 1,
-        title: 'Test Post',
-        slug: 'test-post',
-        content: '{"type":"doc"}',
-        tags: [],
-        status: 'published',
-        createdAt: '2026-04-08T00:00:00Z',
-          postType: 'post',
-          language: 'en',
-        updatedAt: '2026-04-08T12:00:00Z',
-      }
-
-      vi.spyOn(contentStore, 'getByUser').mockResolvedValue([mockContent])
-
-      const wrapper = mount(ContentListView, {
-        global: {
-          stubs: {
-            ContentEditor: true,
-          },
-        },
-      })
-
-      await wrapper.vm.$nextTick()
-
-      // Pass the redirectTo parameter to trigger the navigation
-      await vm(wrapper).handleSaved(mockContent, '/content')
-
-      expect(mockPush).toHaveBeenCalledWith('/content')
+      expect(mockPush).toHaveBeenCalledWith('/content/1/edit?type=post')
     })
   })
 })

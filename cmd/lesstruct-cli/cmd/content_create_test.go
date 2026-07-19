@@ -56,7 +56,8 @@ func TestContentCreate_PositionalArg(t *testing.T) {
 	assert.Equal(t, http.MethodPost, info.method)
 	assert.Equal(t, "/api/v1/content", info.path)
 	assert.Equal(t, "# Hello", info.payload["body"])
-	assert.Equal(t, "markdown", info.payload["format"])
+	_, hasFormat := info.payload["format"]
+	assert.False(t, hasFormat, "format omitted when --format not passed")
 	// Title derived from the first "# " line.
 	assert.Equal(t, "Hello", info.payload["title"])
 	_, hasPublished := info.payload["isPublished"]
@@ -499,4 +500,128 @@ func TestContentCreate_FieldFlagMalformed(t *testing.T) {
 			assert.Contains(t, errOut.String(), tt.wantSubstr)
 		})
 	}
+}
+
+func TestContentCreate_FormatValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		format      string
+		wantCode    int
+		wantSubstr  string
+	}{
+		{
+			name:       "valid tiptap",
+			format:     "tiptap",
+			wantCode:   0,
+			wantSubstr: "",
+		},
+		{
+			name:       "valid markdown",
+			format:     "markdown",
+			wantCode:   0,
+			wantSubstr: "",
+		},
+		{
+			name:       "valid html",
+			format:     "html",
+			wantCode:   0,
+			wantSubstr: "",
+		},
+		{
+			name:       "empty defaults to tiptap",
+			format:     "",
+			wantCode:   0,
+			wantSubstr: "",
+		},
+		{
+			name:       "invalid format",
+			format:     "invalid",
+			wantCode:   5,
+			wantSubstr: "invalid --format",
+		},
+		{
+			name:       "invalid format css",
+			format:     "css",
+			wantCode:   5,
+			wantSubstr: "invalid --format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var info requestInfo
+			srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+			defer srv.Close()
+
+			var out, errOut bytes.Buffer
+			args := []string{
+				"content", "create", "# Hello",
+				"--base-url", srv.URL, "--api-key", "k",
+			}
+			if tt.format != "" {
+				args = append(args, "--format", tt.format)
+			}
+
+			code := cmd.ExecuteArgs(args, strings.NewReader(""), &out, &errOut)
+
+			if tt.wantCode == 0 {
+				require.Equal(t, 0, code, "stderr: %s", errOut)
+				// When format is empty, omitempty means it's absent from the payload
+				if tt.format == "" {
+					_, hasFormat := info.payload["format"]
+					assert.False(t, hasFormat, "format should be absent when empty")
+				} else {
+					assert.Equal(t, tt.format, info.payload["format"])
+				}
+			} else {
+				assert.Equal(t, tt.wantCode, code)
+				assert.Contains(t, errOut.String(), tt.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestContentCreate_HtmlFormat(t *testing.T) {
+	var info requestInfo
+	srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{
+			"content", "create",
+			"--format", "html",
+			"--base-url", srv.URL, "--api-key", "k",
+		},
+		strings.NewReader("<p>Hello World</p>"),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	assert.Equal(t, http.MethodPost, info.method)
+	assert.Equal(t, "html", info.payload["format"])
+	assert.Equal(t, "<p>Hello World</p>", info.payload["body"])
+}
+
+func TestContentCreate_TiptapFormat(t *testing.T) {
+	var info requestInfo
+	srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+	defer srv.Close()
+
+	tiptapDoc := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{
+			"content", "create",
+			"--format", "tiptap",
+			"--base-url", srv.URL, "--api-key", "k",
+		},
+		strings.NewReader(tiptapDoc),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	assert.Equal(t, "tiptap", info.payload["format"])
+	assert.Equal(t, tiptapDoc, info.payload["body"])
 }

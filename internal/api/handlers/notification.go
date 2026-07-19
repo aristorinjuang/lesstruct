@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
@@ -13,7 +14,7 @@ type NotificationRef struct {
 	ID        int                         `json:"id"`
 	Type      repository.NotificationType `json:"type"`
 	Message   string                      `json:"message"`
-	CreatedAt string                      `json:"createdAt"`
+	CreatedAt time.Time                   `json:"createdAt"`
 }
 
 // NotificationsResponse represents the notifications response
@@ -50,7 +51,7 @@ func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Re
 			ID:        notif.ID,
 			Type:      notif.Type,
 			Message:   notif.Message,
-			CreatedAt: notif.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			CreatedAt: notif.CreatedAt,
 		}
 	}
 

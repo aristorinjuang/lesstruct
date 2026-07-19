@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted, onMounted, computed, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { type Editor } from '@tiptap/vue-3'
 import InputText from '@/components/atoms/InputText.vue'
 import Button from '@/components/atoms/Button.vue'
@@ -9,6 +8,8 @@ import FormField from '@/components/molecules/FormField.vue'
 import DeleteConfirmDialog from '@/components/molecules/DeleteConfirmDialog.vue'
 import Toast from '@/components/molecules/Toast.vue'
 import TipTapEditor from '@/components/organisms/TipTapEditor.vue'
+import HtmlCodeEditor from '@/components/organisms/HtmlCodeEditor.vue'
+import HtmlAiPromptModal from '@/components/molecules/HtmlAiPromptModal.vue'
 import MediaPanel from '@/components/organisms/MediaPanel.vue'
 import { useContentStore } from '@/stores/domain/content'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
@@ -25,6 +26,7 @@ interface Props {
   userId: number
   contentId?: number
   initialContent?: Content
+  initialPostType?: string
 }
 
 interface Emits {
@@ -36,7 +38,6 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-const router = useRouter()
 const contentStore = useContentStore()
 const { role } = useAuth()
 const { languages, fetchConfig, primaryLanguage } = useConfig()
@@ -52,18 +53,24 @@ const showLanguageTabs = computed(() => languages.value.length > 1)
 const textGenAvailable = ref(false)
 const isEnhancing = ref(false)
 const isTranslating = ref(false)
+const showHtmlAiModal = ref(false)
+const lastHtmlPrompt = ref('')
 
 const form = ref({
   title: '',
   content: '{"type":"doc","content":[{"type":"paragraph"}]}',
   tags: [] as string[],
   status: 'draft' as 'draft' | 'published',
-  postType: 'post',
+  postType: (props.initialPostType && props.initialPostType !== 'all') ? props.initialPostType : 'post',
   metaDescription: '',
   ogTitle: '',
   ogDescription: '',
   allowComments: true,
 })
+
+const contentFormat = ref<'tiptap' | 'html'>('tiptap')
+const isHTMLContent = computed(() => contentFormat.value === 'html')
+const showFormatSelector = computed(() => isNewContent.value)
 
 const customFields = ref<Record<string, unknown>>({})
 const customFieldErrors = ref<Record<string, string>>({})
@@ -271,6 +278,7 @@ function loadContentIntoForm(c: Content) {
   savedContentId.value = c.id
   hasLoadedInitialContent.value = true
   activeLanguage.value = c.language || primaryLanguage()
+  contentFormat.value = c.format === 'html' ? 'html' : 'tiptap'
   if (c.translationGroupId) {
     translationGroupId.value = c.translationGroupId
   }
@@ -356,7 +364,23 @@ watch(() => form.value.title, (newTitle) => {
   }
 })
 
+let suppressContentChange = false
+
+watch(contentFormat, (newFormat, oldFormat) => {
+  if (newFormat === oldFormat) return
+  if (!isNewContent.value) return
+
+  suppressContentChange = true
+  form.value.content = newFormat === 'html'
+    ? ''
+    : '{"type":"doc","content":[{"type":"paragraph"}]}'
+})
+
 watch(() => form.value.content, () => {
+  if (suppressContentChange) {
+    suppressContentChange = false
+    return
+  }
   hasContentChanges.value = true
 })
 
@@ -387,6 +411,7 @@ async function saveDraft(isAutoSave = false) {
       saved = await contentStore.update(savedContentId.value, {
         title: form.value.title,
         content: form.value.content,
+        format: contentFormat.value,
         tags: form.value.tags,
         status: isAutoSave ? form.value.status : 'draft',
         postType: form.value.postType,
@@ -399,6 +424,7 @@ async function saveDraft(isAutoSave = false) {
     } else {
       saved = await contentStore.create({
         ...form.value,
+        format: contentFormat.value,
         customFields: customFields.value,
         status: 'draft',
         userId: props.userId,
@@ -446,6 +472,7 @@ async function publish() {
       saved = await contentStore.update(savedContentId.value, {
         title: form.value.title,
         content: form.value.content,
+        format: contentFormat.value,
         tags: form.value.tags,
         status: 'published',
         postType: form.value.postType,
@@ -457,6 +484,7 @@ async function publish() {
     } else {
       saved = await contentStore.create({
         ...form.value,
+        format: contentFormat.value,
         customFields: customFields.value,
         status: 'published',
         userId: props.userId,
@@ -499,6 +527,7 @@ async function unpublish() {
     const saved = await contentStore.update(savedContentId.value!, {
       title: form.value.title,
       content: form.value.content,
+      format: contentFormat.value,
       tags: form.value.tags,
       status: 'draft',
       postType: form.value.postType,
@@ -533,6 +562,7 @@ async function saveChanges() {
     const saved = await contentStore.update(savedContentId.value!, {
       title: form.value.title,
       content: form.value.content,
+      format: contentFormat.value,
       tags: form.value.tags,
       status: 'published',
       postType: form.value.postType,
@@ -591,7 +621,6 @@ async function confirmDelete() {
 
 function cancel() {
   emit('cancel')
-  router.push('/content')
 }
 
 function mapBackendErrors(err: unknown) {
@@ -625,7 +654,7 @@ async function handleEnhance() {
   if (isEnhancing.value) return
   isEnhancing.value = true
   try {
-    const enhanced = await contentStore.enhanceContent(form.value.content)
+    const enhanced = await contentStore.enhanceContent(form.value.content, 'tiptap')
     const editor = editorRef.value?.editor
     if (editor) {
       editor.commands.setContent(JSON.parse(enhanced))
@@ -635,6 +664,33 @@ async function handleEnhance() {
   } catch (err: unknown) {
     const error = err as { message?: string; response?: { data?: { error?: { message?: string } } } }
     const msg = error.response?.data?.error?.message || error.message || 'Failed to enhance content'
+    displayToast(msg, 'error')
+  } finally {
+    isEnhancing.value = false
+  }
+}
+
+function openHtmlAiModal() {
+  if (isEnhancing.value) return
+  showHtmlAiModal.value = true
+}
+
+async function handleGenerateHTML(promptText: string) {
+  if (isEnhancing.value) return
+  isEnhancing.value = true
+  try {
+    lastHtmlPrompt.value = promptText
+    const generated = await contentStore.enhanceContent(
+      promptText,
+      'html',
+      form.value.content,
+    )
+    form.value.content = generated
+    showHtmlAiModal.value = false
+    displayToast('Content generated successfully')
+  } catch (err: unknown) {
+    const error = err as { message?: string; response?: { data?: { error?: { message?: string } } } }
+    const msg = error.response?.data?.error?.message || error.message || 'Failed to generate content'
     displayToast(msg, 'error')
   } finally {
     isEnhancing.value = false
@@ -657,12 +713,18 @@ async function handleTranslate() {
 
     const sourceLang = primaryLanguage()
     const targetLang = activeLanguage.value
-    const translated = await contentStore.translateContent(sourceContent, sourceLang, targetLang)
-    const editor = editorRef.value?.editor
-    if (editor) {
-      editor.commands.setContent(JSON.parse(translated))
+    const format: 'tiptap' | 'html' = contentFormat.value === 'html' ? 'html' : 'tiptap'
+    const translated = await contentStore.translateContent(sourceContent, sourceLang, targetLang, format)
+
+    if (format === 'html') {
+      form.value.content = translated
+    } else {
+      const editor = editorRef.value?.editor
+      if (editor) {
+        editor.commands.setContent(JSON.parse(translated))
+      }
+      form.value.content = translated
     }
-    form.value.content = translated
     displayToast('Content translated successfully')
   } catch (err: unknown) {
     const error = err as { message?: string; response?: { data?: { error?: { message?: string } } } }
@@ -742,22 +804,57 @@ async function handleTranslate() {
       @show-toast="displayToast"
     />
 
+    <FormField v-if="showFormatSelector" label="Content Format">
+      <div class="content-editor__format-selector">
+        <button
+          type="button"
+          class="content-editor__format-btn"
+          :class="{ 'content-editor__format-btn--active': contentFormat === 'tiptap' }"
+          @click="contentFormat = 'tiptap'"
+        >
+          Rich Text
+        </button>
+        <button
+          type="button"
+          class="content-editor__format-btn"
+          :class="{ 'content-editor__format-btn--active': contentFormat === 'html' }"
+          @click="contentFormat = 'html'"
+        >
+          HTML &amp; CSS
+        </button>
+      </div>
+    </FormField>
+
     <FormField label="Content">
-      <div class="content-editor__editor-wrapper">
-        <TipTapEditor
-          ref="editorRef"
+      <div v-if="isHTMLContent" class="content-editor__html-editor">
+        <HtmlCodeEditor
           v-model="form.content"
-          placeholder="Start writing your content..."
-          class="content-editor__tiptap"
+          placeholder="Enter HTML content..."
+          class="content-editor__codemirror"
         />
         <div v-if="hasContentChanges && form.title" class="content-editor__autosave-hint">
           Unsaved changes
         </div>
       </div>
-      <!-- AI Text Generation Buttons -->
+      <template v-else>
+        <div class="content-editor__editor-wrapper">
+          <TipTapEditor
+            ref="editorRef"
+            v-model="form.content"
+            placeholder="Start writing your content..."
+            class="content-editor__tiptap"
+          />
+          <div v-if="hasContentChanges && form.title" class="content-editor__autosave-hint">
+            Unsaved changes
+          </div>
+        </div>
+      </template>
+
+      <!-- AI buttons (shared across formats) -->
       <div class="content-editor__ai-buttons">
+        <!-- Rich text: Enhance -->
         <Button
-          v-if="textGenAvailable && activeLanguage === primaryLanguage()"
+          v-if="textGenAvailable && !isHTMLContent && activeLanguage === primaryLanguage()"
           type="button"
           variant="secondary"
           :is-loading="isEnhancing"
@@ -765,6 +862,17 @@ async function handleTranslate() {
         >
           {{ isEnhancing ? 'Enhancing...' : 'Enhance with AI' }}
         </Button>
+        <!-- HTML: Generate (opens modal) -->
+        <Button
+          v-if="textGenAvailable && isHTMLContent && activeLanguage === primaryLanguage()"
+          type="button"
+          variant="secondary"
+          :is-loading="isEnhancing"
+          @click="openHtmlAiModal"
+        >
+          {{ isEnhancing ? 'Generating...' : 'Generate with AI' }}
+        </Button>
+        <!-- Translate (both formats) -->
         <Button
           v-if="textGenAvailable && activeLanguage !== primaryLanguage() && (primaryContentId || savedContentId !== primaryContentId)"
           type="button"
@@ -776,6 +884,16 @@ async function handleTranslate() {
         </Button>
       </div>
     </FormField>
+
+    <!-- HTML AI Modal -->
+    <HtmlAiPromptModal
+      v-if="showHtmlAiModal"
+      :is-loading="isEnhancing"
+      :has-existing-content="!!form.content"
+      :initial-prompt="lastHtmlPrompt"
+      @generate="handleGenerateHTML"
+      @close="showHtmlAiModal = false"
+    />
 
     <FormField label="Tags" v-if="showTags">
       <InputText
@@ -1014,12 +1132,6 @@ async function handleTranslate() {
 </template>
 
 <style scoped>
-.content-editor {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 2rem 1rem;
-}
-
 .content-editor__links {
   margin-bottom: 1rem;
 }
@@ -1082,6 +1194,42 @@ async function handleTranslate() {
 
 .content-editor__tiptap {
   width: 100%;
+}
+
+.content-editor__html-editor {
+  position: relative;
+  width: 100%;
+}
+
+.content-editor__codemirror {
+  width: 100%;
+}
+
+.content-editor__format-selector {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.content-editor__format-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--brand-light-2);
+  background-color: var(--color-background);
+  color: var(--brand-dark-2);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.content-editor__format-btn:hover {
+  background-color: var(--brand-light-1);
+}
+
+.content-editor__format-btn--active {
+  background-color: var(--color-info);
+  color: var(--color-white);
+  border-color: var(--color-info);
 }
 
 .content-editor__autosave-hint {

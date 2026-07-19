@@ -186,7 +186,7 @@ func (r *UserDataExportRepository) GetUserDataForExport(ctx context.Context, use
 		return nil, err
 	}
 	return &UserDataExport{
-		ExportDate: time.Now().Format(time.RFC3339),
+		ExportDate: time.Now().UTC(),
 		User:       &usr,
 		Content:    content,
 		Comments:   comments,

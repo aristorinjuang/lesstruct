@@ -70,6 +70,11 @@ func mapContentItemToDomain(item *ContentItem, tagsJSON string) *contentdomain.C
 		updatedByUsername = item.UpdatedByUsername.String
 	}
 
+	format := contentdomain.Format(item.Format)
+	if format == "" {
+		format = contentdomain.FormatTiptap
+	}
+
 	return &contentdomain.Content{
 		ID:                 item.ID,
 		UserID:             item.UserID,
@@ -78,6 +83,7 @@ func mapContentItemToDomain(item *ContentItem, tagsJSON string) *contentdomain.C
 		Content:            item.Content.String,
 		Tags:               tags,
 		Status:             contentdomain.Status(item.Status),
+		Format:             format,
 		PostType:           item.PostType,
 		MetaDescription:    metaDescription,
 		OGTitle:            ogTitle,
@@ -88,8 +94,8 @@ func mapContentItemToDomain(item *ContentItem, tagsJSON string) *contentdomain.C
 		TranslationGroupID: translationGroupID,
 		UpdatedBy:          updatedBy,
 		UpdatedByUsername:  updatedByUsername,
-		CreatedAt:          item.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:          item.UpdatedAt.Format(time.RFC3339),
+		CreatedAt:          item.CreatedAt,
+		UpdatedAt:          item.UpdatedAt,
 	}
 }
 
@@ -103,7 +109,7 @@ func scanContentRows(rows *sql.Rows) ([]*contentdomain.Content, error) {
 
 		err := rows.Scan(
 			&item.ID, &item.UserID, &item.Title, &item.Slug, &item.Content,
-			&tagsJSON, &item.Status, &item.PostType,
+			&tagsJSON, &item.Status, &item.Format, &item.PostType,
 			&item.MetaDescription, &item.OGTitle, &item.OGDescription,
 			&item.AllowComments, &item.CustomFields, &item.Language,
 			&item.TranslationGroupID, &item.CreatedAt, &item.UpdatedAt,
@@ -138,7 +144,7 @@ func scanContentRowsWithAuditInfo(rows *sql.Rows) ([]*contentdomain.Content, err
 
 		err := rows.Scan(
 			&item.ID, &item.UserID, &item.Title, &item.Slug, &item.Content,
-			&tagsJSON, &item.Status, &item.PostType,
+			&tagsJSON, &item.Status, &item.Format, &item.PostType,
 			&item.MetaDescription, &item.OGTitle, &item.OGDescription,
 			&item.AllowComments, &item.CustomFields, &item.Language,
 			&item.TranslationGroupID, &item.CreatedAt, &item.UpdatedAt,
@@ -176,6 +182,7 @@ type ContentItem struct {
 	Slug               string         `json:"slug"`
 	Content            sql.NullString `json:"content"`
 	Status             string         `json:"status"`
+	Format             string         `json:"format"`
 	PostType           string         `json:"postType"`
 	MetaDescription    *string        `json:"metaDescription"`
 	OGTitle            *string        `json:"ogTitle"`
@@ -225,12 +232,12 @@ func (r *ContentRepository) Create(
 
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO content_items
-			(user_id, title, slug, content, tags, status, post_type,
+			(user_id, title, slug, content, tags, status, format, post_type,
 			 meta_description, og_title, og_description, allow_comments,
 			 custom_fields, language, translation_group_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, content.UserID, content.Title, content.Slug, content.Content,
-		string(tagsJSON), content.Status, content.PostType,
+		string(tagsJSON), content.Status, content.Format, content.PostType,
 		content.MetaDescription, content.OGTitle, content.OGDescription,
 		content.AllowComments, customFieldsJSON, language,
 		content.TranslationGroupID)
@@ -256,8 +263,8 @@ func (r *ContentRepository) Create(
 	if err != nil {
 		return fmt.Errorf("failed to fetch created timestamps: %w", err)
 	}
-	content.CreatedAt = createdAt.Format(time.RFC3339)
-	content.UpdatedAt = updatedAt.Format(time.RFC3339)
+	content.CreatedAt = createdAt
+	content.UpdatedAt = updatedAt
 
 	return nil
 }
@@ -275,7 +282,7 @@ func (r *ContentRepository) GetBySlug(
 
 	err := r.db.QueryRowContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -284,7 +291,7 @@ func (r *ContentRepository) GetBySlug(
 		WHERE ci.slug = ? AND ci.language = ?
 	`, slug, language).Scan(
 		&item.ID, &item.UserID, &item.Title, &item.Slug, &item.Content,
-		&tagsJSON, &item.Status, &item.PostType,
+		&tagsJSON, &item.Status, &item.Format, &item.PostType,
 		&item.MetaDescription, &item.OGTitle, &item.OGDescription,
 		&item.AllowComments, &item.CustomFields, &item.Language,
 		&item.TranslationGroupID, &item.CreatedAt, &item.UpdatedAt,
@@ -325,7 +332,7 @@ func (r *ContentRepository) GetByUser(
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
@@ -371,7 +378,7 @@ func (r *ContentRepository) ListByCursor(
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString(`
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
@@ -441,7 +448,7 @@ func (r *ContentRepository) GetAll(
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
@@ -491,7 +498,7 @@ func (r *ContentRepository) GetByID(
 
 	err := r.db.QueryRowContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
@@ -502,7 +509,7 @@ func (r *ContentRepository) GetByID(
 		WHERE ci.id = ?
 	`, id).Scan(
 		&item.ID, &item.UserID, &item.Title, &item.Slug, &item.Content,
-		&tagsJSON, &item.Status, &item.PostType,
+		&tagsJSON, &item.Status, &item.Format, &item.PostType,
 		&item.MetaDescription, &item.OGTitle, &item.OGDescription,
 		&item.AllowComments, &item.CustomFields, &item.Language,
 		&item.TranslationGroupID, &item.CreatedAt, &item.UpdatedAt,
@@ -547,13 +554,13 @@ func (r *ContentRepository) Update(
 
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE content_items
-		SET title = ?, slug = ?, content = ?, tags = ?, status = ?, post_type = ?,
+		SET title = ?, slug = ?, content = ?, tags = ?, status = ?, format = ?, post_type = ?,
 		    meta_description = ?, og_title = ?, og_description = ?,
 		    allow_comments = ?, custom_fields = ?, language = ?,
 		    translation_group_id = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ?
 	`, content.Title, content.Slug, content.Content,
-		string(tagsJSON), content.Status, content.PostType,
+		string(tagsJSON), content.Status, content.Format, content.PostType,
 		content.MetaDescription, content.OGTitle, content.OGDescription,
 		content.AllowComments, customFieldsJSON, content.Language,
 		content.TranslationGroupID, content.UpdatedBy, content.ID)
@@ -581,7 +588,7 @@ func (r *ContentRepository) Update(
 	if err != nil {
 		return fmt.Errorf("failed to fetch updated_at: %w", err)
 	}
-	content.UpdatedAt = updatedAt.Format(time.RFC3339)
+	content.UpdatedAt = updatedAt
 
 	return nil
 }
@@ -603,7 +610,7 @@ func (r *ContentRepository) GetPublished(
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -634,7 +641,7 @@ func (r *ContentRepository) GetPublishedBySlug(
 
 	err := r.db.QueryRowContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -643,7 +650,7 @@ func (r *ContentRepository) GetPublishedBySlug(
 		WHERE ci.slug = ? AND ci.language = ? AND ci.status = 'published'
 	`, slug, language).Scan(
 		&item.ID, &item.UserID, &item.Title, &item.Slug, &item.Content,
-		&tagsJSON, &item.Status, &item.PostType,
+		&tagsJSON, &item.Status, &item.Format, &item.PostType,
 		&item.MetaDescription, &item.OGTitle, &item.OGDescription,
 		&item.AllowComments, &item.CustomFields, &item.Language,
 		&item.TranslationGroupID, &item.CreatedAt, &item.UpdatedAt,
@@ -678,7 +685,7 @@ func (r *ContentRepository) GetPublishedBySlugAny(
 
 	err := r.db.QueryRowContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -688,7 +695,7 @@ func (r *ContentRepository) GetPublishedBySlugAny(
 		LIMIT 1
 	`, slug).Scan(
 		&item.ID, &item.UserID, &item.Title, &item.Slug, &item.Content,
-		&tagsJSON, &item.Status, &item.PostType,
+		&tagsJSON, &item.Status, &item.Format, &item.PostType,
 		&item.MetaDescription, &item.OGTitle, &item.OGDescription,
 		&item.AllowComments, &item.CustomFields, &item.Language,
 		&item.TranslationGroupID, &item.CreatedAt, &item.UpdatedAt,
@@ -731,7 +738,7 @@ func (r *ContentRepository) GetPublishedByAuthorUsername(
 	}
 	query := `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -869,7 +876,7 @@ func (r *ContentRepository) ListByFilters(
 
 	queryBuilder.WriteString(`
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
@@ -962,7 +969,7 @@ func (r *ContentRepository) GetPublishedPages(
 ) ([]*contentdomain.Content, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -1010,10 +1017,13 @@ func (r *ContentRepository) GetPublishedCustomPostTypes(
 
 // GetPublishedByPostType returns published content for a given post type.
 // When language is non-empty, results are restricted to that language.
+// When year and month are both non-zero, results are restricted to that month.
 func (r *ContentRepository) GetPublishedByPostType(
 	ctx context.Context,
 	postType string,
 	language string,
+	year int,
+	month int,
 	limit int,
 	offset int,
 ) ([]*contentdomain.Content, error) {
@@ -1028,7 +1038,7 @@ func (r *ContentRepository) GetPublishedByPostType(
 	}
 	query := `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -1040,6 +1050,10 @@ func (r *ContentRepository) GetPublishedByPostType(
 	if language != "" {
 		query += ` AND ci.language = ?`
 		args = append(args, language)
+	}
+	if year > 0 && month > 0 {
+		query += ` AND YEAR(ci.created_at) = ? AND MONTH(ci.created_at) = ?`
+		args = append(args, year, month)
 	}
 	query += ` ORDER BY ci.created_at DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -1054,10 +1068,13 @@ func (r *ContentRepository) GetPublishedByPostType(
 
 // GetPublishedByTag returns published content with a specific tag.
 // When language is non-empty, results are restricted to that language.
+// When year and month are both non-zero, results are restricted to that month.
 func (r *ContentRepository) GetPublishedByTag(
 	ctx context.Context,
 	tag string,
 	language string,
+	year int,
+	month int,
 	limit int,
 	offset int,
 ) ([]*contentdomain.Content, error) {
@@ -1074,7 +1091,7 @@ func (r *ContentRepository) GetPublishedByTag(
 	tagJSON := fmt.Sprintf(`"%s"`, tag)
 	query := `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -1086,6 +1103,10 @@ func (r *ContentRepository) GetPublishedByTag(
 	if language != "" {
 		query += ` AND ci.language = ?`
 		args = append(args, language)
+	}
+	if year > 0 && month > 0 {
+		query += ` AND YEAR(ci.created_at) = ? AND MONTH(ci.created_at) = ?`
+		args = append(args, year, month)
 	}
 	query += ` ORDER BY ci.created_at DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -1177,6 +1198,46 @@ func (r *ContentRepository) GetPublishedAuthors(ctx context.Context, limit int, 
 	return authors, nil
 }
 
+func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error) {
+	query := `
+		SELECT YEAR(ci.created_at) AS year,
+		       MONTH(ci.created_at) AS month,
+		       COUNT(*) AS count
+		FROM content_items ci
+		WHERE ci.status = 'published'
+	`
+	args := []any{}
+	if postType != "" {
+		query += ` AND ci.post_type = ?`
+		args = append(args, postType)
+	}
+	if language != "" {
+		query += ` AND ci.language = ?`
+		args = append(args, language)
+	}
+	query += ` GROUP BY year, month ORDER BY year DESC, month DESC`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published archive: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	archive := make([]*contentdomain.ArchiveMonth, 0)
+	for rows.Next() {
+		var m contentdomain.ArchiveMonth
+		if err := rows.Scan(&m.Year, &m.Month, &m.Count); err != nil {
+			return nil, fmt.Errorf("failed to scan archive month: %w", err)
+		}
+		archive = append(archive, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed iterating archive rows: %w", err)
+	}
+
+	return archive, nil
+}
+
 func (r *ContentRepository) SearchPublished(
 	ctx context.Context,
 	query string,
@@ -1191,7 +1252,7 @@ func (r *ContentRepository) SearchPublished(
 	searchQuery := "%" + escapeLike(query) + "%"
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -1218,7 +1279,7 @@ func (r *ContentRepository) GetTranslations(
 ) ([]*contentdomain.Content, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -1298,7 +1359,7 @@ func (r *ContentRepository) GetRelatedByTags(
 
 	query := `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
@@ -1347,7 +1408,7 @@ func (r *ContentRepository) GetLatestByPostType(
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ci.id, ci.user_id, ci.title, ci.slug, ci.content, ci.tags,
-		       ci.status, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
+		       ci.status, ci.format, ci.post_type, ci.meta_description, ci.og_title, ci.og_description,
 		       ci.allow_comments, ci.custom_fields, ci.language, ci.translation_group_id,
 		       ci.created_at, ci.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
 	appmiddleware "github.com/aristorinjuang/lesstruct/internal/api/middleware"
@@ -46,8 +47,8 @@ func TestProfileHandler_GetProfile_Success(t *testing.T) {
 			Username:     "testuser",
 			Email:        "test@example.com",
 			Role:         "Author",
-			CreatedAt:    "2026-03-28T10:30:00Z",
-			UpdatedAt:    "2026-03-30T12:00:00Z",
+			CreatedAt:    time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			UpdatedAt:    time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
 			CustomFields: map[string]any{"job_title": "Engineer", "company": "Acme"},
 		}, nil)
 	jwtManager := appauth.NewJWTManager("test-secret")
@@ -102,7 +103,7 @@ func TestProfileHandler_GetProfile_NoCustomFields(t *testing.T) {
 			Username:  "nosluguser",
 			Email:     "noslug@example.com",
 			Role:      "Author",
-			CreatedAt: "2026-03-28T10:30:00Z",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 		}, nil)
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
@@ -271,13 +272,13 @@ func TestProfileHandler_ExportUserData_Success(t *testing.T) {
 	profileService.EXPECT().
 		ExportUserData(mock.Anything, 123).
 		Return(&repository.UserDataExport{
-			ExportDate: "2026-03-31T12:00:00Z",
+			ExportDate: time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC),
 			User: &repository.User{
 				ID:        123,
 				Username:  "testuser",
 				Email:     "test@example.com",
 				Role:      "Author",
-				CreatedAt: "2026-03-28T10:30:00Z",
+				CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 			},
 		}, nil)
 	jwtManager := appauth.NewJWTManager("test-secret")
@@ -362,7 +363,7 @@ func TestProfileHandler_DeleteAccount_Success(t *testing.T) {
 			Username:  "testuser",
 			Email:     "test@example.com",
 			Role:      "Author",
-			CreatedAt: "2026-03-28T10:30:00Z",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 		}, nil)
 	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
 	accountDeletionService.EXPECT().
@@ -444,7 +445,7 @@ func TestProfileHandler_DeleteAccount_LastAdmin(t *testing.T) {
 			Username:  "admin",
 			Email:     "admin@example.com",
 			Role:      "Admin",
-			CreatedAt: "2026-03-28T10:30:00Z",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
 		}, nil)
 	accountDeletionService := usermocks.NewMockAccountDeletionServiceInterface(t)
 	accountDeletionService.EXPECT().

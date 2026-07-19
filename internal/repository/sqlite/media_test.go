@@ -47,6 +47,7 @@ func setupMediaTestDB(t *testing.T) *sql.DB {
 			content TEXT NOT NULL,
 			tags TEXT,
 			status TEXT NOT NULL,
+			format TEXT DEFAULT 'tiptap',
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			post_type TEXT DEFAULT 'post',
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

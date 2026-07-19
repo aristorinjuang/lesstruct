@@ -43,7 +43,17 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Soft-delete and restore.** Deleted content is recoverable from the admin
   trash view.
 - **Per-content SEO.** Meta description, OpenGraph title and description, and a
-  live preview — collapsible inside the editor.
+  live preview — collapsible inside the editor. SEO metadata generation is
+  format-aware: TipTap content uses JSON extraction, HTML content uses
+  tag-stripping — so HTML-format imports (e.g. WordPress Elementor pages)
+  get real extracted text in their meta descriptions, not empty strings.
+- **HTML/CSS content authoring.** Set `format: html` on create to author raw
+  HTML directly — stored and served as-is, no TipTap conversion. The admin
+  editor provides a CodeMirror 6 editor with syntax highlighting and a live
+  preview (sandboxed iframe). HTML content is sanitized on write (dangerous
+  elements/attributes stripped via bluemonday; inline `style` and class
+  attributes preserved) and on read (rendered through the same policy). Ideal
+  for WordPress Elementor imports and hand-authored HTML pages.
 - **Markdown as first-class ingest.** The CLI and `/api/v1` accept Markdown
   bodies; the server converts them to canonical TipTap JSON. Raw Markdown is
   never persisted.
@@ -52,6 +62,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   Lesstruct. Authors are auto-created as Contributor users and their posts are
   assigned to them. Custom post types and field schemas are read from
   `config.toml`; items whose post type is not registered are silently skipped.
+  Featured images (`_thumbnail_id`) are resolved from attachment items,
+  downloaded, transcoded to WebP, and prepended to each post's content body;
+  inline body images are likewise downloaded and remapped. Failed downloads fall
+  back to hotlinking the original WordPress URL. Elementor-built pages are
+  imported as `format=html` using the rendered HTML from the Elementor cache,
+  preserving their original layout.
 
 ## Media & images {#media-images}
 
@@ -62,7 +78,9 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   (quality 80) on upload, so images never weigh down your content.
 - **Configurable thumbnail variants.** Defaults ship `_thumb` (370px),
   `_medium` (800px), `_large` (1600px); all editable in `config.toml`. The content
-  site emits a responsive `srcset` from them.
+  site emits a responsive `srcset` from them. Post cards also expose an
+  `ImageVariants` map (keyed by configured suffix) and an `OriginalURL` field
+  for the unscaled original, enabling hero backgrounds and high-DPI layouts.
 - **SHA-256 dedup.** Identical uploads are detected and rejected (with a
   force-upload escape hatch).
 - **AI image generation.** Generate images from the media library and the content
@@ -75,6 +93,9 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   link translations into translation groups.
 - **Translation-aware SEO.** The sitemap declares `hreflang` alternates from
   translation groups.
+- **Localized date formatting.** Post dates follow each content item's
+  `Language` field: Indonesian content renders `1 Januari 2026`, English content
+  renders `January 2, 2006`. Custom-field dates localize automatically.
 - **AI translation.** Translate content between your configured languages from
   the editor.
 
@@ -83,8 +104,8 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Opt-in, bring-your-own-key.** Text via any OpenAI-compatible endpoint
   (`AI_TEXT_GENERATION_BASE_URL`); images via Google or OpenAI. Nothing runs
   without your keys; `/api/health` honestly reports which features are enabled.
-- **Text enhancement and translation.** Refine or translate post bodies from the
-  editor.
+- **Text enhancement and translation.** Refine or translate rich-text (TipTap) post bodies from the editor.
+- **AI-powered HTML/CSS authoring.** Describe what you want in plain language — the AI generates production-ready HTML & CSS with semantic markup, responsive layouts, and accessible design. Includes 9 quick-start presets (hero, pricing, testimonials, features, CTA, FAQ, stats, contact, newsletter) and iterative refinement — the AI can modify existing HTML based on your follow-up instructions. Your media library images are automatically surfaced as context. This replaces the need for a drag-and-drop page builder: describe, generate, refine, ship.
 - **Image generation.** Generate images from the media library and the editor.
 - **Built for agents.** `lesstruct-cli` is a thin Cobra client over `/api/v1`
   designed for AI agents and terminal-first humans. Markdown ingest, cursor
@@ -107,12 +128,23 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   CSS, JS, and HTML templates. The contract (CSS variables, layout blocks, JS DOM
   ids, CDN assets) is documented so fork-and-modify is safe. See
   [theme-development.md](theme-development.md).
+- **Per-post-type templates.** Each post type gets its own content template
+  (e.g. `page.html`, `event.html`), falling back to `post.html`, then the
+  embedded default. Theme authors can ship a `page.html` without blog chrome
+  (related posts, author box, date metadata) while keeping the full layout
+  for blog posts — no config changes needed.
 - **Multi-type aware.** Every post card and single-page template receives the
   item's `.PostType`, so a theme can branch layouts for articles, events, and any
   custom post type from one template set.
 - **Magazine homepages.** Optional `[[homepage_section]]` blocks in `config.toml`
   render per-post-type groupings (latest articles, upcoming events, …) alongside
-  the latest-posts list — backward compatible (omitted = flat list).
+  the latest-posts list — backward compatible (omitted = flat list). Each section
+  supports `offset` for non-overlapping content (e.g. "Featured" items 1–6,
+  "Recommendations" items 7–26). The homepage renders via a dedicated
+  `homepage.html` template (distinct from `index.html` used by listing pages).
+- **Content archive API.** `GET /api/v1/public/archive` returns year/month
+  counts for building archive widgets; listing pages accept `?year=`/`?month=`
+  for date filtering.
 - **Site identity from config.** An optional `[site_config]` block in
   `config.toml` sets the site `name` and an optional `logo`, which drive the
   browser-tab title suffix, `og:site_name`, the default logo text, and the

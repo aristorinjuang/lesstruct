@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -11,14 +12,23 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
 	"github.com/aristorinjuang/lesstruct/internal/seo"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
-var numericPattern = regexp.MustCompile(`^-?\d+(\.\d+)?$`)
+const (
+	formatTiptap   = "tiptap"
+	formatMarkdown = "markdown"
+	formatHTML     = "html"
+)
 
-var fieldSlugPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var (
+	fieldSlugPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	numericPattern   = regexp.MustCompile(`^-?\d+(\.\d+)?$`)
+)
 
 func handleContentError(w http.ResponseWriter, err error) {
 	statusCode := http.StatusInternalServerError
@@ -30,9 +40,14 @@ func handleContentError(w http.ResponseWriter, err error) {
 		statusCode = http.StatusBadRequest
 		code = "invalid_title"
 		message = err.Error()
-	case errors.Is(err, contentdomain.ErrInvalidContent):
+	case errors.Is(err, contentdomain.ErrEmptyContent),
+		errors.Is(err, contentdomain.ErrContentTooLong):
 		statusCode = http.StatusBadRequest
 		code = "invalid_content"
+		message = err.Error()
+	case errors.Is(err, contentdomain.ErrInvalidFormat):
+		statusCode = http.StatusBadRequest
+		code = "invalid_format"
 		message = err.Error()
 	case errors.Is(err, contentdomain.ErrInvalidStatus):
 		statusCode = http.StatusBadRequest
@@ -89,6 +104,38 @@ func handleContentError(w http.ResponseWriter, err error) {
 	}
 
 	sendErrorResponse(w, statusCode, code, message, nil)
+}
+
+func normalizeBrowserFormat(format string) (contentdomain.Format, string) {
+	normalized := strings.ToLower(strings.TrimSpace(format))
+	if normalized == "" {
+		return contentdomain.FormatTiptap, ""
+	}
+	switch normalized {
+	case formatTiptap:
+		return contentdomain.FormatTiptap, ""
+	case formatMarkdown:
+		return contentdomain.FormatMarkdown, ""
+	case formatHTML:
+		return contentdomain.FormatHTML, ""
+	default:
+		return "", "Unsupported format: " + normalized
+	}
+}
+
+func convertBrowserContentBody(body string, format contentdomain.Format) (string, string) {
+	switch format {
+	case contentdomain.FormatMarkdown:
+		converted, err := markdown.Convert(body)
+		if err != nil {
+			return "", "Invalid markdown: " + err.Error()
+		}
+		return converted, ""
+	case contentdomain.FormatHTML:
+		return sanitize.SanitizeHTMLDocument(body), ""
+	default:
+		return body, ""
+	}
 }
 
 func sendSuccessResponse(w http.ResponseWriter, statusCode int, data any) {
@@ -191,9 +238,19 @@ type PublicAuthorResponse struct {
 	PostTypes    []string `json:"postTypes"`
 }
 
+// PublicArchiveMonthResponse is the public-facing shape for one month in a
+// content archive. URL points to the listing page filtered by year/month.
+type PublicArchiveMonthResponse struct {
+	Year  int    `json:"year"`
+	Month int    `json:"month"`
+	Count int    `json:"count"`
+	URL   string `json:"url"`
+}
+
 type CreateContentRequest struct {
 	Title              string         `json:"title"`
 	Content            string         `json:"content"`
+	Format             string         `json:"format,omitempty"`
 	Tags               []string       `json:"tags"`
 	Status             string         `json:"status"`
 	PostType           string         `json:"postType"`
@@ -245,6 +302,8 @@ type ContentServiceInterface interface {
 	SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*contentdomain.Content, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
 	GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*contentdomain.PublishedAuthor, error)
+	GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error)
+	GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
 }
 
 type ContentHandler struct {
@@ -252,6 +311,12 @@ type ContentHandler struct {
 	logger                    *util.Logger
 	baseURL                   string
 	profilePictureURLResolver func(string) string
+	featuredImageResolver     func(string) string
+}
+
+type publicContentItem struct {
+	*contentdomain.Content
+	FeaturedImage string `json:"featuredImage,omitempty"`
 }
 
 func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
@@ -274,9 +339,22 @@ func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	format, errMsg := normalizeBrowserFormat(req.Format)
+	if errMsg != "" {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_format", errMsg, nil)
+		return
+	}
+
+	body, errMsg := convertBrowserContentBody(req.Content, format)
+	if errMsg != "" {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", errMsg, nil)
+		return
+	}
+
 	contentReq := contentdomain.CreateContentRequest{
 		Title:              req.Title,
-		Content:            req.Content,
+		Content:            body,
+		Format:             format,
 		Tags:               req.Tags,
 		Status:             contentdomain.Status(req.Status),
 		PostType:           req.PostType,
@@ -369,12 +447,12 @@ func (h *ContentHandler) ListContents(w http.ResponseWriter, r *http.Request) {
 
 	if postType != "" || search != "" || len(customFieldFilters) > 0 || language != "" {
 		filters := contentdomain.ContentFilters{
-			Limit:               limit,
-			Offset:              offset,
-			PostType:            postType,
-			Search:              search,
-			Language:            language,
-			CustomFieldFilters:  customFieldFilters,
+			Limit:              limit,
+			Offset:             offset,
+			PostType:           postType,
+			Search:             search,
+			Language:           language,
+			CustomFieldFilters: customFieldFilters,
 		}
 		filterUserID := userID
 		if isAdmin {
@@ -443,11 +521,24 @@ func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	format, errMsg := normalizeBrowserFormat(req.Format)
+	if errMsg != "" {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_format", errMsg, nil)
+		return
+	}
+
+	body, errMsg := convertBrowserContentBody(req.Content, format)
+	if errMsg != "" {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", errMsg, nil)
+		return
+	}
+
 	role, _ := middleware.GetRole(r)
 
 	updateReq := contentdomain.UpdateContentRequest{
 		Title:              req.Title,
-		Content:            req.Content,
+		Content:            body,
+		Format:             format,
 		Tags:               req.Tags,
 		Status:             contentdomain.Status(req.Status),
 		PostType:           req.PostType,
@@ -532,6 +623,7 @@ func (h *ContentHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 		"title":              content.Title,
 		"slug":               content.Slug,
 		"content":            content.Content,
+		"format":             content.Format,
 		"tags":               content.Tags,
 		"status":             content.Status,
 		"postType":           content.PostType,
@@ -665,14 +757,37 @@ func (h *ContentHandler) ListPublishedContents(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	contents, err := h.contentService.GetPublished(r.Context(), limit, offset)
+	postType := r.URL.Query().Get("post_type")
+
+	var contents []*contentdomain.Content
+	var err error
+
+	if postType != "" {
+		contents, err = h.contentService.GetPublishedByPostType(r.Context(), postType, "", 0, 0, limit, offset)
+	} else {
+		contents, err = h.contentService.GetPublished(r.Context(), limit, offset)
+	}
+
 	if err != nil {
 		h.logger.Error("Failed to list published content: %v", err)
 		handleContentError(w, err)
 		return
 	}
 
-	sendSuccessResponse(w, http.StatusOK, contents)
+	items := make([]publicContentItem, 0, len(contents))
+	for _, c := range contents {
+		item := publicContentItem{Content: c}
+		img := seo.ExtractImageURL(c.Content)
+		if img != "" && h.featuredImageResolver != nil {
+			img = h.featuredImageResolver(img)
+		}
+		if img != "" {
+			item.FeaturedImage = seo.BuildURL(h.baseURL, img)
+		}
+		items = append(items, item)
+	}
+
+	sendSuccessResponse(w, http.StatusOK, items)
 }
 
 func (h *ContentHandler) GetPublishedContent(w http.ResponseWriter, r *http.Request) {
@@ -824,6 +939,39 @@ func (h *ContentHandler) ListPublishedAuthors(w http.ResponseWriter, r *http.Req
 	sendSuccessResponse(w, http.StatusOK, responses)
 }
 
+// ListPublishedArchive returns published-content counts grouped by year and
+// month, newest first. Optional ?post_type filters to a single post type;
+// optional ?language filters to a single language. Each entry includes a URL
+// pointing to the matching listing page with ?year= and ?month= params.
+func (h *ContentHandler) ListPublishedArchive(w http.ResponseWriter, r *http.Request) {
+	postType := r.URL.Query().Get("post_type")
+	language := r.URL.Query().Get("language")
+
+	archive, err := h.contentService.GetPublishedArchive(r.Context(), postType, language)
+	if err != nil {
+		h.logger.Error("Failed to list published archive: %v", err)
+		sendErrorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to list published archive", nil)
+		return
+	}
+
+	listingBase := "/"
+	if postType != "" {
+		listingBase = "/" + postType
+	}
+
+	responses := make([]PublicArchiveMonthResponse, 0, len(archive))
+	for _, m := range archive {
+		responses = append(responses, PublicArchiveMonthResponse{
+			Year:  m.Year,
+			Month: m.Month,
+			Count: m.Count,
+			URL:   fmt.Sprintf("%s%s?year=%d&month=%d", h.baseURL, listingBase, m.Year, m.Month),
+		})
+	}
+
+	sendSuccessResponse(w, http.StatusOK, responses)
+}
+
 func (h *ContentHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 	userIDStr, ok := middleware.GetUserID(r)
 	if !ok {
@@ -937,11 +1085,13 @@ func NewContentHandler(
 	logger *util.Logger,
 	baseURL string,
 	profilePictureURLResolver func(string) string,
+	featuredImageResolver func(string) string,
 ) *ContentHandler {
 	return &ContentHandler{
 		contentService:            contentService,
 		logger:                    logger,
 		baseURL:                   strings.TrimRight(baseURL, "/"),
 		profilePictureURLResolver: profilePictureURLResolver,
+		featuredImageResolver:     featuredImageResolver,
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
@@ -1781,7 +1782,7 @@ func TestCreateUser_Success(t *testing.T) {
 	adminCreateRepoMock.EXPECT().CreateUser(mock.Anything, mock.AnythingOfType("*repository.User")).
 		RunAndReturn(func(ctx context.Context, u *repository.User) error {
 			u.ID = 99
-			u.CreatedAt = "2026-04-26T12:00:00Z"
+			u.CreatedAt = time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 			return nil
 		})
 	emailService.EXPECT().SendAccountCreatedEmail(
@@ -1925,7 +1926,7 @@ func TestUpdateUser_Success(t *testing.T) {
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "new@example.com",
-			Name: "New Name", Role: "Contributor", Status: "verified", CreatedAt: "2025-01-01",
+			Name: "New Name", Role: "Contributor", Status: "verified", CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		}, nil).Once()
 
 	body, _ := json.Marshal(map[string]string{
@@ -2143,7 +2144,7 @@ func TestUpdateUser_PartialUpdate(t *testing.T) {
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "test@example.com",
-			Name: "Only Name", Role: "Admin", Status: "verified", CreatedAt: "2025-01-01",
+			Name: "Only Name", Role: "Admin", Status: "verified", CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		}, nil).Once()
 
 	body, _ := json.Marshal(map[string]string{"name": "Only Name"})

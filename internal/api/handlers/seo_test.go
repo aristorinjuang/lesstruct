@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
@@ -70,8 +71,8 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 		{
 			name: "returns sitemap data with posts and pages",
 			contents: []*contentdomain.Content{
-				{Slug: "my-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
-				{Slug: "about", UpdatedAt: "2026-04-15T08:00:00Z", PostType: "page"},
+				{Slug: "my-post", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "post"},
+				{Slug: "about", UpdatedAt: time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC), PostType: "page"},
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
@@ -104,8 +105,8 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 		{
 			name: "skips content with empty slug",
 			contents: []*contentdomain.Content{
-				{Slug: "", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
-				{Slug: "valid-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
+				{Slug: "", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "post"},
+				{Slug: "valid-post", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "post"},
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
@@ -118,7 +119,7 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 		{
 			name: "skips content with empty UpdatedAt",
 			contents: []*contentdomain.Content{
-				{Slug: "my-post", UpdatedAt: "", PostType: "post"},
+				{Slug: "my-post", UpdatedAt: time.Time{}, PostType: "post"},
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
@@ -131,8 +132,8 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 		{
 			name: "includes custom post types (tutorial, showcase) at the root URL",
 			contents: []*contentdomain.Content{
-				{Slug: "custom-type", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "recipe"},
-				{Slug: "valid-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
+				{Slug: "custom-type", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "recipe"},
+				{Slug: "valid-post", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "post"},
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
@@ -148,9 +149,9 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 		{
 			name: "skips media and comment post types (no public page)",
 			contents: []*contentdomain.Content{
-				{Slug: "img-1", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "media"},
-				{Slug: "c-1", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "comment"},
-				{Slug: "valid-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
+				{Slug: "img-1", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "media"},
+				{Slug: "c-1", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "comment"},
+				{Slug: "valid-post", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "post"},
 			},
 			expectedStatus: http.StatusOK,
 			validateBody: func(t *testing.T, body map[string]any) {
@@ -198,8 +199,8 @@ func TestSEOHandler_GetSitemapData(t *testing.T) {
 
 func TestSEOHandler_GetSitemapXML(t *testing.T) {
 	contents := []*contentdomain.Content{
-		{Slug: "my-tutorial", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "tutorial"},
-		{Slug: "my-post", UpdatedAt: "2026-04-18T10:00:00Z", PostType: "post"},
+		{Slug: "my-tutorial", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "tutorial"},
+		{Slug: "my-post", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC), PostType: "post"},
 	}
 
 	mockService := &MockContentServiceInterface{}
@@ -249,9 +250,9 @@ func TestSEOHandler_GetSitemapXML(t *testing.T) {
 func TestSEOHandler_GetSitemapXML_HreflangAlternates(t *testing.T) {
 	groupID := 1 // primary "about" (id 1); "tentang" joins its group.
 	contents := []*contentdomain.Content{
-		{ID: 1, Slug: "about", UpdatedAt: "2026-04-15T08:00:00Z", PostType: "page", Language: "en"},
-		{ID: 2, Slug: "tentang", UpdatedAt: "2026-04-15T08:00:00Z", PostType: "page", Language: "id", TranslationGroupID: &groupID},
-		{ID: 3, Slug: "solo", UpdatedAt: "2026-04-16T08:00:00Z", PostType: "post", Language: "en"},
+		{ID: 1, Slug: "about", UpdatedAt: time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC), PostType: "page", Language: "en"},
+		{ID: 2, Slug: "tentang", UpdatedAt: time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC), PostType: "page", Language: "id", TranslationGroupID: &groupID},
+		{ID: 3, Slug: "solo", UpdatedAt: time.Date(2026, 4, 16, 8, 0, 0, 0, time.UTC), PostType: "post", Language: "en"},
 	}
 
 	mockService := &MockContentServiceInterface{}

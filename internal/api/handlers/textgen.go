@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -16,7 +17,9 @@ const maxTextGenPromptLength = 50000
 
 // textGenEnhanceRequest is the JSON body for the Enhance endpoint.
 type textGenEnhanceRequest struct {
-	Content string `json:"content"`
+	Content      string `json:"content"`
+	Format       string `json:"format"`
+	ExistingHTML string `json:"existingHtml"`
 }
 
 // textGenTranslateRequest is the JSON body for the Translate endpoint.
@@ -24,6 +27,7 @@ type textGenTranslateRequest struct {
 	Content    string `json:"content"`
 	SourceLang string `json:"sourceLang"`
 	TargetLang string `json:"targetLang"`
+	Format     string `json:"format"`
 }
 
 // textGenResponse is the JSON body for text generation responses.
@@ -33,17 +37,35 @@ type textGenResponse struct {
 
 // TextGenerationService defines the interface for AI text generation.
 type TextGenerationService interface {
-	EnhanceText(ctx context.Context, content string) (string, error)
-	TranslateText(ctx context.Context, content, sourceLang, targetLang string) (string, error)
+	EnhanceText(ctx context.Context, content, format, mediaContext string) (string, error)
+	TranslateText(ctx context.Context, content, sourceLang, targetLang, format string) (string, error)
+}
+
+// MediaLister provides access to media items for AI context injection.
+type MediaLister interface {
+	ListByCursor(ctx context.Context, userID int, limit int, beforeID int) ([]*mediadomain.Media, error)
 }
 
 // TextGenHandler handles AI text generation requests.
 type TextGenHandler struct {
 	textGenService TextGenerationService
+	mediaService   MediaLister
 	logger         *util.Logger
 }
 
-// Enhance handles the "Enhance with AI" endpoint.
+func normalizeFormat(format string) string {
+	normalized := strings.ToLower(strings.TrimSpace(format))
+	if normalized == "" {
+		return formatTiptap
+	}
+	return normalized
+}
+
+func validateFormat(format string) bool {
+	return format == formatTiptap || format == formatHTML
+}
+
+// Enhance handles the "Enhance with AI" / "Generate with AI" endpoint.
 func (h *TextGenHandler) Enhance(w http.ResponseWriter, r *http.Request) {
 	if _, ok := middleware.GetUserID(r); !ok {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
@@ -57,27 +79,54 @@ func (h *TextGenHandler) Enhance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	format := normalizeFormat(req.Format)
+	if !validateFormat(format) {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_format", "Invalid format: must be 'tiptap' or 'html'", nil)
+		return
+	}
+
 	content := strings.TrimSpace(req.Content)
 	if content == "" {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content is required", nil)
 		return
 	}
-	if utf8.RuneCountInString(content) > maxTextGenPromptLength {
+
+	existingHTML := strings.TrimSpace(req.ExistingHTML)
+	combinedLength := utf8.RuneCountInString(content) + utf8.RuneCountInString(existingHTML)
+	if combinedLength > maxTextGenPromptLength {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content is too long", nil)
 		return
 	}
 
-	// Validate that the content is valid JSON
-	var parsed any
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content must be valid JSON", nil)
-		return
+	// For tiptap format, validate that the content is valid JSON
+	if format == formatTiptap {
+		var parsed any
+		if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content must be valid JSON", nil)
+			return
+		}
+	}
+
+	// Build user prompt: for HTML refinement, combine the instruction with existing HTML
+	userPrompt := content
+	if format == formatHTML && existingHTML != "" {
+		userPrompt = "User instruction:\n" + content +
+			"\n\nExisting HTML to refine — modify it according to the instruction, keep what works, output the complete updated fragment:\n" + existingHTML
+	}
+
+	// Build media context for HTML generation
+	var mediaContext string
+	if format == formatHTML && h.mediaService != nil {
+		userIDStr, ok := middleware.GetUserID(r)
+		if ok {
+			mediaContext = buildMediaContext(r.Context(), h.mediaService, userIDStr, content)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
 	defer cancel()
 
-	enhanced, err := h.textGenService.EnhanceText(ctx, content)
+	enhanced, err := h.textGenService.EnhanceText(ctx, userPrompt, format, mediaContext)
 	if err != nil {
 		h.logger.Error("Failed to enhance text: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "generation_failed", "Failed to enhance content", nil)
@@ -98,6 +147,12 @@ func (h *TextGenHandler) Translate(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error("Failed to decode translate request body: %v", err)
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_request", "Invalid request body", nil)
+		return
+	}
+
+	format := normalizeFormat(req.Format)
+	if !validateFormat(format) {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_format", "Invalid format: must be 'tiptap' or 'html'", nil)
 		return
 	}
 
@@ -123,17 +178,19 @@ func (h *TextGenHandler) Translate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate that the content is valid JSON
-	var parsed any
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content must be valid JSON", nil)
-		return
+	// For tiptap format, validate that the content is valid JSON
+	if format == formatTiptap {
+		var parsed any
+		if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content must be valid JSON", nil)
+			return
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
 	defer cancel()
 
-	translated, err := h.textGenService.TranslateText(ctx, content, sourceLang, targetLang)
+	translated, err := h.textGenService.TranslateText(ctx, content, sourceLang, targetLang, format)
 	if err != nil {
 		h.logger.Error("Failed to translate text: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "generation_failed", "Failed to translate content", nil)
@@ -144,9 +201,14 @@ func (h *TextGenHandler) Translate(w http.ResponseWriter, r *http.Request) {
 }
 
 // NewTextGenHandler creates a new TextGenHandler.
-func NewTextGenHandler(textGenService TextGenerationService, logger *util.Logger) *TextGenHandler {
+func NewTextGenHandler(
+	textGenService TextGenerationService,
+	mediaService MediaLister,
+	logger *util.Logger,
+) *TextGenHandler {
 	return &TextGenHandler{
 		textGenService: textGenService,
+		mediaService:   mediaService,
 		logger:         logger,
 	}
 }

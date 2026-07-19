@@ -36,6 +36,7 @@ func setupContentTestDBWithName(t *testing.T) *sql.DB {
 			content TEXT,
 			tags TEXT,
 			status TEXT DEFAULT 'draft',
+			format TEXT DEFAULT 'tiptap',
 			post_type TEXT DEFAULT 'post',
 			meta_description TEXT,
 			og_title TEXT,

@@ -12,11 +12,12 @@ theme ready. Each item is a hard pass / fail.
 - [ ] The theme directory has a `static/` and a `templates/` subdirectory
       (even if empty).
 
-## CSS (`static/style.css`)
+## CSS (`static/base.css` and `static/style.css`)
 
+- [ ] `static/base.css` is valid CSS (run it through a linter).
 - [ ] `static/style.css` is valid CSS (run it through a linter).
-- [ ] `static/style.css` does not reference `style.src.css` (the source file
-      is not served; only the minified `style.css` is).
+- [ ] Neither `base.css` nor `style.css` references `.src.css` files (the source
+      files are not served; only the minified versions are).
 - [ ] Every CSS variable the default theme defines is still defined in the
       override (or in a parent file the override loads). The full set is in
       the [CSS Variable Reference](theme-development.md#css-variable-reference).
@@ -27,7 +28,7 @@ theme ready. Each item is a hard pass / fail.
 - [ ] File defines `{{define "layout"}}…{{end}}` exactly once.
 - [ ] The HTML element has `lang="{{.Lang}}"`.
 - [ ] `<title>{{.PageTitle}}</title>` is present.
-- [ ] `<link rel="stylesheet" href="/static/style.css">` is present.
+- [ ] `<link rel="stylesheet" href="/static/base.css">` and `<link rel="stylesheet" href="/static/style.css">` are present.
 - [ ] `<main>…{{template "body" .}}…</main>` is present.
 - [ ] The Open Graph `<meta>` tags are present (otherwise share previews
       break).

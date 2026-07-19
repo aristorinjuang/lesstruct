@@ -172,8 +172,8 @@ POST /api/v1/content
 | Field | Required | Notes |
 |---|---|---|
 | `title` | yes | 1–200 chars. |
-| `body` | yes | The content. With `format: markdown` it is Markdown (converted server-side to Tiptap); with `format: tiptap` (the default) it must be a valid Tiptap JSON document string. |
-| `format` | no | `"markdown"` or `"tiptap"`. Defaults to `"tiptap"`. Matched case-insensitively after trimming leading/trailing whitespace. |
+| `body` | yes | The content. With `format: markdown` it is Markdown (converted server-side to Tiptap); with `format: tiptap` (the default) it must be a valid Tiptap JSON document string; with `format: html` it is raw HTML stored as-is (sanitized on write). |
+| `format` | no | `"markdown"`, `"tiptap"`, or `"html"`. Defaults to `"tiptap"`. Matched case-insensitively after trimming leading/trailing whitespace. `"html"` stores raw HTML directly — no TipTap conversion. |
 | `postType` | no | Content type. |
 | `tags` | no | Array of tag strings. Server normalizes (trim, lowercase, dedupe, length-bound) via `ValidateTags`; an invalid tag returns 400 `VALIDATION_ERROR`. |
 | `language` | no | Language code (e.g. `"en"`, `"id"`). Must be in the server's configured languages list (`config.toml` `[languages]`); an unknown code returns 400 `VALIDATION_ERROR` (`ErrInvalidLanguage`). |
@@ -240,7 +240,7 @@ Query parameters:
 PUT /api/v1/content/{id}
 ```
 
-Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, and `language`. SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. `slug` is accepted for API stability but not honored (the server auto-generates the slug from the title). `format: markdown` converts the body to Tiptap before storing.
+Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, and `language`. SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. `slug` is accepted for API stability but not honored (the server auto-generates the slug from the title). `format: markdown` converts the body to Tiptap before storing. `format: html` stores raw HTML directly.
 
 **Response** `200 OK`: `{"data":{"content":{…}}}` with the updated item.
 
@@ -625,6 +625,53 @@ A link or image with another scheme (`javascript:`, `data:`, `file:`, …) cause
 
 If you hit the limit, wait and retry with backoff. The limit is shared across all requests made with a given key.
 
+## AI text generation
+
+> Requires `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)).
+
+### Enhance / Generate
+
+```
+POST /api/v1/text/enhance
+```
+
+Enhance existing rich-text content or generate HTML/CSS from a natural-language prompt.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `content` | string | yes | For `tiptap`: TipTap JSON to enhance. For `html`: natural-language prompt describing what to generate. |
+| `format` | string | no | `"tiptap"` (default) or `"html"`. |
+| `existingHtml` | string | no | Existing HTML to refine (HTML format only). Sent alongside the prompt for iterative refinement. |
+
+**Response:** `200 OK` with `{ "data": { "content": "..." } }`.
+
+- `format=tiptap` → returns enhanced TipTap JSON.
+- `format=html` → returns an HTML fragment with `<style>` block first. The AI surfaces the user's media library images as context.
+
+### Translate
+
+```
+POST /api/v1/text/translate
+```
+
+Translate content between languages.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `content` | string | yes | Content to translate (TipTap JSON or HTML). |
+| `sourceLang` | string | yes | Source language code (e.g. `"en"`). |
+| `targetLang` | string | yes | Target language code (e.g. `"fr"`). |
+| `format` | string | no | `"tiptap"` (default) or `"html"`. |
+
+**Response:** `200 OK` with `{ "data": { "content": "..." } }`.
+
+- `format=tiptap` → returns translated TipTap JSON preserving structure.
+- `format=html` → returns translated HTML preserving tags, styles, and URLs — only visible text and `alt` attributes are translated.
+
 ## OpenAPI snippet
 
 A machine-readable OpenAPI fragment for the Content create endpoint. A full OpenAPI specification is deferred to post-MVP; this snippet is suitable for agent tooling consumption.
@@ -683,8 +730,8 @@ paths:
               required: [title, body]
               properties:
                 title: { type: string, minLength: 1, maxLength: 200 }
-                body: { type: string, description: "Tiptap JSON (format=tiptap) or Markdown (format=markdown)" }
-                format: { type: string, enum: [markdown, tiptap], default: tiptap, description: "Server matches case-insensitively after trimming whitespace." }
+                body: { type: string, description: "Tiptap JSON (format=tiptap), Markdown (format=markdown), or raw HTML (format=html)" }
+                format: { type: string, enum: [markdown, tiptap, html], default: tiptap, description: "Server matches case-insensitively after trimming whitespace. 'html' stores raw HTML directly." }
                 postType: { type: string }
                 slug: { type: string, description: "Accepted but not honored; slug is auto-generated." }
                 customFields: { type: object, additionalProperties: true }
@@ -775,5 +822,83 @@ Returns the users who have published at least one content item, with **only safe
 
 An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"Failed to list published authors"}}`.
 
-**Related public endpoints** (same envelope, same rate-limit bucket): `GET /api/v1/public/content_items`, `GET /api/v1/public/content_items/{slug}`, `GET /api/v1/public/authors/{username}/content_items`, `GET /api/v1/public/content_items/{slug}/comments`, `GET /api/v1/public/post_types`, `GET /api/v1/public/search`.
+**Related public endpoints** (same envelope, same rate-limit bucket): `GET /api/v1/public/content_items`, `GET /api/v1/public/content_items/{slug}`, `GET /api/v1/public/authors/{username}/content_items`, `GET /api/v1/public/content_items/{slug}/comments`, `GET /api/v1/public/post_types`, `GET /api/v1/public/search`, `GET /api/v1/public/archive`.
+
+---
+
+```http
+GET /api/v1/public/content_items
+```
+
+Returns published content items, newest first. Each item includes all content fields plus a `featuredImage` URL when the item has an image in its body. Useful for sidebar widgets, "latest posts" lists, and external app rendering.
+
+**Query parameters:**
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `limit` | 100 | Max items returned (clamped to 1–1000). |
+| `offset` | 0 | Pagination offset. |
+| `post_type` | *(all types)* | Restrict to a single post type (e.g. `article`). |
+
+**Response** (`200`):
+
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "title": "Article Title",
+      "slug": "article-title",
+      "postType": "article",
+      "featuredImage": "http://your-lesstruct.example/uploads/abc123_thumb.webp",
+      "createdAt": "2026-07-15T10:00:00Z"
+    }
+  ],
+  "error": null,
+  "meta": { "timestamp": "2026-07-15T10:00:00Z" }
+}
+```
+
+| Field | Description |
+|---|---|
+| `featuredImage` | Absolute thumbnail URL resolved from the item's media record, or omitted when the content body contains no image. |
+
+An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"An internal error occurred"}}`.
+
+---
+
+```http
+GET /api/v1/public/archive
+```
+
+Returns published-content counts grouped by year and month, newest first — for building archive widgets (e.g. a sidebar "Arsip" list with month names and post counts). Each entry includes a `url` pointing to the matching listing page with `?year=` and `?month=` params so the user can browse that month's posts.
+
+**Query parameters:**
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `post_type` | *(all types)* | Restrict to a single post type (e.g. `article`). When omitted, counts span every post type. |
+| `language` | *(all languages)* | Restrict to a single language code. |
+
+**Response** (`200`):
+
+```json
+{
+  "data": [
+    { "year": 2026, "month": 7, "count": 12, "url": "http://your-lesstruct.example/article?year=2026&month=7" },
+    { "year": 2026, "month": 6, "count": 8, "url": "http://your-lesstruct.example/article?year=2026&month=6" }
+  ],
+  "error": null,
+  "meta": { "timestamp": "2026-07-14T10:00:00Z" }
+}
+```
+
+| Field | Description |
+|---|---|
+| `year` | 4-digit year. |
+| `month` | 1–12 month number. |
+| `count` | Number of published items in that month (and post type / language if filtered). |
+| `url` | Absolute URL of the listing page for that month. When `post_type` is set, points to `/<post_type>?year=…&month=…`; otherwise points to `/?year=…&month=…`. |
+
+An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"Failed to list published archive"}}`.
 

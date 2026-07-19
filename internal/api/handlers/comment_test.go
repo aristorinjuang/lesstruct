@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	contentmocks "github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
@@ -43,14 +44,14 @@ func TestCommentHandler_GetComments(t *testing.T) {
 						Comment:   "Great article!",
 						Author:    "Jane Doe",
 						Username:  "janedoe",
-						CreatedAt: "2026-04-19T10:30:00Z",
+						CreatedAt: time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
 					},
 					{
 						ID:        2,
 						Comment:   "Thanks for sharing",
 						Author:    "John Smith",
 						Username:  "johnsmith",
-						CreatedAt: "2026-04-19T11:00:00Z",
+						CreatedAt: time.Date(2026, 4, 19, 11, 0, 0, 0, time.UTC),
 					},
 				}, nil)
 			},
@@ -184,7 +185,7 @@ func TestCommentHandler_CreateComment(t *testing.T) {
 					ID:        1,
 					Comment:   "Great article!",
 					Status:    contentdomain.CommentStatusPending,
-					CreatedAt: "2026-04-19T10:30:00Z",
+					CreatedAt: time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
 				}, nil)
 			},
 			expectedStatus: http.StatusCreated,
@@ -363,7 +364,7 @@ func TestCommentHandler_GetCommentsForModeration(t *testing.T) {
 						Author:    "Spammer",
 						Username:  "spammer",
 						Status:    contentdomain.CommentStatusSpam,
-						CreatedAt: "2026-04-19T10:30:00Z",
+						CreatedAt: time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
 					},
 					{
 						ID:        2,
@@ -371,7 +372,7 @@ func TestCommentHandler_GetCommentsForModeration(t *testing.T) {
 						Author:    "User",
 						Username:  "user",
 						Status:    contentdomain.CommentStatusPending,
-						CreatedAt: "2026-04-19T11:00:00Z",
+						CreatedAt: time.Date(2026, 4, 19, 11, 0, 0, 0, time.UTC),
 					},
 				}, nil)
 			},
@@ -476,7 +477,7 @@ func TestCommentHandler_GetPendingComments(t *testing.T) {
 						Author:       "Jane Doe",
 						Username:     "janedoe",
 						Status:       contentdomain.CommentStatusPending,
-						CreatedAt:    "2026-04-19T10:30:00Z",
+						CreatedAt:    time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
 					},
 				}, nil)
 			},
@@ -586,7 +587,7 @@ func TestCommentHandler_UpdateCommentStatus(t *testing.T) {
 					ID:        1,
 					Comment:   "Test comment",
 					Status:    contentdomain.CommentStatusApproved,
-					CreatedAt: "2026-04-20T10:00:00Z",
+					CreatedAt: time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC),
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -616,7 +617,7 @@ func TestCommentHandler_UpdateCommentStatus(t *testing.T) {
 					ID:        1,
 					Comment:   "Test comment",
 					Status:    contentdomain.CommentStatusRejected,
-					CreatedAt: "2026-04-20T10:00:00Z",
+					CreatedAt: time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC),
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,

@@ -61,6 +61,7 @@ type item struct {
 	Status         string `xml:"http://wordpress.org/export/1.2/ status"`
 	PostParent     int    `xml:"http://wordpress.org/export/1.2/ post_parent"`
 	PostType       string `xml:"http://wordpress.org/export/1.2/ post_type"`
+	AttachmentURL  string `xml:"http://wordpress.org/export/1.2/ attachment_url"`
 	PostMeta       []postMeta     `xml:"http://wordpress.org/export/1.2/ postmeta"`
 	Categories     []itemCategory `xml:"category"`
 }
@@ -89,12 +90,15 @@ type ParsedAuthor struct {
 // WXRDocument is the parsed, normalized representation of a WXR export.
 // Only items whose post type is in the caller-supplied allowlist are retained;
 // other post types (attachment, wp_navigation, wp_global_styles, revisions) are
-// filtered out during parsing.
+// filtered out during parsing. Attachments are captured as a lookup table
+// (attachment post ID → media URL) so that featured images can be resolved by
+// downstream consumers.
 type WXRDocument struct {
-	SiteTitle string
-	SiteURL   string
-	Authors   []ParsedAuthor
-	Items     []ParsedItem
+	SiteTitle  string
+	SiteURL    string
+	Authors    []ParsedAuthor
+	Items      []ParsedItem
+	Attachments map[int]string // attachment post ID → wp:attachment_url
 }
 
 // ParsedItem is a normalized WordPress item ready for conversion.

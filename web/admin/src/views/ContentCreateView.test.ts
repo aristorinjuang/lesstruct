@@ -19,9 +19,10 @@ vi.mock('@/composables/useAuth', () => ({
 
 // Mock vue-router
 const mockPush = vi.fn()
+const mockQuery = ref<Record<string, string>>({})
 vi.mock('vue-router', () => ({
   useRouter: vi.fn(() => ({ push: mockPush })),
-  useRoute: vi.fn(() => ({ path: '/content/create' })),
+  useRoute: vi.fn(() => ({ path: '/content/create', query: mockQuery.value })),
 }))
 
 // Mock TipTap extensions (needed because ContentEditor -> TipTapEditor imports them)
@@ -57,7 +58,7 @@ describe('ContentCreateView', () => {
     mockUserId.value = 5
   })
 
-  const mountView = () => {
+  const mountView = (query: Record<string, string> = {}) => {
     return mount(ContentCreateView, {
       global: {
         plugins: [pinia],
@@ -137,6 +138,24 @@ describe('ContentCreateView', () => {
       const wrapper = mountView()
 
       expect(wrapper.find('.content-create').exists()).toBe(true)
+    })
+  })
+
+  describe('initialPostType from query', () => {
+    it('should pass initialPostType from query.type to ContentEditor', () => {
+      mockQuery.value = { type: 'page' }
+      const wrapper = mountView({ type: 'page' })
+      const contentEditor = wrapper.findComponent(ContentEditor)
+
+      expect(contentEditor.props('initialPostType')).toBe('page')
+    })
+
+    it('should pass empty string when query.type is not set', () => {
+      mockQuery.value = {}
+      const wrapper = mountView()
+      const contentEditor = wrapper.findComponent(ContentEditor)
+
+      expect(contentEditor.props('initialPostType')).toBe('')
     })
   })
 })

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
@@ -35,7 +36,7 @@ func TestDashboardHandler_GetStats_Success(t *testing.T) {
 					Title:     "Latest Post",
 					Slug:      "latest-post",
 					Status:    "published",
-					CreatedAt: "2026-04-10T10:30:00Z",
+					CreatedAt: time.Date(2026, 4, 10, 10, 30, 0, 0, time.UTC),
 				},
 			},
 		}, nil)

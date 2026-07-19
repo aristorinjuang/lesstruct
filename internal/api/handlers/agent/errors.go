@@ -36,7 +36,8 @@ func handleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, contentdomain.ErrUnauthorized):
 		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have permission to access this content", nil)
 	case errors.Is(err, contentdomain.ErrInvalidTitle),
-		errors.Is(err, contentdomain.ErrInvalidContent),
+		errors.Is(err, contentdomain.ErrEmptyContent),
+		errors.Is(err, contentdomain.ErrContentTooLong),
 		errors.Is(err, contentdomain.ErrInvalidStatus),
 		errors.Is(err, contentdomain.ErrInvalidSlug),
 		errors.Is(err, contentdomain.ErrSlugAlreadyExists),

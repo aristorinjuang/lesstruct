@@ -40,11 +40,15 @@ type Repository interface {
 	// GetPublishedByPostType returns published content of the given post type.
 	// When language is non-empty, results are additionally restricted to that
 	// language at the database level. An empty language returns every language.
-	GetPublishedByPostType(ctx context.Context, postType string, language string, limit int, offset int) ([]*Content, error)
+	// When year and month are both non-zero, results are restricted to that
+	// calendar month.
+	GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*Content, error)
 	// GetPublishedByTag returns published content carrying the given tag. When
 	// language is non-empty, results are additionally restricted to that
 	// language at the database level. An empty language returns every language.
-	GetPublishedByTag(ctx context.Context, tag string, language string, limit int, offset int) ([]*Content, error)
+	// When year and month are both non-zero, results are restricted to that
+	// calendar month.
+	GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*Content, error)
 	// GetPublishedTags returns the distinct set of tags used by any published
 	// content item, ordered for stable display. An empty (non-nil) slice is
 	// returned when no published content carries tags.
@@ -57,6 +61,11 @@ type Repository interface {
 	// or custom fields. The handler resolves the profile-picture filename into
 	// a public URL.
 	GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*PublishedAuthor, error)
+	// GetPublishedArchive returns published-content counts grouped by year and
+	// month, ordered newest-first. When postType is non-empty, results are
+	// restricted to that post type; when language is non-empty, to that language.
+	// An empty postType aggregates across all types.
+	GetPublishedArchive(ctx context.Context, postType string, language string) ([]*ArchiveMonth, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*Content, error)
 	// GetTranslations returns all content items in the same translation group, excluding the given content ID.
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*Content, error)

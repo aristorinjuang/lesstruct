@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
@@ -15,8 +16,10 @@ var (
 	ErrContentNotFound = errors.New("content not found")
 	// ErrInvalidTitle is returned when title validation fails
 	ErrInvalidTitle = errors.New("title is required and must be between 1 and 200 characters")
-	// ErrInvalidContent is returned when content validation fails
-	ErrInvalidContent = errors.New("content must be less than 100000 characters")
+	// ErrEmptyContent is returned when content is empty
+	ErrEmptyContent = errors.New("content is required")
+	// ErrContentTooLong is returned when content exceeds maximum length
+	ErrContentTooLong = errors.New("content must be less than 100000 characters")
 	// ErrInvalidStatus is returned when status is not valid
 	ErrInvalidStatus = errors.New("status must be either 'draft' or 'published'")
 	// ErrInvalidSlug is returned when slug validation fails
@@ -57,6 +60,8 @@ var (
 	ErrTranslationAlreadyExists = errors.New("translation for this language already exists in this group")
 	// ErrInvalidLanguage is returned when the language code is not in the configured languages
 	ErrInvalidLanguage = errors.New("language is not in the configured languages list")
+	// ErrInvalidFormat is returned when the content format is not one of the supported values
+	ErrInvalidFormat = errors.New("format must be one of: tiptap, markdown, html")
 )
 
 var defaultSanitizer *sanitize.Sanitizer
@@ -88,6 +93,28 @@ func (s Status) IsValid() bool {
 // String returns the string representation of the status
 func (s Status) String() string {
 	return string(s)
+}
+
+// Format represents the content format used for storage and rendering
+type Format string
+
+const (
+	// FormatTiptap stores content as TipTap JSON (default)
+	FormatTiptap Format = "tiptap"
+	// FormatMarkdown stores content as Markdown (converted to TipTap on write)
+	FormatMarkdown Format = "markdown"
+	// FormatHTML stores content as raw HTML with inline styles
+	FormatHTML Format = "html"
+)
+
+// IsValid checks if the format is supported
+func (f Format) IsValid() bool {
+	return f == FormatTiptap || f == FormatMarkdown || f == FormatHTML
+}
+
+// String returns the string representation of the format
+func (f Format) String() string {
+	return string(f)
 }
 
 // CommentStatus represents the moderation status of a comment
@@ -143,6 +170,7 @@ type Content struct {
 	Content            string         `json:"content"`
 	Tags               []string       `json:"tags"`
 	Status             Status         `json:"status"`
+	Format             Format         `json:"format"`
 	PostType           string         `json:"postType"`
 	MetaDescription    string         `json:"metaDescription,omitempty"`
 	OGTitle            string         `json:"ogTitle,omitempty"`
@@ -155,8 +183,8 @@ type Content struct {
 	UpdatedByUsername  string         `json:"updatedByUsername,omitempty"`
 	Language           string         `json:"language"`
 	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
-	CreatedAt          string         `json:"createdAt"`
-	UpdatedAt          string         `json:"updatedAt"`
+	CreatedAt          time.Time      `json:"createdAt"`
+	UpdatedAt          time.Time      `json:"updatedAt"`
 }
 
 // PublishedAuthor is a read-model aggregating a user's published-content
@@ -169,6 +197,15 @@ type PublishedAuthor struct {
 	ProfilePicture string
 	ContentCount   int
 	PostTypes      []string
+}
+
+// ArchiveMonth is a read-model aggregating published-content counts by year
+// and month. It is shaped by the repository's GROUP BY query and re-shaped
+// into a public DTO (with a listing URL) by the handler.
+type ArchiveMonth struct {
+	Year  int
+	Month int
+	Count int
 }
 
 // FilterOperator represents the type of filter operation
@@ -243,10 +280,29 @@ func ValidateTitle(title string) error {
 	return nil
 }
 
-// ValidateContent validates the content field as TipTap JSON
-func ValidateContent(content string) error {
-	if content == "" || utf8.RuneCountInString(content) > 100000 {
-		return ErrInvalidContent
+// ValidateFormat validates the content format field
+func ValidateFormat(format Format) error {
+	if format == "" {
+		return nil // empty defaults to tiptap at the service layer
+	}
+	if !format.IsValid() {
+		return ErrInvalidFormat
+	}
+	return nil
+}
+
+// ValidateContent validates the content field. For tiptap and markdown formats
+// the content must be valid TipTap JSON; for html format it must be non-empty
+// and within the length limit (the HTML sanitizer runs at a later stage).
+func ValidateContent(content string, format Format) error {
+	if content == "" {
+		return ErrEmptyContent
+	}
+	if utf8.RuneCountInString(content) > 100000 {
+		return ErrContentTooLong
+	}
+	if format == FormatHTML {
+		return nil
 	}
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(content), &doc); err != nil {
@@ -334,8 +390,8 @@ type Comment struct {
 	Role         string        `json:"role,omitempty"`
 	ContentTitle string        `json:"contentTitle,omitempty"`
 	ContentSlug  string        `json:"contentSlug,omitempty"`
-	CreatedAt    string        `json:"createdAt"`
-	UpdatedAt    string        `json:"updatedAt"`
+	CreatedAt    time.Time     `json:"createdAt"`
+	UpdatedAt    time.Time     `json:"updatedAt"`
 }
 
 // ValidateCommentText validates the comment text field

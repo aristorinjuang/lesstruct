@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aristorinjuang/lesstruct/internal/config"
 	"html/template"
 	"log"
 	"net/http"
@@ -16,35 +15,15 @@ import (
 	"time"
 
 	tpl "github.com/aristorinjuang/lesstruct/internal/api/template"
+	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/content/tiptap"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
 	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
+	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
 	"github.com/aristorinjuang/lesstruct/internal/seo"
 )
-
-func formatDate(rfc3339 string) string {
-	if rfc3339 == "" {
-		return ""
-	}
-	t, err := time.Parse(time.RFC3339, rfc3339)
-	if err != nil {
-		return rfc3339
-	}
-	return t.Format("January 2, 2006")
-}
-
-func formatDateTime(rfc3339 string) string {
-	if rfc3339 == "" {
-		return ""
-	}
-	t, err := time.Parse(time.RFC3339, rfc3339)
-	if err != nil {
-		return rfc3339
-	}
-	return t.Format("January 2, 2006 at 3:04 PM")
-}
 
 func isEmptyValue(val any) bool {
 	if val == nil {
@@ -59,7 +38,7 @@ func isEmptyValue(val any) bool {
 	return false
 }
 
-func formatFieldValue(fieldType customfield.FieldType, val any) string {
+func formatFieldValue(fieldType customfield.FieldType, val any, lang string) string {
 	switch fieldType {
 	case customfield.FieldTypeCheckbox:
 		if b, ok := val.(bool); ok && b {
@@ -67,11 +46,20 @@ func formatFieldValue(fieldType customfield.FieldType, val any) string {
 		}
 	case customfield.FieldTypeDate:
 		if s, ok := val.(string); ok {
-			return formatDate(s)
+			if t, err := time.Parse("2006-01-02", s); err == nil {
+				return tpl.FormatDate(lang, t)
+			}
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return tpl.FormatDate(lang, t)
+			}
+			return s
 		}
 	case customfield.FieldTypeDatetime:
 		if s, ok := val.(string); ok {
-			return formatDateTime(s)
+			if t, err := time.Parse(time.RFC3339, s); err == nil {
+				return tpl.FormatDateTime(lang, t)
+			}
+			return s
 		}
 	}
 	return fmt.Sprintf("%v", val)
@@ -80,6 +68,7 @@ func formatFieldValue(fieldType customfield.FieldType, val any) string {
 func formatCustomFields(
 	fields []customfield.FieldSchema,
 	values map[string]any,
+	lang string,
 ) []tpl.FormattedField {
 	result := make([]tpl.FormattedField, 0, len(fields))
 	for _, f := range fields {
@@ -89,7 +78,7 @@ func formatCustomFields(
 		}
 		result = append(result, tpl.FormattedField{
 			Label: f.Name,
-			Value: formatFieldValue(f.Type, val),
+			Value: formatFieldValue(f.Type, val, lang),
 		})
 	}
 	return result
@@ -143,22 +132,72 @@ func parsePage(r *http.Request) int {
 	return n
 }
 
+// parseYear extracts a 4-digit year from the ?year= query parameter. Missing
+// or invalid values default to 0 (meaning "no year filter").
+func parseYear(r *http.Request) int {
+	raw := r.URL.Query().Get("year")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > 9999 {
+		return 0
+	}
+	return n
+}
+
+// parseMonth extracts a month (1-12) from the ?month= query parameter. Missing
+// or invalid values default to 0 (meaning "no month filter").
+func parseMonth(r *http.Request) int {
+	raw := r.URL.Query().Get("month")
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 || n > 12 {
+		return 0
+	}
+	return n
+}
+
+// archiveQuery builds the extra query-string fragment used to preserve
+// ?year= and ?month= across pagination links. Returns "" when no filter is
+// active so buildPagination produces clean URLs (backward compatible).
+func archiveQuery(year, month int) string {
+	if year > 0 && month > 0 {
+		return fmt.Sprintf("year=%d&month=%d", year, month)
+	}
+	return ""
+}
+
 // buildPagination assembles prev/next state from the current page and the
 // HasNext flag produced by the fetch-limit+1 probe. baseURL is the bare path
-// (e.g. "/authors/admin"); page 1 always links to the bare URL.
-func buildPagination(currentPage int, hasNext bool, baseURL string) tpl.PaginationData {
+// (e.g. "/authors/admin"); page 1 always links to the bare URL when extraQuery
+// is empty. When extraQuery is non-empty (e.g. "year=2026&month=7"), it is
+// preserved across all pagination links.
+func buildPagination(currentPage int, hasNext bool, baseURL string, extraQuery string) tpl.PaginationData {
 	pd := tpl.PaginationData{CurrentPage: currentPage}
+
+	pageURL := func(page int) string {
+		if extraQuery == "" {
+			if page == 1 {
+				return baseURL
+			}
+			return fmt.Sprintf("%s?page=%d", baseURL, page)
+		}
+		if page == 1 {
+			return fmt.Sprintf("%s?%s", baseURL, extraQuery)
+		}
+		return fmt.Sprintf("%s?%s&page=%d", baseURL, extraQuery, page)
+	}
+
 	if currentPage > 1 {
 		pd.HasPrev = true
-		if currentPage == 2 {
-			pd.PrevURL = baseURL
-		} else {
-			pd.PrevURL = fmt.Sprintf("%s?page=%d", baseURL, currentPage-1)
-		}
+		pd.PrevURL = pageURL(currentPage - 1)
 	}
 	if hasNext {
 		pd.HasNext = true
-		pd.NextURL = fmt.Sprintf("%s?page=%d", baseURL, currentPage+1)
+		pd.NextURL = pageURL(currentPage + 1)
 	}
 	return pd
 }
@@ -199,8 +238,8 @@ type ContentService interface {
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	GetPublishedPages(ctx context.Context) ([]*contentdomain.Content, error)
 	GetPublishedCustomPostTypes(ctx context.Context) ([]string, error)
-	GetPublishedByPostType(ctx context.Context, postType string, language string, limit int, offset int) ([]*contentdomain.Content, error)
-	GetPublishedByTag(ctx context.Context, tag string, language string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
 	GetPublishedTags(ctx context.Context) ([]string, error)
 	GetCommentsForContent(ctx context.Context, contentID int) ([]*contentdomain.Comment, error)
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
@@ -270,21 +309,28 @@ func (h *ContentPageHandler) effectivePerPage() int {
 	return h.postsPerPage
 }
 
-func (h *ContentPageHandler) resolvePostImage(imageURL string) (thumbURL, srcset, sizes string) {
+func (h *ContentPageHandler) resolvePostImage(imageURL string) (thumbURL, srcset, sizes string, variants map[string]string, originalURL string) {
 	if h.mediaRepo == nil || imageURL == "" {
-		return imageURL, "", ""
+		return imageURL, "", "", nil, imageURL
 	}
 	hash := ExtractHashFromURL(imageURL)
 	if hash == "" {
-		return imageURL, "", ""
+		return imageURL, "", "", nil, imageURL
 	}
 	m, err := h.mediaRepo.FindByHashPrefix(context.Background(), hash)
 	if err != nil {
 		log.Printf("WARNING: resolvePostImage FindByHashPrefix failed for hash %q: %v", hash, err)
-		return imageURL, "", ""
+		return imageURL, "", "", nil, imageURL
 	}
 	if m == nil {
-		return imageURL, "", ""
+		return imageURL, "", "", nil, imageURL
+	}
+	originalURL = m.URL
+	if len(m.Variants) > 0 {
+		variants = make(map[string]string, len(m.Variants))
+		for k, v := range m.Variants {
+			variants[k] = v.URL
+		}
 	}
 	srcset = buildImageSrcset(m.Variants)
 	if srcset != "" {
@@ -297,7 +343,7 @@ func (h *ContentPageHandler) resolvePostImage(imageURL string) (thumbURL, srcset
 	} else {
 		thumbURL = imageURL
 	}
-	return thumbURL, srcset, sizes
+	return thumbURL, srcset, sizes, variants, originalURL
 }
 
 func (h *ContentPageHandler) isPostTypeSlug(slug string) bool {
@@ -409,12 +455,14 @@ func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) 
 	primaryLang := config.PrimaryLanguage(h.languages)
 	perPage := h.effectivePerPage()
 	page := parsePage(r)
+	year := parseYear(r)
+	month := parseMonth(r)
 	offset := (page - 1) * perPage
 
 	// Latest posts scoped to type "post" and the primary language at the query
 	// level (no Go-level filtering, no wasted rows). Fetch perPage+1 to probe
 	// for a next page without a COUNT query.
-	contents, err := h.contentService.GetPublishedByPostType(r.Context(), "post", primaryLang, perPage+1, offset)
+	contents, err := h.contentService.GetPublishedByPostType(r.Context(), "post", primaryLang, year, month, perPage+1, offset)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -455,13 +503,13 @@ func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) 
 			Lang:            primaryLang,
 			SiteConfig:      h.siteConfig,
 		},
-		Posts:           posts,
-		Tags:            tags,
-		Sections:        sections,
-		PaginationData:  buildPagination(page, hasNext, currentPath),
+		Posts:          posts,
+		Tags:           tags,
+		Sections:       sections,
+		PaginationData: buildPagination(page, hasNext, currentPath, archiveQuery(year, month)),
 	}
 
-	if err := h.templates.RenderIndex(w, data); err != nil {
+	if err := h.templates.RenderHome(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
@@ -480,7 +528,7 @@ func (h *ContentPageHandler) buildHomeSections(ctx context.Context, primaryLang 
 		if limit <= 0 {
 			limit = defaultHomeSectionLimit
 		}
-		contents, err := h.contentService.GetPublishedByPostType(ctx, hs.PostType, primaryLang, limit, 0)
+		contents, err := h.contentService.GetPublishedByPostType(ctx, hs.PostType, primaryLang, 0, 0, limit, hs.Offset)
 		if err != nil {
 			log.Printf("failed to get homepage section %q: %v", hs.PostType, err)
 			continue
@@ -519,7 +567,7 @@ func (h *ContentPageHandler) buildHomeSections(ctx context.Context, primaryLang 
 
 func (h *ContentPageHandler) buildPostItem(ctx context.Context, c *contentdomain.Content) tpl.PostItem {
 	imageURL := seo.ExtractImageURL(c.Content)
-	thumbURL, imageSrcset, imageSizes := h.resolvePostImage(imageURL)
+	thumbURL, imageSrcset, imageSizes, imageVariants, originalURL := h.resolvePostImage(imageURL)
 
 	var authorAvatarURL string
 	if h.userProvider != nil && c.Username != "" {
@@ -535,10 +583,12 @@ func (h *ContentPageHandler) buildPostItem(ctx context.Context, c *contentdomain
 		ImageURL:        thumbURL,
 		ImageSrcset:     imageSrcset,
 		ImageSizes:      imageSizes,
+		ImageVariants:   imageVariants,
+		OriginalURL:     originalURL,
 		Author:          c.Author,
 		Username:        c.Username,
 		AuthorAvatarURL: authorAvatarURL,
-		CreatedAt:       formatDate(c.CreatedAt),
+		CreatedAt:       c.CreatedAt,
 		PostType:        c.PostType,
 		Tags:            c.Tags,
 	}
@@ -556,9 +606,15 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 		lang = "en"
 	}
 
-	bodyHTML, err := h.renderer.Render(content.Content)
-	if err != nil {
-		bodyHTML = ""
+	var bodyHTML string
+	switch content.Format {
+	case contentdomain.FormatHTML:
+		bodyHTML = sanitize.SanitizeHTMLDocument(content.Content)
+	default:
+		bodyHTML, err = h.renderer.Render(content.Content)
+		if err != nil {
+			bodyHTML = ""
+		}
 	}
 
 	ogTitle := content.OGTitle
@@ -571,7 +627,13 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 		ogDesc = content.MetaDescription
 	}
 
-	featuredImage := seo.ExtractImageURL(content.Content)
+	var featuredImage string
+	switch content.Format {
+	case contentdomain.FormatHTML:
+		featuredImage = seo.ExtractImageURLFromHTML(content.Content)
+	default:
+		featuredImage = seo.ExtractImageURL(content.Content)
+	}
 
 	currentPath := "/" + slug
 	navItems := h.buildNavigationItems(r.Context(), currentPath)
@@ -580,9 +642,9 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 	if h.postTypeResolver != nil && content.PostType != "" {
 		if pt, ptErr := h.postTypeResolver.GetBySlug(content.PostType); ptErr == nil {
 			if content.CustomFields != nil {
-				formattedFields = formatCustomFields(pt.Fields, content.CustomFields)
+				formattedFields = formatCustomFields(pt.Fields, content.CustomFields, lang)
 				formattedFields = append(formattedFields,
-					formatCustomFields(pt.SystemFields, content.CustomFields)...)
+					formatCustomFields(pt.SystemFields, content.CustomFields, lang)...)
 			}
 		}
 	}
@@ -597,13 +659,13 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 			commentItems = append(commentItems, tpl.CommentItem{
 				Author:    c.Author,
 				Text:      c.Comment,
-				CreatedAt: formatDate(c.CreatedAt),
+				CreatedAt: c.CreatedAt,
 			})
 		}
 	}
 
 	relatedItems := make([]tpl.PostItem, 0)
-	if related, err := h.contentService.GetRelated(r.Context(), content.ID, 5); err != nil {
+	if related, err := h.contentService.GetRelated(r.Context(), content.ID, 4); err != nil {
 		log.Printf("failed to get related content for content %d: %v", content.ID, err)
 	} else {
 		for _, c := range related {
@@ -640,7 +702,7 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 		Author:                content.Author,
 		Username:              content.Username,
 		AuthorAvatarURL:       authorAvatarURL,
-		CreatedAt:             formatDate(content.CreatedAt),
+		CreatedAt:             content.CreatedAt,
 		AllowComments:         content.AllowComments,
 		CustomFields:          content.CustomFields,
 		CustomFieldsFormatted: formattedFields,
@@ -703,7 +765,7 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 		if h.userFieldResolver != nil {
 			userFields := h.userFieldResolver.GetUserFields()
 			if len(userFields) > 0 && len(authorUser.CustomFields) > 0 {
-				formattedFields = formatCustomFields(userFields, authorUser.CustomFields)
+				formattedFields = formatCustomFields(userFields, authorUser.CustomFields, primaryLang)
 			}
 		}
 	}
@@ -723,12 +785,12 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 			Lang:            primaryLang,
 			SiteConfig:      h.siteConfig,
 		},
-		AuthorName:             authorName,
-		Username:               username,
-		AuthorAvatarURL:        authorAvatarURL,
-		Posts:                  posts,
-		CustomFieldsFormatted:  formattedFields,
-		PaginationData:         buildPagination(page, hasNext, currentPath),
+		AuthorName:            authorName,
+		Username:              username,
+		AuthorAvatarURL:       authorAvatarURL,
+		Posts:                 posts,
+		CustomFieldsFormatted: formattedFields,
+		PaginationData:        buildPagination(page, hasNext, currentPath, ""),
 	}
 
 	if err := h.templates.RenderAuthor(w, data); err != nil {
@@ -745,9 +807,11 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 	primaryLang := config.PrimaryLanguage(h.languages)
 	perPage := h.effectivePerPage()
 	page := parsePage(r)
+	year := parseYear(r)
+	month := parseMonth(r)
 	offset := (page - 1) * perPage
 
-	contents, err := h.contentService.GetPublishedByTag(r.Context(), tag, primaryLang, perPage+1, offset)
+	contents, err := h.contentService.GetPublishedByTag(r.Context(), tag, primaryLang, year, month, perPage+1, offset)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -778,9 +842,9 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 			Lang:            primaryLang,
 			SiteConfig:      h.siteConfig,
 		},
-		TagName:         tag,
-		Posts:           posts,
-		PaginationData:  buildPagination(page, hasNext, currentPath),
+		TagName:        tag,
+		Posts:          posts,
+		PaginationData: buildPagination(page, hasNext, currentPath, archiveQuery(year, month)),
 	}
 
 	if err := h.templates.RenderTag(w, data); err != nil {
@@ -810,9 +874,11 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 	primaryLang := config.PrimaryLanguage(h.languages)
 	perPage := h.effectivePerPage()
 	page := parsePage(r)
+	year := parseYear(r)
+	month := parseMonth(r)
 	offset := (page - 1) * perPage
 
-	contents, err := h.contentService.GetPublishedByPostType(r.Context(), postTypeSlug, primaryLang, perPage+1, offset)
+	contents, err := h.contentService.GetPublishedByPostType(r.Context(), postTypeSlug, primaryLang, year, month, perPage+1, offset)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -854,7 +920,7 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 			SiteConfig:      h.siteConfig,
 		},
 		Posts:          posts,
-		PaginationData: buildPagination(page, hasNext, currentPath),
+		PaginationData: buildPagination(page, hasNext, currentPath, archiveQuery(year, month)),
 	}
 
 	if err := h.templates.RenderIndex(w, data); err != nil {

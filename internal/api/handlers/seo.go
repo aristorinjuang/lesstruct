@@ -54,7 +54,7 @@ func (h *SEOHandler) buildSitemapEntries(ctx context.Context) ([]seo.SitemapEntr
 
 	entries := []seo.SitemapEntry{seo.NewHomepageEntry(h.baseURL)}
 	for _, content := range contents {
-		if content.Slug == "" || content.UpdatedAt == "" {
+		if content.Slug == "" || content.UpdatedAt.IsZero() {
 			continue
 		}
 		if content.PostType == "media" || content.PostType == "comment" {

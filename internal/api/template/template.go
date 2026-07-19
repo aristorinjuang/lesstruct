@@ -1,10 +1,15 @@
 package template
 
 import (
+	"crypto/sha256"
 	"embed"
+	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/i18n"
 )
@@ -14,6 +19,50 @@ var staticFS embed.FS
 
 //go:embed all:pages
 var pagesFS embed.FS
+
+// ComputeAssetHash reads base.css and style.css from the resolved static
+// filesystem and returns a short combined hex hash for filename-based cache
+// versioning. When either file is not found (e.g. broken theme), it returns
+// "dev".
+func ComputeAssetHash(theme *Theme) string {
+	resolved := resolveFS(theme, staticFS, "static")
+
+	baseData, err1 := fs.ReadFile(resolved, "base.css")
+	styleData, err2 := fs.ReadFile(resolved, "style.css")
+	if err1 != nil && err2 != nil {
+		return "dev"
+	}
+
+	h := sha256.New()
+	h.Write(baseData)
+	h.Write(styleData)
+	return fmt.Sprintf("%x", h.Sum(nil)[:6])
+}
+
+// staticHandler rewrites versioned CSS requests (<name>.<hash>.css) to serve
+// <name>.css with immutable Cache-Control headers. It handles both base.css
+// and style.css (and any future hashed assets).
+type staticHandler struct {
+	fs        fs.FS
+	assetHash string
+}
+
+func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	if h.assetHash != "" && strings.HasSuffix(path, ".css") {
+		hashSuffix := "." + h.assetHash + ".css"
+		if strings.Contains(path, hashSuffix) {
+			originalName := strings.Replace(path, hashSuffix, ".css", 1)
+			r2 := *r
+			r2.URL = &url.URL{Path: originalName}
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			http.FileServer(http.FS(h.fs)).ServeHTTP(w, &r2)
+			return
+		}
+	}
+
+	http.FileServer(http.FS(h.fs)).ServeHTTP(w, r)
+}
 
 type NavigationItem struct {
 	Title    string
@@ -39,17 +88,17 @@ type SiteConfig struct {
 }
 
 type LayoutData struct {
-	Title              string
-	Description        string
-	OGTitle            string
-	OGDesc             string
-	OGImage            string
-	PageTitle          string
-	NavigationItems    []NavigationItem
-	CurrentPath        string
-	Lang               string
-	LanguageLinks      []LanguageLink
-	SiteConfig         SiteConfig
+	Title           string
+	Description     string
+	OGTitle         string
+	OGDesc          string
+	OGImage         string
+	PageTitle       string
+	NavigationItems []NavigationItem
+	CurrentPath     string
+	Lang            string
+	LanguageLinks   []LanguageLink
+	SiteConfig      SiteConfig
 }
 
 type PostItem struct {
@@ -59,12 +108,14 @@ type PostItem struct {
 	ImageURL        string
 	ImageSrcset     string
 	ImageSizes      string
+	ImageVariants   map[string]string
+	OriginalURL     string
 	Author          string
 	Username        string
 	AuthorAvatarURL string
-	CreatedAt string
-	PostType  string
-	Tags      []string
+	CreatedAt       time.Time
+	PostType        string
+	Tags            []string
 }
 
 // HomeSection is a per-post-type grouping rendered on the homepage. It is only
@@ -92,9 +143,9 @@ type PaginationData struct {
 
 type IndexData struct {
 	LayoutData
-	Posts     []PostItem
-	Tags      []string
-	Sections  []HomeSection
+	Posts    []PostItem
+	Tags     []string
+	Sections []HomeSection
 	PaginationData
 }
 
@@ -106,7 +157,7 @@ type FormattedField struct {
 type CommentItem struct {
 	Author    string
 	Text      string
-	CreatedAt string
+	CreatedAt time.Time
 }
 
 type ContentData struct {
@@ -117,7 +168,7 @@ type ContentData struct {
 	Author                string
 	Username              string
 	AuthorAvatarURL       string
-	CreatedAt             string
+	CreatedAt             time.Time
 	AllowComments         bool
 	CustomFields          map[string]any
 	CustomFieldsFormatted []FormattedField
@@ -128,11 +179,11 @@ type ContentData struct {
 
 type AuthorData struct {
 	LayoutData
-	AuthorName             string
-	Username               string
-	AuthorAvatarURL        string
-	Posts                  []PostItem
-	CustomFieldsFormatted  []FormattedField
+	AuthorName            string
+	Username              string
+	AuthorAvatarURL       string
+	Posts                 []PostItem
+	CustomFieldsFormatted []FormattedField
 	PaginationData
 }
 
@@ -162,7 +213,9 @@ type ResetPasswordData struct {
 type Templates struct {
 	layout         *template.Template
 	index          *template.Template
-	content        *template.Template
+	home           *template.Template
+	content        map[string]*template.Template
+	contentDefault *template.Template
 	author         *template.Template
 	tag            *template.Template
 	notFound       *template.Template
@@ -179,9 +232,18 @@ func (t *Templates) RenderIndex(w http.ResponseWriter, data IndexData) error {
 	return t.index.Execute(w, data)
 }
 
+func (t *Templates) RenderHome(w http.ResponseWriter, data IndexData) error {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return t.home.Execute(w, data)
+}
+
 func (t *Templates) RenderContent(w http.ResponseWriter, data ContentData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.content.Execute(w, data)
+	tpl := t.contentDefault
+	if specific, ok := t.content[data.PostType]; ok {
+		tpl = specific
+	}
+	return tpl.Execute(w, data)
 }
 
 func (t *Templates) RenderAuthor(w http.ResponseWriter, data AuthorData) error {
@@ -225,15 +287,24 @@ func (t *Templates) RenderResetPassword(w http.ResponseWriter, data ResetPasswor
 	return t.resetPassword.Execute(w, data)
 }
 
-func NewTemplates(theme *Theme, catalog *i18n.Catalog) (*Templates, error) {
+func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) (*Templates, error) {
 	tFunc := func(lang, key string) string { return key }
 	if catalog != nil {
 		tFunc = catalog.T
 	}
 
+	assetHash := ComputeAssetHash(theme)
+
 	layout := template.Must(template.New("layout").Funcs(template.FuncMap{
-		"urlpath": url.PathEscape,
-		"t":       tFunc,
+		"urlpath":      url.PathEscape,
+		"t":            tFunc,
+		"assetURL": func(name string) string {
+			ext := ".css"
+			base := strings.TrimSuffix(name, ext)
+			return "/static/" + base + "." + assetHash + ext
+		},
+		"formatDate":   FormatDate,
+		"formatDateTime": FormatDateTime,
 	}).Parse(readThemeFile(theme, "layout.html")))
 
 	t := &Templates{
@@ -242,7 +313,7 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog) (*Templates, error) {
 	}
 
 	t.index = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "index.html")))
-	t.content = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "content.html")))
+	t.home = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "homepage.html")))
 	t.author = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "author.html")))
 	t.tag = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "tag.html")))
 	t.notFound = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "not_found.html")))
@@ -251,6 +322,22 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog) (*Templates, error) {
 	t.forgotPassword = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "forgot_password.html")))
 	t.verifyEmail = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "verify_email.html")))
 	t.resetPassword = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "reset_password.html")))
+
+	// Load the default content template (post.gohtml).
+	t.contentDefault = template.Must(template.Must(t.layout.Clone()).Parse(readContentTemplate(theme, "post")))
+
+	// Load per-post-type content templates.
+	t.content = make(map[string]*template.Template)
+	if len(postTypeSlugs) == 0 {
+		postTypeSlugs = []string{"post"}
+	}
+	for _, slug := range postTypeSlugs {
+		if slug == "post" {
+			continue
+		}
+		tplContent := readContentTemplate(theme, slug)
+		t.content[slug] = template.Must(template.Must(t.layout.Clone()).Parse(tplContent))
+	}
 
 	return t, nil
 }
@@ -261,6 +348,10 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog) (*Templates, error) {
 // embedded defaults for any file not present in the theme directory.
 func StaticFiles(theme *Theme) http.Handler {
 	handlerFS := resolveFS(theme, staticFS, "static")
+	assetHash := ComputeAssetHash(theme)
 
-	return http.FileServer(http.FS(handlerFS))
+	return &staticHandler{
+		fs:        handlerFS,
+		assetHash: assetHash,
+	}
 }

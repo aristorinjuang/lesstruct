@@ -52,8 +52,8 @@ func mapMediaFileToDomain(file *MediaFile, uploadedBy string) *mediadomain.Media
 		Hash:             file.Hash,
 		UploadedBy:       uploadedBy,
 		Variants:         make(map[string]mediadomain.MediaVariant),
-		CreatedAt:        file.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:        file.UpdatedAt.Format(time.RFC3339),
+		CreatedAt:        file.CreatedAt,
+		UpdatedAt:        file.UpdatedAt,
 	}
 
 	if file.Variants.Valid && file.Variants.String != "" {

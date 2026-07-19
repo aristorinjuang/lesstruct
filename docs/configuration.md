@@ -57,7 +57,7 @@ All env vars are loaded by `internal/config/config.go:Load()` and override the c
 
 - **SQLite** — no extra requirements. Just set `DB_PATH` (or use the default).
 - **Postgres** — `DB_DSN` is required. Format: `postgres://user:password@host:port/db?sslmode=disable`. `DB_POOL_MAX_CONNS` must be ≥ 1 if set.
-- **MySQL** — `DB_DSN` is required. The DSN **must** contain `parseTime=true` and `multiStatements=true`. Without them, DATE columns scan as `[]byte` and migrations with multiple statements fail. Format: `user:password@tcp(host:port)/db?parseTime=true&multiStatements=true&charset=utf8mb4&collation=utf8mb4_general_ci`.
+- **MySQL** — `DB_DSN` is required. The DSN **must** contain `parseTime=true` and `multiStatements=true`. Without them, DATE columns scan as `[]byte` and migrations with multiple statements fail. `clientFoundRows=true` is automatically injected if missing — it ensures `RowsAffected()` returns the number of rows matched by the `WHERE` clause rather than rows whose values changed, which prevents spurious `content_not_found` errors on no-op updates. Format: `user:password@tcp(host:port)/db?parseTime=true&multiStatements=true&charset=utf8mb4&collation=utf8mb4_general_ci`.
 
 ### Authentication
 
@@ -134,7 +134,7 @@ When `AI_IMAGE_GENERATION_API_KEY` is set, the admin panel shows a "Generate wit
 
 ### AI text generation (optional)
 
-When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhancement and translation. Works with any OpenAI-compatible API.
+When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhancement (TipTap), HTML/CSS generation, and translation for both formats. Works with any OpenAI-compatible API.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -232,6 +232,7 @@ The latest-posts list and each section are both scoped to the primary language a
 |-----|------|----------|-------------|
 | `post_type` | `string` | yes | The post-type slug to feature (e.g. `"article"`). Must match a configured post type. |
 | `limit` | `int` | no | Number of items to show. Defaults to `6`. |
+| `offset` | `int` | no | Number of items to skip. Defaults to `0`. Use a non-zero offset to avoid duplicating items shown in an earlier section (e.g. a "Recommendations" carousel that starts after the "Featured" section). |
 | `title` | `string` | no | Override the section heading. When omitted, the post type's display `name` is used. |
 
 Example:
@@ -241,6 +242,12 @@ Example:
 post_type = "article"
 limit = 6
 title = "Artikel Pilihan"
+
+[[homepage_section]]
+post_type = "article"
+limit = 20
+offset = 6
+title = "Rekomendasi"
 
 [[homepage_section]]
 post_type = "event"

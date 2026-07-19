@@ -198,6 +198,7 @@ func TestContentHandler_Create(t *testing.T) {
 		wantMessageHas   string // substring expected in error message ("" = skip)
 		wantBodyContent  string // asserts captured.Content when checkRequest is true
 		wantDomainStatus contentdomain.Status
+		wantDomainFormat contentdomain.Format
 		checkRequest     bool
 		wantContentID    int    // asserts data.content.id in the envelope (0 = skip)
 		wantConvertBody  string // markdown body to convert for the expected stored content (overrides wantBodyContent)
@@ -383,12 +384,22 @@ func TestContentHandler_Create(t *testing.T) {
 			wantContentID:    13,
 		},
 		{
-			name:       "error - unsupported format returns VALIDATION_ERROR",
-			body:       marshalJSON(map[string]any{"title": "Hello", "body": "x", "format": "html"}),
+			name:       "success - html format accepted",
+			body:       marshalJSON(map[string]any{"title": "Hello", "body": "<div><p>Hello</p></div>", "format": "html"}),
 			withUser:   true,
-			setup:      nil,
-			wantStatus: http.StatusBadRequest,
-			wantCode:   "VALIDATION_ERROR",
+			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+						*captured = req
+					}).
+					Return(&contentdomain.Content{ID: 17, Title: "Hello"}, nil)
+			},
+			wantStatus:        http.StatusOK,
+			wantBodyContent:   "<div><p>Hello</p></div>",
+			wantDomainStatus:  contentdomain.StatusDraft,
+			wantDomainFormat:  contentdomain.FormatHTML,
+			checkRequest:      true,
+			wantContentID:     17,
 		},
 		{
 			name:       "error - malformed JSON body returns VALIDATION_ERROR",
@@ -503,6 +514,9 @@ func TestContentHandler_Create(t *testing.T) {
 				}
 				assert.Equal(t, wantBody, captured.Content, "body must be stored (converted for markdown)")
 				assert.Equal(t, tt.wantDomainStatus, captured.Status, "status mapping")
+				if tt.wantDomainFormat != "" {
+					assert.Equal(t, tt.wantDomainFormat, captured.Format, "format mapping")
+				}
 				// The want* fields are zero-value sentinels: a non-empty wantPostType
 				// / wantLanguage / non-nil wantTags means the test row explicitly
 				// asserts that field on the domain request. Rows that omit the

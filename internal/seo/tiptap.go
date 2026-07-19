@@ -136,3 +136,70 @@ func BuildURL(baseURL, path string) string {
 
 	return fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(path, "/"))
 }
+
+// ExtractImageURLFromHTML finds the first image URL in HTML content.
+// It looks for <img> tags with src attributes pointing to http(s) URLs.
+func ExtractImageURLFromHTML(htmlContent string) string {
+	if htmlContent == "" {
+		return ""
+	}
+	lower := strings.ToLower(htmlContent)
+	idx := strings.Index(lower, "<img")
+	if idx == -1 {
+		return ""
+	}
+	tag := htmlContent[idx:]
+	srcStart := strings.Index(tag, "src=")
+	if srcStart == -1 {
+		return ""
+	}
+	tag = tag[srcStart+4:]
+	// Handle quoted src values.
+	if len(tag) > 0 && (tag[0] == '"' || tag[0] == '\'') {
+		quote := tag[0]
+		tag = tag[1:]
+		end := strings.IndexByte(tag, quote)
+		if end == -1 {
+			return ""
+		}
+		src := tag[:end]
+		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+			return src
+		}
+		return ""
+	}
+	// Unquoted src.
+	end := strings.IndexAny(tag, " >")
+	if end == -1 {
+		return ""
+	}
+	src := tag[:end]
+	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+		return src
+	}
+	return ""
+}
+
+// ExtractPlainTextFromHTML strips HTML tags and returns plain text.
+func ExtractPlainTextFromHTML(htmlContent string) string {
+	if htmlContent == "" {
+		return ""
+	}
+	// Simple tag stripping: remove everything between < and >.
+	var builder strings.Builder
+	inTag := false
+	for _, r := range htmlContent {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			builder.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}

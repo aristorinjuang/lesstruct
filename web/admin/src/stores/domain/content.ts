@@ -231,12 +231,20 @@ export const useContentStore = defineStore('content', () => {
     }
   }
 
-  async function enhanceContent(content: string): Promise<string> {
+  async function enhanceContent(
+    content: string,
+    format: 'tiptap' | 'html' = 'tiptap',
+    existingHtml: string = '',
+  ): Promise<string> {
     isLoading.value = true
     error.value = null
 
     try {
-      const response = await api.postWithTimeout<{ content: string }>('/api/v1/text/enhance', { content }, 130_000)
+      const body: Record<string, string> = { content, format }
+      if (format === 'html' && existingHtml) {
+        body.existingHtml = existingHtml
+      }
+      const response = await api.postWithTimeout<{ content: string }>('/api/v1/text/enhance', body, 130_000)
       const data = response.data.data
       if (!data || !data.content) {
         throw new Error('Failed to enhance content: No data returned')
@@ -250,14 +258,19 @@ export const useContentStore = defineStore('content', () => {
     }
   }
 
-  async function translateContent(content: string, sourceLang: string, targetLang: string): Promise<string> {
+  async function translateContent(
+    content: string,
+    sourceLang: string,
+    targetLang: string,
+    format: 'tiptap' | 'html' = 'tiptap',
+  ): Promise<string> {
     isLoading.value = true
     error.value = null
 
     try {
       const response = await api.postWithTimeout<{ content: string }>(
         '/api/v1/text/translate',
-        { content, sourceLang, targetLang },
+        { content, sourceLang, targetLang, format },
         130_000,
       )
       const data = response.data.data

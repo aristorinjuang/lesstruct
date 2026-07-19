@@ -94,7 +94,7 @@ func TestConvertBlocks_EachBlockType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc, err := wordpress.ConvertBlocks(tt.input, nil)
+			doc, err := wordpress.ConvertBlocks(tt.input, nil, "")
 			require.NoError(t, err)
 			mustValidate(t, doc)
 
@@ -135,7 +135,7 @@ func TestConvertBlocks_ImageURLRemap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc, err := wordpress.ConvertBlocks(tt.input, tt.imageMap)
+			doc, err := wordpress.ConvertBlocks(tt.input, tt.imageMap, "")
 			require.NoError(t, err)
 			mustValidate(t, doc)
 
@@ -164,7 +164,7 @@ func TestConvertBlocks_EmptyInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc, err := wordpress.ConvertBlocks(tt.input, nil)
+			doc, err := wordpress.ConvertBlocks(tt.input, nil, "")
 			require.NoError(t, err)
 			mustValidate(t, doc)
 
@@ -211,7 +211,7 @@ console.log("Hello World")</code></pre>
 <figure class="wp-block-pullquote"><blockquote><p>Migrate WordPress to Lesstruct!!!</p><cite>Aristo Rinjuang</cite></blockquote></figure>
 <!-- /wp:pullquote -->`
 
-	doc, err := wordpress.ConvertBlocks(input, nil)
+	doc, err := wordpress.ConvertBlocks(input, nil, "")
 	require.NoError(t, err)
 	mustValidate(t, doc)
 
@@ -227,6 +227,50 @@ console.log("Hello World")</code></pre>
 	assert.Equal(t, "heading", parsed.Content[1].Type)
 	assert.Equal(t, "codeBlock", parsed.Content[4].Type)
 	assert.Equal(t, "blockquote", parsed.Content[5].Type)
+}
+
+func TestConvertBlocks_FeaturedImage(t *testing.T) {
+	tests := []struct {
+		name             string
+		input            string
+		featuredImageURL string
+		wantFirstType    string
+		wantFirstSrc     string
+	}{
+		{
+			name:             "success - featured image prepended as first node",
+			input:            `<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->`,
+			featuredImageURL: "http://localhost:8080/uploads/media/abc.webp",
+			wantFirstType:    "image",
+			wantFirstSrc:     "http://localhost:8080/uploads/media/abc.webp",
+		},
+		{
+			name:          "no-op - empty featured image URL",
+			input:         `<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->`,
+			wantFirstType: "paragraph",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := wordpress.ConvertBlocks(tt.input, nil, tt.featuredImageURL)
+			require.NoError(t, err)
+			mustValidate(t, doc)
+
+			var parsed struct {
+				Content []struct {
+					Type string         `json:"type"`
+					Attrs map[string]any `json:"attrs"`
+				} `json:"content"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(doc), &parsed))
+			require.NotEmpty(t, parsed.Content)
+			assert.Equal(t, tt.wantFirstType, parsed.Content[0].Type)
+			if tt.wantFirstSrc != "" {
+				assert.Equal(t, tt.wantFirstSrc, parsed.Content[0].Attrs["src"])
+			}
+		})
+	}
 }
 
 func TestExtractImageURLs(t *testing.T) {

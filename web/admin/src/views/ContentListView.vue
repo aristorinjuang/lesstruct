@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import ContentEditor from '@/components/organisms/ContentEditor.vue'
 import DeleteConfirmDialog from '@/components/molecules/DeleteConfirmDialog.vue'
 import Toast from '@/components/molecules/Toast.vue'
 import { useContentStore } from '@/stores/domain/content'
@@ -22,8 +21,6 @@ const isAdmin = computed(() => role.value === 'Admin')
 const contents = ref<Content[]>([])
 const postTypes = ref<PostType[]>([])
 const isLoading = ref(false)
-const editingContentId = ref<number | null>(null)
-const showEditor = ref(false)
 const selectedPostType = ref<string>('all')
 const searchQuery = ref('')
 
@@ -44,7 +41,7 @@ function displayToast(message: string, type: 'success' | 'error' = 'success') {
 }
 
 // Watch route query type to sync with selectedPostType
-watch(() => route.fullPath, (newPath) => {
+watch(() => route.fullPath, () => {
   const type = route.query.type as string | undefined
   if (type) {
     selectedPostType.value = type
@@ -111,44 +108,17 @@ async function loadPostTypes() {
   }
 }
 
-watch(() => route.path, (newPath) => {
-  if (newPath === '/content/create') {
-    showEditor.value = true
-    editingContentId.value = null
-  } else if (newPath.startsWith('/content/') && newPath.endsWith('/edit')) {
-    const id = parseInt(route.params.id as string)
-    if (!isNaN(id)) {
-      editingContentId.value = id
-      showEditor.value = true
-    }
-  } else {
-    showEditor.value = false
-    editingContentId.value = null
-  }
-}, { immediate: true })
+function buildContentPath(base: string): string {
+  const type = selectedPostType.value
+  return type && type !== 'all' ? `${base}?type=${type}` : base
+}
 
 function createNew() {
-  router.push('/content/create')
+  router.push(buildContentPath('/content/create'))
 }
 
 function editContent(content: Content) {
-  router.push(`/content/${content.id}/edit`)
-}
-
-async function handleSaved(content: Content, redirectTo?: string) {
-  await loadContents()
-  if (redirectTo) {
-    router.push(redirectTo)
-  }
-}
-
-async function handleDeleted() {
-  displayToast('Content deleted successfully')
-  router.push('/content')
-}
-
-function handleCancel() {
-  router.push('/content')
+  router.push(buildContentPath(`/content/${content.id}/edit`))
 }
 
 function selectPostType(postTypeSlug: string) {
@@ -227,10 +197,6 @@ const postTypeTabs = computed(() => {
   ]
 })
 
-const editingContent = computed(() => {
-  if (editingContentId.value === null) return undefined
-  return contents.value.find(c => c.id === editingContentId.value)
-})
 </script>
 
 <template>
@@ -292,6 +258,9 @@ const editingContent = computed(() => {
           <span class="content-list__status" :class="getStatusBadgeClass(item.status)">
             {{ item.status === 'published' ? 'Published' : 'Draft' }}
           </span>
+          <span v-if="item.format === 'html'" class="content-list__format-badge">
+            HTML
+          </span>
           <span v-if="isAdmin && item.author" class="content-list__meta">Created by {{ item.author }}</span>
           <span v-if="item.updatedByUsername" class="content-list__meta">Updated by {{ item.updatedByUsername }}</span>
           <span class="content-list__date">{{ formatRelativeTime(item.updatedAt) }}</span>
@@ -328,22 +297,6 @@ const editingContent = computed(() => {
     <div v-if="deleteError" class="alert alert-error">
       {{ deleteError }}
     </div>
-
-    <Teleport to="body">
-      <div v-if="showEditor && userId" class="content-list__editor-modal">
-        <div class="content-list__editor-backdrop" @click="handleCancel"></div>
-        <div class="content-list__editor-container">
-          <ContentEditor
-            :user-id="Number(userId)"
-            :content-id="editingContentId || undefined"
-            :initial-content="editingContent"
-            @saved="handleSaved"
-            @deleted="handleDeleted"
-            @cancel="handleCancel"
-          />
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -483,37 +436,16 @@ const editingContent = computed(() => {
   color: var(--color-success-dark);
 }
 
-.content-list__editor-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1000;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 2rem;
-  overflow-y: auto;
-}
-
-.content-list__editor-backdrop {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-}
-
-.content-list__editor-container {
-  position: relative;
-  background-color: var(--color-background);
-  border-radius: 0.5rem;
-  max-width: 900px;
-  width: 100%;
-  max-height: calc(100vh - 4rem);
-  overflow-y: auto;
+.content-list__format-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+  margin-left: 0.5rem;
+  background-color: var(--color-bg-muted);
+  color: var(--color-text-secondary);
 }
 
 @media (max-width: 640px) {

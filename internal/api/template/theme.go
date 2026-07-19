@@ -40,6 +40,32 @@ func readThemeFile(theme *Theme, filename string) string {
 	return string(data)
 }
 
+// readContentTemplate resolves the content template for a given post type slug.
+// The lookup chain is:
+//  1. Theme <slug>.html
+//  2. Embedded <slug>.gohtml
+//  3. Theme post.html
+//  4. Embedded post.gohtml
+func readContentTemplate(theme *Theme, slug string) string {
+	if theme != nil && theme.Dir != "" {
+		if data, err := os.ReadFile(filepath.Join(theme.Dir, "templates", slug+".html")); err == nil {
+			return string(data)
+		}
+	}
+
+	if content := readEmbeddedPage(slug + ".html"); content != "" {
+		return content
+	}
+
+	if theme != nil && theme.Dir != "" {
+		if data, err := os.ReadFile(filepath.Join(theme.Dir, "templates", "post.html")); err == nil {
+			return string(data)
+		}
+	}
+
+	return readEmbeddedPage("post.html")
+}
+
 // compositeFS implements fs.FS by checking a primary filesystem first,
 // then falling back to a secondary filesystem.
 type compositeFS struct {

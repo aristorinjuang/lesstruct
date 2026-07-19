@@ -2,6 +2,7 @@ package dashboard_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
 	"github.com/stretchr/testify/assert"
@@ -37,7 +38,7 @@ func TestStats(t *testing.T) {
 						Title:     "Latest Post",
 						Slug:      "latest-post",
 						Status:    "published",
-						CreatedAt: "2026-04-10T10:30:00Z",
+						CreatedAt: time.Date(2026, 4, 10, 10, 30, 0, 0, time.UTC),
 					},
 				},
 			},
@@ -58,14 +59,14 @@ func TestRecentItem(t *testing.T) {
 		Title:     "Test Post",
 		Slug:      "test-post",
 		Status:    "published",
-		CreatedAt: "2026-04-10T10:30:00Z",
+		CreatedAt: time.Date(2026, 4, 10, 10, 30, 0, 0, time.UTC),
 	}
 
 	assert.Equal(t, 1, item.ID)
 	assert.Equal(t, "Test Post", item.Title)
 	assert.Equal(t, "test-post", item.Slug)
 	assert.Equal(t, "published", item.Status)
-	assert.Equal(t, "2026-04-10T10:30:00Z", item.CreatedAt)
+	assert.Equal(t, time.Date(2026, 4, 10, 10, 30, 0, 0, time.UTC), item.CreatedAt)
 }
 
 func TestErrUnauthorized(t *testing.T) {

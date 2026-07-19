@@ -14,7 +14,7 @@ import (
 type BlockedEmail struct {
 	ID        int
 	Email     string
-	CreatedAt string
+	CreatedAt time.Time
 	Reason    string
 }
 

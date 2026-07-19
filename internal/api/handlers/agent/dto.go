@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"time"
+
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
 )
@@ -57,8 +59,8 @@ type ContentProjection struct {
 	Tags         []string       `json:"tags,omitempty"`
 	CustomFields map[string]any `json:"customFields,omitempty"`
 	Author       string         `json:"author,omitempty"`
-	CreatedAt    string         `json:"createdAt,omitempty"`
-	UpdatedAt    string         `json:"updatedAt,omitempty"`
+	CreatedAt    time.Time      `json:"createdAt,omitempty"`
+	UpdatedAt    time.Time      `json:"updatedAt,omitempty"`
 }
 
 // ContentResponse wraps a projected content item for the agent create/get responses.
@@ -116,8 +118,8 @@ type MediaProjection struct {
 	Hash             string                         `json:"hash"`
 	URL              string                         `json:"url"`
 	Variants         map[string]mediadomain.MediaVariant `json:"variants,omitempty"`
-	CreatedAt        string                         `json:"createdAt,omitempty"`
-	UpdatedAt        string                         `json:"updatedAt,omitempty"`
+	CreatedAt        time.Time                          `json:"createdAt,omitempty"`
+	UpdatedAt        time.Time                          `json:"updatedAt,omitempty"`
 }
 
 // MediaResponse wraps a projected media item for the agent media responses.

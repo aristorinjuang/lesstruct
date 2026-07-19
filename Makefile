@@ -15,7 +15,13 @@ mock:
 	mockery
 
 test:
-	go test ./... -cover -race -v
+	go test ./...
+
+test-race:
+	go test ./... -race -cover
+
+test-verbose:
+	go test ./... -v
 
 vulncheck:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -39,6 +45,7 @@ clean-static:
 
 css:
 	go install github.com/tdewolff/minify/v2/cmd/minify@latest
+	minify -o internal/api/template/static/base.css internal/api/template/static/base.src.css
 	minify -o internal/api/template/static/style.css internal/api/template/static/style.src.css
 
 test-cli:

@@ -101,7 +101,7 @@ func TestOpenAITextService_EnhanceText_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := svc.EnhanceText(ctx, validTipTapJSON())
+	_, err := svc.EnhanceText(ctx, validTipTapJSON(), "tiptap", "")
 	// Expect error because context is cancelled before the API call completes
 	assert.Error(t, err, "EnhanceText with cancelled context should return error")
 }
@@ -114,7 +114,7 @@ func TestOpenAITextService_TranslateText_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := svc.TranslateText(ctx, validTipTapJSON(), "en", "fr")
+	_, err := svc.TranslateText(ctx, validTipTapJSON(), "en", "fr", "tiptap")
 	assert.Error(t, err, "TranslateText with cancelled context should return error")
 }
 

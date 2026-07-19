@@ -151,6 +151,7 @@ type CreateContentRequest struct {
 	Content            string         `json:"content"`
 	Tags               []string       `json:"tags"`
 	Status             Status         `json:"status"`
+	Format             Format         `json:"format,omitempty"`
 	PostType           string         `json:"postType"`
 	MetaDescription    string         `json:"metaDescription,omitempty"`
 	OGTitle            string         `json:"ogTitle,omitempty"`
@@ -167,6 +168,7 @@ type UpdateContentRequest struct {
 	Content            string         `json:"content"`
 	Tags               []string       `json:"tags"`
 	Status             Status         `json:"status"`
+	Format             Format         `json:"format,omitempty"`
 	PostType           string         `json:"postType"`
 	MetaDescription    string         `json:"metaDescription,omitempty"`
 	OGTitle            string         `json:"ogTitle,omitempty"`
@@ -182,6 +184,19 @@ type HookExecutor interface {
 	Execute(ctx context.Context, hookName plugin.HookName, data []byte) ([]byte, error)
 }
 
+// Option configures a content Service at construction time.
+type Option func(*Service)
+
+// WithDefaultLanguage sets the language used when a create or read request
+// omits an explicit language. Defaults to "en".
+func WithDefaultLanguage(lang string) Option {
+	return func(s *Service) {
+		if lang != "" {
+			s.defaultLanguage = lang
+		}
+	}
+}
+
 // Service handles content business logic
 type Service struct {
 	repo            Repository
@@ -189,6 +204,7 @@ type Service struct {
 	seoService      *seo.Service
 	postTypeService PostTypeServiceInterface
 	hookExecutor    HookExecutor
+	defaultLanguage string
 }
 
 func (s *Service) validateCustomFields(
@@ -482,7 +498,15 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		return nil, fmt.Errorf("title validation failed: %w", err)
 	}
 
-	if err := ValidateContent(req.Content); err != nil {
+	format := req.Format
+	if format == "" {
+		format = FormatTiptap
+	}
+	if err := ValidateFormat(format); err != nil {
+		return nil, fmt.Errorf("format validation failed: %w", err)
+	}
+
+	if err := ValidateContent(req.Content, format); err != nil {
 		return nil, fmt.Errorf("content validation failed: %w", err)
 	}
 
@@ -499,10 +523,9 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 
 	slug := s.GenerateSlug(req.Title)
 
-	defaultLanguage := "en"
 	language := req.Language
 	if language == "" {
-		language = defaultLanguage
+		language = s.defaultLanguage
 	}
 
 	// Validate translation group if provided
@@ -588,6 +611,7 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		Content:            req.Content,
 		Tags:               tags,
 		Status:             req.Status,
+		Format:             format,
 		PostType:           postType,
 		MetaDescription:    req.MetaDescription,
 		OGTitle:            req.OGTitle,
@@ -663,7 +687,7 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (*Content, error) 
 		return nil, fmt.Errorf("slug validation failed: %w", err)
 	}
 
-	content, err := s.repo.GetBySlug(ctx, slug, "en")
+	content, err := s.repo.GetBySlug(ctx, slug, s.defaultLanguage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get content: %w", err)
 	}
@@ -755,7 +779,7 @@ func (s *Service) GetTranslations(ctx context.Context, translationGroupID int, e
 
 func (s *Service) GetPublishedBySlug(ctx context.Context, slug string, language string) (*Content, error) {
 	if language == "" {
-		language = "en"
+		language = s.defaultLanguage
 	}
 
 	if err := ValidateSlug(slug); err != nil {
@@ -804,8 +828,8 @@ func (s *Service) AuthorExists(ctx context.Context, username string) (bool, erro
 	return s.repo.AuthorExists(ctx, username)
 }
 
-func (s *Service) GetPublishedByTag(ctx context.Context, tag string, language string, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByTag(ctx, tag, language, limit, offset)
+func (s *Service) GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByTag(ctx, tag, language, year, month, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by tag: %w", err)
 	}
@@ -828,8 +852,8 @@ func (s *Service) GetPublishedCustomPostTypes(ctx context.Context) ([]string, er
 	return postTypes, nil
 }
 
-func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, language string, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByPostType(ctx, postType, language, limit, offset)
+func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByPostType(ctx, postType, language, year, month, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by post type: %w", err)
 	}
@@ -852,6 +876,14 @@ func (s *Service) GetPublishedAuthors(ctx context.Context, limit int, offset int
 	return authors, nil
 }
 
+func (s *Service) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*ArchiveMonth, error) {
+	archive, err := s.repo.GetPublishedArchive(ctx, postType, language)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published archive: %w", err)
+	}
+	return archive, nil
+}
+
 func (s *Service) SearchPublished(ctx context.Context, query string, limit int) ([]*Content, error) {
 	query = strings.TrimSpace(query)
 	if len(query) < 2 {
@@ -866,7 +898,7 @@ func (s *Service) SearchPublished(ctx context.Context, query string, limit int) 
 
 const (
 	// defaultRelatedLimit is the number of related posts returned when no limit is requested.
-	defaultRelatedLimit = 5
+	defaultRelatedLimit = 4
 	// maxRelatedLimit caps the number of related posts to keep queries bounded.
 	maxRelatedLimit = 20
 )
@@ -938,7 +970,18 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 		return nil, fmt.Errorf("title validation failed: %w", err)
 	}
 
-	if err := ValidateContent(req.Content); err != nil {
+	format := req.Format
+	if format == "" {
+		format = existing.Format
+	}
+	if format == "" {
+		format = FormatTiptap
+	}
+	if err := ValidateFormat(format); err != nil {
+		return nil, fmt.Errorf("format validation failed: %w", err)
+	}
+
+	if err := ValidateContent(req.Content, format); err != nil {
 		return nil, fmt.Errorf("content validation failed: %w", err)
 	}
 
@@ -1027,6 +1070,7 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 	existing.Title = newTitle
 	existing.Content = req.Content
 	existing.Tags = tags
+	existing.Format = format
 	existing.PostType = req.PostType
 	if req.CustomFields != nil {
 		// Preserve system field values from existing content
@@ -1108,6 +1152,7 @@ func (s *Service) generateSEOMetadata(
 	seoInput := seo.GenerateInput{
 		Title:         c.Title,
 		Content:       c.Content,
+		Format:        string(c.Format),
 		URL:           fmt.Sprintf("%s/%s", urlPrefix, c.Slug),
 		DatePublished: now,
 		DateModified:  now,
@@ -1397,12 +1442,18 @@ func NewService(
 	repo Repository,
 	seoService *seo.Service,
 	postTypeService PostTypeServiceInterface,
+	opts ...Option,
 ) *Service {
-	return &Service{
+	s := &Service{
 		repo:            repo,
 		seoService:      seoService,
 		postTypeService: postTypeService,
+		defaultLanguage: "en",
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func NewServiceWithComments(
@@ -1410,13 +1461,19 @@ func NewServiceWithComments(
 	commentRepo CommentRepository,
 	seoService *seo.Service,
 	postTypeService PostTypeServiceInterface,
+	opts ...Option,
 ) *Service {
-	return &Service{
+	s := &Service{
 		repo:            repo,
 		commentRepo:     commentRepo,
 		seoService:      seoService,
 		postTypeService: postTypeService,
+		defaultLanguage: "en",
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func NewServiceWithHooks(
@@ -1425,12 +1482,18 @@ func NewServiceWithHooks(
 	seoService *seo.Service,
 	postTypeService PostTypeServiceInterface,
 	hookExecutor HookExecutor,
+	opts ...Option,
 ) *Service {
-	return &Service{
+	s := &Service{
 		repo:            repo,
 		commentRepo:     commentRepo,
 		seoService:      seoService,
 		postTypeService: postTypeService,
 		hookExecutor:    hookExecutor,
+		defaultLanguage: "en",
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }

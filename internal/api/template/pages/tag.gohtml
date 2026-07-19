@@ -1,25 +1,25 @@
-{{define "body"}}
+{{- define "body"}}
 <div class="tag-page container">
-<h1>#{{.TagName}}</h1>
-<div class="posts-grid">
-{{range .Posts}}
-<article class="post-card" data-post-type="{{.PostType}}">
-<a href="/{{.Slug}}">
-{{if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
-<h2>{{.Title}}</h2>
-{{if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
-<time>{{.CreatedAt}}</time>
-</a>
-</article>
-{{else}}
-<p class="empty">{{t .Lang "ui.no_posts"}}</p>
-{{end}}
+	<h1>#{{.TagName}}</h1>
+	<div class="posts-grid">
+		{{- range .Posts}}
+		<article class="post-card" data-post-type="{{.PostType}}">
+			<a href="/{{.Slug}}">
+				{{- if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+				<h2>{{.Title}}</h2>
+				{{- if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
+				<time>{{formatDate $.Lang .CreatedAt}}</time>
+			</a>
+		</article>
+		{{- else}}
+		<p class="empty">{{t .Lang "ui.no_posts"}}</p>
+		{{- end}}
+	</div>
+	{{- if or .HasPrev .HasNext}}
+	<nav class="pagination" aria-label="Pagination">
+		{{- if .HasPrev}}<a rel="prev" href="{{.PrevURL}}">{{t .Lang "ui.prev_page"}}</a>{{end}}
+		{{- if .HasNext}}<a rel="next" href="{{.NextURL}}">{{t .Lang "ui.next_page"}}</a>{{end}}
+	</nav>
+	{{- end}}
 </div>
-{{if or .HasPrev .HasNext}}
-<nav class="pagination" aria-label="Pagination">
-{{if .HasPrev}}<a rel="prev" href="{{.PrevURL}}">{{t .Lang "ui.prev_page"}}</a>{{end}}
-{{if .HasNext}}<a rel="next" href="{{.NextURL}}">{{t .Lang "ui.next_page"}}</a>{{end}}
-</nav>
-{{end}}
-</div>
-{{end}}
+{{- end}}

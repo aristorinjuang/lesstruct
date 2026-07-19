@@ -62,6 +62,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 
 ### Content Theme
 - Go `html/template` — server-rendered content site via `internal/api/template/` (layouts/pages) and `internal/api/contentpage/` (data assembly)
+- Per-post-type content templates: each post type resolves via `readContentTemplate` (theme `<type>.html` → theme `post.html` → embedded `<type>.gohtml` → embedded `post.gohtml`)
 - Theme overrides via `THEME_DIR` env var or theme plugin architecture
 - Default theme CSS minified via `make css` (tdewolff/minify)
 
@@ -73,7 +74,9 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - **Middleware** (`internal/api/middleware/`): `auth` (JWT), `apikey` (Bearer API key), `admin`, `commentator`, `cors`, `csrf`, `nocookie`, `ratelimit` (via httprate)
 - **Response envelope** (`internal/api/response/`): `{"data": ..., "error": {...}, "meta": {...}}`. Lists use `SuccessList()` which uses a dedicated `listResponse` type WITHOUT `omitempty` on `data` so empty lists serialize as `"data":[]`
 - **Plugin system**: wazero WASM runtime in `internal/plugin/` with hook execution (`before_save`, `after_save`, etc.). Subpackages: `bootstrap`, `capability`, `devmode`, `hostfunctions`, `loader`, `registry`, `runtime`
-- **Content pipeline**: `internal/content/` holds format converters — `tiptap/` (canonical), `markdown/` (Markdown→TipTap via goldmark), `wordpress/` (WordPress importer). The WXR importer accepts any post type registered in `config.toml` (built-in `post`/`page` plus custom types), parses `<wp:postmeta>` custom fields, and converts values to the declared field types (e.g. WordPress `YYYY-MM-DD HH:MM:SS` datetimes → RFC 3339; numeric strings → `float64`) before passing them to the content service as `CustomFields`
+- **Content pipeline**: `internal/content/` holds format converters — `tiptap/` (canonical), `markdown/` (Markdown→TipTap via goldmark), `wordpress/` (WordPress importer). Content items carry a `format` field (`tiptap`, `html`, or `markdown`). HTML-format content is stored and served as-is — no TipTap conversion. The WXR importer accepts any post type registered in `config.toml` (built-in `post`/`page` plus custom types), parses `<wp:postmeta>` custom fields, and converts values to the declared field types (e.g. WordPress `YYYY-MM-DD HH:MM:SS` datetimes → RFC 3339; numeric strings → `float64`) before passing them to the content service as `CustomFields`. Featured images (`_thumbnail_id`) are resolved from attachment items, downloaded via the media downloader (WebP transcode + SHA-256 dedup), and prepended to the post's TipTap content; inline body images are likewise downloaded and remapped. Attachment items themselves are captured as a lookup table (post ID → URL) in `WXRDocument.Attachments` but never become content posts.
+- **Content sanitization**: HTML content (format `html`) is sanitized on **write** (both browser and agent API handlers run `SanitizeHTMLDocument` before persisting) and on **read** (the public contentpage handler re-sanitizes before rendering). The policy (`internal/domain/sanitize/htmldocument.go`) allows all HTML5 elements and inline `style`/`class` attributes while blocking `<script>`, event handlers (`on*`), and `javascript:` URLs. TipTap content is sanitized differently — raw HTML within TipTap bodies is stripped to plain text via bluemonday's `UGCPolicy`. AI-generated HTML is also sanitized server-side in `callChatCompletionHTML` (in `internal/domain/textgen/service.go`) before being returned to the client.
+- **AI text generation**: `internal/domain/textgen/` provides the `TextGenerationService` interface with `EnhanceText` and `TranslateText` methods, both parameterized by a `format` field (`tiptap` or `html`). For HTML format, the handler injects a keyword-filtered subset of the user's media library (up to 20 images, matched by alt-text overlap with the user's prompt) as context in the system prompt. The HTML system prompt instructs the AI to produce production-ready fragments with `<style>` blocks at the top, scoped class names (`.ls-<topic>`), responsive CSS, and accessible semantic HTML5. The handler (`internal/api/handlers/textgen.go`) owns the `MediaLister` interface and the `buildMediaContext` helper (`textgen_media.go`).
 - **Config**: `.env` + env vars loaded via `internal/config/config.go` (`Config` struct, `Load()`); user-facing `config.toml` in project root loaded **once** at startup from `${CONFIG_DIR}/${CONFIG_FILE}` (no hot-reload — restart the server to pick up changes); post types/languages/thumbnails schemas in `internal/config/`
 - **Migrations**: numbered `.up.sql`/`.down.sql` pairs in `internal/database/migrations/{driver}/`, embedded via `embed.go`
 
@@ -110,7 +113,7 @@ Quick routing — confirm the exact package by reading the matching `internal/` 
 | Database access for that interface | the interface in `internal/domain/<name>/`, plus an implementation in **all three** `internal/repository/{sqlite,mysql,postgresql}/` (cross-driver helper → `internal/repository/`) |
 | An HTTP endpoint | a handler in `internal/api/handlers/` (browser/admin realm) or `internal/api/handlers/agent/` (`/api/v1`), the route in `internal/api/routes/routes.go`, and the error in the realm's mapper |
 | Request middleware | `internal/api/middleware/` |
-| A content format converter | `internal/content/<format>/` |
+| A content format converter | `internal/content/<format>/` (tipTap JSON converters); HTML-format content is stored directly via the content service (no converter needed) |
 | A plugin host function or hook | `internal/plugin/` |
 | A CLI subcommand | `cmd/lesstruct-cli/` |
 | Admin UI | `web/admin/src/` following atomic design (`atoms/` → `molecules/` → `organisms/` → `views/`); the **Pinia store action** makes the API call — components only call store actions |
@@ -154,13 +157,13 @@ Quick routing — confirm the exact package by reading the matching `internal/` 
 - Custom field validation flows through `content.Service.validateCustomFields()` — never call `validateFieldValue()` directly from handlers
 - Post types loaded from `config.toml` **once** at startup via `internal/config/posttypes.go` (restart to pick up changes); built-in slugs (`post`/`page`/`media`/`comment`) extend instead of duplicating
 - Homepage sections (`[[homepage_section]]`), public listing page size (`POSTS_PER_PAGE` env), and site-wide identity (`[site_config]` → `name`/`logo`) are loaded the same way — `internal/config/homepage.go` and `internal/config/siteconfig.go`; the site name defaults to `Lesstruct` in the contentpage handler constructor and drives `PageTitle` suffixes + `og:site_name` (the one branding value a `THEME_DIR` override cannot reach). Public listing queries (`GetPublishedByPostType`/`GetPublishedByAuthorUsername`/`GetPublishedByTag`) take an optional `language` argument so the primary-language scope and the pagination HasNext probe happen at the SQL level, not in Go
-- SEO auto-extraction: `ExtractPlainText()` and `ExtractImageURL()` consume TipTap JSON from content
-- Markdown bodies on the agent create surface are converted to canonical TipTap JSON via `internal/content/markdown` — raw Markdown is NEVER persisted
+- SEO auto-extraction: `ExtractPlainText()` and `ExtractImageURL()` consume TipTap JSON from content; HTML content uses tag-stripping for meta description extraction
+- Markdown bodies on the agent create surface are converted to canonical TipTap JSON via `internal/content/markdown` — raw Markdown is NEVER persisted; HTML bodies (`format: html`) are stored as-is after sanitization
 - Rate limits configurable per realm via `RATE_LIMIT_{AUTH,API,PUBLIC}_PER_MINUTE`; toggle via `RATE_LIMIT_ENABLED`
 
 #### Frontend (Vue 3 + Pinia)
 - **Atomic design**: `atoms/` → `molecules/` → `organisms/` → `views/` under `web/admin/src/components/` and `web/admin/src/views/`
-- Content editor: `ContentEditor.vue` is the single organism for create + edit (shared component, not separate views)
+- Content editor: `ContentEditor.vue` is the single organism for create + edit (shared component, not separate views); format selector toggles between TipTap editor and `HtmlCodeEditor.vue` (CodeMirror 6 with live iframe preview)
 - Custom field rendering: `CustomFieldRenderer.vue` in molecules handles all field types
 - Media upload: `MediaPanel.vue` organism, opened as a slideover from `ContentEditor`
 - SEO settings are collapsible within `ContentEditor` (`isSEOSettingsOpen`)

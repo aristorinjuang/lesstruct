@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
@@ -145,7 +146,7 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/content_items", bytes.NewReader([]byte(tt.requestBody)))
 			req.Header.Set("Content-Type", "application/json")
@@ -240,7 +241,7 @@ func TestContentHandler_GenerateSlug(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/content/slug", bytes.NewReader([]byte(tt.requestBody)))
 			req.Header.Set("Content-Type", "application/json")
@@ -522,7 +523,7 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 			r := chi.NewRouter()
 			r.Put("/api/v1/content_items/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -576,8 +577,8 @@ func TestContentHandler_GetPublishedContent(t *testing.T) {
 					Content:        `{"type":"doc","content":[{"type":"paragraph"},{"type":"image","attrs":{"src":"/uploads/media/photo.webp"}}]}`,
 					Status:         contentdomain.StatusPublished,
 					AllowComments:  true,
-					CreatedAt:      "2026-01-01T00:00:00Z",
-					UpdatedAt:      "2026-01-01T00:00:00Z",
+					CreatedAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					UpdatedAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -613,8 +614,8 @@ func TestContentHandler_GetPublishedContent(t *testing.T) {
 					Content:        `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Just text"}]}]}`,
 					Status:         contentdomain.StatusPublished,
 					AllowComments:  false,
-					CreatedAt:      "2026-01-01T00:00:00Z",
-					UpdatedAt:      "2026-01-01T00:00:00Z",
+					CreatedAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+					UpdatedAt:      time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -680,6 +681,7 @@ func TestContentHandler_GetPublishedContent(t *testing.T) {
 				mockService,
 				util.NewLogger(os.Stdout),
 				"http://localhost:3000",
+				nil,
 				nil,
 			)
 
@@ -814,7 +816,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items"+tt.queryParams, nil)
 			req.Header.Set("Content-Type", "application/json")
@@ -909,7 +911,7 @@ func TestContentHandler_ListContents_WithSearch(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items"+tt.queryParams, nil)
 			req.Header.Set("Content-Type", "application/json")
@@ -1102,7 +1104,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 			r := chi.NewRouter()
 			r.Put("/api/admin/content/{id}/system-fields", handler.SetSystemFields)
@@ -1287,7 +1289,7 @@ func TestContentHandler_SearchPublished(t *testing.T) {
 			mockService := handlersmocks.NewMockContentServiceInterface(t)
 			tt.setupService(mockService)
 
-			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 		r := chi.NewRouter()
 		r.Get("/api/v1/public/search", handler.SearchPublished)
@@ -1327,7 +1329,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 		}, nil)
 
 		resolver := func(filename string) string { return "http://cdn.test/uploads/profile_pictures/" + filename }
-		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", resolver)
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", resolver, nil)
 
 		r := chi.NewRouter()
 		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
@@ -1388,7 +1390,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
 			Return([]*contentdomain.PublishedAuthor{}, nil)
 
-		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 		r := chi.NewRouter()
 		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
@@ -1410,7 +1412,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
 			Return(nil, fmt.Errorf("database down"))
 
-		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 		r := chi.NewRouter()
 		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
@@ -1430,7 +1432,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 40).
 			Return([]*contentdomain.PublishedAuthor{}, nil)
 
-		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 		r := chi.NewRouter()
 		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
@@ -1449,7 +1451,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
 			Return([]*contentdomain.PublishedAuthor{}, nil)
 
-		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil)
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
 
 		r := chi.NewRouter()
 		r.Get("/api/v1/public/authors", handler.ListPublishedAuthors)
@@ -1460,6 +1462,198 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 
 		if w.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", w.Code)
+		}
+	})
+}
+
+func TestContentHandler_ListPublishedContents(t *testing.T) {
+	tiptapImageJSON := `{"type":"doc","content":[{"type":"image","attrs":{"src":"/uploads/abc123_thumb.webp"}}]}`
+
+	t.Run("without post_type calls GetPublished", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublished(mock.Anything, 10, 0).
+			Return([]*contentdomain.Content{
+				{ID: 1, Title: "Hello", Slug: "hello", Content: tiptapImageJSON, PostType: "post"},
+			}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/content_items", handler.ListPublishedContents)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items?limit=10", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		data := resp["data"].([]any)
+		item := data[0].(map[string]any)
+		if item["title"] != "Hello" {
+			t.Errorf("expected title 'Hello', got %v", item["title"])
+		}
+	})
+
+	t.Run("with post_type calls GetPublishedByPostType", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublishedByPostType(mock.Anything, "article", "", 0, 0, 5, 0).
+			Return([]*contentdomain.Content{
+				{ID: 2, Title: "Article", Slug: "article-1", Content: "{}", PostType: "article"},
+			}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/content_items", handler.ListPublishedContents)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items?post_type=article&limit=5", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		data := resp["data"].([]any)
+		item := data[0].(map[string]any)
+		if item["title"] != "Article" {
+			t.Errorf("expected title 'Article', got %v", item["title"])
+		}
+	})
+
+	t.Run("featuredImage resolved when resolver provided", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublished(mock.Anything, 100, 0).
+			Return([]*contentdomain.Content{
+				{ID: 3, Title: "Image Post", Slug: "img", Content: tiptapImageJSON, PostType: "post"},
+			}, nil)
+
+		imageResolver := func(imageURL string) string {
+			if strings.Contains(imageURL, "abc123") {
+				return "/uploads/abc123_thumb.webp"
+			}
+			return imageURL
+		}
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, imageResolver)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/content_items", handler.ListPublishedContents)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		data := resp["data"].([]any)
+		item := data[0].(map[string]any)
+		featured := item["featuredImage"].(string)
+		if !strings.Contains(featured, "abc123_thumb") {
+			t.Errorf("expected featuredImage to contain thumb variant, got %v", featured)
+		}
+	})
+
+	t.Run("no featuredImage when content has no image", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublished(mock.Anything, 100, 0).
+			Return([]*contentdomain.Content{
+				{ID: 4, Title: "No Image", Slug: "no-img", Content: `{"type":"doc","content":[]}`, PostType: "post"},
+			}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/content_items", handler.ListPublishedContents)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		data := resp["data"].([]any)
+		item := data[0].(map[string]any)
+		if _, exists := item["featuredImage"]; exists {
+			t.Errorf("expected no featuredImage when content has no image, got %v", item["featuredImage"])
+		}
+	})
+
+	t.Run("limit and offset parsed correctly", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublished(mock.Anything, 25, 10).
+			Return([]*contentdomain.Content{}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/content_items", handler.ListPublishedContents)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items?limit=25&offset=10", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("limit clamped to max 1000", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublished(mock.Anything, 1000, 0).
+			Return([]*contentdomain.Content{}, nil)
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/content_items", handler.ListPublishedContents)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items?limit=5000", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("service error returns 500", func(t *testing.T) {
+		mockService := handlersmocks.NewMockContentServiceInterface(t)
+		mockService.EXPECT().GetPublished(mock.Anything, 100, 0).
+			Return(nil, fmt.Errorf("database down"))
+
+		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/public/content_items", handler.ListPublishedContents)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d", w.Code)
 		}
 	})
 }

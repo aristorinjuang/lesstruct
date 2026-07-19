@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -54,13 +55,13 @@ type CommentService interface {
 // contract is consistent across the two realms, and excludes the numeric owner
 // / content ids the raw contentdomain.Comment carries.
 type CommentProjection struct {
-	ID        int    `json:"id"`
-	Comment   string `json:"comment"`
-	Author    string `json:"author,omitempty"`
-	Username  string `json:"username,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Status    string `json:"status,omitempty"`
-	CreatedAt string `json:"createdAt"`
+	ID        int       `json:"id"`
+	Comment   string    `json:"comment"`
+	Author    string    `json:"author,omitempty"`
+	Username  string    `json:"username,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // CommentResponse wraps a projected comment for the agent comment responses.

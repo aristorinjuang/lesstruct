@@ -35,6 +35,8 @@ rendered and your theme took effect.
 
 ## Static asset checks
 
+- [ ] `GET /static/base.css` returns your theme's CSS (or the embedded
+      default if you did not override it).
 - [ ] `GET /static/style.css` returns your theme's CSS (or the embedded
       default if you did not override it).
 - [ ] `GET /static/<file>` returns 200 for every file in your

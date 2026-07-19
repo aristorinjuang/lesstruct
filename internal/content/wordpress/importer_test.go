@@ -3,6 +3,8 @@ package wordpress_test
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -69,6 +71,7 @@ func newTestImporter(creator *fakeContentCreator, resolver *fakeUserResolver) *w
 		wordpress.NewMediaDownloader(nil, stubMediaService{}),
 		resolver,
 		nil,
+		"en",
 		nil,
 	)
 }
@@ -83,6 +86,7 @@ func newTestImporterWithPostTypes(
 		wordpress.NewMediaDownloader(nil, stubMediaService{}),
 		resolver,
 		postTypes,
+		"en",
 		nil,
 	)
 }
@@ -414,6 +418,221 @@ func TestImporter_CustomFields(t *testing.T) {
 				require.Len(t, creator.created, 1)
 				assert.Equal(t, tt.wantCustomFields, creator.created[0].CustomFields)
 			}
+		})
+	}
+}
+
+func TestImporter_FeaturedImage(t *testing.T) {
+	t.Run("success - featured image downloaded and local url prepended", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngSignature)
+		}))
+		defer server.Close()
+
+		mediaSvc := &fakeMediaService{returnMedia: &mediadomain.Media{URL: "http://localhost:8080/uploads/media/featured.webp"}}
+
+		xml := `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Post With Thumb</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>post-with-thumb</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+<wp:postmeta>
+<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+<wp:meta_value><![CDATA[100]]></wp:meta_value>
+</wp:postmeta>
+</item>
+<item>
+<title>Thumb</title>
+<content:encoded><![CDATA[]]></content:encoded>
+<wp:post_id>100</wp:post_id>
+<wp:post_name>thumb</wp:post_name>
+<wp:status>inherit</wp:status>
+<wp:post_type>attachment</wp:post_type>
+<wp:attachment_url><![CDATA[` + server.URL + `/featured.png]]></wp:attachment_url>
+</item>
+</channel>
+</rss>`
+
+		creator := &fakeContentCreator{failOn: -1}
+		importer := wordpress.NewImporter(
+			creator,
+			wordpress.NewMediaDownloader(server.Client(), mediaSvc),
+			&fakeUserResolver{},
+			nil,
+			"en",
+			nil,
+		)
+		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1)
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Imported)
+		assert.Equal(t, 0, result.Skipped)
+		require.Len(t, creator.created, 1)
+		assert.Contains(t, creator.created[0].Content, `"src":"http://localhost:8080/uploads/media/featured.webp"`)
+		assert.Equal(t, 1, mediaSvc.called)
+	})
+
+	t.Run("fallback - download fails, original url hotlinked", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		mediaSvc := &fakeMediaService{returnMedia: &mediadomain.Media{URL: "http://localhost:8080/uploads/media/featured.webp"}}
+		creator := &fakeContentCreator{failOn: -1}
+		importer := wordpress.NewImporter(
+			creator,
+			wordpress.NewMediaDownloader(server.Client(), mediaSvc),
+			&fakeUserResolver{},
+			nil,
+			"en",
+			nil,
+		)
+
+		xml := `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Post Broken Thumb</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>post-broken-thumb</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+<wp:postmeta>
+<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+<wp:meta_value><![CDATA[200]]></wp:meta_value>
+</wp:postmeta>
+</item>
+<item>
+<title>Thumb</title>
+<content:encoded><![CDATA[]]></content:encoded>
+<wp:post_id>200</wp:post_id>
+<wp:post_name>thumb</wp:post_name>
+<wp:status>inherit</wp:status>
+<wp:post_type>attachment</wp:post_type>
+<wp:attachment_url><![CDATA[` + server.URL + `/missing.png]]></wp:attachment_url>
+</item>
+</channel>
+</rss>`
+
+		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1)
+		require.NoError(t, err)
+		assert.Equal(t, 1, result.Imported)
+		require.Len(t, creator.created, 1)
+		assert.Contains(t, creator.created[0].Content, `"src":"`+server.URL+`/missing.png"`)
+		assert.NotContains(t, creator.created[0].Content, "localhost:8080")
+		assert.Equal(t, 0, mediaSvc.called)
+	})
+
+	tests := []struct {
+		name           string
+		xml            string
+		wantImported   int
+		wantContentHas string
+	}{
+		{
+			name: "no-op - thumbnail_id references missing attachment",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Post Missing Ref</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>post-missing-ref</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+<wp:postmeta>
+<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+<wp:meta_value><![CDATA[999]]></wp:meta_value>
+</wp:postmeta>
+</item>
+</channel>
+</rss>`,
+			wantImported:   1,
+			wantContentHas: `"type":"paragraph"`,
+		},
+		{
+			name: "no-op - post without thumbnail_id unchanged",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Plain Post</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Plain</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>plain-post</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+</item>
+</channel>
+</rss>`,
+			wantImported:   1,
+			wantContentHas: `"type":"paragraph"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			creator := &fakeContentCreator{failOn: -1}
+			importer := newTestImporter(creator, &fakeUserResolver{})
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantImported, result.Imported)
+			require.Len(t, creator.created, tt.wantImported)
+			assert.Contains(t, creator.created[0].Content, tt.wantContentHas)
+		})
+	}
+}
+
+func TestImporter_ForwardsLanguage(t *testing.T) {
+	tests := []struct {
+		name         string
+		language     string
+		wantLanguage string
+	}{
+		{
+			name:         "success - importer sets configured language on created content",
+			language:     "id",
+			wantLanguage: "id",
+		},
+		{
+			name:         "success - empty language results in empty field",
+			language:     "",
+			wantLanguage: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			xml := `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Test Post</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>test-post</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+</item>
+</channel>
+</rss>`
+			creator := &fakeContentCreator{failOn: -1}
+			importer := wordpress.NewImporter(
+				creator,
+				wordpress.NewMediaDownloader(nil, stubMediaService{}),
+				&fakeUserResolver{},
+				nil,
+				tt.language,
+				nil,
+			)
+			result, err := importer.Import(context.Background(), strings.NewReader(xml), 1)
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.Imported)
+			require.Len(t, creator.created, 1)
+			assert.Equal(t, tt.wantLanguage, creator.created[0].Language)
 		})
 	}
 }

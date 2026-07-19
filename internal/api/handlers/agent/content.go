@@ -16,6 +16,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
+	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -27,6 +28,9 @@ const (
 	// formatMarkdown converts the Markdown body to canonical Tiptap JSON via
 	// internal/content/markdown before storage. Raw Markdown is never persisted.
 	formatMarkdown = "markdown"
+	// formatHTML stores the body as raw HTML with inline styles. The body is
+	// sanitized before storage.
+	formatHTML = "html"
 )
 
 // List pagination bounds for the agent v1 list surface. Missing/invalid/negative limit
@@ -69,8 +73,9 @@ func authenticatedRole(r *http.Request) string {
 
 // normalizeContentFormat trims + lowercases the format, defaults "" to tiptap, and returns
 // the effective format plus an error message. An empty message means the format is
-// supported (tiptap is stored unchanged; markdown is converted to Tiptap by the caller).
-// Shared by Create and Update so the normalize + switch lives in exactly one place.
+// supported (tiptap is stored unchanged; markdown is converted to Tiptap by the caller;
+// html is stored as-is after sanitization). Shared by Create and Update so the
+// normalize + switch lives in exactly one place.
 func normalizeContentFormat(format string) (string, string) {
 	normalized := strings.ToLower(strings.TrimSpace(format))
 	if normalized == "" {
@@ -81,28 +86,25 @@ func normalizeContentFormat(format string) (string, string) {
 		return formatTiptap, ""
 	case formatMarkdown:
 		return formatMarkdown, ""
+	case formatHTML:
+		return formatHTML, ""
 	default:
 		return "", "Unsupported format: " + normalized
 	}
 }
 
-// resolveContentBody normalizes the request format and returns the canonical content
-// string to store. For format=markdown it converts the Markdown body to Tiptap JSON via
-// internal/content/markdown (raw Markdown is never persisted); for format=tiptap (the
-// default) it returns the body unchanged. A non-empty errMsg means the format is invalid
-// or conversion failed and must be surfaced as 400 VALIDATION_ERROR. Shared by Create
-// and Update so the normalize + convert logic lives in exactly one place.
-func resolveContentBody(req ContentRequest) (body string, errMsg string) {
-	normalized, formatErr := normalizeContentFormat(req.Format)
-	if formatErr != "" {
-		return "", formatErr
-	}
+// convertContentBody converts the request body based on the normalized format.
+// This is the inner implementation shared by Create and Update.
+func convertContentBody(req ContentRequest, normalized string) (body string, errMsg string) {
 	if normalized == formatMarkdown {
 		converted, err := markdown.Convert(req.Body)
 		if err != nil {
 			return "", "Invalid markdown: " + err.Error()
 		}
 		return converted, ""
+	}
+	if normalized == formatHTML {
+		return sanitize.SanitizeHTMLDocument(req.Body), ""
 	}
 	return req.Body, ""
 }
@@ -226,11 +228,17 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Resolve the canonical content body. format=tiptap (default) stores the body
 	// unchanged; format=markdown converts the Markdown body to Tiptap JSON via
 	// internal/content/markdown so raw Markdown is never persisted (the service's
-	// ValidateContent path then unmarshals + sanitizes the Tiptap). An unknown
-	// format or a conversion failure is surfaced as VALIDATION_ERROR.
-	body, formatErr := resolveContentBody(req)
+	// ValidateContent path then unmarshals + sanitizes the Tiptap). format=html
+	// sanitizes the body. An unknown format or a conversion failure is surfaced
+	// as VALIDATION_ERROR.
+	normalized, formatErr := normalizeContentFormat(req.Format)
 	if formatErr != "" {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", formatErr, nil)
+		return
+	}
+	body, convertErr := convertContentBody(req, normalized)
+	if convertErr != "" {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", convertErr, nil)
 		return
 	}
 
@@ -257,6 +265,7 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Title:              req.Title,
 		Content:            body,
 		Status:             status,
+		Format:             contentdomain.Format(normalized),
 		PostType:           req.PostType,
 		CustomFields:       req.CustomFields,
 		Tags:               req.Tags,
@@ -466,11 +475,17 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the canonical content body (tiptap stored unchanged; markdown
-	// converted to Tiptap so raw Markdown is never persisted). The ownership
-	// pre-fetch below runs after resolution — conversion is a cheap, pure step.
-	body, formatErr := resolveContentBody(req)
+	// converted to Tiptap so raw Markdown is never persisted; html sanitized).
+	// The ownership pre-fetch below runs after resolution — conversion is a
+	// cheap, pure step.
+	normalized, formatErr := normalizeContentFormat(req.Format)
 	if formatErr != "" {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", formatErr, nil)
+		return
+	}
+	body, convertErr := convertContentBody(req, normalized)
+	if convertErr != "" {
+		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", convertErr, nil)
 		return
 	}
 
@@ -518,6 +533,7 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Title:              req.Title,
 		Content:            body,
 		Status:             status,
+		Format:             contentdomain.Format(normalized),
 		CustomFields:       req.CustomFields,
 		PostType:           req.PostType,
 		Tags:               req.Tags,

@@ -275,9 +275,10 @@ onMounted(async () => {
 
 <style scoped>
 .media-panel {
-  border-bottom: 1px solid var(--brand-light-2, #e5e7eb);
-  padding: 1rem;
   background-color: var(--color-background-soft, #f9fafb);
+  border-bottom: 1px solid var(--brand-light-2, #e5e7eb);
+  margin: 1rem 0;
+  padding: 1rem;
 }
 
 .media-panel__upload {

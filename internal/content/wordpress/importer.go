@@ -2,6 +2,7 @@ package wordpress
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -100,6 +101,7 @@ type Importer struct {
 	downloader     *MediaDownloader
 	resolver       userResolver
 	postTypes      postTypeLister
+	language       string
 	logger         *util.Logger
 }
 
@@ -137,15 +139,33 @@ func (imp *Importer) importItem(
 	ctx context.Context,
 	item ParsedItem,
 	imageMap map[string]string,
+	featuredImageURL string,
 	userID int,
 	result *ImportResult,
 ) {
-	contentJSON, err := ConvertBlocks(item.Content, imageMap)
-	if err != nil {
-		result.Skipped++
-		msg := fmt.Sprintf("skipped %q: failed to convert content: %v", item.Title, err)
-		result.Errors = append(result.Errors, msg)
-		return
+	// Detect Elementor-built pages. Source priority:
+	// 1. _elementor_element_cache.value.content (the rendered HTML)
+	// 2. <content:encoded> fallback (raw HTML from WordPress)
+	isElementor := imp.isElementorPage(item)
+	var contentBody string
+	var format contentdomain.Format
+
+	if isElementor {
+		contentBody = imp.extractElementorHTML(item)
+		if contentBody == "" {
+			contentBody = item.Content
+		}
+		format = contentdomain.FormatHTML
+	} else {
+		var err error
+		contentBody, err = ConvertBlocks(item.Content, imageMap, featuredImageURL)
+		if err != nil {
+			result.Skipped++
+			msg := fmt.Sprintf("skipped %q: failed to convert content: %v", item.Title, err)
+			result.Errors = append(result.Errors, msg)
+			return
+		}
+		format = contentdomain.FormatTiptap
 	}
 
 	status := contentdomain.StatusDraft
@@ -162,11 +182,13 @@ func (imp *Importer) importItem(
 
 	req := contentdomain.CreateContentRequest{
 		Title:        item.Title,
-		Content:      contentJSON,
+		Content:      contentBody,
 		Tags:         item.Tags,
 		Status:       status,
+		Format:       format,
 		PostType:     item.PostType,
 		CustomFields: customFields,
+		Language:     imp.language,
 	}
 
 	if _, err := imp.contentService.Create(ctx, userID, req); err != nil {
@@ -180,6 +202,45 @@ func (imp *Importer) importItem(
 	}
 
 	result.Imported++
+}
+
+// isElementorPage reports whether the parsed item was built with Elementor.
+// It checks the _elementor_edit_mode postmeta for "builder" or the presence
+// of a non-empty _elementor_element_cache postmeta.
+func (imp *Importer) isElementorPage(item ParsedItem) bool {
+	if item.Meta == nil {
+		return false
+	}
+	if mode, ok := item.Meta["_elementor_edit_mode"]; ok && strings.TrimSpace(mode) == "builder" {
+		return true
+	}
+	if cache, ok := item.Meta["_elementor_element_cache"]; ok && strings.TrimSpace(cache) != "" {
+		return true
+	}
+	return false
+}
+
+// extractElementorHTML attempts to extract the rendered HTML from Elementor's
+// postmeta. It looks for _elementor_element_cache.value.content first, then
+// falls back to <content:encoded>.
+func (imp *Importer) extractElementorHTML(item ParsedItem) string {
+	if item.Meta == nil {
+		return ""
+	}
+	cache, ok := item.Meta["_elementor_element_cache"]
+	if !ok || strings.TrimSpace(cache) == "" {
+		return ""
+	}
+	// The cache is JSON; try to extract the content field.
+	var parsed struct {
+		Value struct {
+			Content string `json:"content"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(cache), &parsed); err == nil && parsed.Value.Content != "" {
+		return parsed.Value.Content
+	}
+	return ""
 }
 
 // buildCustomFields maps a parsed item's WordPress postmeta to the custom-field
@@ -276,6 +337,44 @@ func (imp *Importer) resolveUserID(
 	return id
 }
 
+// resolveFeaturedImage resolves a WordPress post's _thumbnail_id to a local
+// media URL. The attachment post ID is looked up in the pre-built attachments
+// map (built by the parser from attachment items), downloaded via the media
+// downloader, and remapped to a local URL. On failure the original WordPress
+// URL is returned so the image is hotlinked rather than lost.
+func (imp *Importer) resolveFeaturedImage(
+	ctx context.Context,
+	item ParsedItem,
+	attachments map[int]string,
+	userID int,
+	result *ImportResult,
+) string {
+	thumbnailID, ok := item.Meta["_thumbnail_id"]
+	if !ok || strings.TrimSpace(thumbnailID) == "" {
+		return ""
+	}
+	id, err := strconv.Atoi(strings.TrimSpace(thumbnailID))
+	if err != nil || id == 0 {
+		return ""
+	}
+	wpURL, ok := attachments[id]
+	if !ok || wpURL == "" {
+		return ""
+	}
+	local, err := imp.downloader.DownloadAndUpload(ctx, wpURL, userID)
+	if err != nil {
+		if imp.logger != nil {
+			imp.logger.Error("WordPress import: featured image download failed for %s: %v", wpURL, err)
+		}
+		result.Errors = append(result.Errors, fmt.Sprintf("featured image not downloaded: %s", wpURL))
+		return wpURL
+	}
+	if local != "" {
+		return local
+	}
+	return wpURL
+}
+
 func (imp *Importer) allowedPostTypes() map[string]bool {
 	allowed := map[string]bool{"post": true, "page": true}
 	if imp.postTypes == nil {
@@ -314,7 +413,8 @@ func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int) 
 
 	for _, item := range doc.Items {
 		itemUserID := imp.resolveUserID(ctx, item.Creator, authorByLogin, userID, creatorCache, result)
-		imp.importItem(ctx, item, imageMap, itemUserID, result)
+		featuredURL := imp.resolveFeaturedImage(ctx, item, doc.Attachments, userID, result)
+		imp.importItem(ctx, item, imageMap, featuredURL, itemUserID, result)
 	}
 	return result, nil
 }
@@ -325,6 +425,7 @@ func NewImporter(
 	downloader *MediaDownloader,
 	resolver userResolver,
 	postTypes postTypeLister,
+	language string,
 	logger *util.Logger,
 ) *Importer {
 	return &Importer{
@@ -332,6 +433,7 @@ func NewImporter(
 		downloader:     downloader,
 		resolver:       resolver,
 		postTypes:      postTypes,
+		language:       language,
 		logger:         logger,
 	}
 }

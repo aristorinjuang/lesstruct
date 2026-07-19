@@ -16,8 +16,8 @@ func mapCommentItemToDomain(item *CommentItem) *contentdomain.Comment {
 		UserID:    item.UserID,
 		Comment:   item.Comment,
 		Status:    contentdomain.CommentStatus(item.Status),
-		CreatedAt: item.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: item.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: item.CreatedAt,
+		UpdatedAt: item.UpdatedAt,
 	}
 	if item.Author.Valid {
 		comment.Author = item.Author.String
@@ -103,8 +103,8 @@ func (r *CommentRepository) Create(ctx context.Context, comment *contentdomain.C
 		return fmt.Errorf("failed to create comment: %w", err)
 	}
 
-	comment.CreatedAt = createdAt.Format(time.RFC3339)
-	comment.UpdatedAt = updatedAt.Format(time.RFC3339)
+	comment.CreatedAt = createdAt
+	comment.UpdatedAt = updatedAt
 
 	return nil
 }

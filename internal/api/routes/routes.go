@@ -326,6 +326,7 @@ func Setup(
 			r.Get("/content_items/{slug}/comments", commentHandler.GetComments)
 			r.Get("/post_types", postTypeHandler.GetPublicPostTypes)
 			r.Get("/search", contentHandler.SearchPublished)
+			r.Get("/archive", contentHandler.ListPublishedArchive)
 		})
 
 		// SEO routes (public, no authentication) - Story 4.2

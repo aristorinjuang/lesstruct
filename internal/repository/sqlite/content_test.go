@@ -37,6 +37,7 @@ func setupContentTestDB(t *testing.T) *sql.DB {
 			content TEXT,
 			tags TEXT,
 			status TEXT DEFAULT 'draft',
+			format TEXT DEFAULT 'tiptap',
 			post_type TEXT DEFAULT 'post',
 			meta_description TEXT,
 			og_title TEXT,
@@ -705,6 +706,21 @@ func TestContentRepository_GetByID(t *testing.T) {
 				assert.Equal(t, content.StatusPublished, c.Status, "expected status 'published'")
 			},
 		},
+		{
+			name: "format column round-trip",
+			id:   1,
+			setupDB: func(db *sql.DB) error {
+				_, err := db.Exec(`
+					INSERT INTO content_items (user_id, title, slug, content, tags, status, format)
+					VALUES (1, 'HTML Content', 'html-content', '<p>Body</p>', '[]', 'published', 'html')
+				`)
+				return err
+			},
+			wantErr: nil,
+			validateFn: func(t *testing.T, c *content.Content) {
+				assert.Equal(t, "html", string(c.Format))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -872,6 +888,32 @@ func TestContentRepository_Update(t *testing.T) {
 			wantErr:    content.ErrContentNotFound,
 			validateFn: nil,
 		},
+		{
+			name: "no-op update with identical data does not return not found",
+			content: &content.Content{
+				ID:      1,
+				UserID:  1,
+				Title:   "Title",
+				Slug:    "test-content",
+				Content: "Content",
+				Tags:    []string{},
+				Status:  content.StatusDraft,
+			},
+			setupDB: func(db *sql.DB) error {
+				_, err := db.Exec(`
+					INSERT INTO content_items (user_id, title, slug, content, tags, status)
+					VALUES (1, 'Title', 'test-content', 'Content', '[]', 'draft')
+				`)
+				return err
+			},
+			wantErr: nil,
+			validateFn: func(t *testing.T, db *sql.DB, c *content.Content) {
+				var title string
+				err := db.QueryRow(`SELECT title FROM content_items WHERE id = ?`, c.ID).Scan(&title)
+				require.NoError(t, err, "failed to query content after no-op update")
+				assert.Equal(t, "Title", title, "title should be unchanged")
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -970,7 +1012,7 @@ func TestContentRepository_GetPublishedByTag(t *testing.T) {
 			require.NoError(t, tt.setupDB(db))
 
 			repo := sqlite.NewContentRepository(db)
-			contents, err := repo.GetPublishedByTag(context.Background(), tt.tag, "", 10, 0)
+			contents, err := repo.GetPublishedByTag(context.Background(), tt.tag, "", 0, 0, 10, 0)
 
 			require.NoError(t, err)
 			assert.Len(t, contents, tt.wantLen)
@@ -998,7 +1040,7 @@ func TestContentRepository_GetPublishedByTag_NullTags(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := sqlite.NewContentRepository(db)
-	contents, err := repo.GetPublishedByTag(context.Background(), "golang", "", 10, 0)
+	contents, err := repo.GetPublishedByTag(context.Background(), "golang", "", 0, 0, 10, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, contents, 1)
@@ -1377,4 +1419,76 @@ func TestContentRepository_GetLatestByPostType(t *testing.T) {
 	require.Len(t, contents, 2)
 	assert.Equal(t, "Newer", contents[0].Title, "newest published first")
 	assert.Equal(t, "Oldest", contents[1].Title)
+}
+
+func TestContentRepository_FormatColumnRoundTrip(t *testing.T) {
+	t.Run("GetPublishedBySlug preserves format", func(t *testing.T) {
+		db := setupContentTestDB(t)
+		defer teardownContentTestDB(t, db)
+
+		_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+		require.NoError(t, err)
+
+		_, err = db.Exec(`
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, language)
+			VALUES (1, 'HTML Post', 'html-post', '<p>Body</p>', '[]', 'published', 'html', 'post', 'en')
+		`)
+		require.NoError(t, err)
+
+		repo := sqlite.NewContentRepository(db)
+		c, err := repo.GetPublishedBySlug(context.Background(), "html-post", "en")
+
+		require.NoError(t, err)
+		require.NotNil(t, c)
+		assert.Equal(t, "html", string(c.Format))
+	})
+
+	t.Run("GetPublishedBySlugAny preserves format", func(t *testing.T) {
+		db := setupContentTestDB(t)
+		defer teardownContentTestDB(t, db)
+
+		_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+		require.NoError(t, err)
+
+		_, err = db.Exec(`
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, language)
+			VALUES (1, 'HTML Page', 'html-page', '<p>Page body</p>', '[]', 'published', 'html', 'page', 'en')
+		`)
+		require.NoError(t, err)
+
+		repo := sqlite.NewContentRepository(db)
+		c, err := repo.GetPublishedBySlugAny(context.Background(), "html-page")
+
+		require.NoError(t, err)
+		require.NotNil(t, c)
+		assert.Equal(t, "html", string(c.Format))
+	})
+
+	t.Run("GetPublishedByPostType preserves format", func(t *testing.T) {
+		db := setupContentTestDB(t)
+		defer teardownContentTestDB(t, db)
+
+		_, err := db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+		require.NoError(t, err)
+
+		_, err = db.Exec(`
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, language) VALUES
+			(1, 'Tiptap Post', 'tiptap-post', '{"type":"doc"}', '[]', 'published', 'tiptap', 'post', 'en'),
+			(1, 'HTML Post', 'html-post', '<p>Body</p>', '[]', 'published', 'html', 'post', 'en')
+		`)
+		require.NoError(t, err)
+
+		repo := sqlite.NewContentRepository(db)
+		items, err := repo.GetPublishedByPostType(context.Background(), "post", "en", 0, 0, 10, 0)
+
+		require.NoError(t, err)
+		require.Len(t, items, 2)
+
+		formats := map[string]string{}
+		for _, item := range items {
+			formats[item.Slug] = string(item.Format)
+		}
+		assert.Equal(t, "tiptap", formats["tiptap-post"])
+		assert.Equal(t, "html", formats["html-post"])
+	})
 }

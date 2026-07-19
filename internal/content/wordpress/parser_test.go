@@ -270,3 +270,71 @@ func TestParse_PostMeta(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_AttachmentsCaptured(t *testing.T) {
+	tests := []struct {
+		name            string
+		xml             string
+		wantAttachments map[int]string
+		wantItems       int
+	}{
+		{
+			name: "success - attachment URLs captured while items filtered",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Post</title>
+<content:encoded><![CDATA[<p>Hi</p>]]></content:encoded>
+<wp:post_name>post</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+<wp:postmeta>
+<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+<wp:meta_value><![CDATA[100]]></wp:meta_value>
+</wp:postmeta>
+</item>
+<item>
+<title>Attachment</title>
+<content:encoded><![CDATA[]]></content:encoded>
+<wp:post_id>100</wp:post_id>
+<wp:post_name>attachment</wp:post_name>
+<wp:status>inherit</wp:status>
+<wp:post_type>attachment</wp:post_type>
+<wp:attachment_url><![CDATA[http://wp.local/img.jpg]]></wp:attachment_url>
+</item>
+</channel>
+</rss>`,
+			wantAttachments: map[int]string{100: "http://wp.local/img.jpg"},
+			wantItems:       1,
+		},
+		{
+			name: "success - attachment without URL is ignored",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+<title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Attachment</title>
+<content:encoded><![CDATA[]]></content:encoded>
+<wp:post_name>att</wp:post_name>
+<wp:status>inherit</wp:status>
+<wp:post_type>attachment</wp:post_type>
+</item>
+</channel>
+</rss>`,
+			wantAttachments: map[int]string{},
+			wantItems:       0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := wordpress.Parse(strings.NewReader(tt.xml), map[string]bool{"post": true})
+			require.NoError(t, err)
+			assert.Len(t, doc.Items, tt.wantItems)
+			assert.Equal(t, tt.wantAttachments, doc.Attachments)
+		})
+	}
+}

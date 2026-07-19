@@ -39,6 +39,7 @@ func TestContentHandler_CustomFieldQuery_ExactMatch(t *testing.T) {
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
 			nil,
+			nil,
 		)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items?cf_category=Pastry", nil)
@@ -88,6 +89,7 @@ func TestContentHandler_CustomFieldQuery_NumberRange(t *testing.T) {
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
 			nil,
+			nil,
 		)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items?cf_price_min=5&cf_price_max=20", nil)
@@ -123,6 +125,7 @@ func TestContentHandler_CustomFieldQuery_CombinedFilter(t *testing.T) {
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
 			nil,
+			nil,
 		)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items?post_type=menu-item&cf_category=Pastry", nil)
@@ -150,6 +153,7 @@ func TestContentHandler_CustomFieldQuery_InvalidSlug(t *testing.T) {
 			mockService,
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
+			nil,
 			nil,
 		)
 
@@ -181,6 +185,7 @@ func TestContentHandler_CustomFieldQuery_InvalidSlug(t *testing.T) {
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
 			nil,
+			nil,
 		)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items?cf_Cat!gori@=Bread&cf_category=Pastry", nil)
@@ -211,6 +216,7 @@ func TestContentHandler_CustomFieldQuery_NoFilters(t *testing.T) {
 			mockService,
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
+			nil,
 			nil,
 		)
 
@@ -245,6 +251,7 @@ func TestContentHandler_CustomFieldQuery_PostTypeOnly(t *testing.T) {
 			mockService,
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
+			nil,
 			nil,
 		)
 

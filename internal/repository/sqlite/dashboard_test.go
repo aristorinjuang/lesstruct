@@ -44,6 +44,7 @@ func setupDashboardTestDB(t *testing.T) *sql.DB {
 			content TEXT NOT NULL,
 			tags TEXT,
 			status TEXT NOT NULL,
+			format TEXT DEFAULT 'tiptap',
 			post_type TEXT DEFAULT 'post',
 			meta_description TEXT,
 			og_title TEXT,

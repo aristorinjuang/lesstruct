@@ -38,7 +38,7 @@ const router = createRouter({
         {
           path: 'content/:id/edit',
           name: 'content-edit',
-          component: () => import('../views/ContentListView.vue'),
+          component: () => import('../views/ContentEditView.vue'),
           meta: { title: 'Edit Content' },
         },
         {

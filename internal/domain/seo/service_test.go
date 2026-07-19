@@ -468,3 +468,71 @@ func TestService_Generate_EmptyTags(t *testing.T) {
 		t.Error("Service.Generate() JSONLD should not have keywords field when tags are empty")
 	}
 }
+
+// TestService_Generate_HTMLFormat verifies that HTML content (format="html")
+// is extracted using the HTML tag-stripper, not the TipTap JSON parser.
+// This is critical: TipTap extraction on raw HTML silently returns empty,
+// causing SEO meta-description validation to fail and the entire
+// import/publish to be skipped. See internal/domain/seo/service.go for the
+// format-aware branching.
+func TestService_Generate_HTMLFormat(t *testing.T) {
+	service := seo.NewService("https://example.com", "Test Site")
+
+	htmlContent := `<section><h1>Selamat Datang Di Bengkel Resmi Honda</h1><p>Untuk menjamin keamanan dan kenyamanan dalam berkendara, pastikan Anda mendapatkan servis terbaik hanya dari AHASS.</p></section>`
+
+	input := seo.GenerateInput{
+		Title:         "Service",
+		Content:       htmlContent,
+		Format:        "html",
+		URL:           "/pages/service",
+		DatePublished: "2026-04-10T00:00:00Z",
+		DateModified:  "2026-04-10T12:00:00Z",
+		AuthorName:    "Test Author",
+	}
+
+	metadata, err := service.Generate(input)
+	if err != nil {
+		t.Fatalf("Service.Generate() error = %v", err)
+	}
+
+	// MetaDescription must be populated from the HTML body — not empty.
+	if metadata.MetaDescription == "" {
+		t.Error("Service.Generate() MetaDescription is empty for HTML content — tip tap extractor may have been used instead of HTML extractor")
+	}
+	if metadata.OGDescription == "" {
+		t.Error("Service.Generate() OGDescription is empty for HTML content")
+	}
+	if metadata.OGTitle != "Service" {
+		t.Errorf("Service.Generate() OGTitle = %q, want %q", metadata.OGTitle, "Service")
+	}
+}
+
+// TestService_Generate_HTMLFormatWithImage verifies that the first <img src>
+// in HTML content is picked up for OG image / Twitter image.
+func TestService_Generate_HTMLFormatWithImage(t *testing.T) {
+	service := seo.NewService("https://example.com", "Test Site")
+
+	htmlContent := `<section><img src="https://example.com/photo.jpg" alt="Photo"><p>Some text here.</p></section>`
+
+	input := seo.GenerateInput{
+		Title:         "Page With Image",
+		Content:       htmlContent,
+		Format:        "html",
+		URL:           "/pages/page-with-image",
+		DatePublished: "2026-04-10T00:00:00Z",
+		DateModified:  "2026-04-10T12:00:00Z",
+		AuthorName:    "Test Author",
+	}
+
+	metadata, err := service.Generate(input)
+	if err != nil {
+		t.Fatalf("Service.Generate() error = %v", err)
+	}
+
+	if metadata.OGImage == "" {
+		t.Error("Service.Generate() OGImage is empty — HTML image extraction may have failed")
+	}
+	if metadata.TwitterImage == "" {
+		t.Error("Service.Generate() TwitterImage is empty — HTML image extraction may have failed")
+	}
+}

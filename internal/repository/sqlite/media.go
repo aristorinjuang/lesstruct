@@ -91,8 +91,8 @@ func scanMediaRow(row *sql.Row) (*mediadomain.Media, error) {
 		Hash:             file.Hash,
 		UploadedBy:       uploadedBy.String,
 		Variants:         make(map[string]mediadomain.MediaVariant),
-		CreatedAt:        file.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:        file.UpdatedAt.Format(time.RFC3339),
+		CreatedAt:        file.CreatedAt,
+		UpdatedAt:        file.UpdatedAt,
 	}
 
 	if file.Variants.Valid && file.Variants.String != "" {
@@ -148,8 +148,8 @@ func scanMediaRows(rows *sql.Rows) ([]*mediadomain.Media, error) {
 			Hash:             file.Hash,
 			UploadedBy:       uploadedBy.String,
 			Variants:         make(map[string]mediadomain.MediaVariant),
-			CreatedAt:        file.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:        file.UpdatedAt.Format(time.RFC3339),
+			CreatedAt:        file.CreatedAt,
+			UpdatedAt:        file.UpdatedAt,
 		}
 
 		if file.Variants.Valid && file.Variants.String != "" {
@@ -225,8 +225,8 @@ func (r *MediaRepository) Create(ctx context.Context, media *mediadomain.Media) 
 		return fmt.Errorf("failed to get timestamps: %w", err)
 	}
 
-	media.CreatedAt = createdAt.Format(time.RFC3339)
-	media.UpdatedAt = updatedAt.Format(time.RFC3339)
+	media.CreatedAt = createdAt
+	media.UpdatedAt = updatedAt
 
 	return nil
 }

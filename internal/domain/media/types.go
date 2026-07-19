@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -123,8 +124,8 @@ type Media struct {
 	Hash             string                  `json:"hash"`
 	Variants         map[string]MediaVariant  `json:"variants"`
 	UploadedBy       string        `json:"uploadedBy"`
-	CreatedAt        string        `json:"createdAt"`
-	UpdatedAt        string        `json:"updatedAt"`
+	CreatedAt        time.Time     `json:"createdAt"`
+	UpdatedAt        time.Time     `json:"updatedAt"`
 }
 
 // ValidateMimeType validates if a mime type is supported

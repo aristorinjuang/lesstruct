@@ -3,7 +3,10 @@ package template_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/template"
 	"github.com/stretchr/testify/assert"
@@ -42,7 +45,7 @@ func TestRenderIndex(t *testing.T) {
 	assert.Contains(t, body, "<html")
 	assert.Contains(t, body, "Hello World")
 	assert.Contains(t, body, `href="/hello-world"`)
-	assert.Contains(t, body, `<link rel="stylesheet" href="/static/style.css">`)
+	assert.Regexp(t, `href="/static/style\.[a-f0-9]+\.css"`, body)
 }
 
 func TestRenderIndex_PostItemTagsAccepted(t *testing.T) {
@@ -111,7 +114,7 @@ func TestRenderContent(t *testing.T) {
 		Body:      "<p>Hello <strong>world</strong></p>",
 		Author:    "Admin",
 		Username:  "admin",
-		CreatedAt: "2025-01-01",
+		CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		Tags:      []string{"go", "test"},
 	}
 
@@ -240,4 +243,121 @@ func TestRenderResetPassword(t *testing.T) {
 	assert.Contains(t, body, "/static/reset-password.js")
 	assert.Contains(t, body, `href="/login"`)
 	assert.Contains(t, body, `style="display:none"`)
+}
+
+func TestAssetURL_VersionedCSS(t *testing.T) {
+	templates, err := template.NewTemplates(nil, nil)
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	data := template.IndexData{
+		LayoutData: template.LayoutData{
+			Title:     "Test Site",
+			PageTitle: "Test Site",
+			Lang:      "en",
+		},
+	}
+	require.NoError(t, templates.RenderIndex(w, data))
+
+	body := w.Body.String()
+	assert.Regexp(t, `href="/static/style\.[a-f0-9]+\.css"`, body)
+}
+
+func TestRenderContent_PostTypeDispatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		postType     string
+		postTypes    []string
+		setupTheme   func(t *testing.T) *template.Theme
+		wantInOutput string
+	}{
+		{
+			name:         "empty post type falls back to default",
+			postType:     "",
+			postTypes:    []string{"post"},
+			setupTheme:   func(t *testing.T) *template.Theme { return nil },
+			wantInOutput: "content-article",
+		},
+		{
+			name:         "unknown post type falls back to default",
+			postType:     "menu-item",
+			postTypes:    []string{"post", "page"},
+			setupTheme:   func(t *testing.T) *template.Theme { return nil },
+			wantInOutput: "content-article",
+		},
+		{
+			name:     "registered post type uses default when no theme override",
+			postType: "page",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme { return nil },
+			wantInOutput: "content-article",
+		},
+		{
+			name:     "theme page.html overrides page post type",
+			postType: "page",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				pageHTML := `{{define "body"}}<div class="page-only">PAGE TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page.html"), []byte(pageHTML), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "PAGE TEMPLATE",
+		},
+		{
+			name:     "theme page.html does not affect post rendering",
+			postType: "post",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				pageHTML := `{{define "body"}}<div class="page-only">PAGE TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page.html"), []byte(pageHTML), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "content-article",
+		},
+		{
+			name:     "theme post.html overrides all types without specific override",
+			postType: "menu-item",
+			postTypes: []string{"post", "page", "menu-item"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				postHTML := `{{define "body"}}<div class="custom-post">CUSTOM POST</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "post.html"), []byte(postHTML), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "CUSTOM POST",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			theme := tt.setupTheme(t)
+			templates, err := template.NewTemplates(nil, nil, tt.postTypes...)
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			data := template.ContentData{
+				LayoutData: template.LayoutData{
+					Title:     "Test",
+					PageTitle: "Test",
+					Lang:      "en",
+				},
+				Slug:     "test",
+				Body:     "<p>Body</p>",
+				PostType: tt.postType,
+			}
+
+			if theme != nil {
+				templates, err = template.NewTemplates(theme, nil, tt.postTypes...)
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, templates.RenderContent(w, data))
+			assert.Contains(t, w.Body.String(), tt.wantInOutput)
+		})
+	}
 }

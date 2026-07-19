@@ -14,7 +14,7 @@ type EmailUpdateToken struct {
 	UserID    int
 	NewEmail  string
 	ExpiresAt string
-	CreatedAt string
+	CreatedAt time.Time
 }
 
 // EmailUpdateTokenRepo defines the interface for email update token repository operations

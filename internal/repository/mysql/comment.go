@@ -16,8 +16,8 @@ func mapCommentItemToDomain(item *CommentItem) *contentdomain.Comment {
 		UserID:    item.UserID,
 		Comment:   item.Comment,
 		Status:    contentdomain.CommentStatus(item.Status),
-		CreatedAt: item.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: item.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: item.CreatedAt,
+		UpdatedAt: item.UpdatedAt,
 	}
 	if item.Author.Valid {
 		comment.Author = item.Author.String

@@ -9,7 +9,8 @@ import (
 // GenerateInput contains input data for SEO metadata generation
 type GenerateInput struct {
 	Title           string
-	Content         string // TipTap JSON
+	Content         string // TipTap JSON or HTML (see Format)
+	Format          string // "html" → HTML extraction; anything else (including "") → TipTap extraction
 	FeaturedImage   string
 	URL             string
 	DatePublished   string
@@ -45,8 +46,22 @@ type Service struct {
 
 // Generate generates SEO metadata from the input data
 func (s *Service) Generate(input GenerateInput) (*GeneratedMetadata, error) {
-	plainText := seo.ExtractPlainText(input.Content)
-	imageURL := seo.ExtractImageURL(input.Content)
+	// Extract plain text and first image URL in a format-aware way. Content
+	// in "html" format (e.g. WordPress Elementor pages stored via the HTML
+	// content format) uses tag-stripping and regex-based extraction; any
+	// other format (including empty, the default) assumes TipTap JSON.
+	// This branching is required because the HTML content format stores raw
+	// HTML — calling the TipTap extractor on it silently returns empty,
+	// which causes SEO meta-description validation to fail and the entire
+	// import/publish to be skipped.
+	var plainText, imageURL string
+	if input.Format == "html" {
+		plainText = seo.ExtractPlainTextFromHTML(input.Content)
+		imageURL = seo.ExtractImageURLFromHTML(input.Content)
+	} else {
+		plainText = seo.ExtractPlainText(input.Content)
+		imageURL = seo.ExtractImageURL(input.Content)
+	}
 
 	if input.FeaturedImage != "" {
 		imageURL = input.FeaturedImage

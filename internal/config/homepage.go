@@ -12,10 +12,11 @@ import (
 // HomepageSection is one [[homepage_section]] block from config.toml. It tells
 // the public homepage to render a per-post-type grouping in addition to (or
 // instead of relying on) the flat latest-posts list. PostType is the only
-// required field; Limit and Title are optional overrides.
+// required field; Limit, Offset, and Title are optional overrides.
 type HomepageSection struct {
 	PostType string `toml:"post_type"`
 	Limit    int    `toml:"limit"`
+	Offset   int    `toml:"offset"`
 	Title    string `toml:"title"`
 }
 
@@ -63,6 +64,7 @@ func LoadHomepageSections(cfg *Config) ([]HomepageSection, error) {
 		sections = append(sections, HomepageSection{
 			PostType: hs.PostType,
 			Limit:    hs.Limit,
+			Offset:   hs.Offset,
 			Title:    hs.Title,
 		})
 	}

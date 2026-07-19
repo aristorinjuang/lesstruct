@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -24,27 +25,27 @@ type UpdateCommentStatusRequest struct {
 }
 
 type CommentResponse struct {
-	ID        int    `json:"id"`
-	Comment   string `json:"comment"`
-	Author    string `json:"author,omitempty"`
-	Username  string `json:"username,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Status    string `json:"status,omitempty"`
-	CreatedAt string `json:"createdAt"`
+	ID        int       `json:"id"`
+	Comment   string    `json:"comment"`
+	Author    string    `json:"author,omitempty"`
+	Username  string    `json:"username,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	Status    string    `json:"status,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // PendingCommentResponse is the admin-facing representation of a comment awaiting
 // moderation, enriched with the content item it belongs to.
 type PendingCommentResponse struct {
-	ID           int    `json:"id"`
-	ContentID    int    `json:"contentId"`
-	ContentTitle string `json:"contentTitle,omitempty"`
-	ContentSlug  string `json:"contentSlug,omitempty"`
-	Comment      string `json:"comment"`
-	Author       string `json:"author,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Status       string `json:"status,omitempty"`
-	CreatedAt    string `json:"createdAt"`
+	ID           int       `json:"id"`
+	ContentID    int       `json:"contentId"`
+	ContentTitle string    `json:"contentTitle,omitempty"`
+	ContentSlug  string    `json:"contentSlug,omitempty"`
+	Comment      string    `json:"comment"`
+	Author       string    `json:"author,omitempty"`
+	Username     string    `json:"username,omitempty"`
+	Status       string    `json:"status,omitempty"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 func handleCommentError(w http.ResponseWriter, err error) {

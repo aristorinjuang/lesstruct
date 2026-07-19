@@ -44,6 +44,7 @@ func TestContentHandler_CustomFields_CreateContent(t *testing.T) {
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
 			nil,
+			nil,
 		)
 
 		body := `{
@@ -99,6 +100,7 @@ func TestContentHandler_CustomFields_GetPublishedContent(t *testing.T) {
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
 			nil,
+			nil,
 		)
 
 		r := chi.NewRouter()
@@ -143,6 +145,7 @@ func TestContentHandler_CustomFields_GetPublishedContent(t *testing.T) {
 			mockService,
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
+			nil,
 			nil,
 		)
 
@@ -189,6 +192,7 @@ func TestContentHandler_CustomFields_UpdateContent(t *testing.T) {
 			mockService,
 			util.NewLogger(os.Stdout),
 			"http://localhost:3000",
+			nil,
 			nil,
 		)
 

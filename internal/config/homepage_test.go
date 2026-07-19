@@ -57,6 +57,12 @@ limit = 6
 title = "Artikel Pilihan"
 
 [[homepage_section]]
+post_type = "article"
+limit = 20
+offset = 6
+title = "Rekomendasi"
+
+[[homepage_section]]
 post_type = "event"
 limit = 3
 `
@@ -69,15 +75,21 @@ limit = 3
 
 	sections, err := config.LoadHomepageSections(cfg)
 	require.NoError(t, err)
-	require.Len(t, sections, 2)
+	require.Len(t, sections, 3)
 
 	assert.Equal(t, "article", sections[0].PostType)
 	assert.Equal(t, 6, sections[0].Limit)
+	assert.Equal(t, 0, sections[0].Offset)
 	assert.Equal(t, "Artikel Pilihan", sections[0].Title)
 
-	assert.Equal(t, "event", sections[1].PostType)
-	assert.Equal(t, 3, sections[1].Limit)
-	assert.Empty(t, sections[1].Title, "title should default to empty when unset")
+	assert.Equal(t, "article", sections[1].PostType)
+	assert.Equal(t, 20, sections[1].Limit)
+	assert.Equal(t, 6, sections[1].Offset)
+	assert.Equal(t, "Rekomendasi", sections[1].Title)
+
+	assert.Equal(t, "event", sections[2].PostType)
+	assert.Equal(t, 3, sections[2].Limit)
+	assert.Empty(t, sections[2].Title, "title should default to empty when unset")
 }
 
 func TestLoadHomepageSections_MissingPostType(t *testing.T) {

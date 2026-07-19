@@ -21,7 +21,7 @@ default CSS, JavaScript, and (optionally) HTML templates without modifying the c
    composite filesystem: if the file exists under `THEME_DIR`, that copy is
    used; otherwise the embedded default is used.
 
-This means you can ship a **partial** theme — a single `style.css`, or a full
+This means you can ship a **partial** theme — a single `style.css`, `base.css` + `style.css`, or a full
 `layout.html`, or anything in between — and the rest stays on the embedded
 defaults.
 
@@ -31,6 +31,7 @@ defaults.
 themes/
   mytheme/
     static/          # Served at /static/*
+      base.css
       style.css
       auth.js
       comments.js
@@ -42,8 +43,9 @@ themes/
       highlight.min.js
     templates/       # Go html/template files
       layout.html
+      homepage.html
       index.html
-      content.html
+      post.html
       author.html
       tag.html
       not_found.html
@@ -58,7 +60,9 @@ The theme can override **any subset** of these files. Any file not present
 falls back to the embedded default. The embedded defaults are not visible
 files on your install — they live inside the Lesstruct binary — but you can
 inspect the served versions at the URLs listed below in
-[Reference URLs](#reference-urls).
+[Reference URLs](#reference-urls). You can also add per-post-type templates
+(e.g. `page.html`, `event.html`) — see
+[Per-post-type templates](#per-post-type-templates).
 
 ## Quick Start: CSS-Only Theme
 
@@ -72,11 +76,13 @@ mkdir -p themes/mytheme/static
 
 ### 2. Start from the readable source
 
-The file browsers receive is `/static/style.css` (the minified default). The
-readable, documented source is bundled with this skill at
-`references/default-style-reference.css` — copy it as your starting point:
+The file browsers receive is `/static/base.css` and `/static/style.css` (the
+minified defaults). The readable, documented sources are bundled with this skill
+at `references/default-base-reference.css` and
+`references/default-style-reference.css` — copy them as your starting point:
 
 ```bash
+cp references/default-base-reference.css themes/mytheme/static/base.css
 cp references/default-style-reference.css themes/mytheme/static/style.css
 ```
 
@@ -197,7 +203,7 @@ The full set of custom properties the default theme defines.
 The default theme imports Inter from Google Fonts at the top of its stylesheet.
 To switch:
 
-1. Replace the `@import` line at the top of your `style.css` with the new
+1. Replace the `@import` line at the top of your `base.css` with the new
    font's `@import` (or self-host and `@font-face` it).
 2. Override `--font-sans` on `:root`.
 3. Override `--font-mono` if you want a different monospace stack.
@@ -260,6 +266,22 @@ fallbacks compose — partial themes are the normal case.
 Themes can override any of the 10 page templates. Place your overrides in
 `themes/<name>/templates/`.
 
+### Per-post-type templates
+
+Every content row is rendered through a per-post-type template. The lookup chain
+is:
+
+1. **Theme** `<theme>/templates/<postType>.html` — e.g. `templates/page.html`
+2. **Theme** `<theme>/templates/post.html`
+3. **Embedded** `pages/<postType>.gohtml` (reserved for future built-ins)
+4. **Embedded** `pages/post.gohtml` — the universal default
+
+This means you can ship a `page.html` that omits the related-posts section,
+author box, and date metadata, while `post.gohtml` keeps the full blog chrome.
+If a theme only ships `post.html`, every post type (including `page`) renders
+through that one template. If a theme ships neither, the embedded `post.gohtml`
+is used for everything.
+
 ### Block contract
 
 Templates use Go's `html/template` with two `{{define}}` blocks:
@@ -274,6 +296,20 @@ Templates use Go's `html/template` with two `{{define}}` blocks:
 > page templates still works. If you override only page templates, they
 > continue to use the embedded `layout.html`. Either is supported; mix as you
 > wish.
+
+### GOHTML Formatting
+
+All `.gohtml` files must follow the Lesstruct GOHTML coding standard. Key
+rules:
+
+- **Tabs** for indentation (one per nesting level).
+- **Strategic `{{- -}}` trimming** around block-control actions (`define`,
+  `range`, `if`, `with`, `end`) so source is indented without injecting
+  blank lines into rendered output.
+- **Inline runs on one line** — `{{if}}…{{end}}` around inline elements
+  (nav links, author bylines, language links) must not be broken across
+  lines, as newlines between inline elements create visible spaces.
+- `style="display:none"` must be kept verbatim — test assertions check it.
 
 ### Template Data Fields
 
@@ -303,11 +339,11 @@ the fields below.
 | `.Name` | `string` | Site name. Always populated (defaults to `"Lesstruct"` when unconfigured). Drives `og:site_name` and the `PageTitle` suffix; use it as the logo text and the logo `alt`. |
 | `.Logo` | `string` | Optional logo image URL/path (e.g. `/uploads/logo.png`). Empty means no image — render `.Name` as text. |
 
-**`IndexData`** — landing page (also used by post-type listing pages):
+**`IndexData`** — homepage (rendered via `homepage.html`) and post-type listing pages (rendered via `index.html`). Both use the same data struct; override `homepage.html` to give the homepage a distinct layout from listing pages:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `.Posts` | `[]PostItem` | Latest posts (homepage) or posts of the listed type. Paginated via `?page=N` |
+| `.Posts` | `[]PostItem` | Latest posts (homepage) or posts of the listed type. Paginated via `?page=N`; filterable by `?year=` and `?month=` on homepage, post-type listings, and tag pages |
 | `.Tags` | `[]string` | Distinct tags across all published content; populated on the homepage for tag clouds (empty on post-type listings) |
 | `.Sections` | `[]HomeSection` | Per-post-type homepage sections; **only populated when `[[homepage_section]]` blocks are configured** in `config.toml`. Empty otherwise — fall back to `.Posts` |
 | `.HasPrev` / `.HasNext` | `bool` | Pagination state (see `PaginationData` below) |
@@ -346,10 +382,12 @@ Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Render `
 | `.ImageURL` | `string` | Cover image URL (may be empty) |
 | `.ImageSrcset` | `string` | Responsive image `srcset` (may be empty) |
 | `.ImageSizes` | `string` | Responsive image `sizes` (may be empty) |
+| `.ImageVariants` | `map[string]string` | Map of thumbnail variant URLs keyed by configured suffix (e.g. `"_large"`, `"_medium"`, `"_thumb"`). Guard with `{{with (index .ImageVariants "_large")}}` — keys depend on `[[thumbnail]]` config. Populated when a media record is resolved; empty when no media. |
+| `.OriginalURL` | `string` | The unscaled original image URL (from `Media.URL`). Falls back to the raw content image URL when no media record is found. Useful for hero backgrounds, high-DPI displays, and download links. |
 | `.Author` | `string` | Author display name |
 | `.Username` | `string` | Author username (for `/authors/<username>` links) |
 | `.AuthorAvatarURL` | `string` | Avatar URL (may be empty) |
-| `.CreatedAt` | `string` | Pre-formatted creation date |
+| `.CreatedAt` | `time.Time` | Creation timestamp; format with `{{formatDate .Lang .CreatedAt}}` for a localized date, `{{.CreatedAt.Format "2006-01-02"}}` for a custom layout, or call any `time.Time` method |
 | `.PostType` | `string` | Post type (e.g. `post`, `article`, `event`); use it to branch card layouts, render type badges, or build type-aware links. Emitted as `data-post-type="…"` on the default cards |
 | `.Tags` | `[]string` | Post tags; render with `{{range .Tags}}<a href="/tags/{{. \| urlpath}}" class="tag">{{.}}</a>{{end}}` (empty when none). Not rendered on the default card — override `index.html` to show them |
 
@@ -363,12 +401,12 @@ Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Render `
 | `.Author` | `string` | Author display name |
 | `.Username` | `string` | Author username |
 | `.AuthorAvatarURL` | `string` | Avatar URL |
-| `.CreatedAt` | `string` | Pre-formatted creation date |
+| `.CreatedAt` | `time.Time` | Creation timestamp; format with `{{formatDate .Lang .CreatedAt}}` for a localized date, `{{.CreatedAt.Format "2006-01-02"}}` for a custom layout, or call any `time.Time` method |
 | `.AllowComments` | `bool` | Whether comments are enabled |
 | `.CustomFields` | `map[string]any` | Raw custom-field values keyed by name |
 | `.CustomFieldsFormatted` | `[]FormattedField` | Display-formatted custom fields (`.Label`, `.Value`) |
 | `.Related` | `[]PostItem` | Related posts (same post type & language, ranked by shared tags), rendered above the comments section; empty slice when none |
-| `.Comments` | `[]CommentItem` | Comments (`.Author`, `.Text`, `.CreatedAt`) |
+| `.Comments` | `[]CommentItem` | Comments (`.Author`, `.Text`, `.CreatedAt` — timestamp as `time.Time`) |
 | `.PostType` | `string` | Post type; branch the single-page template to show type-specific metadata (e.g. event start/end vs. article link). Emitted as `data-post-type="…"` on the default `<article>` |
 | `.LanguageLinks` | `[]LanguageLink` | Inherited via `LayoutData`; also rendered inside the article for translated posts |
 
@@ -412,6 +450,7 @@ without breaking the layout contract.
 <meta property="og:description" content="{{.OGDesc}}">
 <meta property="og:site_name" content="{{.SiteConfig.Name}}">
 {{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
+<link rel="stylesheet" href="/static/base.css">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -467,6 +506,12 @@ Two helpers are registered for use in any template:
   | `ui.reset_password` | `Reset Password` |
   | `ui.verify_email_title` | `Verify Email` |
 
+- `{{assetURL "string"}}` — `assetURL "base.css"` → `/static/base.<hash>.css`,
+  `assetURL "style.css"` → `/static/style.<hash>.css` —
+  Returns a versioned URL for the named static asset. Currently `base.css` and
+  `style.css` are supported. The hash is computed from both files at startup;
+  cache headers are `immutable` for versioned URLs.
+
 ## Static File Overrides
 
 Any file in the embedded `static/` can be replaced by a same-named file under
@@ -474,11 +519,14 @@ Any file in the embedded `static/` can be replaced by a same-named file under
 
 | File | Used by | DOM contract |
 |------|---------|--------------|
-| `style.css` | All pages (linked from `layout.html`) | Defines every custom property and class the embedded templates rely on. Override freely. |
+| `base.css` | All pages (linked from `layout.html`) | Imports Google Fonts, defines CSS custom properties (`:root` tokens), resets, base element styles, and `.content-body` typography. Override freely. |
+| `style.css` | All pages (linked from `layout.html`) | Defines layout primitives, components, header/nav, grid, article wrappers, tags, comments, auth, footer, and responsive rules. Override freely. |
+
+The default layout uses `{{assetURL "base.css"}}` and `{{assetURL "style.css"}}` to emit content-hashed filenames with immutable cache headers. Plain `/static/base.css` and `/static/style.css` still work for backward compatibility.
 | `nav-auth.js` | `layout.html` | Expects `#nav-login`, `#nav-logout`; reads `localStorage.token` or `localStorage.auth_token`; handles `.nav-toggle` / `.site-nav` for mobile. |
 | `search.js` | `layout.html` | Expects `.search-toggle`, `.search-box`, `#search-input`, `#search-dropdown`; fetches `/api/v1/public/search?q=…`. |
 | `auth.js` | `login.html`, `register.html`, `forgot_password.html` | Expects `#login-form`/`#register-form`/`#forgot-form`, inputs named `username`/`name`/`email`/`password`, and `#auth-error` / `#auth-success` elements. POSTs to `/api/auth/login`, `/api/auth/register`, `/api/auth/forgot-password`. |
-| `comments.js` | `content.html` (only when comments are enabled) | Expects `#comment-form[data-slug]`, `#comment-error`, `#comment-success`, `#comment-login-link`; reads `localStorage.token`; POSTs to `/api/v1/content_items/<slug>/comments`. |
+| `comments.js` | `post.html` (only when comments are enabled) | Expects `#comment-form[data-slug]`, `#comment-error`, `#comment-success`, `#comment-login-link`; reads `localStorage.token`; POSTs to `/api/v1/content_items/<slug>/comments`. |
 | `math.js` | `layout.html` | KaTeX auto-render; depends on katex from CDN (see below). |
 | `verify-email.js` | `verify_email.html` | Reads `?token=` from the URL; calls `/api/auth/verify-email?token=…`; toggles `#auth-error` / `#auth-success`. |
 | `reset-password.js` | `reset_password.html` | Reads `?token=` from the URL; POSTs to `/api/auth/reset-password`; expects `#new-password` input. |
@@ -517,6 +565,7 @@ defaults that your theme falls back to:
 
 | Default | URL |
 |---------|-----|
+| Default stylesheet (minified) | `GET /static/base.css` |
 | Default stylesheet (minified) | `GET /static/style.css` |
 | Default index page (with navigation) | `GET /` |
 | Default content page | `GET /<existing-slug>` |
@@ -555,7 +604,7 @@ Recommended sequence for a new theme:
    [Reference URLs](#reference-urls) and confirm your theme loads and the
    page renders.
 7. **Maintain.** When upgrading Lesstruct, fetch the new default CSS
-   (`curl -s http://localhost:8080/static/style.css > /tmp/new-default.css`)
+   (`curl -s http://localhost:8080/static/base.css > /tmp/new-default-base.css`)
    and compare against your override. New template fields and JS DOM
    contracts are listed in this snapshot; new server endpoints show up in
    the embedded JavaScript.
@@ -565,7 +614,7 @@ Recommended sequence for a new theme:
 | Symptom | Likely cause |
 |---------|--------------|
 | Theme changes have no effect | `THEME_DIR` is empty, points to a missing directory, or the server was not restarted. |
-| Page renders, but no styles | `<link rel="stylesheet" href="/static/style.css">` is missing from your `layout.html`. |
+| Page renders, but no styles | `<link rel="stylesheet" href="/static/base.css">` and/or `<link rel="stylesheet" href="/static/style.css">` are missing from your `layout.html`. |
 | Search box or comment form is dead | You overrode `search.js` / `comments.js` / `layout.html` and the DOM ids no longer match. Restore the ids, or update the JS to match your new layout. |
 | Tag links are broken for non-ASCII tags | The href was built with `.TagName` instead of `{{.TagName | urlpath}}`. |
 | `{{t .Lang "ui.x"}}` shows the literal key | The translation is missing for the current language. Add it, or change the key. |

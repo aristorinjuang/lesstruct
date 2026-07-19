@@ -3,16 +3,17 @@ package seo
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderSitemapXML(t *testing.T) {
 	entries := []SitemapEntry{
 		NewHomepageEntry("http://localhost:3000"),
-		ContentToSitemapEntry("http://localhost:3000", ContentItem{Slug: "my-post", UpdatedAt: "2026-04-18T10:00:00Z"}, "post"),
-		ContentToSitemapEntry("http://localhost:3000", ContentItem{Slug: "about", UpdatedAt: "2026-04-15T08:00:00Z"}, "page"),
+		ContentToSitemapEntry("http://localhost:3000", ContentItem{Slug: "my-post", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)}, "post"),
+		ContentToSitemapEntry("http://localhost:3000", ContentItem{Slug: "about", UpdatedAt: time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC)}, "page"),
 	}
 	// A page with two published translations (en + id) → hreflang alternates.
-	translated := ContentToSitemapEntry("http://localhost:3000", ContentItem{Slug: "about", UpdatedAt: "2026-04-15T08:00:00Z"}, "page")
+	translated := ContentToSitemapEntry("http://localhost:3000", ContentItem{Slug: "about", UpdatedAt: time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC)}, "page")
 	translated.Alternates = []SitemapAlternate{
 		{Hreflang: "en", Href: "http://localhost:3000/about"},
 		{Hreflang: "id", Href: "http://localhost:3000/tentang"},
@@ -61,21 +62,21 @@ func TestContentToSitemapEntry(t *testing.T) {
 		{
 			name:     "post type generates root URL (served at /<slug>, not /posts/<slug>)",
 			baseURL:  "http://localhost:3000",
-			content:  ContentItem{Slug: "my-post", UpdatedAt: "2026-04-18T10:00:00Z"},
+			content:  ContentItem{Slug: "my-post", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)},
 			postType: "post",
 			wantLoc:  "http://localhost:3000/my-post",
 		},
 		{
 			name:     "page type generates root URL",
 			baseURL:  "http://localhost:3000",
-			content:  ContentItem{Slug: "about", UpdatedAt: "2026-04-15T08:00:00Z"},
+			content:  ContentItem{Slug: "about", UpdatedAt: time.Date(2026, 4, 15, 8, 0, 0, 0, time.UTC)},
 			postType: "page",
 			wantLoc:  "http://localhost:3000/about",
 		},
 		{
 			name:     "custom post type generates root URL",
 			baseURL:  "http://localhost:3000",
-			content:  ContentItem{Slug: "my-tutorial", UpdatedAt: "2026-04-18T10:00:00Z"},
+			content:  ContentItem{Slug: "my-tutorial", UpdatedAt: time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)},
 			postType: "tutorial",
 			wantLoc:  "http://localhost:3000/my-tutorial",
 		},

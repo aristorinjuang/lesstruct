@@ -498,6 +498,15 @@ func main() {
 
 	postTypeHandler := handlers.NewPostTypeHandler(postTypeService, utilLogger)
 
+	// Initialize languages configuration (i18n) — loaded early so content
+	// service and WordPress importer can use the site's primary language.
+	languages, err := config.LoadLanguages(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load languages config, using defaults: %v", err)
+		languages = []string{"en"}
+	}
+	primaryLanguage := config.PrimaryLanguage(languages)
+
 	// Initialize content service and handler (Story 2.1)
 	contentRepo := newContentRepo(cfg.DBDriver, db.DB())
 	commentRepo := newCommentRepo(cfg.DBDriver, db.DB())
@@ -509,8 +518,8 @@ func main() {
 		seoService,
 		postTypeAdapter,
 		pluginadapter.NewHookExecutorAdapter(pluginSys.Registry()),
+		contentdomain.WithDefaultLanguage(primaryLanguage),
 	)
-	contentHandler := handlers.NewContentHandler(contentService, utilLogger, baseURL, profilePictureStorage.GetURL)
 
 	// Initialize agent (Bearer) content handler — the streamlined API surface for
 	// programmatic publishing (Story 2.1). Reuses the same contentService so custom
@@ -525,6 +534,25 @@ func main() {
 	mediaRepo := newMediaRepo(cfg.DBDriver, db.DB())
 	mediaStorage := mediadomain.NewLocalStorage(uploadsDir, cfg.Host, cfg.Port)
 	mediaService := mediadomain.NewService(mediaRepo, mediaStorage, thumbnailService)
+
+	// Public content handler — resolves featured images (thumbnail variants) for the
+	// public API content-items list via the same media-join used by the SSR layer.
+	featuredImageResolver := func(imageURL string) string {
+		hash := contentpage.ExtractHashFromURL(imageURL)
+		if hash == "" {
+			return imageURL
+		}
+		m, err := mediaRepo.FindByHashPrefix(context.Background(), hash)
+		if err != nil || m == nil {
+			return imageURL
+		}
+		if thumb, ok := m.Variants["_thumb"]; ok {
+			return thumb.URL
+		}
+		return imageURL
+	}
+	contentHandler := handlers.NewContentHandler(contentService, utilLogger, baseURL, profilePictureStorage.GetURL, featuredImageResolver)
+
 	// Initialize agent (Bearer) media handler — the streamlined API surface for
 	// programmatic media upload/retrieval (Story 2.3). Reuses the same mediaService so
 	// hashing, dedup, WebP conversion, and thumbnail variants run identically to admin.
@@ -570,7 +598,7 @@ func main() {
 			cfg.AITextGenerationModel,
 		)
 	}
-	textGenHandler := handlers.NewTextGenHandler(textGenService, utilLogger)
+	textGenHandler := handlers.NewTextGenHandler(textGenService, mediaService, utilLogger)
 
 	// Initialize profile picture service and handler (Story 12.8)
 	profilePictureService := profilepicture.NewService(
@@ -627,6 +655,7 @@ func main() {
 		wordpressDownloader,
 		wordpressResolver,
 		postTypeService,
+		primaryLanguage,
 		utilLogger,
 	)
 	wordPressHandler := handlers.NewWordPressHandler(
@@ -672,13 +701,6 @@ func main() {
 	// (#13) Reduce logging exposure
 	utilLogger.Info("Admin credentials configured. Please change password after first login.")
 
-	// Initialize languages configuration (i18n)
-	languages, err := config.LoadLanguages(cfg)
-	if err != nil {
-		log.Printf("Warning: Failed to load languages config, using defaults: %v", err)
-		languages = []string{"en"}
-	}
-
 	// Load UI translation catalog from translations/ directory
 	uiCatalog, err := i18n.NewCatalog(i18n.Embedded(), languages)
 	if err != nil {
@@ -692,7 +714,12 @@ func main() {
 	}
 
 	// Initialize content site templates and renderer
-	contentTemplates, err := template.NewTemplates(theme, uiCatalog)
+	postTypes := postTypeService.GetAll()
+	postTypeSlugs := make([]string, 0, len(postTypes))
+	for _, pt := range postTypes {
+		postTypeSlugs = append(postTypeSlugs, pt.Slug)
+	}
+	contentTemplates, err := template.NewTemplates(theme, uiCatalog, postTypeSlugs...)
 	if err != nil {
 		log.Fatalf("Failed to load content templates: %v", err)
 	}

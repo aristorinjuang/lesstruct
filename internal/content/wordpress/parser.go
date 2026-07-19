@@ -75,10 +75,11 @@ func Parse(r io.Reader, allowedTypes map[string]bool) (*WXRDocument, error) {
 	}
 
 	doc := &WXRDocument{
-		SiteTitle: strings.TrimSpace(root.Channel.Title),
-		SiteURL:   strings.TrimSpace(root.Channel.BaseBlogURL),
-		Authors:   make([]ParsedAuthor, 0, len(root.Channel.Authors)),
-		Items:     make([]ParsedItem, 0, len(root.Channel.Items)),
+		SiteTitle:  strings.TrimSpace(root.Channel.Title),
+		SiteURL:    strings.TrimSpace(root.Channel.BaseBlogURL),
+		Authors:    make([]ParsedAuthor, 0, len(root.Channel.Authors)),
+		Items:      make([]ParsedItem, 0, len(root.Channel.Items)),
+		Attachments: make(map[int]string),
 	}
 
 	for _, a := range root.Channel.Authors {
@@ -95,6 +96,15 @@ func Parse(r io.Reader, allowedTypes map[string]bool) (*WXRDocument, error) {
 
 	for _, it := range root.Channel.Items {
 		postType := strings.TrimSpace(it.PostType)
+
+		// Capture attachment URLs for featured-image resolution before filtering.
+		if postType == "attachment" {
+			url := strings.TrimSpace(it.AttachmentURL)
+			if url != "" && it.PostID != 0 {
+				doc.Attachments[it.PostID] = url
+			}
+		}
+
 		if !allowedTypes[postType] {
 			continue
 		}

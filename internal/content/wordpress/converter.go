@@ -416,9 +416,10 @@ func isEmptyNode(n ttNode) bool {
 
 // ConvertBlocks converts WordPress block-editor HTML into a TipTap JSON document
 // string. imageMap remaps WordPress image URLs to local media URLs; entries not
-// present in the map keep their original URL. Unsupported blocks degrade to a
-// plain paragraph so no content is silently lost.
-func ConvertBlocks(wpContent string, imageMap map[string]string) (string, error) {
+// present in the map keep their original URL. If featuredImageURL is non-empty,
+// it is prepended as the first image node in the document. Unsupported blocks
+// degrade to a plain paragraph so no content is silently lost.
+func ConvertBlocks(wpContent string, imageMap map[string]string, featuredImageURL string) (string, error) {
 	root := tokenizeBlocks(wpContent)
 
 	var content []ttNode
@@ -432,6 +433,14 @@ func ConvertBlocks(wpContent string, imageMap map[string]string) (string, error)
 	cleanupNodes(&content)
 	if len(content) == 0 {
 		content = []ttNode{{Type: "paragraph"}}
+	}
+
+	if featuredImageURL != "" {
+		featuredNode := ttNode{
+			Type:  "image",
+			Attrs: map[string]any{"src": featuredImageURL},
+		}
+		content = append([]ttNode{featuredNode}, content...)
 	}
 
 	doc := ttNode{Type: "doc", Content: content}

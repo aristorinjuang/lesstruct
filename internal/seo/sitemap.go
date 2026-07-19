@@ -48,7 +48,7 @@ type sitemapURLSet struct {
 
 type ContentItem struct {
 	Slug      string
-	UpdatedAt string
+	UpdatedAt time.Time
 }
 
 // SitemapAlternate declares one language variant of a page: a language code
@@ -75,7 +75,7 @@ type SitemapEntry struct {
 func ContentToSitemapEntry(baseURL string, content ContentItem, postType string) SitemapEntry {
 	return SitemapEntry{
 		Loc:        fmt.Sprintf("%s/%s", baseURL, content.Slug),
-		LastMod:    content.UpdatedAt,
+		LastMod:    content.UpdatedAt.Format(time.RFC3339),
 		ChangeFreq: GetChangeFrequency(postType),
 		Priority:   GetPriority(postType),
 	}

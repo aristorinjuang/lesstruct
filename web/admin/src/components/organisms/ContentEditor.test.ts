@@ -83,6 +83,10 @@ vi.mock('./TipTapYoutube', () => ({
   Youtube: { name: 'youtube' },
 }))
 
+vi.mock('./HtmlCodeEditor', () => ({
+  default: { name: 'HtmlCodeEditor', template: '<div />', props: ['modelValue', 'placeholder'] },
+}))
+
 vi.mock('@tiptap/vue-3', () => ({
   useEditor: vi.fn(() => ({
     chain: vi.fn(() => ({ focus: vi.fn(() => ({ run: vi.fn() })) })),
@@ -687,6 +691,7 @@ describe('ContentEditor', () => {
       expect(updateSpy).toHaveBeenCalledWith(1, {
         title: 'Test',
         content: '{"type":"doc"}',
+        format: 'tiptap',
         tags: [],
         status: 'published',
         postType: 'post',
@@ -2071,6 +2076,373 @@ describe('ContentEditor', () => {
       expect(vm.form.title).toBe('Tentang Lesstruct')
 
       wrapper.unmount()
+    })
+  })
+
+  describe('Format Selection', () => {
+    const formatStubs = {
+      InputText: true,
+      Button: true,
+      Select: true,
+      FormField: { template: '<div><slot /></div>' },
+      TipTapEditor: true,
+      HtmlCodeEditor: true,
+      MediaPanel: true,
+      HtmlAiPromptModal: {
+        template: '<div class="html-ai-modal"><slot /></div>',
+        props: ['isLoading', 'hasExistingContent', 'initialPrompt'],
+      },
+    }
+
+    it('shows format selector on create', () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: formatStubs },
+      })
+
+      expect(wrapper.find('.content-editor__format-selector').exists()).toBe(true)
+    })
+
+    it('does not show format selector when editing existing content', () => {
+      const tiptapContent: Content = {
+        id: 1,
+        userId: 1,
+        title: 'Test',
+        slug: 'test',
+        content: '{"type":"doc"}',
+        tags: [],
+        status: 'draft',
+        postType: 'post',
+        format: 'tiptap',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      }
+
+      const wrapper = mount(ContentEditor, {
+        props: {
+          userId: 1,
+          contentId: 1,
+          initialContent: tiptapContent,
+        },
+        global: { stubs: formatStubs },
+      })
+
+      expect(wrapper.find('.content-editor__format-selector').exists()).toBe(false)
+    })
+
+    it('defaults format to tiptap', () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: formatStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).contentFormat).toBe('tiptap')
+    })
+
+    it('switches to html format when HTML button is clicked', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: formatStubs },
+      })
+
+      const htmlBtn = wrapper.findAll('.content-editor__format-btn').find(b => b.text().includes('HTML'))
+      expect(htmlBtn).toBeTruthy()
+      await htmlBtn!.trigger('click')
+      await wrapper.vm.$nextTick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).contentFormat).toBe('html')
+    })
+
+    it('clears content when switching to HTML format', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: formatStubs },
+      })
+
+      const htmlBtn = wrapper.findAll('.content-editor__format-btn').find(b => b.text().includes('HTML'))
+      await htmlBtn!.trigger('click')
+      await wrapper.vm.$nextTick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).form.content).toBe('')
+    })
+
+    it('resets content to default tiptap doc when switching back to Rich Text', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: formatStubs },
+      })
+
+      const htmlBtn = wrapper.findAll('.content-editor__format-btn').find(b => b.text().includes('HTML'))
+      await htmlBtn!.trigger('click')
+      await wrapper.vm.$nextTick()
+
+      const richBtn = wrapper.findAll('.content-editor__format-btn').find(b => b.text().includes('Rich Text'))
+      await richBtn!.trigger('click')
+      await wrapper.vm.$nextTick()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).form.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+    })
+
+    it('does not trigger autosave after format switch', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: formatStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.form.title = 'Test Title'
+      await wrapper.vm.$nextTick()
+
+      // Switch to HTML — resets content but should NOT set hasContentChanges
+      const htmlBtn = wrapper.findAll('.content-editor__format-btn').find(b => b.text().includes('HTML'))
+      await htmlBtn!.trigger('click')
+      await wrapper.vm.$nextTick()
+
+      expect(vm.hasContentChanges).toBe(false)
+    })
+
+    it('loads HTML format from existing content', () => {
+      const htmlContent: Content = {
+        id: 1,
+        userId: 1,
+        title: 'Elementor Page',
+        slug: 'elementor-page',
+        content: '<section class="elementor">Hello</section>',
+        tags: [],
+        status: 'published',
+        postType: 'page',
+        format: 'html',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      }
+
+      const wrapper = mount(ContentEditor, {
+        props: {
+          userId: 1,
+          contentId: 1,
+          initialContent: htmlContent,
+        },
+        global: { stubs: formatStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).contentFormat).toBe('html')
+    })
+
+    it('includes format in create payload', async () => {
+      const contentStore = useContentStore()
+      const createSpy = vi.spyOn(contentStore, 'create').mockResolvedValue({
+        id: 1,
+        userId: 1,
+        title: 'Test',
+        slug: 'test',
+        content: '<p>Hello</p>',
+        tags: [],
+        status: 'draft',
+        postType: 'post',
+        format: 'html',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      })
+
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: formatStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.form.title = 'Test'
+      vm.contentFormat = 'html'
+      await wrapper.vm.$nextTick()
+      vm.form.content = '<p>Hello</p>'
+      await wrapper.vm.$nextTick()
+
+      await vm.saveDraft()
+
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          format: 'html',
+          content: '<p>Hello</p>',
+        })
+      )
+    })
+
+    it('includes format in update payload', async () => {
+      const contentStore = useContentStore()
+      const updateSpy = vi.spyOn(contentStore, 'update').mockResolvedValue({
+        id: 1,
+        userId: 1,
+        title: 'Test',
+        slug: 'test',
+        content: '<p>Updated</p>',
+        tags: [],
+        status: 'published',
+        postType: 'post',
+        format: 'html',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      })
+
+      const htmlContent: Content = {
+        id: 1,
+        userId: 1,
+        title: 'Test',
+        slug: 'test',
+        content: '<p>Hello</p>',
+        tags: [],
+        status: 'published',
+        postType: 'post',
+        format: 'html',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      }
+
+      const wrapper = mount(ContentEditor, {
+        props: {
+          userId: 1,
+          contentId: 1,
+          initialContent: htmlContent,
+        },
+        global: { stubs: formatStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.form.content = '<p>Updated</p>'
+      await wrapper.vm.$nextTick()
+
+      await vm.saveChanges()
+
+      expect(updateSpy).toHaveBeenCalledWith(1, expect.objectContaining({
+        format: 'html',
+        content: '<p>Updated</p>',
+      }))
+    })
+
+    it('opens HtmlAiPromptModal without crashing when Generate with AI is clicked', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: {
+          stubs: {
+            ...formatStubs,
+            HtmlAiPromptModal: {
+              template: '<div class="html-ai-modal"><slot /></div>',
+              props: ['isLoading', 'hasExistingContent', 'initialPrompt'],
+            },
+          },
+        },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.textGenAvailable = true
+      vm.contentFormat = 'html'
+      await wrapper.vm.$nextTick()
+
+      vm.showHtmlAiModal = true
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('.html-ai-modal').exists()).toBe(true)
+    })
+  })
+
+  describe('initialPostType prop', () => {
+    it('sets form.postType to initialPostType when provided', () => {
+      const wrapper = mount(ContentEditor, {
+        props: {
+          userId: 1,
+          initialPostType: 'page',
+        },
+        global: {
+          stubs: {
+            InputText: true,
+            Button: true,
+            Select: true,
+            FormField: true,
+            TipTapEditor: true,
+            MediaPanel: true,
+          },
+        },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).form.postType).toBe('page')
+    })
+
+    it('defaults to post when initialPostType is not provided', () => {
+      const wrapper = mount(ContentEditor, {
+        props: {
+          userId: 1,
+        },
+        global: {
+          stubs: {
+            InputText: true,
+            Button: true,
+            Select: true,
+            FormField: true,
+            TipTapEditor: true,
+            MediaPanel: true,
+          },
+        },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).form.postType).toBe('post')
+    })
+
+    it('defaults to post when initialPostType is empty string', () => {
+      const wrapper = mount(ContentEditor, {
+        props: {
+          userId: 1,
+          initialPostType: '',
+        },
+        global: {
+          stubs: {
+            InputText: true,
+            Button: true,
+            Select: true,
+            FormField: true,
+            TipTapEditor: true,
+            MediaPanel: true,
+          },
+        },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).form.postType).toBe('post')
+    })
+
+    it('defaults to post when initialPostType is all', () => {
+      const wrapper = mount(ContentEditor, {
+        props: {
+          userId: 1,
+          initialPostType: 'all',
+        },
+        global: {
+          stubs: {
+            InputText: true,
+            Button: true,
+            Select: true,
+            FormField: true,
+            TipTapEditor: true,
+            MediaPanel: true,
+          },
+        },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).form.postType).toBe('post')
     })
   })
 })

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/agent"
 	agentmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/agent/mocks"
@@ -64,7 +65,7 @@ func buildComment(id, contentID, userID int, status contentdomain.CommentStatus,
 		Status:    status,
 		Author:    "Author " + strconv.Itoa(userID),
 		Username:  "user" + strconv.Itoa(userID),
-		CreatedAt: "2026-06-23T12:00:00Z",
+		CreatedAt: time.Date(2026, 6, 23, 12, 0, 0, 0, time.UTC),
 	}
 }
 

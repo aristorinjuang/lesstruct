@@ -151,61 +151,130 @@ func TestValidateTitle(t *testing.T) {
 	}
 }
 
+func TestValidateFormat(t *testing.T) {
+	tests := []struct {
+		name    string
+		format  contentdomain.Format
+		wantErr error
+	}{
+		{
+			name:    "empty format defaults to tiptap",
+			format:  "",
+			wantErr: nil,
+		},
+		{
+			name:    "valid tiptap format",
+			format:  contentdomain.FormatTiptap,
+			wantErr: nil,
+		},
+		{
+			name:    "valid markdown format",
+			format:  contentdomain.FormatMarkdown,
+			wantErr: nil,
+		},
+		{
+			name:    "valid html format",
+			format:  contentdomain.FormatHTML,
+			wantErr: nil,
+		},
+		{
+			name:    "invalid format",
+			format:  "docx",
+			wantErr: contentdomain.ErrInvalidFormat,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := contentdomain.ValidateFormat(tt.format); !errors.Is(err, tt.wantErr) {
+				t.Errorf("ValidateFormat() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateContent(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
+		format  contentdomain.Format
 		wantErr error
 	}{
 		{
 			name:    "invalid empty content",
 			content: "",
-			wantErr: contentdomain.ErrInvalidContent,
+			format:  contentdomain.FormatTiptap,
+			wantErr: contentdomain.ErrEmptyContent,
 		},
 		{
 			name:    "valid TipTap JSON document",
 			content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`,
+			format:  contentdomain.FormatTiptap,
 			wantErr: nil,
 		},
 		{
 			name:    "valid 100000 character TipTap JSON",
 			content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"` + strings.Repeat("A", 99915) + `"}]}]}`,
+			format:  contentdomain.FormatTiptap,
 			wantErr: nil,
 		},
 		{
 			name:    "invalid plain text content",
 			content: "This is not JSON",
+			format:  contentdomain.FormatTiptap,
 			wantErr: contentdomain.ErrInvalidTipTapContent,
 		},
 		{
 			name:    "invalid 100001 character content",
 			content: strings.Repeat("A", 100001),
-			wantErr: contentdomain.ErrInvalidContent,
+			format:  contentdomain.FormatTiptap,
+			wantErr: contentdomain.ErrContentTooLong,
 		},
 		{
 			name:    "invalid TipTap JSON with script node",
 			content: `{"type":"doc","content":[{"type":"script","content":[{"type":"text","text":"alert(1)"}]}]}`,
+			format:  contentdomain.FormatTiptap,
 			wantErr: contentdomain.ErrInvalidTipTapContent,
 		},
 		{
 			name:    "invalid TipTap JSON with unknown node type",
 			content: `{"type":"doc","content":[{"type":"iframe","attrs":{"src":"https://evil.com"}}]}`,
+			format:  contentdomain.FormatTiptap,
 			wantErr: contentdomain.ErrInvalidTipTapContent,
 		},
 		{
 			name:    "valid empty TipTap document",
 			content: `{"type":"doc"}`,
+			format:  contentdomain.FormatTiptap,
 			wantErr: nil,
 		},
 		{
 			name:    "invalid malformed JSON",
 			content: `{not json}`,
+			format:  contentdomain.FormatTiptap,
 			wantErr: contentdomain.ErrInvalidTipTapContent,
+		},
+		{
+			name:    "valid HTML content",
+			content: `<div class="elementor-widget-wrap"><p>Hello World</p></div>`,
+			format:  contentdomain.FormatHTML,
+			wantErr: nil,
+		},
+		{
+			name:    "empty HTML content rejected",
+			content: "",
+			format:  contentdomain.FormatHTML,
+			wantErr: contentdomain.ErrEmptyContent,
+		},
+		{
+			name:    "HTML content 100001 chars rejected",
+			content: strings.Repeat("A", 100001),
+			format:  contentdomain.FormatHTML,
+			wantErr: contentdomain.ErrContentTooLong,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := contentdomain.ValidateContent(tt.content); !errors.Is(err, tt.wantErr) {
+			if err := contentdomain.ValidateContent(tt.content, tt.format); !errors.Is(err, tt.wantErr) {
 				t.Errorf("ValidateContent() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

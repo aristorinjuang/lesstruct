@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	repomocks "github.com/aristorinjuang/lesstruct/internal/repository/mocks"
@@ -79,7 +80,7 @@ func TestUpdateUser_WithCustomFields(t *testing.T) {
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "new@example.com",
-			Name: "Test User", Role: "Contributor", Status: "verified", CreatedAt: "2025-01-01",
+			Name: "Test User", Role: "Contributor", Status: "verified", CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 			CustomFields: map[string]any{"job_title": "Engineer", "company": "Acme"},
 		}, nil).Once()
 
@@ -129,7 +130,7 @@ func TestUpdateUser_WithoutCustomFields(t *testing.T) {
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "test@example.com",
-			Name: "Test User", Role: "Contributor", Status: "verified", CreatedAt: "2025-01-01",
+			Name: "Test User", Role: "Contributor", Status: "verified", CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		}, nil).Once()
 
 	body, _ := json.Marshal(map[string]string{})
@@ -168,7 +169,7 @@ func TestUpdateUserProfileService_WithCustomFields(t *testing.T) {
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "test@example.com",
-			Name: "Test", Role: "Contributor", Status: "verified", CreatedAt: "2025-01-01",
+			Name: "Test", Role: "Contributor", Status: "verified", CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 			CustomFields: map[string]any{"key": "value"},
 		}, nil).Once()
 
@@ -198,7 +199,7 @@ func TestUpdateUserProfileService_NilCustomFields(t *testing.T) {
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "test@example.com",
-			Name: "Test", Role: "Contributor", Status: "verified", CreatedAt: "2025-01-01",
+			Name: "Test", Role: "Contributor", Status: "verified", CreatedAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 		}, nil).Once()
 
 	updated, err := service.UpdateUserProfile(context.Background(), 1, "", "", "", nil)

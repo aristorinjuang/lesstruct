@@ -80,7 +80,7 @@ func (r *DashboardRepository) GetStats(ctx context.Context, userID int) (*dashbo
 			return nil, fmt.Errorf("failed to scan recent content: %w", err)
 		}
 
-		item.CreatedAt = createdAt.Format(time.RFC3339)
+		item.CreatedAt = createdAt
 		recentContent = append(recentContent, &item)
 	}
 

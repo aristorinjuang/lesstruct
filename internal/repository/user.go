@@ -29,8 +29,8 @@ type User struct {
 	ProfilePicture string         `json:"profilePicture,omitempty"`
 	LastLoginAt    *string        `json:"lastLoginAt,omitempty"`
 	CustomFields   map[string]any `json:"customFields,omitempty"`
-	CreatedAt      string         `json:"createdAt"`
-	UpdatedAt      string         `json:"updatedAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt,omitempty"`
 }
 
 func unmarshalCustomFields(raw *string) map[string]any {
@@ -366,8 +366,8 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, er
 	var user User
 	var email sql.NullString
 	var name sql.NullString
-	var createdAt sql.NullString
-	var updatedAt sql.NullString
+	var createdAt time.Time
+	var updatedAt time.Time
 	var profilePicture sql.NullString
 	var customFields *string
 	err := r.db.QueryRowContext(ctx, `
@@ -405,11 +405,11 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, er
 	if profilePicture.Valid {
 		user.ProfilePicture = profilePicture.String
 	}
-	if createdAt.Valid {
-		user.CreatedAt = createdAt.String
+	if !createdAt.IsZero() {
+		user.CreatedAt = createdAt
 	}
-	if updatedAt.Valid {
-		user.UpdatedAt = updatedAt.String
+	if !updatedAt.IsZero() {
+		user.UpdatedAt = updatedAt
 	}
 	user.CustomFields = unmarshalCustomFields(customFields)
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 )
@@ -13,7 +14,7 @@ import (
 type BlockedEmail struct {
 	ID        int
 	Email     string
-	CreatedAt string
+	CreatedAt time.Time
 	Reason    string
 }
 

@@ -31,11 +31,11 @@ type ResponseMeta struct {
 
 // PendingUser represents a pending user in the response
 type PendingUser struct {
-	ID             int    `json:"id"`
-	Username       string `json:"username"`
-	Email          string `json:"email"`
-	ProfilePicture string `json:"profilePicture,omitempty"`
-	CreatedAt      string `json:"createdAt"`
+	ID             int       `json:"id"`
+	Username       string    `json:"username"`
+	Email          string    `json:"email"`
+	ProfilePicture string    `json:"profilePicture,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 // ApproveUserResponse represents the response for approve user
@@ -53,7 +53,7 @@ type UserDetail struct {
 	Status         string         `json:"status"`
 	ProfilePicture string         `json:"profilePicture,omitempty"`
 	CustomFields   map[string]any `json:"customFields,omitempty"`
-	CreatedAt      string         `json:"createdAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt,omitempty"`
 }
 
 // RejectUserResponse represents the response for reject user
@@ -84,7 +84,7 @@ type UserInList struct {
 	Role           string         `json:"role"`
 	ProfilePicture string         `json:"profilePicture,omitempty"`
 	CustomFields   map[string]any `json:"customFields,omitempty"`
-	CreatedAt      string         `json:"createdAt"`
+	CreatedAt      time.Time      `json:"createdAt"`
 }
 
 // UsersMeta represents metadata for users list

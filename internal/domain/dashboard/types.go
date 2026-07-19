@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"errors"
+	"time"
 )
 
 var (
@@ -25,5 +26,5 @@ type RecentItem struct {
 	Title     string `json:"title"`
 	Slug      string `json:"slug"`
 	Status    string `json:"status"`
-	CreatedAt string `json:"createdAt"`
+	CreatedAt time.Time `json:"createdAt"`
 }
