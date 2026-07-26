@@ -1,22 +1,27 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { ApiError } from '@/utils/request'
 import Button from '@/components/atoms/Button.vue'
 import Toast from '@/components/molecules/Toast.vue'
 
-interface ImportResult {
+interface ImportJob {
+  state: string
   imported: number
   skipped: number
   usersImported: number
+  total: number
   errors?: string[]
+  startedAt?: string
+  finishedAt?: string
 }
 
 const router = useRouter()
 const selectedFile = ref<File | null>(null)
 const fileInput = ref<HTMLInputElement>()
+const isUploading = ref(false)
 const isImporting = ref(false)
-const result = ref<ImportResult | null>(null)
+const job = ref<ImportJob | null>(null)
 const importError = ref('')
 
 const toastMessage = ref('')
@@ -24,11 +29,67 @@ const toastType = ref<'success' | 'error'>('success')
 const toastVisible = ref(false)
 const toastKey = ref(0)
 
-const canImport = computed(() => selectedFile.value !== null && !isImporting.value)
+let jobId: string | null = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const canImport = computed(() => selectedFile.value !== null && !isUploading.value && !isImporting.value)
 const dropzoneClasses = computed(() => ({
   'dropzone--active': selectedFile.value !== null,
-  'dropzone--disabled': isImporting.value,
+  'dropzone--disabled': isUploading.value || isImporting.value,
 }))
+
+const progressLabel = computed(() => {
+  if (isUploading.value) return 'Uploading file...'
+  if (isImporting.value && job.value) {
+    return `Importing... ${job.value.imported.toLocaleString()} / ${job.value.total.toLocaleString()} items`
+  }
+  if (isImporting.value) return 'Starting import...'
+  return ''
+})
+
+onUnmounted(() => {
+  stopPolling()
+})
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(pollStatus, 3000)
+}
+
+async function pollStatus() {
+  if (!jobId) return
+  try {
+    const response = await api.get<{ data: { job: ImportJob } }>(
+      `/api/admin/wordpress/import/status/${jobId}`,
+      { timeout: 10000 },
+    )
+    const jobData = response.data.data.job
+    job.value = jobData
+
+    if (jobData.state === 'done') {
+      stopPolling()
+      isImporting.value = false
+      displayToast(
+        `Successfully imported ${jobData.imported} item${jobData.imported === 1 ? '' : 's'}` +
+          (jobData.skipped > 0 ? `, skipped ${jobData.skipped}` : ''),
+        'success',
+      )
+    } else if (jobData.state === 'failed') {
+      stopPolling()
+      isImporting.value = false
+      displayToast('Import failed. See details below for more information.', 'error')
+    }
+  } catch {
+    // Poll errors are transient — the next tick will retry.
+  }
+}
 
 function goBack() {
   router.push('/import')
@@ -48,7 +109,7 @@ function handleFileSelect(event: Event) {
     return
   }
   selectedFile.value = file
-  result.value = null
+  job.value = null
   importError.value = ''
 }
 
@@ -62,7 +123,7 @@ function handleDrop(event: DragEvent) {
     return
   }
   selectedFile.value = file
-  result.value = null
+  job.value = null
   importError.value = ''
 }
 
@@ -78,43 +139,43 @@ async function handleImport() {
     return
   }
 
-  isImporting.value = true
+  isUploading.value = true
+  isImporting.value = false
   importError.value = ''
-  result.value = null
+  job.value = null
+  jobId = null
 
   try {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
-    const response = await api.postWithTimeout<{ data: ImportResult }>(
+    const response = await api.postWithTimeout<{ data: { jobId: string; state: string } }>(
       '/api/admin/wordpress/import',
       formData,
       5 * 60 * 1000,
     )
-    result.value = response.data.data
-    if (result.value.skipped > 0) {
-      displayToast(
-        `Imported ${result.value.imported}, skipped ${result.value.skipped}`,
-        'error',
-      )
-    } else {
-      displayToast(`Successfully imported ${result.value.imported} item${result.value.imported === 1 ? '' : 's'}`, 'success')
-    }
+    jobId = response.data.data.jobId
+    isUploading.value = false
+    isImporting.value = true
+    startPolling()
   } catch (err) {
+    isUploading.value = false
     if (err instanceof ApiError) {
       importError.value = err.message
     } else {
-      importError.value = 'Failed to import WordPress file. Please try again.'
+      importError.value = 'Failed to start WordPress import. Please try again.'
     }
     displayToast(importError.value, 'error')
-  } finally {
-    isImporting.value = false
   }
 }
 
 function resetForm() {
+  stopPolling()
   selectedFile.value = null
-  result.value = null
+  job.value = null
   importError.value = ''
+  jobId = null
+  isUploading.value = false
+  isImporting.value = false
   if (fileInput.value) {
     fileInput.value.value = ''
   }
@@ -138,14 +199,14 @@ function resetForm() {
         type="file"
         accept=".xml,application/xml,text/xml"
         class="wordpress-import-form__file-input"
-        :disabled="isImporting"
+        :disabled="isUploading || isImporting"
         @change="handleFileSelect"
       />
 
       <div
         class="dropzone"
         :class="dropzoneClasses"
-        @click="!isImporting && fileInput?.click()"
+        @click="!isUploading && !isImporting && fileInput?.click()"
         @dragover.prevent
         @drop.prevent="handleDrop"
       >
@@ -167,25 +228,24 @@ function resetForm() {
         <Button
           type="button"
           variant="primary"
-          :is-loading="isImporting"
+          :is-loading="isUploading || isImporting"
           :disabled="!canImport"
           @click="handleImport"
         >
-          {{ isImporting ? 'Importing...' : 'Import' }}
+          {{ isUploading || isImporting ? 'Importing...' : 'Import' }}
         </Button>
         <Button
-          v-if="result"
+          v-if="job && !isImporting"
           type="button"
           variant="secondary"
-          :disabled="isImporting"
           @click="resetForm"
         >
           Import Another
         </Button>
       </div>
 
-      <div v-if="isImporting" class="alert alert-info wordpress-import-form__alert">
-        Importing content. This may take a few minutes for large files or many images.
+      <div v-if="isUploading || isImporting" class="alert alert-info wordpress-import-form__alert">
+        {{ progressLabel }}
       </div>
 
       <div v-if="importError" class="alert alert-error wordpress-import-form__alert">
@@ -193,26 +253,32 @@ function resetForm() {
       </div>
     </div>
 
-    <div v-if="result" class="card wordpress-import-form__results">
+    <div v-if="job" class="card wordpress-import-form__results">
       <h2 class="card-title">Import Summary</h2>
+      <div v-if="job.state === 'running'" class="progress-bar">
+        <div
+          class="progress-bar__fill"
+          :style="{ width: (job.total > 0 ? (job.imported / job.total) * 100 : 0) + '%' }"
+        />
+      </div>
       <div class="stats">
-        <div class="stat stat--success">
-          <span class="stat-value">{{ result.imported }}</span>
+        <div class="stat" :class="job.state === 'failed' ? 'stat--warning' : 'stat--success'">
+          <span class="stat-value">{{ job.imported.toLocaleString() }}</span>
           <span class="stat-label">Imported</span>
         </div>
         <div class="stat stat--success">
-          <span class="stat-value">{{ result.usersImported }}</span>
+          <span class="stat-value">{{ job.usersImported }}</span>
           <span class="stat-label">Users Created</span>
         </div>
         <div class="stat stat--warning">
-          <span class="stat-value">{{ result.skipped }}</span>
+          <span class="stat-value">{{ job.skipped }}</span>
           <span class="stat-label">Skipped</span>
         </div>
       </div>
-      <div v-if="result.errors && result.errors.length > 0" class="wordpress-import-form__errors">
+      <div v-if="job.errors && job.errors.length > 0" class="wordpress-import-form__errors">
         <h3 class="card-title">Issues</h3>
         <ul class="wordpress-import-form__error-list">
-          <li v-for="(err, index) in result.errors" :key="index" class="alert alert-error wordpress-import-form__error-item">
+          <li v-for="(err, index) in job.errors" :key="index" class="alert alert-error wordpress-import-form__error-item">
             {{ err }}
           </li>
         </ul>
@@ -297,5 +363,20 @@ function resetForm() {
 
 .wordpress-import-form__back-link:hover {
   color: var(--brand-primary);
+}
+
+.progress-bar {
+  height: 6px;
+  background: var(--color-gray-200);
+  border-radius: 3px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  background: var(--brand-primary, #2563eb);
+  border-radius: 3px;
+  transition: width 0.5s ease;
 }
 </style>

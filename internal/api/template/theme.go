@@ -46,6 +46,10 @@ func readThemeFile(theme *Theme, filename string) string {
 //  2. Embedded <slug>.gohtml
 //  3. Theme post.html
 //  4. Embedded post.gohtml
+//
+// This handles the per-post-type template only; per-slug overrides
+// (<postType>-<slug>.html) are discovered separately by
+// findPerSlugTemplateOverrides at startup.
 func readContentTemplate(theme *Theme, slug string) string {
 	if theme != nil && theme.Dir != "" {
 		if data, err := os.ReadFile(filepath.Join(theme.Dir, "templates", slug+".html")); err == nil {
@@ -64,6 +68,90 @@ func readContentTemplate(theme *Theme, slug string) string {
 	}
 
 	return readEmbeddedPage("post.html")
+}
+
+// findPerSlugTemplateOverrides scans the theme's templates directory for
+// per-slug content template overrides. A per-slug override is a file named
+// <postType>-<slug>.html (e.g. page-about.html, menu-item-special.html),
+// where <postType> is one of the known post-type slugs. The longest matching
+// post-type prefix wins, so a file menu-item-special.html is attributed to
+// post type "menu-item" rather than "menu" when both are registered.
+//
+// Returns a map keyed by "<postType>:<slug>" whose values are the raw file
+// contents. Returns an empty map when the theme is nil, the theme directory
+// is empty, the templates directory cannot be read, or no per-slug overrides
+// are present. Individual per-slug files are skipped on read error — a
+// missing or unreadable file is treated as if it did not exist.
+func findPerSlugTemplateOverrides(theme *Theme, knownPostTypes map[string]bool) map[string]string {
+	overrides := make(map[string]string)
+	if theme == nil || theme.Dir == "" || len(knownPostTypes) == 0 {
+		return overrides
+	}
+
+	templatesDir := filepath.Join(theme.Dir, "templates")
+	entries, err := os.ReadDir(templatesDir)
+	if err != nil {
+		return overrides
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".html") {
+			continue
+		}
+
+		base := strings.TrimSuffix(name, ".html")
+		if base == "" {
+			continue
+		}
+
+		matchedPostType := longestPostTypePrefix(base, knownPostTypes)
+		if matchedPostType == "" {
+			continue
+		}
+
+		slug := base[len(matchedPostType)+1:]
+		if slug == "" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(templatesDir, name))
+		if err != nil {
+			continue
+		}
+
+		overrides[matchedPostType+":"+slug] = string(data)
+	}
+
+	return overrides
+}
+
+// longestPostTypePrefix returns the longest entry in knownPostTypes that
+// matches base up to a hyphen boundary. Returns "" when no post type is a
+// prefix of base followed by a hyphen (or when base is itself an exact
+// post-type slug, which denotes a per-post-type template rather than a
+// per-slug override).
+func longestPostTypePrefix(base string, knownPostTypes map[string]bool) string {
+	matched := ""
+	for pt := range knownPostTypes {
+		if len(base) <= len(pt) {
+			continue
+		}
+		if !strings.HasPrefix(base, pt) {
+			continue
+		}
+		if base[len(pt)] != '-' {
+			continue
+		}
+		if len(pt) > len(matched) {
+			matched = pt
+		}
+	}
+	return matched
 }
 
 // compositeFS implements fs.FS by checking a primary filesystem first,

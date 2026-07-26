@@ -114,6 +114,7 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `IMPORT_MAX_SIZE_MB` | `100` | Max upload size (in megabytes) for any importer. Shared by all import types — today the WordPress WXR importer; future importers reuse the same cap. WordPress exports commonly reach tens or hundreds of MB for real sites, so the default is generous; raise it for very large sites. |
+| `WORDPRESS_IMPORT_TIMEOUT` | `2h` | Max duration (Go duration string, e.g. `4h`, `90m`) for a single WordPress import job. Imports run asynchronously in a background goroutine after the HTTP request returns `202 Accepted`. Set higher for very large exports with many images. |
 
 ### Logging
 
@@ -166,6 +167,8 @@ The first line is silently overridden by the empty second line — Lesstruct end
 | `[user_fields]` | table | empty | Global user profile fields. Applies to all users. |
 | `[[post_type]]` | array of tables | four built-in types | Custom post types, or extensions to built-in types (see below). Add as many as needed. |
 | `[[homepage_section]]` | array of tables | empty | Per-post-type groupings rendered on the homepage in addition to the latest-posts list. See below. |
+| `[[public_field]]` | array of tables | empty | Allowlist of custom/system fields that may be filtered or sorted on the public query endpoints. See below. |
+| `[csp]` | table | empty (default CSP applied) | Content-Security-Policy configuration — per-directive source appends, extra directives, report-only mode, and a full-override escape hatch. See below. |
 | `[[thumbnail]]` | array of tables | `[{max_width=370, suffix="_thumb"}]` | Image processing variants. See below. |
 
 ### `[user_fields]`
@@ -253,6 +256,97 @@ title = "Rekomendasi"
 post_type = "event"
 limit = 3
 ```
+
+### `[[public_field]]`
+
+The public query endpoints (`GET /api/v1/public/content_items` and `GET /api/v1/public/authors`) accept `cf_<field>`, `cf_<field>_min`, `cf_<field>_max`, and `sort_by=cf:<field>` parameters. These are **off by default** — every such parameter that references a field not declared in a `[[public_field]]` block is rejected with a `400 field_not_queryable` error. This is the fail-closed default; the operator must explicitly opt fields in.
+
+Admin-managed **system fields** (`[[post_type.system_fields]]`, `[user_fields].system_fields`) are also queryable via the same `cf_*` / `sort_by=cf:*` parameters — they share the same `custom_fields` JSON column as regular custom fields. A `[[public_field]]` entry with the system-field slug is all that is needed to expose it on the public API.
+
+The `"expose"` operation additionally includes the field's value in the response body. When `"expose"` is not present (the default), the field's value is never sent to the client — it can only be used for sorting/filtering queries. Currently only the `"user"` resource supports the `"expose"` operation.
+
+Admin endpoints (e.g. `GET /api/v1/content_items`) are **not** gated by this allowlist — they remain unrestricted, matching pre-existing behaviour.
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `resource` | `string` | yes | Either `"user"` or `"content"`. Selects which public endpoint the entry applies to. |
+| `field` | `string` | yes | The custom-field or system-field slug. Must match `^[a-z][a-z0-9_]*$`. |
+| `post_type` | `string` | no | When `resource = "content"`, scopes the entry to one post type. Empty (the default) matches every post type. Ignored (and silently cleared) when `resource = "user"`. |
+| `operations` | `[]string` | yes | A non-empty subset of `["sort", "filter", "expose"]`. Declares which public query operations are allowed on this field. The `"expose"` operation includes the field's value in the response body (currently only `"user"` resource). |
+
+`resource`, `field`, `post_type`, and `operations` are matched case-insensitively after normalisation. Duplicate operations in the list are collapsed.
+
+```toml
+# A user system field that powers a "Top Contributors by points" sidebar widget.
+[[public_field]]
+resource   = "user"
+field      = "points"
+operations = ["sort"]
+
+# A user system field that is both sortable and included in the response body.
+[[public_field]]
+resource   = "user"
+field      = "tier_point"
+operations = ["sort", "expose"]
+
+# A content custom field scoped to one post type, both sortable and filterable.
+[[public_field]]
+resource   = "content"
+field      = "views"
+post_type  = "article"
+operations = ["sort", "filter"]
+
+# A content custom field that applies to every post type, filter only.
+[[public_field]]
+resource   = "content"
+field      = "category"
+post_type  = ""
+operations = ["filter"]
+```
+
+With the configuration above:
+- `GET /api/v1/public/authors?sort_by=cf:points&order=desc` → `200`
+- `GET /api/v1/public/authors?sort_by=cf:email` → `400 field_not_queryable`
+- `GET /api/v1/public/authors` → response includes `"publicFields": {"tier_point": 500}` for each author (if `tier_point` is not empty)
+- `GET /api/v1/public/content_items?post_type=article&cf_views_min=100&sort_by=cf:views` → `200`
+- `GET /api/v1/public/content_items?post_type=page&sort_by=cf:views` → `400 field_not_queryable` (the `views` entry is scoped to `article`)
+
+### `[csp]`
+
+Optional Content-Security-Policy configuration. When the section is absent, Lesstruct applies its built-in default CSP (backward compatible, exactly today's policy plus `https://www.youtube-nocookie.com` in `frame-src` — the privacy-enhanced variant of the already-allowed `youtube.com`). All fields are optional.
+
+The default CSP (structured as an ordered directive table in the binary) is:
+```
+default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+```
+
+Each `_src` list **appends** to the directive's built-in sources — the policy can only become more permissive; nothing existing is replaced. Use `extra_directives` to add wholly new directives (e.g. `worker-src`, `report-uri`). Use `policy` for a complete override (documented as "advanced" — the operator takes ownership).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `disable` | `bool` | `false` | When `true`, no CSP header is emitted at all. For operators behind a CDN/WAF that manages CSP. |
+| `report_only` | `bool` | `false` | When `true`, emits `Content-Security-Policy-Report-Only` instead, for safe rollout testing. |
+| `script_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `style_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `img_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `font_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `connect_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `frame_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `media_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `object_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `worker_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `extra_directives` | `map[string]string` | `{}` | New directives not in the defaults. Key = directive name, value = sources (or empty for flag directives like `upgrade-insecure-requests`). |
+| `policy` | `string` | `""` | Complete override. When non-empty, replaces the safe builder. The operator takes full responsibility for the resulting policy. |
+
+Example — enable Google Analytics, data: URI fonts, and the privacy-enhanced YouTube host:
+
+```toml
+[csp]
+script_src = ["https://www.googletagmanager.com"]
+font_src   = ["data:"]
+```
+
+The CSP is built once at startup. Restart the server to pick up changes.
 
 ### `[[thumbnail]]`
 
@@ -707,6 +801,13 @@ description = ""
 supports = ["title", "content", "tags", "featured_image", "excerpt"]   # ≥ 1
 fields = [{ name, slug, type, required, ... }]
 system_fields = [{ name, slug, type, ... }]
+
+[csp]
+disable = false                  # omit CSP entirely when true
+report_only = false              # emit Content-Security-Policy-Report-Only
+script_src = []                  # appended to default sources (same for style/img/font/connect/frame/media/object/worker)
+extra_directives = {}            # new directive: "directive-name" = "sources" (or "" for flag directives)
+policy = ""                      # full override (operator takes ownership)
 
 [[thumbnail]]
 max_width = 370                  # > 0

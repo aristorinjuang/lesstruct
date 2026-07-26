@@ -683,9 +683,77 @@ func (_c *MockContentServiceInterface_GetPublishedArchive_Call) RunAndReturn(run
 	return _c
 }
 
+// GetPublishedAuthor provides a mock function for the type MockContentServiceInterface
+func (_mock *MockContentServiceInterface) GetPublishedAuthor(ctx context.Context, username string) (*content.PublishedAuthor, error) {
+	ret := _mock.Called(ctx, username)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPublishedAuthor")
+	}
+
+	var r0 *content.PublishedAuthor
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*content.PublishedAuthor, error)); ok {
+		return returnFunc(ctx, username)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *content.PublishedAuthor); ok {
+		r0 = returnFunc(ctx, username)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*content.PublishedAuthor)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, username)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockContentServiceInterface_GetPublishedAuthor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPublishedAuthor'
+type MockContentServiceInterface_GetPublishedAuthor_Call struct {
+	*mock.Call
+}
+
+// GetPublishedAuthor is a helper method to define mock.On call
+//   - ctx context.Context
+//   - username string
+func (_e *MockContentServiceInterface_Expecter) GetPublishedAuthor(ctx any, username any) *MockContentServiceInterface_GetPublishedAuthor_Call {
+	return &MockContentServiceInterface_GetPublishedAuthor_Call{Call: _e.mock.On("GetPublishedAuthor", ctx, username)}
+}
+
+func (_c *MockContentServiceInterface_GetPublishedAuthor_Call) Run(run func(ctx context.Context, username string)) *MockContentServiceInterface_GetPublishedAuthor_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockContentServiceInterface_GetPublishedAuthor_Call) Return(publishedAuthor *content.PublishedAuthor, err error) *MockContentServiceInterface_GetPublishedAuthor_Call {
+	_c.Call.Return(publishedAuthor, err)
+	return _c
+}
+
+func (_c *MockContentServiceInterface_GetPublishedAuthor_Call) RunAndReturn(run func(ctx context.Context, username string) (*content.PublishedAuthor, error)) *MockContentServiceInterface_GetPublishedAuthor_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetPublishedAuthors provides a mock function for the type MockContentServiceInterface
-func (_mock *MockContentServiceInterface) GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*content.PublishedAuthor, error) {
-	ret := _mock.Called(ctx, limit, offset)
+func (_mock *MockContentServiceInterface) GetPublishedAuthors(ctx context.Context, filters content.PublishedAuthorFilters) ([]*content.PublishedAuthor, error) {
+	ret := _mock.Called(ctx, filters)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedAuthors")
@@ -693,18 +761,18 @@ func (_mock *MockContentServiceInterface) GetPublishedAuthors(ctx context.Contex
 
 	var r0 []*content.PublishedAuthor
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) ([]*content.PublishedAuthor, error)); ok {
-		return returnFunc(ctx, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, content.PublishedAuthorFilters) ([]*content.PublishedAuthor, error)); ok {
+		return returnFunc(ctx, filters)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) []*content.PublishedAuthor); ok {
-		r0 = returnFunc(ctx, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, content.PublishedAuthorFilters) []*content.PublishedAuthor); ok {
+		r0 = returnFunc(ctx, filters)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.PublishedAuthor)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
-		r1 = returnFunc(ctx, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, content.PublishedAuthorFilters) error); ok {
+		r1 = returnFunc(ctx, filters)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -718,30 +786,24 @@ type MockContentServiceInterface_GetPublishedAuthors_Call struct {
 
 // GetPublishedAuthors is a helper method to define mock.On call
 //   - ctx context.Context
-//   - limit int
-//   - offset int
-func (_e *MockContentServiceInterface_Expecter) GetPublishedAuthors(ctx any, limit any, offset any) *MockContentServiceInterface_GetPublishedAuthors_Call {
-	return &MockContentServiceInterface_GetPublishedAuthors_Call{Call: _e.mock.On("GetPublishedAuthors", ctx, limit, offset)}
+//   - filters content.PublishedAuthorFilters
+func (_e *MockContentServiceInterface_Expecter) GetPublishedAuthors(ctx any, filters any) *MockContentServiceInterface_GetPublishedAuthors_Call {
+	return &MockContentServiceInterface_GetPublishedAuthors_Call{Call: _e.mock.On("GetPublishedAuthors", ctx, filters)}
 }
 
-func (_c *MockContentServiceInterface_GetPublishedAuthors_Call) Run(run func(ctx context.Context, limit int, offset int)) *MockContentServiceInterface_GetPublishedAuthors_Call {
+func (_c *MockContentServiceInterface_GetPublishedAuthors_Call) Run(run func(ctx context.Context, filters content.PublishedAuthorFilters)) *MockContentServiceInterface_GetPublishedAuthors_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 int
+		var arg1 content.PublishedAuthorFilters
 		if args[1] != nil {
-			arg1 = args[1].(int)
-		}
-		var arg2 int
-		if args[2] != nil {
-			arg2 = args[2].(int)
+			arg1 = args[1].(content.PublishedAuthorFilters)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
@@ -752,7 +814,7 @@ func (_c *MockContentServiceInterface_GetPublishedAuthors_Call) Return(published
 	return _c
 }
 
-func (_c *MockContentServiceInterface_GetPublishedAuthors_Call) RunAndReturn(run func(ctx context.Context, limit int, offset int) ([]*content.PublishedAuthor, error)) *MockContentServiceInterface_GetPublishedAuthors_Call {
+func (_c *MockContentServiceInterface_GetPublishedAuthors_Call) RunAndReturn(run func(ctx context.Context, filters content.PublishedAuthorFilters) ([]*content.PublishedAuthor, error)) *MockContentServiceInterface_GetPublishedAuthors_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -111,7 +111,7 @@ func (h *TextGenHandler) Enhance(w http.ResponseWriter, r *http.Request) {
 	userPrompt := content
 	if format == formatHTML && existingHTML != "" {
 		userPrompt = "User instruction:\n" + content +
-			"\n\nExisting HTML to refine — modify it according to the instruction, keep what works, output the complete updated fragment:\n" + existingHTML
+			"\n\nExisting HTML to refine (treat it as authoritative structure — modify it according to the instruction, keep what already works, reuse its existing CSS custom properties and class names, and output the COMPLETE updated fragment):\n" + existingHTML
 	}
 
 	// Build media context for HTML generation

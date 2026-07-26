@@ -265,6 +265,7 @@ func startServer(
 	noCookieMiddleware *middleware.NoCookieMiddleware,
 	csrfMiddleware *middleware.CSRFMiddleware,
 	rateLimitMiddleware *middleware.RateLimitMiddleware,
+	securityHeadersMiddleware *middleware.SecurityHeadersMiddleware,
 	jwtManager *auth.JWTManager,
 	staticServer *static.StaticServer,
 	staticHandler http.Handler,
@@ -298,6 +299,7 @@ func startServer(
 		noCookieMiddleware,
 		csrfMiddleware,
 		rateLimitMiddleware,
+		securityHeadersMiddleware,
 		jwtManager,
 		staticServer,
 		staticHandler,
@@ -553,6 +555,18 @@ func main() {
 	}
 	contentHandler := handlers.NewContentHandler(contentService, utilLogger, baseURL, profilePictureStorage.GetURL, featuredImageResolver)
 
+	// Load the public-field allowlist that gates /api/v1/public/* cf_*/sort_by
+	// queries. A missing or invalid block yields an empty registry, which fails
+	// closed — every cf_*/sort_by=cf:* request then returns 400
+	// field_not_queryable. Operators must add [[public_field]] entries to
+	// config.toml to opt in.
+	publicFieldRegistry, err := config.LoadPublicFields(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load public_field config, continuing with closed registry: %v", err)
+		publicFieldRegistry = &config.PublicFieldRegistry{}
+	}
+	contentHandler = contentHandler.WithPublicFieldRegistry(publicFieldRegistry)
+
 	// Initialize agent (Bearer) media handler — the streamlined API surface for
 	// programmatic media upload/retrieval (Story 2.3). Reuses the same mediaService so
 	// hashing, dedup, WebP conversion, and thumbnail variants run identically to admin.
@@ -589,6 +603,18 @@ func main() {
 
 	mediaHandler := handlers.NewMediaHandler(mediaService, imageGenService, utilLogger)
 
+	// Initialize theme for content site (templates and static files).
+	// Done early so AI text generation can read the active theme's styles.
+	var theme *template.Theme
+	if cfg.ThemeDir != "" {
+		theme = &template.Theme{Dir: cfg.ThemeDir}
+	}
+
+	// Read the active theme's minified base.css + style.css so AI-generated
+	// HTML/CSS reuses the site's design tokens and component classes instead
+	// of inventing off-brand styles.
+	themeBaseCSS, themeStyleCSS := template.ReadThemeStyles(theme)
+
 	// Initialize AI text generation service
 	var textGenService textgen.TextGenerationService
 	if cfg.IsTextGenerationEnabled() {
@@ -596,6 +622,8 @@ func main() {
 			cfg.AITextGenerationAPIKey,
 			cfg.AITextGenerationBaseURL,
 			cfg.AITextGenerationModel,
+			themeBaseCSS,
+			themeStyleCSS,
 		)
 	}
 	textGenHandler := handlers.NewTextGenHandler(textGenService, mediaService, utilLogger)
@@ -662,6 +690,7 @@ func main() {
 		wordpressImporter,
 		utilLogger,
 		cfg.ImportMaxSize(),
+		cfg.WordPressImportTimeout,
 	)
 
 	// Initialize API key service and handler (Story 1.1)
@@ -705,12 +734,6 @@ func main() {
 	uiCatalog, err := i18n.NewCatalog(i18n.Embedded(), languages)
 	if err != nil {
 		log.Fatalf("Failed to load UI translations: %v", err)
-	}
-
-	// Initialize theme for content site (templates and static files)
-	var theme *template.Theme
-	if cfg.ThemeDir != "" {
-		theme = &template.Theme{Dir: cfg.ThemeDir}
 	}
 
 	// Initialize content site templates and renderer
@@ -784,6 +807,14 @@ func main() {
 		siteConfig = config.SiteConfig{}
 	}
 
+	cspConfig, err := config.LoadCSPConfig(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load CSP config, continuing with defaults: %v", err)
+		cspConfig = config.CSPConfig{}
+	}
+	cspHeaderName, cspHeaderValue := cspConfig.Build()
+	securityHeadersMiddleware := middleware.NewSecurityHeadersMiddleware(cspHeaderName, cspHeaderValue)
+
 	contentPageHandler := contentpage.NewContentPageHandler(
 		contentService,
 		postTypeService,
@@ -797,6 +828,7 @@ func main() {
 		siteConfig,
 		cfg.PostPerPage,
 	)
+	contentPageHandler = contentPageHandler.WithPublicFieldRegistry(publicFieldRegistry)
 
 	// Initialize static file server for admin panel and content site
 	staticServer := static.NewStaticServer(
@@ -835,6 +867,7 @@ func main() {
 		noCookieMiddleware,
 		csrfMiddleware,
 		rateLimitMiddleware,
+		securityHeadersMiddleware,
 		jwtManager,
 		staticServer,
 		staticHandler,

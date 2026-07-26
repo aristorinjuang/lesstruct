@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -22,6 +23,17 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+// getEnvDuration retrieves an environment variable as a duration (e.g. "2h", "30m")
+// or returns a default value. Invalid values fall back to the default.
+func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if d, err := time.ParseDuration(value); err == nil {
+			return d
 		}
 	}
 	return defaultValue
@@ -92,6 +104,11 @@ type Config struct {
 	// (WordPress WXR now; future importers reuse the same cap). Read via
 	// IMPORT_MAX_SIZE_MB. Use ImportMaxSize() for the byte value.
 	ImportMaxSizeMB int
+
+	// WordPressImportTimeout is the maximum duration a WordPress import job may
+	// run after the HTTP response has been sent (the job runs in a background
+	// goroutine). Read via WORDPRESS_IMPORT_TIMEOUT.
+	WordPressImportTimeout time.Duration
 }
 
 // Load loads configuration from environment variables
@@ -139,7 +156,8 @@ func Load() (*Config, error) {
 
 		APIKeyPepper: getEnv("API_KEY_PEPPER", ""),
 
-		ImportMaxSizeMB: getEnvInt("IMPORT_MAX_SIZE_MB", 100),
+		ImportMaxSizeMB:        getEnvInt("IMPORT_MAX_SIZE_MB", 100),
+		WordPressImportTimeout: getEnvDuration("WORDPRESS_IMPORT_TIMEOUT", 2*time.Hour),
 	}
 
 	// Validate JWT secret
@@ -195,6 +213,10 @@ func Load() (*Config, error) {
 	// Validate import max size
 	if cfg.ImportMaxSizeMB < 1 {
 		return nil, fmt.Errorf("IMPORT_MAX_SIZE_MB must be at least 1, got %d", cfg.ImportMaxSizeMB)
+	}
+
+	if cfg.WordPressImportTimeout <= 0 {
+		return nil, fmt.Errorf("WORDPRESS_IMPORT_TIMEOUT must be positive, got %v", cfg.WordPressImportTimeout)
 	}
 
 	return cfg, nil

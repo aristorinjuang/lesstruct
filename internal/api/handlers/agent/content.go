@@ -255,14 +255,18 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		status = contentdomain.StatusPublished
 	}
 
-	// Slug is intentionally NOT mapped: CreateContentRequest has no Slug field and
-	// the service auto-generates the slug from the title. See Completion Notes.
-	// Tags, Language, and TranslationGroupID are forwarded as-given; the service
-	// normalizes Tags via contentdomain.ValidateTags, rejects an unknown Language
-	// with ErrInvalidLanguage, and validates a provided TranslationGroupID exists
-	// (ErrTranslationGroupNotFound) — all mapped to VALIDATION_ERROR by handleError.
+	// The slug is immutable after creation: any user may supply one at create
+	// time (validated and uniqueness-checked by the service); it can never be
+	// changed via Update. Tags, Language, and TranslationGroupID are forwarded
+	// as-given; the service normalizes Tags via contentdomain.ValidateTags,
+	// rejects an unknown Language with ErrInvalidLanguage, and validates a
+	// provided TranslationGroupID exists (ErrTranslationGroupNotFound) — all
+	// mapped to VALIDATION_ERROR by handleError.
+	slug := req.Slug
+
 	domainReq := contentdomain.CreateContentRequest{
 		Title:              req.Title,
+		Slug:               slug,
 		Content:            body,
 		Status:             status,
 		Format:             contentdomain.Format(normalized),

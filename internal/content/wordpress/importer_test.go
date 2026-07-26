@@ -145,7 +145,7 @@ func TestImporter_RealSample(t *testing.T) {
 			defer func() { _ = f.Close() }()
 
 			importer := newTestImporter(tt.creator, tt.resolver)
-			result, err := importer.Import(context.Background(), f, 1)
+			result, err := importer.Import(context.Background(), f, 1, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			assert.Equal(t, tt.wantSkipped, result.Skipped)
@@ -167,7 +167,7 @@ func TestImporter_InvalidXML(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			importer := newTestImporter(&fakeContentCreator{failOn: -1}, &fakeUserResolver{})
-			result, err := importer.Import(context.Background(), strings.NewReader("<<<broken"), 1)
+			result, err := importer.Import(context.Background(), strings.NewReader("<<<broken"), 1, nil)
 			require.Error(t, err)
 			require.Nil(t, result)
 		})
@@ -225,7 +225,7 @@ func TestImporter_MapsStatusAndTags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			creator := &fakeContentCreator{failOn: -1}
 			importer := newTestImporter(creator, &fakeUserResolver{})
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, nil)
 			require.NoError(t, err)
 			assert.Equal(t, 1, result.Imported)
 			require.Len(t, creator.created, 1)
@@ -321,7 +321,7 @@ func TestImporter_AssignsPostsToCreators(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			importer := newTestImporter(tt.creator, tt.resolver)
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 99)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 99, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			assert.Equal(t, tt.wantUsersImported, result.UsersImported)
@@ -409,7 +409,7 @@ func TestImporter_CustomFields(t *testing.T) {
 				},
 			}
 			importer := newTestImporterWithPostTypes(creator, &fakeUserResolver{}, postTypes)
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			assert.Equal(t, tt.wantSkipped, result.Skipped)
@@ -467,7 +467,7 @@ func TestImporter_FeaturedImage(t *testing.T) {
 			"en",
 			nil,
 		)
-		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1)
+		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, nil)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Imported)
 		assert.Equal(t, 0, result.Skipped)
@@ -519,7 +519,7 @@ func TestImporter_FeaturedImage(t *testing.T) {
 </channel>
 </rss>`
 
-		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1)
+		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, nil)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Imported)
 		require.Len(t, creator.created, 1)
@@ -578,7 +578,7 @@ func TestImporter_FeaturedImage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			creator := &fakeContentCreator{failOn: -1}
 			importer := newTestImporter(creator, &fakeUserResolver{})
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			require.Len(t, creator.created, tt.wantImported)
@@ -628,7 +628,7 @@ func TestImporter_ForwardsLanguage(t *testing.T) {
 				tt.language,
 				nil,
 			)
-			result, err := importer.Import(context.Background(), strings.NewReader(xml), 1)
+			result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, nil)
 			require.NoError(t, err)
 			assert.Equal(t, 1, result.Imported)
 			require.Len(t, creator.created, 1)

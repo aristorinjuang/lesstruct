@@ -55,12 +55,25 @@ type Repository interface {
 	GetPublishedTags(ctx context.Context) ([]string, error)
 	// GetPublishedAuthors returns the users who have at least one published
 	// content item, aggregated with their published-content count and the
-	// distinct post types they publish under. Results are ordered by content
-	// count (desc) then username (asc). Only safe display fields are populated
-	// (username, display name, profile picture filename) — never email, role,
-	// or custom fields. The handler resolves the profile-picture filename into
-	// a public URL.
-	GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*PublishedAuthor, error)
+	// distinct post types they publish under.
+	//
+	// With a zero-value PublishedAuthorFilters, results are ordered by content
+	// count (desc) then username (asc) — the legacy default ranking. When
+	// filters.SortBy is a non-empty custom-field slug, results are instead
+	// ordered by that field's numeric value (the wrapping CASE in each driver
+	// treats non-numeric values as 0). CustomFieldFilters add additional
+	// numeric/equality predicates on user custom fields.
+	//
+	// Each PublishedAuthor carries the raw user custom_fields map. The handler
+	// projects only [[public_field]] allowlisted slugs into the public DTO.
+	// Email, role, and status are never populated — those stay behind
+	// authentication.
+	GetPublishedAuthors(ctx context.Context, filters PublishedAuthorFilters) ([]*PublishedAuthor, error)
+	// GetPublishedAuthor returns a single published author by username, or nil
+	// if no published content exists for that user. The returned PublishedAuthor
+	// follows the same shape as GetPublishedAuthors and carries the raw
+	// custom_fields map.
+	GetPublishedAuthor(ctx context.Context, username string) (*PublishedAuthor, error)
 	// GetPublishedArchive returns published-content counts grouped by year and
 	// month, ordered newest-first. When postType is non-empty, results are
 	// restricted to that post type; when language is non-empty, to that language.

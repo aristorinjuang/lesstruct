@@ -59,7 +59,7 @@ func TestNewOpenAITextService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := textgen.NewOpenAITextService(tt.apiKey, tt.baseURL, tt.model)
+			svc := textgen.NewOpenAITextService(tt.apiKey, tt.baseURL, tt.model, "", "")
 			require.NotNil(t, svc, "NewOpenAITextService should return non-nil")
 		})
 	}
@@ -68,7 +68,7 @@ func TestNewOpenAITextService(t *testing.T) {
 // TestOpenAITextService_EnhanceText_NoAPIKey tests that the service exists
 // and has the right interface even without a real API key.
 func TestOpenAITextService_EnhanceText_NoAPIKey(t *testing.T) {
-	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel)
+	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel, "", "")
 	require.NotNil(t, svc)
 
 	var iface textgen.TextGenerationService = svc
@@ -77,7 +77,7 @@ func TestOpenAITextService_EnhanceText_NoAPIKey(t *testing.T) {
 
 // TestOpenAITextService_TranslateText_NoAPIKey tests translate interface.
 func TestOpenAITextService_TranslateText_NoAPIKey(t *testing.T) {
-	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel)
+	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel, "", "")
 	require.NotNil(t, svc)
 
 	var iface textgen.TextGenerationService = svc
@@ -86,7 +86,7 @@ func TestOpenAITextService_TranslateText_NoAPIKey(t *testing.T) {
 
 // TestOpenAITextService_Interface tests that OpenAITextService satisfies TextGenerationService.
 func TestOpenAITextService_Interface(t *testing.T) {
-	svc := textgen.NewOpenAITextService("sk-key", "https://custom.api/v1", "gpt-5-mini")
+	svc := textgen.NewOpenAITextService("sk-key", "https://custom.api/v1", "gpt-5-mini", "", "")
 	require.NotNil(t, svc)
 
 	// Verify it satisfies the interface
@@ -95,7 +95,7 @@ func TestOpenAITextService_Interface(t *testing.T) {
 
 // TestOpenAITextService_EnhanceText_ContextCancellation tests enhancement with cancelled context.
 func TestOpenAITextService_EnhanceText_ContextCancellation(t *testing.T) {
-	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel)
+	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel, "", "")
 	require.NotNil(t, svc)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -108,7 +108,7 @@ func TestOpenAITextService_EnhanceText_ContextCancellation(t *testing.T) {
 
 // TestOpenAITextService_TranslateText_ContextCancellation tests translation with cancelled context.
 func TestOpenAITextService_TranslateText_ContextCancellation(t *testing.T) {
-	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel)
+	svc := textgen.NewOpenAITextService("sk-fake-key", "", defaultModel, "", "")
 	require.NotNil(t, svc)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,7 +154,7 @@ func TestOpenAITextService_BaseURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := textgen.NewOpenAITextService(tt.apiKey, tt.baseURL, tt.model)
+			svc := textgen.NewOpenAITextService(tt.apiKey, tt.baseURL, tt.model, "", "")
 			require.NotNil(t, svc)
 		})
 	}
@@ -276,4 +276,100 @@ func TestTipTapSchemasAreValid(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBuildHTMLSystemPrompt_NoThemeCSS tests that the prompt is assembled
+// without the theme section when no theme CSS is provided. The base rules and
+// examples must always be present.
+func TestBuildHTMLSystemPrompt_NoThemeCSS(t *testing.T) {
+	tests := []struct {
+		name         string
+		themeBaseCSS string
+		themeStyleCSS string
+	}{
+		{
+			name:          "both empty",
+			themeBaseCSS:  "",
+			themeStyleCSS: "",
+		},
+		{
+			name:          "base only empty",
+			themeBaseCSS:  "",
+			themeStyleCSS: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prompt := textgen.BuildHTMLSystemPromptForTest(tt.themeBaseCSS, tt.themeStyleCSS)
+
+			assert.Contains(t, prompt, "## Hard rules")
+			assert.Contains(t, prompt, "## Brand consistency")
+			assert.Contains(t, prompt, "Few-shot examples")
+			assert.Contains(t, prompt, "var(--color-primary)")
+			assert.NotContains(t, prompt, "Active site theme CSS")
+		})
+	}
+}
+
+// TestBuildHTMLSystemPrompt_WithThemeCSS tests that the active theme CSS is
+// injected into the prompt alongside the base rules and examples.
+func TestBuildHTMLSystemPrompt_WithThemeCSS(t *testing.T) {
+	tests := []struct {
+		name          string
+		themeBaseCSS  string
+		themeStyleCSS string
+	}{
+		{
+			name:          "both present",
+			themeBaseCSS:  ":root{--color-primary:#22d3ee;--color-text:#1a1a2e}",
+			themeStyleCSS: ".btn{background:var(--color-primary)}",
+		},
+		{
+			name:          "only base present",
+			themeBaseCSS:  ":root{--color-primary:#22d3ee}",
+			themeStyleCSS: "",
+		},
+		{
+			name:          "only style present",
+			themeBaseCSS:  "",
+			themeStyleCSS: ".btn{background:var(--color-primary)}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prompt := textgen.BuildHTMLSystemPromptForTest(tt.themeBaseCSS, tt.themeStyleCSS)
+
+			assert.Contains(t, prompt, "## Hard rules")
+			assert.Contains(t, prompt, "## Brand consistency")
+			assert.Contains(t, prompt, "Active site theme CSS")
+			assert.Contains(t, prompt, "### base.css")
+			assert.Contains(t, prompt, "### style.css")
+			assert.Contains(t, prompt, "Few-shot examples")
+
+			if tt.themeBaseCSS != "" {
+				assert.Contains(t, prompt, tt.themeBaseCSS)
+			}
+			if tt.themeStyleCSS != "" {
+				assert.Contains(t, prompt, tt.themeStyleCSS)
+			}
+		})
+	}
+}
+
+// TestNewOpenAITextService_HTMLSystemPromptPrecomputed verifies that the
+// constructor accepts theme CSS without panicking and produces a usable service.
+func TestNewOpenAITextService_HTMLSystemPromptPrecomputed(t *testing.T) {
+	svc := textgen.NewOpenAITextService(
+		"sk-fake-key",
+		"",
+		defaultModel,
+		":root{--color-primary:#22d3ee}",
+		".btn{background:var(--color-primary)}",
+	)
+	require.NotNil(t, svc)
+
+	var iface textgen.TextGenerationService = svc
+	require.NotNil(t, iface)
 }

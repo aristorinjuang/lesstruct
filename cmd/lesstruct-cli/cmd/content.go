@@ -30,11 +30,11 @@ type contentSummary struct {
 // the parsed values at execution time.
 func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 	var (
-		file, title, postType, language, format string
-		tags                                    []string
-		fields                                  []string
-		translationOf                           int
-		published                               bool
+		file, title, slug, postType, language, format string
+		tags                                          []string
+		fields                                        []string
+		translationOf                                 int
+		published                                     bool
 	)
 
 	content := &cobra.Command{
@@ -52,7 +52,9 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 			"argument, or piped stdin. Sends POST /api/v1/content with format: markdown. " +
 			"Use repeatable --field key=value to set custom fields (auto-typed: " +
 			"true/false→bool, numbers→number, else string) and --translation-of <id> " +
-			"to mark this item as a translation of an existing one.",
+			"to mark this item as a translation of an existing one. --slug sets a " +
+			"custom URL slug (create-only; the slug is immutable after creation and " +
+			"cannot be changed via update).",
 		Args:          cobra.MaximumNArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -65,20 +67,21 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 				id := translationOf
 				translationGroupID = &id
 			}
-			return runContentCreate(cmd, args, contentCreateOptions{
-				apiKey:             *apiKey,
-				baseURL:            *baseURL,
-				output:             *output,
-				file:               file,
-				title:              title,
-				published:          published,
-				postType:           postType,
-				format:             format,
-				tags:               tags,
-				language:           language,
-				fields:             fields,
-				translationGroupID: translationGroupID,
-			})
+		return runContentCreate(cmd, args, contentCreateOptions{
+			apiKey:             *apiKey,
+			baseURL:            *baseURL,
+			output:             *output,
+			file:               file,
+			title:              title,
+			slug:               slug,
+			published:          published,
+			postType:           postType,
+			format:             format,
+			tags:               tags,
+			language:           language,
+			fields:             fields,
+			translationGroupID: translationGroupID,
+		})
 		},
 	}
 
@@ -93,6 +96,12 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		"title",
 		"",
 		"content title (default: derived from the first heading or line)",
+	)
+	create.Flags().StringVar(
+		&slug,
+		"slug",
+		"",
+		"custom URL slug (create-only; immutable after creation). Lowercase letters, digits, and hyphens; must be unique per language. Omit to auto-generate from the title.",
 	)
 	create.Flags().BoolVar(
 		&published,
@@ -157,7 +166,8 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 			"Repeatable --field key=value REPLACES all custom fields (auto-typed; omit " +
 			"to preserve). SEO metadata (metaDescription, ogTitle, ogDescription), " +
 			"allowComments, and translationGroupId are server-managed and preserved. " +
-			"slug is accepted but not honored (the server auto-generates it from the title).",
+			"The slug is immutable after creation and cannot be changed via update " +
+			"(it is the public URL; changing it would harm SEO and break links).",
 		Args:          cobra.MaximumNArgs(2),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -446,6 +456,7 @@ type contentCreateOptions struct {
 	output             string
 	file               string
 	title              string
+	slug               string
 	published          bool
 	postType           string
 	format             string
@@ -532,6 +543,7 @@ func runContentCreate(cmd *cobra.Command, args []string, opts contentCreateOptio
 
 	data, meta, err := cl.CreateContent(cmd.Context(), client.CreateContentRequest{
 		Title:              title,
+		Slug:               opts.slug,
 		Body:               body,
 		Format:             opts.format,
 		PostType:           opts.postType,

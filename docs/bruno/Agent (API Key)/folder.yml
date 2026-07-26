@@ -1,0 +1,7 @@
+info:
+  name: Agent (API Key)
+  type: folder
+  seq: 14
+
+request:
+  auth: inherit

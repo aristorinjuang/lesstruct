@@ -88,6 +88,14 @@ verbatim. (If you maintain `.src.css` files for your own authoring convenience a
 to ship minified versions, run `make css` against your source — but the theme
 override is happy with any valid CSS.)
 
+> **Your theme CSS doubles as the AI's brand brief.** When a user generates
+> HTML/CSS with AI, the active theme's `base.css` and `style.css` are injected
+> into the generation prompt. The AI reuses your design tokens
+> (`var(--color-primary)`, `var(--space-*)`, etc.) and component classes
+> (`.btn`, `.form-control`) instead of inventing off-brand styles. Keep your
+> tokens well-named and your component classes semantic — the AI follows your
+> lead.
+
 ### 3. Override the design tokens
 
 The default theme exposes every visual decision as a CSS custom property under
@@ -274,16 +282,124 @@ your overrides in `themes/<name>/templates/`.
 Every content row is rendered through a per-post-type template. The lookup chain
 is:
 
-1. **Theme** `<theme>/templates/<postType>.html` — e.g. `templates/page.html`
-2. **Theme** `<theme>/templates/post.html`
-3. **Embedded** `pages/<postType>.gohtml` (reserved for future built-ins)
-4. **Embedded** `pages/post.gohtml` — the universal default
+1. **Theme** `<theme>/templates/<postType>-<slug>.html` — per-slug override (see [below](#per-slug-template-overrides))
+2. **Theme** `<theme>/templates/<postType>.html` — e.g. `templates/page.html`
+3. **Theme** `<theme>/templates/post.html`
+4. **Embedded** `pages/<postType>.gohtml` (reserved for future built-ins)
+5. **Embedded** `pages/post.gohtml` — the universal default
 
 This means you can ship a `page.html` that omits the related-posts section,
 author box, and date metadata, while `post.gohtml` keeps the full blog chrome.
 If a theme only ships `post.html`, every post type (including `page`) renders
 through that one template. If a theme ships neither, the embedded `post.gohtml`
 is used for everything.
+
+### Per-slug template overrides
+
+A theme can ship a distinct template for **one specific content row** by naming
+the file `<postType>-<slug>.html`. The file applies only when both the post
+type and the slug match the request. This mirrors the WordPress
+`page-{slug}.php` convention but generalizes to every post type.
+
+Example: a theme that wants `/about` (a Page with slug `about`) to render
+through a dedicated layout ships `themes/<name>/templates/page-about.html`.
+The Page with slug `contact` (also `postType=page`) is unaffected and
+continues to render through `page.html`.
+
+The lookup chain is the one above; per-slug is checked first, then the
+per-post-type fallbacks apply.
+
+#### Naming rules
+
+- Filename pattern: `<postType>-<slug>.html` (e.g. `page-about.html`,
+  `article-spotlight.html`, `menu-item-special.html`).
+- `<postType>` must be a registered post-type slug (`post`, `page`, or any
+  custom type declared in `config.toml`). Files whose prefix is not a known
+  post type are ignored.
+- When the post-type slug itself contains a hyphen (e.g. `menu-item`), the
+  **longest** matching registered post type wins. So `menu-item-special.html`
+  is interpreted as `menu-item` + `special`, not `menu` + `item-special`
+  (assuming both `menu` and `menu-item` are registered).
+- A per-post-type template file itself (e.g. `page.html`) is never mistaken
+  for a per-slug override — it has no hyphen and is therefore skipped by the
+  per-slug scan.
+- Files are discovered at startup by scanning `<theme>/templates/`. Add or
+  remove a per-slug file, then restart Lesstruct to pick up the change.
+
+#### What per-slug templates do NOT solve on their own
+
+`html/template` cannot run database queries, so a per-slug template alone
+cannot render dynamic regions such as "recent posts of type X" or "top
+contributors ranked by a custom field". Those regions are added at the theme
+layer via client-side fetches against the public API — see
+[Dynamic regions via CSR](#dynamic-regions-via-csr) below. The per-slug
+template is the layout shell where those region hooks live.
+
+#### Dynamic regions via CSR
+
+A per-slug template defines DOM hooks (elements with `data-*` attributes);
+a theme JS file fetches `/api/v1/public/*` and renders into them. The page
+body stays server-rendered; only the dynamic regions are client-rendered.
+
+```html
+<!-- themes/<name>/templates/page-chefs.html -->
+{{define "body"}}
+<article class="page-chefs">
+	<div class="page-body">{{.Body}}</div>
+
+	<aside class="page-sidebar">
+		<h2>Top Chefs</h2>
+		<ul id="top-chefs" data-limit="5"></ul>
+	</aside>
+
+	<section class="recent-recipes">
+		<h2>Latest Recipes</h2>
+		<div id="recent-recipes"
+		     data-post-type="recipe"
+		     data-limit="8"></div>
+		<a href="/recipe">See all recipes.</a>
+	</section>
+</article>
+<script src="/static/page-chefs.js" defer></script>
+{{end}}
+```
+
+```js
+// themes/<name>/static/page-chefs.js
+async function renderTopChefs() {
+	const ul = document.getElementById('top-chefs');
+	const limit = ul.dataset.limit;
+	const res = await fetch(`/api/v1/public/authors?sort_by=cf:rating&order=desc&limit=${limit}`);
+	const authors = (await res.json()).data;
+	ul.innerHTML = authors.map(a =>
+		`<li><a href="/authors/${a.username}">${a.displayName}</a> (${a.contentCount})</li>`
+	).join('');
+}
+
+async function renderRecentRecipes() {
+	const el = document.getElementById('recent-recipes');
+	const { postType, limit } = el.dataset;
+	const res = await fetch(`/api/v1/public/content_items?post_type=${postType}&limit=${limit}`);
+	const items = (await res.json()).data;
+	el.innerHTML = items.map(p =>
+		`<article><a href="/${p.slug}">${p.title}</a></article>`
+	).join('');
+}
+
+renderTopChefs();
+renderRecentRecipes();
+```
+
+The corresponding `config.toml` entries — these are mandatory; without them the cf queries above return `400 field_not_queryable`:
+
+```toml
+[[public_field]]
+resource   = "user"
+field      = "rating"
+operations = ["sort"]
+```
+
+See [Public custom-field query](api-reference.md#public-custom-field-query) in the API reference for the full parameter catalog and the numeric-safety rules.
 
 ### Block contract
 
@@ -427,7 +543,7 @@ Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Use `{{i
 | `.Username` | `string` | Author username |
 | `.AuthorAvatarURL` | `string` | Avatar URL |
 | `.Posts` | `[]PostItem` | Author's posts (paginated via `?page=N`) |
-| `.CustomFieldsFormatted` | `[]FormattedField` | Author "About" custom fields |
+| `.CustomFieldsFormatted` | `[]FormattedField` | Author "About" custom fields plus any system fields allowlisted with `"expose"` in `[[public_field]]`; merged into one list |
 | `.HasPrev` / `.HasNext` / `.PrevURL` / `.NextURL` / `.CurrentPage` | | Embedded `PaginationData` |
 
 **`TagData`** — tag page:

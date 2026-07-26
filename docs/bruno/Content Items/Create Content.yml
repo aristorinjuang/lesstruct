@@ -11,6 +11,7 @@ http:
     data: |-
       {
         "title": "My First Content",
+        "slug": "my-first-content",
         "content": "<p>Hello World.</p>",
         "tags": [
           "test",

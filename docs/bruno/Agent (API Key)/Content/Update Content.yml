@@ -1,0 +1,25 @@
+info:
+  name: Update Content
+  type: http
+  seq: 4
+
+http:
+  method: PUT
+  url: "{{BASE_URL}}/api/v1/content/{{CONTENT_ID}}"
+  body:
+    type: json
+    data: |-
+      {
+        "title": "Updated Agent Post",
+        "body": "<p>This content was updated via the agent API.</p>",
+        "format": "html"
+      }
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

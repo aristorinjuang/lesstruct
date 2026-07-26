@@ -18,6 +18,8 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -170,6 +172,62 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			if tt.validateResp != nil {
 				tt.validateResp(t, resp)
 			}
+		})
+	}
+}
+
+func TestContentHandler_CreateContent_SlugForwarding(t *testing.T) {
+	tests := []struct {
+		name     string
+		role     string
+		bodySlug string
+		wantSlug string
+	}{
+		{
+			name:     "admin slug is forwarded into the domain request",
+			role:     contentdomain.RoleAdmin,
+			bodySlug: "custom-admin-slug",
+			wantSlug: "custom-admin-slug",
+		},
+		{
+			name:     "non-admin slug is forwarded into the domain request",
+			role:     "",
+			bodySlug: "user-slug",
+			wantSlug: "user-slug",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := handlersmocks.NewMockContentServiceInterface(t)
+			var captured contentdomain.CreateContentRequest
+			mockService.EXPECT().Create(
+				mock.Anything,
+				1,
+				mock.AnythingOfType("content.CreateContentRequest"),
+			).Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				captured = req
+			}).Return(&contentdomain.Content{ID: 1, Title: "Hello"}, nil)
+
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+			body := fmt.Sprintf(
+				`{"title":"Hello","content":"{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\"}]}","status":"draft","slug":%q}`,
+				tt.bodySlug,
+			)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/content_items", bytes.NewReader([]byte(body)))
+			req.Header.Set("Content-Type", "application/json")
+			ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+			if tt.role != "" {
+				ctx = context.WithValue(ctx, middleware.RoleKey, tt.role)
+			}
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+			handler.CreateContent(w, req)
+
+			require.Equal(t, http.StatusCreated, w.Code, "expected success, got body: %s", w.Body.String())
+			assert.Equal(t, tt.wantSlug, captured.Slug, "slug gating for role %q", tt.role)
 		})
 	}
 }
@@ -1321,8 +1379,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 		mockService := handlersmocks.NewMockContentServiceInterface(t)
 		mockService.EXPECT().GetPublishedAuthors(
 			mock.Anything,
-			100,
-			0,
+			contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0},
 		).Return([]*contentdomain.PublishedAuthor{
 			{Username: "jane", DisplayName: "Jane Doe", ProfilePicture: "jane.webp", ContentCount: 5, PostTypes: []string{"article", "event"}},
 			{Username: "bob", DisplayName: "bob", ProfilePicture: "", ContentCount: 1, PostTypes: []string{"post"}},
@@ -1387,7 +1444,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 
 	t.Run("empty result renders data: []", func(t *testing.T) {
 		mockService := handlersmocks.NewMockContentServiceInterface(t)
-		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0}).
 			Return([]*contentdomain.PublishedAuthor{}, nil)
 
 		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
@@ -1409,7 +1466,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 
 	t.Run("service error returns 500", func(t *testing.T) {
 		mockService := handlersmocks.NewMockContentServiceInterface(t)
-		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0}).
 			Return(nil, fmt.Errorf("database down"))
 
 		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
@@ -1429,7 +1486,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 	t.Run("limit clamped to 100 and offset parsed", func(t *testing.T) {
 		mockService := handlersmocks.NewMockContentServiceInterface(t)
 		// Caller asks for limit=500; handler must clamp to 100.
-		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 40).
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 40}).
 			Return([]*contentdomain.PublishedAuthor{}, nil)
 
 		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
@@ -1448,7 +1505,7 @@ func TestContentHandler_ListPublishedAuthors(t *testing.T) {
 
 	t.Run("invalid limit and offset fall back to defaults", func(t *testing.T) {
 		mockService := handlersmocks.NewMockContentServiceInterface(t)
-		mockService.EXPECT().GetPublishedAuthors(mock.Anything, 100, 0).
+		mockService.EXPECT().GetPublishedAuthors(mock.Anything, contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0}).
 			Return([]*contentdomain.PublishedAuthor{}, nil)
 
 		handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)

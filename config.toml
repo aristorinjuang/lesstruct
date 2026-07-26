@@ -137,6 +137,22 @@ slug = "bio"
 type = "textarea"
 max_length = 1000
 
+# ── Content Security Policy (optional) ──────────────────────────────
+# [csp]
+# disable = false                      # set to true to omit the CSP header entirely
+# report_only = false                  # true = emit Content-Security-Policy-Report-Only
+# script_src = []                      # appended to default script-src
+# style_src = []                       # appended to default style-src
+# img_src = []                         # appended to default img-src
+# font_src = ["data:"]                 # appended to default font-src
+# connect_src = []                     # appended to default connect-src
+# frame_src = []                       # appended to default frame-src
+# media_src = []                       # appended to default media-src
+# object_src = []                      # appended to default object-src
+# worker_src = []                      # appended to default worker-src
+# extra_directives = {}                # add directives not in defaults (e.g. upgrade-insecure-requests)
+# policy = ""                          # full override — replaces the safe builder entirely
+
 # ── Thumbnail Sizes ─────────────────────────────────────────────────
 # Thumbnail size configuration for media processing.
 # Each [[thumbnail]] entry defines a max_width (integer > 0) and a suffix (unique, starts with _).

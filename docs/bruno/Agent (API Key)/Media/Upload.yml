@@ -1,0 +1,27 @@
+info:
+  name: Upload
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/media"
+  body:
+    type: multipart-form
+    data:
+      - name: file
+        type: file
+        value:
+          - ./logo.png
+      - name: metadata
+        type: text
+        value: '{"altText": "Logo image uploaded by agent"}'
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

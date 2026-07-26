@@ -1,0 +1,23 @@
+info:
+  name: Create API Key
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/admin/api-keys"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "my-new-key"
+      }
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

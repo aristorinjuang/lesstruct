@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
@@ -23,11 +24,29 @@ const (
 	formatTiptap   = "tiptap"
 	formatMarkdown = "markdown"
 	formatHTML     = "html"
+
+	publicFieldOperationFilter = "filter"
+	publicFieldOperationSort   = "sort"
+	publicFieldOperationExpose = "expose"
 )
 
 var (
 	fieldSlugPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	numericPattern   = regexp.MustCompile(`^-?\d+(\.\d+)?$`)
+
+	// errInvalidSortByPrefix is returned when sort_by is non-empty but lacks the
+	// required "cf:" prefix. Future extensions (e.g. sort_by=created_at) will
+	// relax this — for now only custom-field sort is supported publicly.
+	errInvalidSortByPrefix = errors.New("sort_by must be of the form 'cf:<field>'")
+
+	errInvalidSortByField = errors.New("sort_by field must match ^[a-z][a-z0-9_]*$")
+
+	errInvalidSortOrder = errors.New("order must be 'asc' or 'desc'")
+
+	// errFieldNotQueryable is returned when a public cf_*/sort_by=cf:* parameter
+	// references a field that is not in the [[public_field]] allowlist. The
+	// handler maps this to a 400 field_not_queryable response.
+	errFieldNotQueryable = errors.New("field is not publicly queryable; add a [[public_field]] entry to config.toml")
 )
 
 func handleContentError(w http.ResponseWriter, err error) {
@@ -220,6 +239,96 @@ func parseCustomFieldFilters(r *http.Request) []contentdomain.CustomFieldFilter 
 	return filters
 }
 
+// parsePublicSortBy reads the sort_by and order query params and returns the
+// (field, order) pair on the public query surface. sort_by must be of the form
+// "cf:<field>"; the "cf:" prefix is stripped before returning so the domain
+// layer receives a bare field slug. An empty or non-cf sort_by returns empty
+// strings — the caller treats that as "no sort requested" and falls through to
+// the default ranking.
+//
+// order is validated against {"asc","desc",""}; any other value yields
+// errInvalidSortOrder so the handler can map it to a 400 response.
+func parsePublicSortBy(r *http.Request) (sortBy, sortOrder string, err error) {
+	sortBy = strings.TrimSpace(r.URL.Query().Get("sort_by"))
+	if sortBy == "" {
+		return "", "", nil
+	}
+	if !strings.HasPrefix(sortBy, "cf:") {
+		return "", "", errInvalidSortByPrefix
+	}
+	field := strings.TrimPrefix(sortBy, "cf:")
+	if field == "" || !fieldSlugPattern.MatchString(field) {
+		return "", "", errInvalidSortByField
+	}
+
+	order := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
+	if order == "" {
+		return field, "", nil
+	}
+	if order != string(contentdomain.SortOrderAsc) && order != string(contentdomain.SortOrderDesc) {
+		return "", "", errInvalidSortOrder
+	}
+	return field, order, nil
+}
+
+// enforcePublicFieldAllowlist rejects the request when the registry does not
+// allow every operation the caller is asking for. Returns nil when the
+// registry is nil (fail-closed is enforced elsewhere by the caller not
+// reaching this path) — but in practice, every call site first checks that
+// the registry is non-nil and returns errFieldNotQueryable directly so the
+// user gets a clear "add a [[public_field]] entry" message.
+func enforcePublicFieldAllowlist(
+	registry PublicFieldLookup,
+	resource, postType string,
+	customFieldFilters []contentdomain.CustomFieldFilter,
+	sortBy, sortOrder string,
+) error {
+	for _, f := range customFieldFilters {
+		operation := publicFieldOperationFilter
+		if registry == nil || !registry.IsQueryable(resource, postType, f.Field, operation) {
+			return errFieldNotQueryable
+		}
+	}
+	if sortBy != "" {
+		if registry == nil || !registry.IsQueryable(resource, postType, sortBy, publicFieldOperationSort) {
+			return errFieldNotQueryable
+		}
+	}
+	return nil
+}
+
+// projectPublicFields filters a raw custom-fields map to only the slugs that
+// are allowlisted with the "expose" operation in the [[public_field]] config
+// for the given resource. Returns nil (omitted from JSON via omitempty) when
+// no fields are allowlisted or the registry is nil — safe default.
+func projectPublicFields(
+	registry PublicFieldLookup,
+	resource, postType string,
+	values map[string]any,
+) map[string]any {
+	if registry == nil || values == nil {
+		return nil
+	}
+
+	exposed := registry.ExposedFields(resource, postType)
+	if len(exposed) == 0 {
+		return nil
+	}
+
+	result := make(map[string]any, len(exposed))
+	for _, slug := range exposed {
+		if val, ok := values[slug]; ok {
+			result[slug] = val
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	return result
+}
+
 type SearchResult struct {
 	Slug            string `json:"slug"`
 	Title           string `json:"title"`
@@ -227,15 +336,19 @@ type SearchResult struct {
 }
 
 // PublicAuthorResponse is the safe, public-facing shape for a published author.
-// It deliberately omits email, role, status, and custom fields — those stay
-// behind authentication (per Lesstruct's no-enumeration model).
+// It deliberately omits email, role, and status — those stay behind
+// authentication (per Lesstruct's no-enumeration model). PublicFields carries
+// the raw values of custom/system fields that are allowlisted with the
+// "expose" operation in the [[public_field]] config. When no fields are
+// allowlisted, the key is omitted from the JSON response (omitempty).
 type PublicAuthorResponse struct {
-	Username     string   `json:"username"`
-	DisplayName  string   `json:"displayName"`
-	AvatarURL    string   `json:"avatarURL"`
-	ProfileURL   string   `json:"profileURL"`
-	ContentCount int      `json:"contentCount"`
-	PostTypes    []string `json:"postTypes"`
+	Username     string         `json:"username"`
+	DisplayName  string         `json:"displayName"`
+	AvatarURL    string         `json:"avatarURL"`
+	ProfileURL   string         `json:"profileURL"`
+	ContentCount int            `json:"contentCount"`
+	PostTypes    []string       `json:"postTypes"`
+	PublicFields map[string]any `json:"publicFields,omitempty"`
 }
 
 // PublicArchiveMonthResponse is the public-facing shape for one month in a
@@ -249,6 +362,7 @@ type PublicArchiveMonthResponse struct {
 
 type CreateContentRequest struct {
 	Title              string         `json:"title"`
+	Slug               string         `json:"slug,omitempty"`
 	Content            string         `json:"content"`
 	Format             string         `json:"format,omitempty"`
 	Tags               []string       `json:"tags"`
@@ -301,7 +415,8 @@ type ContentServiceInterface interface {
 	ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*contentdomain.Content, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
-	GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*contentdomain.PublishedAuthor, error)
+	GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error)
+	GetPublishedAuthor(ctx context.Context, username string) (*contentdomain.PublishedAuthor, error)
 	GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error)
 	GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
 }
@@ -312,6 +427,26 @@ type ContentHandler struct {
 	baseURL                   string
 	profilePictureURLResolver func(string) string
 	featuredImageResolver     func(string) string
+	publicFieldRegistry       PublicFieldLookup
+}
+
+// PublicFieldLookup is the minimal subset of *config.PublicFieldRegistry that
+// ContentHandler consults to enforce the [[public_field]] allowlist. Defining
+// it locally keeps the handler package decoupled from the config package and
+// makes the handler trivially testable with a stub.
+type PublicFieldLookup interface {
+	IsQueryable(resource, postType, field, operation string) bool
+	ExposedFields(resource, postType string) []string
+}
+
+// WithPublicFieldRegistry attaches a [[public_field]] registry to the handler
+// so /api/v1/public/* endpoints can enforce the public query allowlist. When
+// not called (or called with nil), the handler rejects every cf_*/sort_by=cf:*
+// parameter — fail-closed is the safe default. Returns the receiver for
+// chaining at construction time.
+func (h *ContentHandler) WithPublicFieldRegistry(registry PublicFieldLookup) *ContentHandler {
+	h.publicFieldRegistry = registry
+	return h
 }
 
 type publicContentItem struct {
@@ -351,8 +486,14 @@ func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The slug is immutable after creation: any user may supply one at create
+	// time (validated and uniqueness-checked by the service); it can never be
+	// changed via Update.
+	slug := req.Slug
+
 	contentReq := contentdomain.CreateContentRequest{
 		Title:              req.Title,
+		Slug:               slug,
 		Content:            body,
 		Format:             format,
 		Tags:               req.Tags,
@@ -758,11 +899,49 @@ func (h *ContentHandler) ListPublishedContents(w http.ResponseWriter, r *http.Re
 	}
 
 	postType := r.URL.Query().Get("post_type")
+	language := r.URL.Query().Get("language")
+	customFieldFilters := parseCustomFieldFilters(r)
+	sortBy, sortOrder, sortErr := parsePublicSortBy(r)
+	if sortErr != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_sort", sortErr.Error(), nil)
+		return
+	}
+
+	// Public custom-field queries are opt-in via the [[public_field]] allowlist.
+	// When the caller asks for any cf_* filter or sort_by=cf:*, every referenced
+	// field must be allowlisted for the content resource (and the request's
+	// post_type when the entry is post-type-scoped). Without an entry here, the
+	// request fails closed with 400 field_not_queryable.
+	if len(customFieldFilters) > 0 || sortBy != "" {
+		if err := enforcePublicFieldAllowlist(
+			h.publicFieldRegistry,
+			config.PublicFieldResourceContent,
+			postType,
+			customFieldFilters,
+			sortBy,
+			sortOrder,
+		); err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, "field_not_queryable", err.Error(), nil)
+			return
+		}
+	}
 
 	var contents []*contentdomain.Content
 	var err error
 
-	if postType != "" {
+	if len(customFieldFilters) > 0 || sortBy != "" || language != "" {
+		filters := contentdomain.ContentFilters{
+			Limit:              limit,
+			Offset:             offset,
+			PostType:           postType,
+			Language:           language,
+			Status:             string(contentdomain.StatusPublished),
+			CustomFieldFilters: customFieldFilters,
+			SortBy:             sortBy,
+			SortOrder:          sortOrder,
+		}
+		contents, err = h.contentService.ListByFilters(r.Context(), 0, filters)
+	} else if postType != "" {
 		contents, err = h.contentService.GetPublishedByPostType(r.Context(), postType, "", 0, 0, limit, offset)
 	} else {
 		contents, err = h.contentService.GetPublished(r.Context(), limit, offset)
@@ -913,7 +1092,34 @@ func (h *ContentHandler) ListPublishedAuthors(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	authors, err := h.contentService.GetPublishedAuthors(r.Context(), limit, offset)
+	customFieldFilters := parseCustomFieldFilters(r)
+	sortBy, sortOrder, sortErr := parsePublicSortBy(r)
+	if sortErr != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_sort", sortErr.Error(), nil)
+		return
+	}
+
+	if len(customFieldFilters) > 0 || sortBy != "" {
+		if err := enforcePublicFieldAllowlist(
+			h.publicFieldRegistry,
+			config.PublicFieldResourceUser,
+			"",
+			customFieldFilters,
+			sortBy,
+			sortOrder,
+		); err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, "field_not_queryable", err.Error(), nil)
+			return
+		}
+	}
+
+	authors, err := h.contentService.GetPublishedAuthors(r.Context(), contentdomain.PublishedAuthorFilters{
+		Limit:              limit,
+		Offset:             offset,
+		SortBy:             sortBy,
+		SortOrder:          sortOrder,
+		CustomFieldFilters: customFieldFilters,
+	})
 	if err != nil {
 		h.logger.Error("Failed to list published authors: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to list published authors", nil)
@@ -933,10 +1139,51 @@ func (h *ContentHandler) ListPublishedAuthors(w http.ResponseWriter, r *http.Req
 			ProfileURL:   h.baseURL + "/authors/" + a.Username,
 			ContentCount: a.ContentCount,
 			PostTypes:    a.PostTypes,
+			PublicFields: projectPublicFields(h.publicFieldRegistry, config.PublicFieldResourceUser, "", a.CustomFields),
 		})
 	}
 
 	sendSuccessResponse(w, http.StatusOK, responses)
+}
+
+// GetPublishedAuthor returns a single published author's public profile.
+// It follows the same response shape as the ListPublishedAuthors endpoint
+// (PublicAuthorResponse) but for one author. Returns 404 when the author has
+// no published content or does not exist.
+func (h *ContentHandler) GetPublishedAuthor(w http.ResponseWriter, r *http.Request) {
+	username := r.PathValue("username")
+	if username == "" {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_username", "Username is required", nil)
+		return
+	}
+
+	author, err := h.contentService.GetPublishedAuthor(r.Context(), username)
+	if err != nil {
+		h.logger.Error("Failed to get published author: %v", err)
+		sendErrorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to get published author", nil)
+		return
+	}
+	if author == nil {
+		sendErrorResponse(w, http.StatusNotFound, "author_not_found", "Author not found", nil)
+		return
+	}
+
+	var avatarURL string
+	if author.ProfilePicture != "" && h.profilePictureURLResolver != nil {
+		avatarURL = h.profilePictureURLResolver(author.ProfilePicture)
+	}
+
+	response := PublicAuthorResponse{
+		Username:     author.Username,
+		DisplayName:  author.DisplayName,
+		AvatarURL:    avatarURL,
+		ProfileURL:   h.baseURL + "/authors/" + author.Username,
+		ContentCount: author.ContentCount,
+		PostTypes:    author.PostTypes,
+		PublicFields: projectPublicFields(h.publicFieldRegistry, config.PublicFieldResourceUser, "", author.CustomFields),
+	}
+
+	sendSuccessResponse(w, http.StatusOK, response)
 }
 
 // ListPublishedArchive returns published-content counts grouped by year and

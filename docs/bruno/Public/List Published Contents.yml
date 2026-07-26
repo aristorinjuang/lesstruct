@@ -6,6 +6,22 @@ info:
 http:
   method: GET
   url: "{{BASE_URL}}/api/v1/public/content_items"
+  params:
+    - name: post_type
+      value: "post"
+      type: query
+    - name: language
+      value: "en"
+      type: query
+    - name: cf_tier_point
+      value: "100"
+      type: query
+    - name: sort_by
+      value: "cf:tier_point"
+      type: query
+    - name: order
+      value: "desc"
+      type: query
   auth: inherit
 
 settings:

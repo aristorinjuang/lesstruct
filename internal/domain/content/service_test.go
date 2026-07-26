@@ -251,6 +251,78 @@ func TestService_Create(t *testing.T) {
 			wantErr:      errors.New("failed to check slug uniqueness"),
 			validateSlug: false,
 		},
+		{
+			name:   "successful create with caller-supplied slug",
+			userID: 1,
+			req: content.CreateContentRequest{
+				Title:   "Some Title",
+				Slug:    "custom-slug",
+				Content: testTipTapJSON("Content here"),
+				Tags:    []string{},
+				Status:  content.StatusDraft,
+			},
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("CheckSlugUnique", mock.Anything, "custom-slug", "en").Return(true, nil)
+				m.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+					content := args.Get(1).(*content.Content)
+					content.ID = 4
+				})
+			},
+			wantErr:      nil,
+			validateSlug: true,
+			expectedSlug: "custom-slug",
+		},
+		{
+			name:   "caller-supplied slug is trimmed of surrounding whitespace",
+			userID: 1,
+			req: content.CreateContentRequest{
+				Title:   "Some Title",
+				Slug:    "  custom-slug  ",
+				Content: testTipTapJSON("Content here"),
+				Tags:    []string{},
+				Status:  content.StatusDraft,
+			},
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("CheckSlugUnique", mock.Anything, "custom-slug", "en").Return(true, nil)
+				m.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+					content := args.Get(1).(*content.Content)
+					content.ID = 5
+				})
+			},
+			wantErr:      nil,
+			validateSlug: true,
+			expectedSlug: "custom-slug",
+		},
+		{
+			name:   "fails when caller-supplied slug is invalid",
+			userID: 1,
+			req: content.CreateContentRequest{
+				Title:   "Some Title",
+				Slug:    "Invalid Slug!",
+				Content: testTipTapJSON("Content here"),
+				Tags:    []string{},
+				Status:  content.StatusDraft,
+			},
+			setupMock:    func(m *mocks.MockRepository) {},
+			wantErr:      content.ErrInvalidSlug,
+			validateSlug: false,
+		},
+		{
+			name:   "fails when caller-supplied slug already exists",
+			userID: 1,
+			req: content.CreateContentRequest{
+				Title:   "Some Title",
+				Slug:    "taken-slug",
+				Content: testTipTapJSON("Content here"),
+				Tags:    []string{},
+				Status:  content.StatusDraft,
+			},
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("CheckSlugUnique", mock.Anything, "taken-slug", "en").Return(false, nil)
+			},
+			wantErr:      content.ErrSlugAlreadyExists,
+			validateSlug: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -731,7 +803,6 @@ func TestService_Update(t *testing.T) {
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
-				m.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:        nil,
@@ -817,7 +888,6 @@ func TestService_Update(t *testing.T) {
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
-				m.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:        nil,
@@ -1038,6 +1108,37 @@ func TestService_Update(t *testing.T) {
 			mockRepo.AssertExpectations(t)
 		})
 	}
+}
+
+func TestService_Update_SlugIsImmutable(t *testing.T) {
+	mockRepo := &mocks.MockRepository{}
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		ID:      1,
+		UserID:  1,
+		Title:   "Original Title",
+		Slug:    "original-slug",
+		Content: testTipTapJSON("Original content"),
+		Tags:    []string{},
+		Status:  content.StatusDraft,
+	}, nil)
+	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
+
+	service := content.NewService(mockRepo, nil, nil)
+	req := content.UpdateContentRequest{
+		Title:   "Completely Different Title",
+		Content: testTipTapJSON("Updated content"),
+		Tags:    []string{},
+		Status:  content.StatusDraft,
+	}
+
+	result, err := service.Update(context.Background(), 1, 1, "", req)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Completely Different Title", result.Title, "Service.Update() Title")
+	// The slug is immutable after creation: a title edit must not regenerate it,
+	// since changing the public URL would harm SEO and break existing links.
+	assert.Equal(t, "original-slug", result.Slug, "Service.Update() must not regenerate the slug")
+	mockRepo.AssertExpectations(t)
 }
 
 func TestService_Update_SEOAutoGeneration(t *testing.T) {
@@ -1698,7 +1799,6 @@ func TestService_Update_SEOGenerationFailure(t *testing.T) {
 		Tags:    []string{},
 		Status:  content.StatusDraft,
 	}, nil)
-	mockRepo.On("CheckSlugUnique", mock.Anything, mock.AnythingOfType("string"), "").Return(true, nil)
 
 	seoService := seo.NewService("http://localhost:8080", "Test Site")
 	service := content.NewService(mockRepo, seoService, nil)
@@ -3065,7 +3165,6 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			PostType: "product",
 			Status:   content.StatusDraft,
 		}, nil)
-		mockRepo.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -3106,7 +3205,6 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			PostType: "product",
 			Status:   content.StatusDraft,
 		}, nil)
-		mockRepo.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
 		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
@@ -3144,7 +3242,6 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			PostType: "product",
 			Status:   content.StatusDraft,
 		}, nil)
-		mockRepo.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -3182,7 +3279,6 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			PostType: "product",
 			Status:   content.StatusDraft,
 		}, nil)
-		mockRepo.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 		service := content.NewService(mockRepo, nil, nil)
@@ -3214,7 +3310,6 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			Status:       content.StatusDraft,
 			CustomFields: map[string]any{"price": 29.99},
 		}, nil)
-		mockRepo.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -3246,7 +3341,6 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			PostType: "product",
 			Status:   content.StatusDraft,
 		}, nil)
-		mockRepo.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
@@ -3437,7 +3531,6 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 			PostType: "product",
 			Status:   content.StatusDraft,
 		}, nil)
-		mockRepo.On("CheckSlugUnique", mock.Anything, "updated-title", "").Return(true, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}

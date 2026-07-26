@@ -1,0 +1,24 @@
+info:
+  name: Upload Picture
+  type: http
+  seq: 11
+
+http:
+  method: PUT
+  url: "{{BASE_URL}}/api/profile/picture"
+  body:
+    type: multipart-form
+    data:
+      - name: image
+        type: file
+        value:
+          - ./logo.png
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -39,6 +39,26 @@ func ComputeAssetHash(theme *Theme) string {
 	return fmt.Sprintf("%x", h.Sum(nil)[:6])
 }
 
+// ReadThemeStyles reads base.css and style.css from the resolved static
+// filesystem (theme overrides first, embedded defaults as fallback). The
+// returned CSS is injected into AI text generation so generated HTML reuses
+// the site's design tokens and component classes instead of inventing
+// off-brand styles. A missing file yields an empty string for that slot —
+// callers handle the empty case gracefully.
+func ReadThemeStyles(theme *Theme) (baseCSS, styleCSS string) {
+	resolved := resolveFS(theme, staticFS, "static")
+
+	if data, err := fs.ReadFile(resolved, "base.css"); err == nil {
+		baseCSS = string(data)
+	}
+
+	if data, err := fs.ReadFile(resolved, "style.css"); err == nil {
+		styleCSS = string(data)
+	}
+
+	return baseCSS, styleCSS
+}
+
 // staticHandler rewrites versioned CSS requests (<name>.<hash>.css) to serve
 // <name>.css with immutable Cache-Control headers. It handles both base.css
 // and style.css (and any future hashed assets).
@@ -215,6 +235,7 @@ type Templates struct {
 	index          *template.Template
 	home           *template.Template
 	content        map[string]*template.Template
+	contentBySlug  map[string]*template.Template
 	contentDefault *template.Template
 	author         *template.Template
 	tag            *template.Template
@@ -239,6 +260,13 @@ func (t *Templates) RenderHome(w http.ResponseWriter, data IndexData) error {
 
 func (t *Templates) RenderContent(w http.ResponseWriter, data ContentData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	if data.PostType != "" && data.Slug != "" {
+		if tpl, ok := t.contentBySlug[data.PostType+":"+data.Slug]; ok {
+			return tpl.Execute(w, data)
+		}
+	}
+
 	tpl := t.contentDefault
 	if specific, ok := t.content[data.PostType]; ok {
 		tpl = specific
@@ -337,6 +365,21 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) 
 		}
 		tplContent := readContentTemplate(theme, slug)
 		t.content[slug] = template.Must(template.Must(t.layout.Clone()).Parse(tplContent))
+	}
+
+	// Load per-slug content template overrides (e.g. page-about.html). These
+	// take precedence over the per-post-type templates above when both the
+	// post type and the slug match. Files without a matching post-type prefix
+	// are ignored; per-post-type templates themselves (e.g. page.html) do not
+	// have a hyphen and so are skipped.
+	knownPostTypes := make(map[string]bool, len(postTypeSlugs)+1)
+	knownPostTypes["post"] = true
+	for _, slug := range postTypeSlugs {
+		knownPostTypes[slug] = true
+	}
+	t.contentBySlug = make(map[string]*template.Template)
+	for key, tplContent := range findPerSlugTemplateOverrides(theme, knownPostTypes) {
+		t.contentBySlug[key] = template.Must(template.Must(t.layout.Clone()).Parse(tplContent))
 	}
 
 	return t, nil

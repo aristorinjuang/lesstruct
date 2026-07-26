@@ -89,6 +89,7 @@ func (e *APIError) Error() string {
 // unknown code, mapped to 400 VALIDATION_ERROR by the CLI's exit code map).
 type CreateContentRequest struct {
 	Title              string         `json:"title"`
+	Slug               string         `json:"slug,omitempty"`
 	Body               string         `json:"body"`
 	Format             string         `json:"format,omitempty"`
 	PostType           string         `json:"postType,omitempty"`

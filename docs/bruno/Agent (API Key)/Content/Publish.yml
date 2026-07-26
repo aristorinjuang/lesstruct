@@ -1,0 +1,17 @@
+info:
+  name: Publish
+  type: http
+  seq: 7
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/content/{{CONTENT_ID}}/publish"
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -1,0 +1,17 @@
+info:
+  name: Delete Content
+  type: http
+  seq: 6
+
+http:
+  method: DELETE
+  url: "{{BASE_URL}}/api/v1/content/{{CONTENT_ID}}"
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

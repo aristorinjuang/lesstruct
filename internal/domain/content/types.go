@@ -46,6 +46,10 @@ var (
 	ErrInvalidFilterOperator = errors.New("invalid filter operator")
 	// ErrInvalidFilterValue is returned when a custom field filter has an empty value
 	ErrInvalidFilterValue = errors.New("filter value must not be empty")
+	// ErrInvalidSortOrder is returned when a sort order is not one of the
+	// recognised values (asc, desc). The empty string means "use the default"
+	// and is always valid.
+	ErrInvalidSortOrder = errors.New("sort order must be 'asc' or 'desc'")
 	// ErrUnknownSystemFieldKey is returned when a system field key is not in the schema
 	ErrUnknownSystemFieldKey = errors.New("unknown system field key")
 	// ErrSystemFieldValidation is returned when a system field value fails schema validation
@@ -189,14 +193,35 @@ type Content struct {
 
 // PublishedAuthor is a read-model aggregating a user's published-content
 // footprint. It is shaped by the repository (which owns the content↔user join)
-// and re-shaped into a public DTO by the handler. It intentionally carries no
-// email, role, or custom-field data — those stay behind authentication.
+// and re-shaped into a public DTO by the handler. CustomFields carries the raw
+// user custom_fields map from the database; the handler projects only
+// allowlisted slugs into the public response via the [[public_field]] expose
+// operation. Email, role, and status are never populated — those stay behind
+// authentication.
 type PublishedAuthor struct {
 	Username       string
 	DisplayName    string
 	ProfilePicture string
 	ContentCount   int
 	PostTypes      []string
+	CustomFields   map[string]any
+}
+
+// PublishedAuthorFilters holds filter and sort parameters for the public
+// authors listing. A zero-value filter behaves identically to the legacy
+// (limit, offset) call — the default content_count DESC ranking is preserved.
+//
+// SortBy holds the custom-field slug with no prefix (the "cf:" prefix on the
+// HTTP surface is stripped by the handler before constructing the filter).
+// When SortBy is empty, content_count DESC remains the ranking. Custom-field
+// sorts are numeric-only — non-numeric values sort as zero (per the numeric
+// safety wrappers in each repository driver).
+type PublishedAuthorFilters struct {
+	Limit              int
+	Offset             int
+	SortBy             string
+	SortOrder          string
+	CustomFieldFilters []CustomFieldFilter
 }
 
 // ArchiveMonth is a read-model aggregating published-content counts by year
@@ -220,6 +245,27 @@ const (
 	FilterOpMax FilterOperator = "max"
 )
 
+// SortOrder represents the direction of an ORDER BY clause. The empty string
+// is treated as "default" — the repository picks the direction (typically
+// DESC for rankings).
+type SortOrder string
+
+const (
+	// SortOrderAsc sorts from smallest to largest.
+	SortOrderAsc SortOrder = "asc"
+	// SortOrderDesc sorts from largest to smallest.
+	SortOrderDesc SortOrder = "desc"
+)
+
+// ValidateSortOrder reports whether s is a valid SortOrder value (including
+// the empty string, which means "no explicit direction — use the default").
+func ValidateSortOrder(s string) error {
+	if s == "" || s == string(SortOrderAsc) || s == string(SortOrderDesc) {
+		return nil
+	}
+	return ErrInvalidSortOrder
+}
+
 // CustomFieldFilter represents a filter on a custom field
 type CustomFieldFilter struct {
 	Field    string
@@ -239,6 +285,12 @@ type CustomFieldFilter struct {
 // Author matches the joined users.name (with users.username as a fallback),
 // case-insensitive equality. The agent v1 surface only honors it for admins;
 // the agent handler returns 403 to non-admins before the filter is built.
+//
+// SortBy and SortOrder together enable an ORDER BY clause on a custom field.
+// SortBy holds the field slug with no prefix (the "cf:" prefix on the public
+// HTTP surface is stripped by the handler before constructing the filter).
+// When SortBy is empty, the repository's default created_at DESC ordering
+// applies. SortOrder is "asc", "desc", or "" (use the default).
 type ContentFilters struct {
 	Limit              int
 	Offset             int
@@ -249,6 +301,8 @@ type ContentFilters struct {
 	Tags               []string
 	Author             string
 	CustomFieldFilters []CustomFieldFilter
+	SortBy             string
+	SortOrder          string
 }
 
 // MaxCustomFieldFilters limits the number of custom field filters per query

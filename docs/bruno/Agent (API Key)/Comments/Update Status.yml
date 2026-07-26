@@ -1,0 +1,23 @@
+info:
+  name: Update Status
+  type: http
+  seq: 4
+
+http:
+  method: PUT
+  url: "{{BASE_URL}}/api/v1/content/{{CONTENT_ID}}/comments/{{COMMENT_ID}}/status"
+  body:
+    type: json
+    data: |-
+      {
+        "status": "approved"
+      }
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

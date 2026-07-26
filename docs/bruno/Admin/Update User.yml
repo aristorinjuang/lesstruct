@@ -1,0 +1,25 @@
+info:
+  name: Update User
+  type: http
+  seq: 12
+
+http:
+  method: PUT
+  url: "{{BASE_URL}}/api/admin/users/{{USER_ID}}"
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Updated Name",
+        "email": "updated@example.com",
+        "role": "Commentator"
+      }
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -215,7 +215,7 @@ func TestTextGenHandler_Enhance(t *testing.T) {
 			setupService: func(s *handlersmocks.MockTextGenerationService) {
 				s.EXPECT().EnhanceText(
 					mock.Anything,
-					"User instruction:\nMake the colors warmer\n\nExisting HTML to refine — modify it according to the instruction, keep what works, output the complete updated fragment:\n<section class='ls-test'>Hello</section>",
+					"User instruction:\nMake the colors warmer\n\nExisting HTML to refine (treat it as authoritative structure — modify it according to the instruction, keep what already works, reuse its existing CSS custom properties and class names, and output the COMPLETE updated fragment):\n<section class='ls-test'>Hello</section>",
 					"html",
 					"",
 				).Return("<style>.ls-test{color:orange}</style><section class='ls-test'>Hello</section>", nil)

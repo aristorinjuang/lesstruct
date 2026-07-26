@@ -401,3 +401,94 @@ func TestNewTemplates_WithTheme_RenderNotFound(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "Gone Exploring!")
 	assert.NotContains(t, w.Body.String(), "Page not found.")
 }
+
+// TestReadThemeStyles verifies that ReadThemeStyles returns the minified
+// base.css and style.css from the resolved theme filesystem, falling back to
+// the embedded defaults when a file is not present on disk.
+func TestReadThemeStyles(t *testing.T) {
+	tests := []struct {
+		name           string
+		setupTheme     func(t *testing.T) *template.Theme
+		wantBaseCSS    string
+		wantStyleCSS   string
+		wantBaseNonEmpty bool
+		wantStyleNonEmpty bool
+	}{
+		{
+			name: "nil theme returns embedded defaults",
+			setupTheme: func(t *testing.T) *template.Theme {
+				return nil
+			},
+			wantBaseNonEmpty:  true,
+			wantStyleNonEmpty: true,
+		},
+		{
+			name: "empty theme dir returns embedded defaults",
+			setupTheme: func(t *testing.T) *template.Theme {
+				return &template.Theme{Dir: ""}
+			},
+			wantBaseNonEmpty:  true,
+			wantStyleNonEmpty: true,
+		},
+		{
+			name: "theme overrides both base.css and style.css",
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				staticDir := filepath.Join(dir, "static")
+				require.NoError(t, os.MkdirAll(staticDir, 0755))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(staticDir, "base.css"),
+					[]byte(":root{--color-primary:#ff0000}"),
+					0644,
+				))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(staticDir, "style.css"),
+					[]byte(".custom-btn{color:red}"),
+					0644,
+				))
+				return &template.Theme{Dir: dir}
+			},
+			wantBaseCSS:    ":root{--color-primary:#ff0000}",
+			wantStyleCSS:   ".custom-btn{color:red}",
+			wantBaseNonEmpty:  true,
+			wantStyleNonEmpty: true,
+		},
+		{
+			name: "theme overrides only style.css, base.css falls back to embedded",
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				staticDir := filepath.Join(dir, "static")
+				require.NoError(t, os.MkdirAll(staticDir, 0755))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(staticDir, "style.css"),
+					[]byte(".custom-btn{color:red}"),
+					0644,
+				))
+				return &template.Theme{Dir: dir}
+			},
+			wantStyleCSS:     ".custom-btn{color:red}",
+			wantBaseNonEmpty:  true,
+			wantStyleNonEmpty: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			theme := tt.setupTheme(t)
+			baseCSS, styleCSS := template.ReadThemeStyles(theme)
+
+			if tt.wantBaseCSS != "" {
+				assert.Equal(t, tt.wantBaseCSS, baseCSS)
+			}
+			if tt.wantStyleCSS != "" {
+				assert.Equal(t, tt.wantStyleCSS, styleCSS)
+			}
+			if tt.wantBaseNonEmpty {
+				assert.NotEmpty(t, baseCSS, "base.css should not be empty")
+			}
+			if tt.wantStyleNonEmpty {
+				assert.NotEmpty(t, styleCSS, "style.css should not be empty")
+			}
+		})
+	}
+}

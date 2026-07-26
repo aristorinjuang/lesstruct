@@ -539,6 +539,51 @@ func TestContentHandler_Create(t *testing.T) {
 	}
 }
 
+func TestContentHandler_Create_SlugForwarding(t *testing.T) {
+	tiptapJSON := `{"type":"doc","content":[{"type":"paragraph"}]}`
+
+	tests := []struct {
+		name     string
+		role     string
+		bodySlug string
+		wantSlug string
+	}{
+		{
+			name:     "admin slug is forwarded into the domain request",
+			role:     contentdomain.RoleAdmin,
+			bodySlug: "custom-admin-slug",
+			wantSlug: "custom-admin-slug",
+		},
+		{
+			name:     "non-admin slug is forwarded into the domain request",
+			role:     "",
+			bodySlug: "user-slug",
+			wantSlug: "user-slug",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := agentmocks.NewMockContentService(t)
+			var captured contentdomain.CreateContentRequest
+			svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+				Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+					captured = req
+				}).
+				Return(&contentdomain.Content{ID: 1, Title: "Hello"}, nil)
+
+			handler := newContentHandler(svc)
+			body := marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "slug": tt.bodySlug})
+			r := newAuthenticatedRequestAs(http.MethodPost, "/api/v1/content", body, testUserID, tt.role)
+			w := httptest.NewRecorder()
+			handler.Create(w, r)
+
+			require.Equal(t, http.StatusOK, w.Code, "expected success, got body: %s", w.Body.String())
+			assert.Equal(t, tt.wantSlug, captured.Slug, "slug gating for role %q", tt.role)
+		})
+	}
+}
+
 func TestContentHandler_Get(t *testing.T) {
 	tests := []struct {
 		name       string

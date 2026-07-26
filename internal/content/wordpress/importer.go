@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -15,6 +16,8 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
+
+const downloadWorkers = 10
 
 var wpDatetimeFormats = []string{
 	time.RFC3339,
@@ -94,6 +97,14 @@ type ImportResult struct {
 	Errors        []string `json:"errors,omitempty"`
 }
 
+// Progress reflects the current state of an in-flight import.
+type Progress struct {
+	Imported      int `json:"imported"`
+	Skipped       int `json:"skipped"`
+	UsersImported int `json:"usersImported"`
+	Total         int `json:"total"`
+}
+
 // Importer orchestrates a WordPress import: parse the WXR, download images,
 // convert each item to TipTap JSON, and create it via the content service.
 type Importer struct {
@@ -108,30 +119,61 @@ type Importer struct {
 // downloadImages collects every image URL across all items, downloads each once,
 // and returns a map of WordPress URL to local media URL.
 func (imp *Importer) downloadImages(ctx context.Context, items []ParsedItem, userID int) (map[string]string, []string) {
-	imageMap := make(map[string]string)
-	var errs []string
+	// Collect unique image URLs first.
+	var allURLs []string
 	seen := make(map[string]struct{})
-
 	for _, item := range items {
 		for _, imageURL := range ExtractImageURLs(item.Content) {
 			if _, ok := seen[imageURL]; ok {
 				continue
 			}
 			seen[imageURL] = struct{}{}
-
-			local, err := imp.downloader.DownloadAndUpload(ctx, imageURL, userID)
-			if err != nil {
-				if imp.logger != nil {
-					imp.logger.Error("WordPress import: image download failed for %s: %v", imageURL, err)
-				}
-				errs = append(errs, fmt.Sprintf("image not downloaded: %s", imageURL))
-				continue
-			}
-			if local != "" {
-				imageMap[imageURL] = local
-			}
+			allURLs = append(allURLs, imageURL)
 		}
 	}
+
+	if len(allURLs) == 0 {
+		return make(map[string]string), nil
+	}
+
+	imageMap := make(map[string]string)
+	var errs []string
+	var mu sync.Mutex
+
+	urlCh := make(chan string, len(allURLs))
+	for _, u := range allURLs {
+		urlCh <- u
+	}
+	close(urlCh)
+
+	var wg sync.WaitGroup
+	workerCount := downloadWorkers
+	if len(allURLs) < workerCount {
+		workerCount = len(allURLs)
+	}
+
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for imageURL := range urlCh {
+				local, err := imp.downloader.DownloadAndUpload(ctx, imageURL, userID)
+				mu.Lock()
+				if err != nil {
+					if imp.logger != nil {
+						imp.logger.Error("WordPress import: image download failed for %s: %v", imageURL, err)
+					}
+					errs = append(errs, fmt.Sprintf("image not downloaded: %s", imageURL))
+				} else if local != "" {
+					imageMap[imageURL] = local
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+
+	wg.Wait()
+
 	return imageMap, errs
 }
 
@@ -143,9 +185,6 @@ func (imp *Importer) importItem(
 	userID int,
 	result *ImportResult,
 ) {
-	// Detect Elementor-built pages. Source priority:
-	// 1. _elementor_element_cache.value.content (the rendered HTML)
-	// 2. <content:encoded> fallback (raw HTML from WordPress)
 	isElementor := imp.isElementorPage(item)
 	var contentBody string
 	var format contentdomain.Format
@@ -231,7 +270,6 @@ func (imp *Importer) extractElementorHTML(item ParsedItem) string {
 	if !ok || strings.TrimSpace(cache) == "" {
 		return ""
 	}
-	// The cache is JSON; try to extract the content field.
 	var parsed struct {
 		Value struct {
 			Content string `json:"content"`
@@ -391,8 +429,16 @@ func (imp *Importer) allowedPostTypes() map[string]bool {
 // never abort the run; the original WordPress URL is kept as a fallback. Authors
 // are auto-created as Contributor users and their posts are assigned to them;
 // authors that cannot be resolved fall back to the importing admin. Returns an
-// aggregated result.
-func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int) (*ImportResult, error) {
+// aggregated result. The onProgress callback, if non-nil, is called after each
+// item with current cumulative totals.
+//
+// Images are downloaded per-item — each item's inline images are fetched just
+// before its content is created. The MediaDownloader cache deduplicates across
+// items so every unique image URL is fetched at most once for the entire import.
+// This means content starts appearing in the database immediately (no lengthy
+// "download all images first" phase), and progress updates are meaningful from
+// the very first item.
+func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int, onProgress func(Progress)) (*ImportResult, error) {
 	allowedTypes := imp.allowedPostTypes()
 
 	doc, err := Parse(wxrData, allowedTypes)
@@ -400,21 +446,30 @@ func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int) 
 		return nil, fmt.Errorf("failed to parse WXR: %w", err)
 	}
 
-	imageMap, downloadErrors := imp.downloadImages(ctx, doc.Items, userID)
-
-	result := &ImportResult{Errors: downloadErrors}
-
 	authorByLogin := make(map[string]ParsedAuthor, len(doc.Authors))
 	for _, a := range doc.Authors {
 		authorByLogin[a.Login] = a
 	}
 
+	result := &ImportResult{}
 	creatorCache := make(map[string]int)
 
 	for _, item := range doc.Items {
+		itemImageMap, downloadErrs := imp.downloadImages(ctx, []ParsedItem{item}, userID)
+		result.Errors = append(result.Errors, downloadErrs...)
+
 		itemUserID := imp.resolveUserID(ctx, item.Creator, authorByLogin, userID, creatorCache, result)
 		featuredURL := imp.resolveFeaturedImage(ctx, item, doc.Attachments, userID, result)
-		imp.importItem(ctx, item, imageMap, featuredURL, itemUserID, result)
+		imp.importItem(ctx, item, itemImageMap, featuredURL, itemUserID, result)
+
+		if onProgress != nil {
+			onProgress(Progress{
+				Imported:      result.Imported,
+				Skipped:       result.Skipped,
+				UsersImported: result.UsersImported,
+				Total:         len(doc.Items),
+			})
+		}
 	}
 	return result, nil
 }

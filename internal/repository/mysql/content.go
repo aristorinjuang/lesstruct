@@ -942,7 +942,16 @@ func (r *ContentRepository) ListByFilters(
 		}
 	}
 
-	queryBuilder.WriteString(" ORDER BY ci.created_at DESC")
+	if filters.SortBy != "" {
+		direction := repository.SortDirectionSQL(filters.SortOrder)
+		fmt.Fprintf(&queryBuilder,
+			" ORDER BY CAST(JSON_EXTRACT(ci.custom_fields, ?) AS DECIMAL) %s, ci.created_at DESC",
+			direction,
+		)
+		args = append(args, fmt.Sprintf("$.%s", filters.SortBy))
+	} else {
+		queryBuilder.WriteString(" ORDER BY ci.created_at DESC")
+	}
 
 	if filters.Limit > 0 {
 		queryBuilder.WriteString(" LIMIT ?")
@@ -1153,29 +1162,67 @@ func (r *ContentRepository) GetPublishedTags(ctx context.Context) ([]string, err
 
 // GetPublishedAuthors returns users with at least one published content item,
 // aggregated with their published count and distinct post types.
-func (r *ContentRepository) GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*contentdomain.PublishedAuthor, error) {
-	if limit <= 0 {
-		limit = 100
+func (r *ContentRepository) GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error) {
+	if filters.Limit <= 0 {
+		filters.Limit = 100
 	}
-	if limit > 100 {
-		limit = 100
+	if filters.Limit > 100 {
+		filters.Limit = 100
 	}
-	if offset < 0 {
-		offset = 0
+	if filters.Offset < 0 {
+		filters.Offset = 0
 	}
-	rows, err := r.db.QueryContext(ctx, `
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString(`
 		SELECT u.username,
 		       COALESCE(u.name, u.username) AS display_name,
 		       COALESCE(u.profile_picture, '') AS profile_picture,
 		       COUNT(ci.id) AS content_count,
-		       GROUP_CONCAT(DISTINCT ci.post_type) AS post_types
+		       GROUP_CONCAT(DISTINCT ci.post_type) AS post_types,
+		       u.custom_fields
 		FROM content_items ci
 		JOIN users u ON ci.user_id = u.id
 		WHERE ci.status = 'published'
-		GROUP BY u.id, u.username, u.name, u.profile_picture
-		ORDER BY content_count DESC, u.username ASC
-		LIMIT ? OFFSET ?
-	`, limit, offset)
+	`)
+
+	args := []any{}
+
+	for _, cf := range filters.CustomFieldFilters {
+		switch cf.Operator {
+		case contentdomain.FilterOpEqual:
+			queryBuilder.WriteString(" AND JSON_EXTRACT(u.custom_fields, ?) = ?")
+			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
+		case contentdomain.FilterOpMin:
+			queryBuilder.WriteString(" AND CAST(JSON_EXTRACT(u.custom_fields, ?) AS DECIMAL) >= ?")
+			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
+		case contentdomain.FilterOpMax:
+			queryBuilder.WriteString(" AND CAST(JSON_EXTRACT(u.custom_fields, ?) AS DECIMAL) <= ?")
+			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
+		default:
+			return nil, fmt.Errorf("unsupported filter operator: %s", cf.Operator)
+		}
+	}
+
+	queryBuilder.WriteString(`
+		GROUP BY u.id, u.username, u.name, u.profile_picture, u.custom_fields
+	`)
+
+	if filters.SortBy != "" {
+		direction := repository.SortDirectionSQL(filters.SortOrder)
+		fmt.Fprintf(&queryBuilder,
+			" ORDER BY CAST(JSON_EXTRACT(u.custom_fields, ?) AS DECIMAL) %s, u.username ASC",
+			direction,
+		)
+		args = append(args, fmt.Sprintf("$.%s", filters.SortBy))
+	} else {
+		queryBuilder.WriteString(" ORDER BY content_count DESC, u.username ASC")
+	}
+
+	queryBuilder.WriteString(" LIMIT ? OFFSET ?")
+	args = append(args, filters.Limit, filters.Offset)
+
+	rows, err := r.db.QueryContext(ctx, queryBuilder.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published authors: %w", err)
 	}
@@ -1185,10 +1232,16 @@ func (r *ContentRepository) GetPublishedAuthors(ctx context.Context, limit int, 
 	for rows.Next() {
 		var a contentdomain.PublishedAuthor
 		var postTypes string
-		if err := rows.Scan(&a.Username, &a.DisplayName, &a.ProfilePicture, &a.ContentCount, &postTypes); err != nil {
+		var customFieldsJSON *string
+		if err := rows.Scan(&a.Username, &a.DisplayName, &a.ProfilePicture, &a.ContentCount, &postTypes, &customFieldsJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan published author: %w", err)
 		}
 		a.PostTypes = repository.SplitCSV(postTypes)
+		if customFieldsJSON != nil {
+			var cf map[string]any
+			_ = json.Unmarshal([]byte(*customFieldsJSON), &cf)
+			a.CustomFields = cf
+		}
 		authors = append(authors, &a)
 	}
 	if err := rows.Err(); err != nil {
@@ -1196,6 +1249,44 @@ func (r *ContentRepository) GetPublishedAuthors(ctx context.Context, limit int, 
 	}
 
 	return authors, nil
+}
+
+func (r *ContentRepository) GetPublishedAuthor(ctx context.Context, username string) (*contentdomain.PublishedAuthor, error) {
+	query := `
+		SELECT u.username,
+		       COALESCE(u.name, u.username) AS display_name,
+		       COALESCE(u.profile_picture, '') AS profile_picture,
+		       COUNT(ci.id) AS content_count,
+		       GROUP_CONCAT(DISTINCT ci.post_type) AS post_types,
+		       u.custom_fields
+		FROM content_items ci
+		JOIN users u ON ci.user_id = u.id
+		WHERE ci.status = 'published'
+		  AND LOWER(u.username) = LOWER(?)
+		GROUP BY u.id, u.username, u.name, u.profile_picture, u.custom_fields
+	`
+
+	var a contentdomain.PublishedAuthor
+	var postTypes string
+	var customFieldsJSON *string
+	err := r.db.QueryRowContext(ctx, query, username).Scan(
+		&a.Username, &a.DisplayName, &a.ProfilePicture, &a.ContentCount, &postTypes, &customFieldsJSON,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get published author: %w", err)
+	}
+
+	a.PostTypes = repository.SplitCSV(postTypes)
+	if customFieldsJSON != nil {
+		var cf map[string]any
+		_ = json.Unmarshal([]byte(*customFieldsJSON), &cf)
+		a.CustomFields = cf
+	}
+
+	return &a, nil
 }
 
 func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error) {

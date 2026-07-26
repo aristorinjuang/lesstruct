@@ -1,0 +1,17 @@
+info:
+  name: Delete User Picture
+  type: http
+  seq: 15
+
+http:
+  method: DELETE
+  url: "{{BASE_URL}}/api/admin/users/{{USER_ID}}/picture"
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

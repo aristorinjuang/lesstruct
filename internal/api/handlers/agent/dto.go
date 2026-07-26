@@ -17,8 +17,11 @@ import (
 //     Tiptap JSON string, stored unchanged. The service validates/sanitizes it.
 //   - Format defaults to "tiptap" when omitted. "markdown" is reserved for Story
 //     2.4 (Markdown→Tiptap conversion) and is rejected with VALIDATION_ERROR here.
-//   - Slug  is accepted for API stability but NOT honored in Story 2.1: the
-//     content service auto-generates the slug from the title. See Completion Notes.
+//   - Slug  is admin-only and honored only at create time: an admin may supply a
+//     custom slug (validated and uniqueness-checked per language by the service),
+//     while a non-admin's slug is dropped and the service auto-generates one from
+//     the title. The slug is immutable after creation — it can never be changed
+//     via Update (changing it would break the public URL and harm SEO).
 //   - IsPublished true maps to StatusPublished; false/omitted maps to StatusDraft.
 //   - Tags are normalized via contentdomain.ValidateTags; an invalid tag returns
 //     VALIDATION_ERROR from the server.

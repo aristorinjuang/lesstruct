@@ -1,0 +1,29 @@
+info:
+  name: Create Content
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/content"
+  body:
+    type: json
+    data: |-
+      {
+        "title": "Agent Created Post",
+        "slug": "agent-created-post",
+        "body": "<p>This content was created via the agent API.</p>",
+        "format": "html",
+        "postType": "post",
+        "isPublished": false,
+        "tags": ["api", "test"]
+      }
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

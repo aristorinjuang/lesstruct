@@ -1,0 +1,7 @@
+info:
+  name: API Keys
+  type: folder
+  seq: 11
+
+request:
+  auth: inherit

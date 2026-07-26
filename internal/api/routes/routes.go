@@ -77,6 +77,7 @@ func Setup(
 	noCookieMiddleware *middleware.NoCookieMiddleware,
 	csrfMiddleware *middleware.CSRFMiddleware,
 	rateLimitMiddleware *middleware.RateLimitMiddleware,
+	securityHeadersMiddleware *middleware.SecurityHeadersMiddleware,
 	jwtManager *auth.JWTManager,
 	staticServer *static.StaticServer,
 	staticHandler http.Handler,
@@ -97,16 +98,7 @@ func Setup(
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
 
 	// Security headers middleware
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("X-Frame-Options", "DENY")
-			w.Header().Set("X-Content-Type-Options", "nosniff")
-			w.Header().Set("X-XSS-Protection", "1; mode=block")
-			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self'; frame-src 'self' https://www.youtube.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
-			next.ServeHTTP(w, r)
-		})
-	})
+	r.Use(securityHeadersMiddleware.Handler)
 
 	// Body-size limits are applied per-route-group below, NOT globally. A global
 	// MaxBytesReader would run before any per-route exemption and silently cap
@@ -272,9 +264,13 @@ func Setup(
 			// Admin profile picture upload — 10MB (Story 12.8).
 			r.With(maxBodySizeMiddleware(10<<20)).Put("/users/{id}/picture", profilePictureHandler.AdminUploadUserPicture)
 
-			// WordPress import (admin only) — the handler applies MaxBytesReader at
-			// IMPORT_MAX_SIZE_MB, so no route-level wrapper is needed here.
+			// WordPress import — the handler is async (202 Accepted). The handler
+			// applies MaxBytesReader at IMPORT_MAX_SIZE_MB, so no route-level
+			// wrapper is needed here. Status polling endpoints let the admin UI
+			// or the caller track progress of a running import job.
 			r.Post("/wordpress/import", wordPressHandler.Import)
+			r.Get("/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
+			r.Get("/wordpress/import/status", wordPressHandler.ImportStatus)
 		})
 
 		// API key management routes (browser-realm, any authenticated role) - Story 1.1 + 1.2
@@ -322,6 +318,7 @@ func Setup(
 			r.Get("/content_items", contentHandler.ListPublishedContents)
 			r.Get("/content_items/{slug}", contentHandler.GetPublishedContent)
 			r.Get("/authors", contentHandler.ListPublishedAuthors)
+			r.Get("/authors/{username}", contentHandler.GetPublishedAuthor)
 			r.Get("/authors/{username}/content_items", contentHandler.GetPublishedContentByAuthor)
 			r.Get("/content_items/{slug}/comments", commentHandler.GetComments)
 			r.Get("/post_types", postTypeHandler.GetPublicPostTypes)

@@ -95,10 +95,13 @@ IMPORTANT RULES:
 8. NEVER use heading level 1 (h1) — headings must start at level 2 or higher.
 9. Always wrap text content inside a paragraph node unless it belongs in a heading, list, blockquote, or code block.`
 
-// htmlDocumentSystemPrompt is the system prompt for generating and enhancing
-// HTML/CSS content. It instructs the AI to produce production-ready, semantic,
-// accessible, and responsive HTML fragments with all styling in a <style> block.
-const htmlDocumentSystemPrompt = `You are an expert front-end developer creating production-ready HTML and CSS for a website's content area. You write clean, semantic, accessible, and visually premium code that rivals the best page builders.
+// htmlSystemPromptBase is the always-on system prompt for HTML/CSS generation.
+// It instructs the AI to produce a scoped, self-contained HTML fragment that
+// reuses the active theme's CSS custom properties and component classes, so
+// generated content stays on-brand instead of inventing arbitrary colors,
+// fonts, and spacing. The active theme's CSS is injected separately (see
+// htmlSystemPromptThemeSection) and the examples follow (htmlSystemPromptExamples).
+const htmlSystemPromptBase = `You are an expert front-end developer creating production-ready HTML and CSS for a website's content area. You write clean, semantic, accessible code that matches the site's existing brand — every color, font, spacing, and radius should come from the theme's design tokens, never invented.
 
 ## Output format
 
@@ -108,105 +111,143 @@ Output a SINGLE HTML fragment. Start with a <style> block, followed by the HTML 
 
 ## Hard rules
 
-- ALL styling goes in the <style> block at the top. NEVER use inline style="..." attributes. Inline styles are terrible for performance, readability, and overrides.
-- Scope every CSS selector under a unique top-level class .ls-<topic> (e.g., .ls-hero-pricing, .ls-testimonials-section).
+- ALL styling goes in the <style> block at the top. NEVER use inline style="..." attributes.
+- Scope every CSS selector under a unique top-level class .ls-<topic> (e.g., .ls-hero-pricing, .ls-testimonials-section) so your styles never leak into the rest of the page.
 - NO <script>, NO on* handlers, NO javascript: URLs.
-- NO external resources — no <link>, no <script src>, no @import, no external fonts. Use a system font stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif.
+- NO external resources — no <link>, no <script src>, no @import, no external fonts.
 - Close all tags, use valid HTML5.
 
-## Design directives (apply to every output)
+## Brand consistency — REUSE the site theme (critical)
 
-- **Visual hierarchy**: clear primary/secondary/tertiary emphasis via size, weight, color, and spacing.
-- **Whitespace**: generous padding (at least clamp(1rem, 4vw, 3rem) between sections) and breathing room.
-- **Color theory**: cohesive palette via CSS custom properties (--accent, --bg, --text, --muted). No raw #000/#fff for text. Honor prefers-color-scheme: dark.
-- **Modern CSS**: Grid + Flexbox for layout (no floats). Use clamp() for fluid typography, aspect-ratio for media, custom properties for theming.
-- **Micro-interactions**: :hover, :focus-visible, transition (150-250ms), transform on interactive elements. Respect prefers-reduced-motion.
-- **Responsive**: mobile-first, no fixed pixel widths on containers, fluid images (max-width: 100%; height: auto).
-- **Accessibility**: WCAG AA contrast (4.5:1 body text), visible focus rings, semantic landmarks (<section>, <article>, <nav>), single <h2> per block at most (the page owns <h1>), alt text on all images.
-- **Images**: only use URLs from the "Available images" list when relevant. Never invent image URLs. Always add loading="lazy" and meaningful alt.
+The page that renders your fragment already loads the site theme, which defines CSS custom properties on :root and component classes in its stylesheets. Your output MUST blend in with that theme.
 
-## Few-shot example: Hero section
+REUSE these theme custom properties verbatim — do NOT invent new --accent/--bg/--text tokens and do NOT hardcode hex colors anywhere:
+- Color: var(--color-primary), var(--color-primary-hover), var(--color-secondary), var(--color-accent), var(--color-text), var(--color-text-muted), var(--color-bg), var(--color-card-bg), var(--color-border), var(--color-success), var(--color-danger)
+- Spacing: var(--space-1) (0.25rem) ... var(--space-8) (3rem)
+- Radius: var(--radius-sm), var(--radius-md), var(--radius-lg)
+- Shadow: var(--shadow-sm), var(--shadow-md), var(--shadow-lg)
+- Focus ring: var(--ring)
+- Fonts: var(--font-sans) (body — already set on <body>, do NOT redeclare on body), var(--font-mono)
+- Transition: var(--transition-fast)
+
+REUSE existing theme component classes where they fit — only add a scoped .ls-<topic> class for layout the theme does not already cover:
+- .container — max-width page wrapper
+- .btn — styled button (already wired to --color-primary, hover, and focus ring)
+- .form-control — inputs and textareas
+- .alert, .alert--success, .alert--error — callout banners
+
+Do NOT redefine base body typography (font-family, font-size, line-height, color, background) — the theme's base.css already sets them on <body>. Only set font or color inside your scoped .ls-<topic> block when a section needs something different from the page default.
+
+## Design directives
+
+- Clear visual hierarchy via size, weight, color, and spacing.
+- Generous whitespace using var(--space-*) tokens (e.g., var(--space-8) between sections).
+- Modern CSS: Grid + Flexbox for layout (no floats). clamp() for fluid typography, aspect-ratio for media, CSS custom properties for per-section theming.
+- Micro-interactions: :hover, :focus-visible, transition: <property> var(--transition-fast), transform on interactive elements. Respect prefers-reduced-motion.
+- Responsive: mobile-first, no fixed pixel widths on containers, fluid images (max-width: 100%; height: auto).
+- Accessibility: WCAG AA contrast (4.5:1 body text), visible focus rings (use var(--ring) or outline: 2px solid var(--color-primary)), semantic landmarks (<section>, <article>, <nav>), at most one <h2> per block (the page owns <h1>), alt text on all images.
+- Images: only use URLs from the "Available images" list when provided. Never invent image URLs. Always add loading="lazy" and meaningful alt.`
+
+// htmlSystemPromptThemeSection is injected between the base prompt and the
+// examples when the active theme's CSS is available. Seeing the exact token
+// values and existing component patterns lets the AI match them precisely
+// instead of guessing. The two %s placeholders receive base.css (tokens) and
+// style.css (components) respectively.
+const htmlSystemPromptThemeSection = `
+
+## Active site theme CSS (authoritative — match these tokens and patterns)
+
+Below is the site's current base.css (design tokens) and style.css (component styles). Internalize the palette, spacing, radius, and font conventions. Do NOT copy these rules into your <style> block — reference them via var(--custom-property) and reuse component classes instead.
+
+### base.css
+%s
+
+### style.css
+%s`
+
+// htmlSystemPromptExamples contains the few-shot examples. Every example uses
+// the theme's custom properties (var(--color-*), var(--space-*), var(--radius-*),
+// var(--font-sans)) rather than hardcoded hex values, so output blends with any
+// theme and demonstrates the token-reuse rule.
+const htmlSystemPromptExamples = `
+
+## Few-shot examples
+
+Every example below uses theme tokens — your real output must do the same.
+
+### Example: Hero section
 
 <style>
 .ls-hero-example {
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --text: #1e293b;
-  --muted: #64748b;
-  --bg: #fafafa;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 50vh;
-  padding: clamp(3rem, 8vw, 6rem) clamp(1.5rem, 4vw, 3rem);
-  background: linear-gradient(135deg, var(--bg) 0%, #f0f0f5 100%);
+  padding: var(--space-8) var(--space-5);
+  background: linear-gradient(135deg, var(--color-bg) 0%, color-mix(in srgb, var(--color-secondary) 8%, var(--color-bg)) 100%);
   text-align: center;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  color: var(--text);
+  color: var(--color-text);
 }
 .ls-hero-example h2 {
   font-size: clamp(2rem, 5vw, 3.5rem);
   font-weight: 700;
   line-height: 1.15;
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-3);
 }
 .ls-hero-example p {
   font-size: clamp(1.05rem, 2vw, 1.25rem);
-  color: var(--muted);
+  color: var(--color-text-muted);
   max-width: 36rem;
-  margin: 0 0 2rem;
+  margin: 0 0 var(--space-6);
 }
 .ls-hero-example .ls-hero-buttons {
   display: flex;
-  gap: 1rem;
+  gap: var(--space-4);
   flex-wrap: wrap;
   justify-content: center;
 }
 .ls-hero-example .ls-hero-btn-primary {
   display: inline-block;
-  padding: 0.85rem 2rem;
-  background: var(--accent);
-  color: #fff;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-primary);
+  color: var(--color-bg);
   border: none;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-md);
   font-size: 1rem;
   font-weight: 600;
   text-decoration: none;
-  transition: background 200ms, transform 200ms;
+  transition: background var(--transition-fast), transform var(--transition-fast);
 }
 .ls-hero-example .ls-hero-btn-primary:hover {
-  background: var(--accent-hover);
+  background: var(--color-primary-hover);
   transform: translateY(-1px);
 }
 .ls-hero-example .ls-hero-btn-primary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 .ls-hero-example .ls-hero-btn-secondary {
   display: inline-block;
-  padding: 0.85rem 2rem;
-  color: var(--accent);
-  border: 2px solid var(--accent);
-  border-radius: 0.5rem;
+  padding: var(--space-3) var(--space-6);
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-md);
   font-size: 1rem;
   font-weight: 600;
   text-decoration: none;
-  transition: background 200ms, color 200ms;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 .ls-hero-example .ls-hero-btn-secondary:hover {
-  background: var(--accent);
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-bg);
 }
 .ls-hero-example .ls-hero-btn-secondary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
   .ls-hero-example * { transition: none !important; transform: none !important; }
-}
-@media (prefers-color-scheme: dark) {
-  .ls-hero-example { --text: #e2e8f0; --muted: #94a3b8; --bg: #0f172a; }
 }
 </style>
 <section class="ls-hero-example">
@@ -218,96 +259,87 @@ Output a SINGLE HTML fragment. Start with a <style> block, followed by the HTML 
   </div>
 </section>
 
-## Few-shot example: Pricing table
+### Example: Pricing table
 
 <style>
 .ls-pricing-example {
-  --accent: #6366f1;
-  --text: #1e293b;
-  --muted: #64748b;
-  --bg: #ffffff;
-  --border: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem);
-  color: var(--text);
+  padding: var(--space-8) var(--space-5);
+  color: var(--color-text);
 }
 .ls-pricing-example h2 {
   text-align: center;
   font-size: clamp(1.75rem, 4vw, 2.5rem);
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-2);
 }
 .ls-pricing-example .ls-pricing-subtitle {
   text-align: center;
-  color: var(--muted);
-  margin: 0 0 3rem;
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-8);
 }
 .ls-pricing-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1.5rem;
+  gap: var(--space-6);
   max-width: 56rem;
   margin: 0 auto;
 }
 .ls-pricing-card {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 1rem;
-  padding: 2rem;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
   display: flex;
   flex-direction: column;
 }
 .ls-pricing-card--featured {
-  border-color: var(--accent);
-  box-shadow: 0 4px 24px rgba(99,102,241,.15);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
   transform: scale(1.03);
 }
 .ls-pricing-card .ls-pricing-badge {
   display: inline-block;
-  background: var(--accent);
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-bg);
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.25rem 0.75rem;
+  padding: var(--space-1) var(--space-3);
   border-radius: 9999px;
   align-self: flex-start;
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--space-3);
 }
-.ls-pricing-card h3 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+.ls-pricing-card h3 { font-size: 1.25rem; margin: 0 0 var(--space-2); }
 .ls-pricing-card .ls-pricing-price {
   font-size: 2rem;
   font-weight: 700;
-  margin: 0 0 1.5rem;
+  margin: 0 0 var(--space-6);
 }
-.ls-pricing-card .ls-pricing-price span { font-size: 0.875rem; font-weight: 400; color: var(--muted); }
-.ls-pricing-features { list-style: none; padding: 0; margin: 0 0 2rem; flex: 1; }
+.ls-pricing-card .ls-pricing-price span { font-size: 0.875rem; font-weight: 400; color: var(--color-text-muted); }
+.ls-pricing-features { list-style: none; padding: 0; margin: 0 0 var(--space-8); flex: 1; }
 .ls-pricing-features li {
-  padding: 0.4rem 0;
+  padding: var(--space-1) 0;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   font-size: 0.95rem;
-  color: var(--muted);
+  color: var(--color-text-muted);
 }
-.ls-pricing-features li svg { flex-shrink: 0; color: var(--accent); }
+.ls-pricing-features li svg { flex-shrink: 0; color: var(--color-primary); }
 .ls-pricing-card .ls-pricing-btn {
   display: block;
   text-align: center;
-  padding: 0.75rem;
-  border-radius: 0.5rem;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
   font-weight: 600;
   text-decoration: none;
-  transition: background 200ms, color 200ms;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
-.ls-pricing-card .ls-pricing-btn--outline { border: 2px solid var(--accent); color: var(--accent); }
-.ls-pricing-card .ls-pricing-btn--outline:hover { background: var(--accent); color: #fff; }
-.ls-pricing-card .ls-pricing-btn--solid { background: var(--accent); color: #fff; border: none; }
-.ls-pricing-card .ls-pricing-btn--solid:hover { background: #4f46e5; }
-.ls-pricing-card .ls-pricing-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ls-pricing-card .ls-pricing-btn--outline { border: 2px solid var(--color-primary); color: var(--color-primary); }
+.ls-pricing-card .ls-pricing-btn--outline:hover { background: var(--color-primary); color: var(--color-bg); }
+.ls-pricing-card .ls-pricing-btn--solid { background: var(--color-primary); color: var(--color-bg); border: none; }
+.ls-pricing-card .ls-pricing-btn--solid:hover { background: var(--color-primary-hover); }
+.ls-pricing-card .ls-pricing-btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .ls-pricing-example * { transition: none !important; transform: none !important; }
-}
-@media (prefers-color-scheme: dark) {
-  .ls-pricing-example { --text: #e2e8f0; --muted: #94a3b8; --bg: #1e293b; --border: #334155; }
 }
 </style>
 <section class="ls-pricing-example">
@@ -350,51 +382,41 @@ Output a SINGLE HTML fragment. Start with a <style> block, followed by the HTML 
   </div>
 </section>
 
-## Few-shot example: Testimonials
+### Example: Testimonials
 
 <style>
 .ls-testimonials-example {
-  --accent: #8b5cf6;
-  --text: #1e293b;
-  --muted: #64748b;
-  --bg: #f8fafc;
-  --card-bg: #ffffff;
-  --border: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem);
-  color: var(--text);
+  padding: var(--space-8) var(--space-5);
+  color: var(--color-text);
 }
-.ls-testimonials-example h2 { text-align: center; font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 0 0 2.5rem; }
+.ls-testimonials-example h2 { text-align: center; font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 0 0 var(--space-8); }
 .ls-testimonials-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
+  gap: var(--space-6);
   max-width: 64rem;
   margin: 0 auto;
 }
 .ls-testimonial-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 1rem;
-  padding: 2rem;
-  transition: transform 200ms, box-shadow 200ms;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
-.ls-testimonial-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.06); }
+.ls-testimonial-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .ls-testimonial-card blockquote {
-  margin: 0 0 1.5rem;
+  margin: 0 0 var(--space-6);
   font-style: italic;
-  color: var(--muted);
+  color: var(--color-text-muted);
   line-height: 1.6;
 }
-.ls-testimonial-avatar { display: flex; align-items: center; gap: 0.75rem; }
+.ls-testimonial-avatar { display: flex; align-items: center; gap: var(--space-3); }
 .ls-testimonial-avatar img { width: 3rem; height: 3rem; border-radius: 50%; object-fit: cover; }
 .ls-testimonial-name { font-weight: 600; font-size: 0.95rem; }
-.ls-testimonial-role { font-size: 0.8rem; color: var(--muted); }
+.ls-testimonial-role { font-size: 0.8rem; color: var(--color-text-muted); }
 @media (prefers-reduced-motion: reduce) {
   .ls-testimonials-example * { transition: none !important; transform: none !important; }
-}
-@media (prefers-color-scheme: dark) {
-  .ls-testimonials-example { --text: #e2e8f0; --muted: #94a3b8; --bg: #0f172a; --card-bg: #1e293b; --border: #334155; }
 }
 </style>
 <section class="ls-testimonials-example">
@@ -424,53 +446,44 @@ Output a SINGLE HTML fragment. Start with a <style> block, followed by the HTML 
   </div>
 </section>
 
-## Few-shot example: Feature grid
+### Example: Feature grid
 
 <style>
 .ls-features-example {
-  --accent: #0ea5e9;
-  --text: #1e293b;
-  --muted: #64748b;
-  --bg: #ffffff;
-  --border: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem);
-  color: var(--text);
+  padding: var(--space-8) var(--space-5);
+  color: var(--color-text);
 }
-.ls-features-example h2 { text-align: center; font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 0 0 0.5rem; }
-.ls-features-example .ls-features-subtitle { text-align: center; color: var(--muted); margin: 0 0 3rem; max-width: 32rem; margin-left: auto; margin-right: auto; }
+.ls-features-example h2 { text-align: center; font-size: clamp(1.75rem, 4vw, 2.5rem); margin: 0 0 var(--space-2); }
+.ls-features-example .ls-features-subtitle { text-align: center; color: var(--color-text-muted); margin: 0 0 var(--space-8); max-width: 32rem; margin-left: auto; margin-right: auto; }
 .ls-features-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 2rem;
+  gap: var(--space-8);
   max-width: 64rem;
   margin: 0 auto;
 }
 .ls-feature-card {
-  padding: 2rem;
-  border: 1px solid var(--border);
-  border-radius: 1rem;
-  transition: transform 200ms, box-shadow 200ms;
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
-.ls-feature-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.06); }
+.ls-feature-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
 .ls-feature-icon {
   width: 3rem;
   height: 3rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-radius: 0.75rem;
-  margin-bottom: 1.25rem;
-  color: var(--accent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-5);
+  color: var(--color-primary);
 }
-.ls-feature-card h3 { font-size: 1.15rem; margin: 0 0 0.5rem; }
-.ls-feature-card p { font-size: 0.95rem; color: var(--muted); margin: 0; line-height: 1.5; }
+.ls-feature-card h3 { font-size: 1.15rem; margin: 0 0 var(--space-2); }
+.ls-feature-card p { font-size: 0.95rem; color: var(--color-text-muted); margin: 0; line-height: 1.5; }
 @media (prefers-reduced-motion: reduce) {
   .ls-features-example * { transition: none !important; transform: none !important; }
-}
-@media (prefers-color-scheme: dark) {
-  .ls-features-example { --text: #e2e8f0; --muted: #94a3b8; --bg: #0f172a; --border: #334155; }
 }
 </style>
 <section class="ls-features-example">
@@ -494,6 +507,18 @@ Output a SINGLE HTML fragment. Start with a <style> block, followed by the HTML 
     </div>
   </div>
 </section>`
+
+// buildHTMLSystemPrompt assembles the full HTML system prompt from the base
+// rules, optional active-theme CSS, and the examples. It is called once at
+// construction so per-request calls just reuse the precomputed string.
+func buildHTMLSystemPrompt(themeBaseCSS, themeStyleCSS string) string {
+	prompt := htmlSystemPromptBase
+	if themeBaseCSS != "" || themeStyleCSS != "" {
+		prompt += "\n\n" + fmt.Sprintf(htmlSystemPromptThemeSection, themeBaseCSS, themeStyleCSS)
+	}
+	prompt += htmlSystemPromptExamples
+	return prompt
+}
 
 // htmlTranslateSystemPrompt instructs the AI to translate HTML content while
 // preserving structure, styles, and URLs — translating only visible text and alt attributes.
@@ -523,10 +548,11 @@ const (
 
 // OpenAITextService implements TextGenerationService using any OpenAI-compatible API.
 type OpenAITextService struct {
-	client  *openai.Client // singleton client
-	apiKey  string
-	baseURL string
-	model   string
+	client           *openai.Client // singleton client
+	apiKey           string
+	baseURL          string
+	model            string
+	htmlSystemPrompt string // precomputed at construction from base + theme CSS + examples
 }
 
 func (s *OpenAITextService) ensureClient() {
@@ -628,14 +654,12 @@ func (s *OpenAITextService) callChatCompletionHTML(ctx context.Context, systemPr
 // mediaContext is an optional string of available images injected into the prompt for HTML generation.
 func (s *OpenAITextService) EnhanceText(ctx context.Context, content, format, mediaContext string) (string, error) {
 	if format == FormatHTML {
-		systemPrompt := htmlDocumentSystemPrompt
-
 		userPrompt := "Generate HTML/CSS based on this description:\n\n" + content
 		if mediaContext != "" {
 			userPrompt += "\n\n" + mediaContext
 		}
 
-		return s.callChatCompletionHTML(ctx, systemPrompt, userPrompt)
+		return s.callChatCompletionHTML(ctx, s.htmlSystemPrompt, userPrompt)
 	}
 
 	// tiptap format
@@ -698,10 +722,16 @@ func (s *OpenAITextService) TranslateText(ctx context.Context, content, sourceLa
 // NewOpenAITextService creates a new OpenAI-compatible text generation service.
 // baseURL is optional — pass "" to use the OpenAI default.
 // model is the chat model name (e.g. "gpt-5-mini", "gpt-5.4-mini", "openai/gpt-5-mini" for OpenRouter).
-func NewOpenAITextService(apiKey, baseURL, model string) *OpenAITextService {
+// themeBaseCSS and themeStyleCSS are the active theme's minified base.css (design
+// tokens) and style.css (component styles). When non-empty, they are injected
+// into the HTML generation prompt so output reuses the site's brand tokens and
+// component classes instead of inventing off-brand styles. Pass empty strings
+// when no theme is available (the embedded defaults are still a reasonable brief).
+func NewOpenAITextService(apiKey, baseURL, model, themeBaseCSS, themeStyleCSS string) *OpenAITextService {
 	return &OpenAITextService{
-		apiKey:  apiKey,
-		baseURL: baseURL,
-		model:   model,
+		apiKey:           apiKey,
+		baseURL:          baseURL,
+		model:            model,
+		htmlSystemPrompt: buildHTMLSystemPrompt(themeBaseCSS, themeStyleCSS),
 	}
 }

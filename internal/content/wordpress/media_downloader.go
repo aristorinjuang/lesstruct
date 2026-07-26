@@ -8,9 +8,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
+)
+
+const (
+	maxRetries        = 3
+	initialBackoff    = 500 * time.Millisecond
+	backoffMultiplier = 2
 )
 
 // mediaService is the subset of the media domain service used to re-upload
@@ -80,11 +87,34 @@ func filenameFromURL(imageURL string) string {
 	return path
 }
 
+// isRetryableError reports whether the error from an HTTP download is worth
+// retrying. Transient network errors (timeouts, connection resets, 5xx) are
+// retryable. Fatal context signals (Canceled, DeadlineExceeded) are not — the
+// job is shutting down so there is no point retrying.
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	return true
+}
+
+// isRetryableStatusCode returns true for server errors (5xx) and rate
+// limiting (429) that may succeed on retry.
+func isRetryableStatusCode(code int) bool {
+	return code >= 500 || code == http.StatusTooManyRequests
+}
+
 // MediaDownloader downloads images from a WordPress site and re-uploads them
 // through the media service (which converts to WebP, deduplicates by hash, and
 // generates thumbnails). Results are cached per URL so each image is fetched at
 // most once per import.
 type MediaDownloader struct {
+	mu           sync.Mutex
 	httpClient   *http.Client
 	mediaService mediaService
 	cache        map[string]string // WordPress URL -> local media URL
@@ -92,39 +122,69 @@ type MediaDownloader struct {
 }
 
 func (d *MediaDownloader) download(ctx context.Context, imageURL string, userID int) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("invalid image URL %q: %w", imageURL, err)
-	}
+	var lastErr error
+	backoff := initialBackoff
 
-	resp, err := d.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to download image %q: %w", imageURL, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download %q returned status %d", imageURL, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, mediadomain.MaxFileSize))
-	if err != nil {
-		return "", fmt.Errorf("failed to read image body %q: %w", imageURL, err)
-	}
-	if !isImageContent(body) {
-		return "", fmt.Errorf("downloaded content from %q is not a supported image", imageURL)
-	}
-
-	media, err := d.mediaService.GenerateFromBytes(ctx, body, userID, altTextFromURL(imageURL), filenameFromURL(imageURL))
-	if err != nil {
-		var dupErr *mediadomain.DuplicateMediaError
-		if errors.As(err, &dupErr) && dupErr.Existing != nil {
-			return dupErr.Existing.URL, nil
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("context canceled before retry %d: %w", attempt, ctx.Err())
+			case <-time.After(backoff):
+			}
+			backoff *= backoffMultiplier
 		}
-		return "", fmt.Errorf("failed to re-upload image %q: %w", imageURL, err)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+		if err != nil {
+			return "", fmt.Errorf("invalid image URL %q: %w", imageURL, err)
+		}
+
+		resp, err := d.httpClient.Do(req)
+		if err != nil {
+			if !isRetryableError(err) || attempt == maxRetries {
+				return "", fmt.Errorf("failed to download image %q: %w", imageURL, err)
+			}
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			if isRetryableStatusCode(resp.StatusCode) && attempt < maxRetries {
+				lastErr = fmt.Errorf("download %q returned status %d", imageURL, resp.StatusCode)
+				continue
+			}
+			return "", fmt.Errorf("download %q returned status %d", imageURL, resp.StatusCode)
+		}
+
+		body, err := io.ReadAll(io.LimitReader(resp.Body, mediadomain.MaxFileSize))
+		_ = resp.Body.Close()
+		if err != nil {
+			if attempt == maxRetries {
+				return "", fmt.Errorf("failed to read image body %q: %w", imageURL, err)
+			}
+			lastErr = err
+			continue
+		}
+
+		if !isImageContent(body) {
+			return "", fmt.Errorf("downloaded content from %q is not a supported image", imageURL)
+		}
+
+		media, err := d.mediaService.GenerateFromBytes(ctx, body, userID, altTextFromURL(imageURL), filenameFromURL(imageURL))
+		if err != nil {
+			var dupErr *mediadomain.DuplicateMediaError
+			if errors.As(err, &dupErr) && dupErr.Existing != nil {
+				return dupErr.Existing.URL, nil
+			}
+			return "", fmt.Errorf("failed to re-upload image %q: %w", imageURL, err)
+		}
+
+		return media.URL, nil
 	}
 
-	return media.URL, nil
+	return "", lastErr
 }
 
 // DownloadAndUpload fetches the image at imageURL and re-uploads it to local
@@ -137,20 +197,28 @@ func (d *MediaDownloader) DownloadAndUpload(ctx context.Context, imageURL string
 		return "", nil
 	}
 
+	d.mu.Lock()
 	if local, ok := d.cache[imageURL]; ok {
+		d.mu.Unlock()
 		return local, nil
 	}
 	if _, ok := d.failed[imageURL]; ok {
+		d.mu.Unlock()
 		return "", nil
 	}
+	d.mu.Unlock()
 
 	local, err := d.download(ctx, imageURL, userID)
 	if err != nil {
+		d.mu.Lock()
 		d.failed[imageURL] = struct{}{}
+		d.mu.Unlock()
 		return "", err
 	}
 
+	d.mu.Lock()
 	d.cache[imageURL] = local
+	d.mu.Unlock()
 	return local, nil
 }
 

@@ -111,6 +111,14 @@ function validateAllCustomFields(): boolean {
 
 const slug = ref('')
 const slugManuallyEdited = ref(false)
+
+// When a user types a custom slug, stop the title->slug auto-suggest watcher
+// from overwriting it. Only meaningful on the create form (the field is disabled
+// otherwise); the slug is immutable once the content is saved.
+function onSlugInput(value: string) {
+  slug.value = value
+  slugManuallyEdited.value = true
+}
 const isLoading = ref(false)
 const error = ref('')
 const successMessage = ref('')
@@ -275,6 +283,9 @@ function loadContentIntoForm(c: Content) {
   form.value.allowComments = c.allowComments ?? true
   customFields.value = c.customFields ?? {}
   slug.value = c.slug
+  // Editing existing content: the slug is immutable, so mark it as manually
+  // edited to keep the title->slug auto-suggest watcher from touching it.
+  slugManuallyEdited.value = true
   savedContentId.value = c.id
   hasLoadedInitialContent.value = true
   activeLanguage.value = c.language || primaryLanguage()
@@ -334,6 +345,7 @@ async function switchLanguage(lang: string) {
     form.value.ogDescription = ''
     customFields.value = {}
     slug.value = ''
+    slugManuallyEdited.value = false
     activeLanguage.value = lang
     translationGroupId.value = groupId
   } else {
@@ -430,6 +442,7 @@ async function saveDraft(isAutoSave = false) {
         userId: props.userId,
         language: activeLanguage.value,
         translationGroupId: translationGroupId.value || undefined,
+        ...(slug.value ? { slug: slug.value } : {}),
       })
     }
     savedContentId.value = saved.id
@@ -490,6 +503,7 @@ async function publish() {
         userId: props.userId,
         language: activeLanguage.value,
         translationGroupId: translationGroupId.value || undefined,
+        ...(slug.value ? { slug: slug.value } : {}),
       })
     }
     savedContentId.value = saved.id
@@ -775,10 +789,15 @@ async function handleTranslate() {
 
     <FormField label="Slug">
       <InputText
-        v-model="slug"
-        placeholder="URL-friendly slug will be generated"
-        disabled
+        :model-value="slug"
+        :placeholder="isNewContent ? 'Auto-generated from title, or type a custom slug' : 'URL-friendly slug will be generated'"
+        :disabled="!isNewContent"
+        @update:model-value="onSlugInput"
       />
+      <span class="content-editor__slug-hint">
+        <template v-if="isNewContent">Left blank, the slug is generated from the title. It cannot be changed after saving.</template>
+        <template v-else>The slug is fixed once created and cannot be changed (it is the public URL).</template>
+      </span>
     </FormField>
 
     <FormField v-if="activeLanguage === primaryLanguage()" label="Content Type">
@@ -1243,6 +1262,13 @@ async function handleTranslate() {
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
   pointer-events: none;
+}
+
+.content-editor__slug-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--brand-dark-2);
 }
 
 .content-editor__error {

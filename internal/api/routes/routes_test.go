@@ -13,6 +13,7 @@ import (
 	agentmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/agent/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/config"
 	mwmocks "github.com/aristorinjuang/lesstruct/internal/api/middleware/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/routes"
 	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
@@ -31,6 +32,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+func defaultSecurityHeadersMiddleware(t *testing.T) *middleware.SecurityHeadersMiddleware {
+	t.Helper()
+	cspName, cspValue := config.CSPConfig{}.Build()
+	return middleware.NewSecurityHeadersMiddleware(cspName, cspValue)
+}
 
 func setupTestRouter(t *testing.T) *chi.Mux {
 	t.Helper()
@@ -124,6 +131,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	csrfMiddleware := middleware.NewCSRFMiddleware(logger, nil, nil)
 
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(false, 5, 100, 60)
+	secHeaderMW := defaultSecurityHeadersMiddleware(t)
 
 	// Initialize SEO handler (Story 4.2)
 	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", logger)
@@ -175,6 +183,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 		middleware.NewNoCookieMiddleware(logger),
 		csrfMiddleware,
 		rateLimitMiddleware,
+		secHeaderMW,
 		jwtManager,
 		nil,
 		nil,
@@ -239,6 +248,7 @@ func TestSetup(t *testing.T) {
 	dashboardHandler := handlers.NewDashboardHandler(mocks.NewMockDashboardServiceInterface(t), logger)
 
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(false, 5, 100, 60)
+	secHeaderMW := defaultSecurityHeadersMiddleware(t)
 
 	// Initialize SEO handler (Story 4.2)
 	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", logger)
@@ -280,6 +290,7 @@ func TestSetup(t *testing.T) {
 		middleware.NewNoCookieMiddleware(logger),
 		csrfMiddleware,
 		rateLimitMiddleware,
+		secHeaderMW,
 		jwtManager,
 		nil,
 		nil,

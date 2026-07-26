@@ -81,3 +81,49 @@ func (_c *MockUserFieldResolver_GetUserFields_Call) RunAndReturn(run func() []cu
 	_c.Call.Return(run)
 	return _c
 }
+
+// GetUserSystemFields provides a mock function for the type MockUserFieldResolver
+func (_mock *MockUserFieldResolver) GetUserSystemFields() []customfield.FieldSchema {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetUserSystemFields")
+	}
+
+	var r0 []customfield.FieldSchema
+	if returnFunc, ok := ret.Get(0).(func() []customfield.FieldSchema); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]customfield.FieldSchema)
+		}
+	}
+	return r0
+}
+
+// MockUserFieldResolver_GetUserSystemFields_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetUserSystemFields'
+type MockUserFieldResolver_GetUserSystemFields_Call struct {
+	*mock.Call
+}
+
+// GetUserSystemFields is a helper method to define mock.On call
+func (_e *MockUserFieldResolver_Expecter) GetUserSystemFields() *MockUserFieldResolver_GetUserSystemFields_Call {
+	return &MockUserFieldResolver_GetUserSystemFields_Call{Call: _e.mock.On("GetUserSystemFields")}
+}
+
+func (_c *MockUserFieldResolver_GetUserSystemFields_Call) Run(run func()) *MockUserFieldResolver_GetUserSystemFields_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockUserFieldResolver_GetUserSystemFields_Call) Return(fieldSchemas []customfield.FieldSchema) *MockUserFieldResolver_GetUserSystemFields_Call {
+	_c.Call.Return(fieldSchemas)
+	return _c
+}
+
+func (_c *MockUserFieldResolver_GetUserSystemFields_Call) RunAndReturn(run func() []customfield.FieldSchema) *MockUserFieldResolver_GetUserSystemFields_Call {
+	_c.Call.Return(run)
+	return _c
+}

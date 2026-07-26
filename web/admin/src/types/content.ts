@@ -45,6 +45,7 @@ export interface Content {
 
 export interface CreateContentRequest {
   title: string
+  slug?: string // admin-only; immutable after creation. Omitted/blank => server auto-generates from the title.
   content: string // TipTap JSON string or raw HTML when format is 'html'
   format?: 'tiptap' | 'html'
   tags: string[]

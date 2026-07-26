@@ -2643,6 +2643,59 @@ func TestServeAuthor_SystemFieldsExcluded(t *testing.T) {
 	mockUserFieldResolver.AssertExpectations(t)
 }
 
+func TestServeAuthor_SystemFieldsExposed(t *testing.T) {
+	mockService := new(mocks.MockContentService)
+	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
+	}, nil)
+	setupNavMocks(mockService)
+
+	mockUserProvider := new(mocks.MockUserProvider)
+	mockUserProvider.On("GetUserByUsername", mock.Anything, "admin").Return(&contentpage.UserBasicInfo{
+		Name:         "Admin",
+		Username:     "admin",
+		CustomFields: map[string]any{"job_title": "Dev", "tier_point": float64(500), "rank": "gold"},
+	}, nil)
+
+	mockUserFieldResolver := new(mocks.MockUserFieldResolver)
+	mockUserFieldResolver.On("GetUserFields").Return([]customfield.FieldSchema{
+		{Name: "Job Title", Slug: "job_title", Type: customfield.FieldTypeText},
+	})
+	mockUserFieldResolver.On("GetUserSystemFields").Return([]customfield.FieldSchema{
+		{Name: "Tier Point", Slug: "tier_point", Type: customfield.FieldTypeNumber},
+		{Name: "Rank", Slug: "rank", Type: customfield.FieldTypeSelect},
+	})
+
+	mockPublicFieldLookup := new(mocks.MockPublicFieldLookup)
+	mockPublicFieldLookup.On("ExposedFields", "user", "").Return([]string{"tier_point"})
+
+	handler := setupAuthorHandler(t, mockService, mockUserProvider, mockUserFieldResolver)
+	handler = handler.WithPublicFieldRegistry(mockPublicFieldLookup)
+
+	req := httptest.NewRequest(http.MethodGet, "/authors/admin", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, "<dt>Job Title</dt>")
+	assert.Contains(t, body, "<dd>Dev</dd>")
+	assert.Contains(t, body, "<dt>Tier Point</dt>",
+		"exposed system field should appear on the page")
+	assert.Contains(t, body, "500",
+		"the value of the exposed system field should be rendered")
+	assert.NotContains(t, body, "Rank",
+		"non-exposed system field label should NOT appear")
+	assert.NotContains(t, body, "gold",
+		"non-exposed system field value should NOT appear")
+	mockService.AssertExpectations(t)
+	mockUserProvider.AssertExpectations(t)
+	mockUserFieldResolver.AssertExpectations(t)
+	mockPublicFieldLookup.AssertExpectations(t)
+}
+
 func TestServeAuthor_EmptyCustomFieldsOmitted(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)

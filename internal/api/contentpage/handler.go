@@ -25,6 +25,24 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/seo"
 )
 
+const (
+	// defaultPostsPerPage is the page size used when the configured POSTS_PER_PAGE
+	// is zero or invalid. Public listings fetch postsPerPage+1 rows so they can
+	// detect HasNext without a COUNT query, then trim back to postsPerPage.
+	defaultPostsPerPage = 50
+
+	// defaultHomeSectionLimit is the number of items shown in a homepage section
+	// when its [[homepage_section]] limit is unset.
+	defaultHomeSectionLimit = 6
+
+	postCardSizes = "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)"
+
+	// defaultSiteName is the site name used when [site_config].name is not
+	// configured. It keeps the embedded theme's branding stable for an
+	// out-of-the-box install; operators override it via config.toml.
+	defaultSiteName = "Lesstruct"
+)
+
 func isEmptyValue(val any) bool {
 	if val == nil {
 		return true
@@ -108,15 +126,6 @@ func buildImageSrcset(variants map[string]mediadomain.MediaVariant) string {
 	}
 	return sb.String()
 }
-
-// defaultPostsPerPage is the page size used when the configured POSTS_PER_PAGE
-// is zero or invalid. Public listings fetch postsPerPage+1 rows so they can
-// detect HasNext without a COUNT query, then trim back to postsPerPage.
-const defaultPostsPerPage = 50
-
-// defaultHomeSectionLimit is the number of items shown in a homepage section
-// when its [[homepage_section]] limit is unset.
-const defaultHomeSectionLimit = 6
 
 // parsePage extracts a 1-based page number from the ?page= query parameter,
 // clamped to a minimum of 1. Missing or invalid values default to page 1.
@@ -211,6 +220,27 @@ func trimToPage(items []*contentdomain.Content, perPage int) ([]*contentdomain.C
 	return items, false
 }
 
+func ExtractHashFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	path, err := url.PathUnescape(u.Path)
+	if err != nil {
+		return ""
+	}
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	for _, suffix := range []string{"_large", "_medium", "_thumb"} {
+		if rest, ok := strings.CutSuffix(name, suffix); ok {
+			name = rest
+			break
+		}
+	}
+	return name
+}
+
 type UserBasicInfo struct {
 	Name           string
 	Username       string
@@ -224,6 +254,15 @@ type UserProvider interface {
 
 type UserFieldResolver interface {
 	GetUserFields() []customfield.FieldSchema
+	GetUserSystemFields() []customfield.FieldSchema
+}
+
+// PublicFieldLookup is the interface the ContentPageHandler uses to discover
+// which user custom/system field slugs are allowlisted with the "expose"
+// operation in the [[public_field]] config. Defining it locally keeps the
+// contentpage package decoupled from the config package and testable with a stub.
+type PublicFieldLookup interface {
+	ExposedFields(resource, postType string) []string
 }
 
 type PostTypeResolver interface {
@@ -287,17 +326,18 @@ func displayLanguage(code string) string {
 }
 
 type ContentPageHandler struct {
-	contentService    ContentService
-	postTypeResolver  PostTypeResolver
-	userFieldResolver UserFieldResolver
-	userProvider      UserProvider
-	templates         *tpl.Templates
-	renderer          tiptap.Renderer
-	mediaRepo         mediadomain.Repository
-	languages         []string
-	homepageSections  []config.HomepageSection
-	siteConfig        tpl.SiteConfig
-	postsPerPage      int
+	contentService      ContentService
+	postTypeResolver    PostTypeResolver
+	userFieldResolver   UserFieldResolver
+	userProvider        UserProvider
+	templates           *tpl.Templates
+	renderer            tiptap.Renderer
+	mediaRepo           mediadomain.Repository
+	languages           []string
+	homepageSections    []config.HomepageSection
+	siteConfig          tpl.SiteConfig
+	postsPerPage        int
+	publicFieldRegistry PublicFieldLookup
 }
 
 // effectivePerPage returns the configured page size, falling back to the
@@ -767,6 +807,12 @@ func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request,
 			if len(userFields) > 0 && len(authorUser.CustomFields) > 0 {
 				formattedFields = formatCustomFields(userFields, authorUser.CustomFields, primaryLang)
 			}
+
+			// Append system fields that are allowlisted with the "expose" operation.
+			exposed := h.exposedSystemFieldSchemas(authorUser.CustomFields)
+			if len(exposed) > 0 {
+				formattedFields = append(formattedFields, formatCustomFields(exposed, authorUser.CustomFields, primaryLang)...)
+			}
 		}
 	}
 
@@ -1013,6 +1059,39 @@ func (h *ContentPageHandler) serveResetPassword(w http.ResponseWriter, r *http.R
 	}
 }
 
+// exposedSystemFieldSchemas returns the user system-field schemas whose slugs
+// are allowlisted with the "expose" operation in the [[public_field]] config.
+// Returns nil when no registry is attached or no system fields are allowlisted.
+func (h *ContentPageHandler) exposedSystemFieldSchemas(values map[string]any) []customfield.FieldSchema {
+	if h.userFieldResolver == nil || h.publicFieldRegistry == nil || len(values) == 0 {
+		return nil
+	}
+
+	exposed := h.publicFieldRegistry.ExposedFields(config.PublicFieldResourceUser, "")
+	if len(exposed) == 0 {
+		return nil
+	}
+
+	allSystem := h.userFieldResolver.GetUserSystemFields()
+	if len(allSystem) == 0 {
+		return nil
+	}
+
+	exposedSet := make(map[string]bool, len(exposed))
+	for _, slug := range exposed {
+		exposedSet[slug] = true
+	}
+
+	filtered := make([]customfield.FieldSchema, 0, len(exposed))
+	for _, sf := range allSystem {
+		if exposedSet[sf.Slug] {
+			filtered = append(filtered, sf)
+		}
+	}
+
+	return filtered
+}
+
 func (h *ContentPageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(r.URL.Path, "/")
 
@@ -1047,33 +1126,15 @@ func (h *ContentPageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-const postCardSizes = "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)"
-
-func ExtractHashFromURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	path, err := url.PathUnescape(u.Path)
-	if err != nil {
-		return ""
-	}
-	base := filepath.Base(path)
-	ext := filepath.Ext(base)
-	name := strings.TrimSuffix(base, ext)
-	for _, suffix := range []string{"_large", "_medium", "_thumb"} {
-		if rest, ok := strings.CutSuffix(name, suffix); ok {
-			name = rest
-			break
-		}
-	}
-	return name
+// WithPublicFieldRegistry attaches a [[public_field]] registry to the handler
+// so the author HTML page can discover which user system fields are allowlisted
+// with the "expose" operation and render them. When not called (or called with
+// nil), no system fields appear — the safe default. Returns the receiver for
+// chaining at construction time.
+func (h *ContentPageHandler) WithPublicFieldRegistry(registry PublicFieldLookup) *ContentPageHandler {
+	h.publicFieldRegistry = registry
+	return h
 }
-
-// defaultSiteName is the site name used when [site_config].name is not
-// configured. It keeps the embedded theme's branding stable for an
-// out-of-the-box install; operators override it via config.toml.
-const defaultSiteName = "Lesstruct"
 
 func NewContentPageHandler(
 	contentService ContentService,

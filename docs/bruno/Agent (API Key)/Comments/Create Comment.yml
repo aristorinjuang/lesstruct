@@ -1,0 +1,23 @@
+info:
+  name: Create Comment
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/content/{{CONTENT_ID}}/comments"
+  body:
+    type: json
+    data: |-
+      {
+        "comment": "Agent comment on content"
+      }
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

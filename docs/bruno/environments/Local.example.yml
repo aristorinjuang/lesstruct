@@ -33,3 +33,23 @@ variables:
     value: "1"
   - name: SLUG
     value: my-first-content
+  # Agent (Bearer API key) realm — generated via "Create API Key"
+  - secret: true
+    name: API_KEY
+  - name: API_KEY_ID
+    value: "1"
+  # Comment moderation / own-comments
+  - name: COMMENT_ID
+    value: "1"
+  # Public author content listing
+  - name: AUTHOR_USERNAME
+    value: johndoe
+  # WordPress async import job ID (returned by POST /api/admin/wordpress/import)
+  - name: JOB_ID
+    value: "1"
+  # Password reset flow (token is emailed to the user)
+  - secret: true
+    name: RESET_TOKEN
+  # Public search
+  - name: SEARCH_QUERY
+    value: hello

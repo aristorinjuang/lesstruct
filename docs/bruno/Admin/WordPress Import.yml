@@ -1,0 +1,24 @@
+info:
+  name: WordPress Import
+  type: http
+  seq: 17
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/admin/wordpress/import"
+  body:
+    type: multipart-form
+    data:
+      - name: file
+        type: file
+        value:
+          - ./export.xml
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

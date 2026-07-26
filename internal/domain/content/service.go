@@ -148,6 +148,7 @@ type UpdateCommentStatusRequest struct {
 // CreateContentRequest represents a request to create content
 type CreateContentRequest struct {
 	Title              string         `json:"title"`
+	Slug               string         `json:"slug,omitempty"`
 	Content            string         `json:"content"`
 	Tags               []string       `json:"tags"`
 	Status             Status         `json:"status"`
@@ -521,7 +522,18 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		return nil, fmt.Errorf("tags validation failed: %w", err)
 	}
 
-	slug := s.GenerateSlug(req.Title)
+	// The slug is immutable after creation, so it is resolved once here. A
+	// caller-supplied slug (admin-only at the handler layer) is validated and
+	// used as-is; otherwise it is auto-generated from the title. Uniqueness is
+	// enforced per-language below regardless of the source.
+	slug := strings.TrimSpace(req.Slug)
+	if slug != "" {
+		if err := ValidateSlug(slug); err != nil {
+			return nil, fmt.Errorf("slug validation failed: %w", err)
+		}
+	} else {
+		slug = s.GenerateSlug(req.Title)
+	}
 
 	language := req.Language
 	if language == "" {
@@ -742,6 +754,9 @@ func (s *Service) ListByFilters(ctx context.Context, userID int, filters Content
 		filters.Offset = 0
 	}
 
+	if err := ValidateSortOrder(filters.SortOrder); err != nil {
+		return nil, err
+	}
 	for _, f := range filters.CustomFieldFilters {
 		if err := ValidateCustomFieldFilter(f); err != nil {
 			return nil, fmt.Errorf("invalid custom field filter: %w", err)
@@ -868,12 +883,28 @@ func (s *Service) GetPublishedTags(ctx context.Context) ([]string, error) {
 	return tags, nil
 }
 
-func (s *Service) GetPublishedAuthors(ctx context.Context, limit int, offset int) ([]*PublishedAuthor, error) {
-	authors, err := s.repo.GetPublishedAuthors(ctx, limit, offset)
+func (s *Service) GetPublishedAuthors(ctx context.Context, filters PublishedAuthorFilters) ([]*PublishedAuthor, error) {
+	if err := ValidateSortOrder(filters.SortOrder); err != nil {
+		return nil, err
+	}
+	for _, f := range filters.CustomFieldFilters {
+		if err := ValidateCustomFieldFilter(f); err != nil {
+			return nil, err
+		}
+	}
+	authors, err := s.repo.GetPublishedAuthors(ctx, filters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published authors: %w", err)
 	}
 	return authors, nil
+}
+
+func (s *Service) GetPublishedAuthor(ctx context.Context, username string) (*PublishedAuthor, error) {
+	author, err := s.repo.GetPublishedAuthor(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published author: %w", err)
+	}
+	return author, nil
 }
 
 func (s *Service) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*ArchiveMonth, error) {
@@ -1053,20 +1084,9 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 		return nil, fmt.Errorf("%w: %w", ErrCustomFieldValidation, err)
 	}
 
+	// The slug is immutable after creation (changing it would break the public
+	// URL and harm SEO), so a title edit never regenerates the slug.
 	newTitle := strings.TrimSpace(req.Title)
-	if newTitle != existing.Title {
-		newSlug := s.GenerateSlug(newTitle)
-		if newSlug != existing.Slug {
-			unique, slugErr := s.repo.CheckSlugUnique(ctx, newSlug, existing.Language)
-			if slugErr != nil {
-				return nil, fmt.Errorf("failed to check slug uniqueness: %w", slugErr)
-			}
-			if !unique {
-				return nil, fmt.Errorf("%w: %s", ErrSlugAlreadyExists, newSlug)
-			}
-			existing.Slug = newSlug
-		}
-	}
 	existing.Title = newTitle
 	existing.Content = req.Content
 	existing.Tags = tags

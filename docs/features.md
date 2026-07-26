@@ -47,6 +47,13 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   format-aware: TipTap content uses JSON extraction, HTML content uses
   tag-stripping — so HTML-format imports (e.g. WordPress Elementor pages)
   get real extracted text in their meta descriptions, not empty strings.
+- **Immutable URL slugs.** The slug is the public URL (`/<slug>`).
+  Any authenticated user can set a custom slug when creating content (in the
+  editor or via `--slug` on `lesstruct-cli content create`); otherwise the slug
+  is auto-generated from the title. Once saved, the slug is **locked for
+  everyone** — editing the title never regenerates it, so published URLs stay
+  stable for SEO and inbound links. Uniqueness is enforced per language; a
+  collision returns a clear error rather than silently suffixing.
 - **HTML/CSS content authoring.** Set `format: html` on create to author raw
   HTML directly — stored and served as-is, no TipTap conversion. The admin
   editor provides a CodeMirror 6 editor with syntax highlighting and a live
@@ -57,14 +64,18 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Markdown as first-class ingest.** The CLI and `/api/v1` accept Markdown
   bodies; the server converts them to canonical TipTap JSON. Raw Markdown is
   never persisted.
-- **WordPress importer.** Upload a WordPress WXR export to migrate posts, pages,
-  custom post types (and their custom fields), media, and authors into
-  Lesstruct. Authors are auto-created as Contributor users and their posts are
-  assigned to them. Custom post types and field schemas are read from
-  `config.toml`; items whose post type is not registered are silently skipped.
-  Featured images (`_thumbnail_id`) are resolved from attachment items,
-  downloaded, transcoded to WebP, and prepended to each post's content body;
-  inline body images are likewise downloaded and remapped. Failed downloads fall
+- **WordPress importer (async).** Upload a WordPress WXR export to migrate
+  posts, pages, custom post types (and their custom fields), media, and authors
+  into Lesstruct. The import runs in a background goroutine and returns `202
+  Accepted` immediately with a `jobId`; poll
+  `GET /api/admin/wordpress/import/status/{jobId}` to track progress. Authors
+  are auto-created as Contributor users and their posts are assigned to them.
+  Custom post types and field schemas are read from `config.toml`; items whose
+  post type is not registered are silently skipped. Featured images
+  (`_thumbnail_id`) are resolved from attachment items, downloaded, transcoded
+  to WebP, and prepended to each post's content body; inline body images are
+  likewise downloaded and remapped (downloading is concurrent with a bounded
+  worker pool; transient errors are retried with backoff). Failed downloads fall
   back to hotlinking the original WordPress URL. Elementor-built pages are
   imported as `format=html` using the rendered HTML from the Elementor cache,
   preserving their original layout.
@@ -105,7 +116,7 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   (`AI_TEXT_GENERATION_BASE_URL`); images via Google or OpenAI. Nothing runs
   without your keys; `/api/health` honestly reports which features are enabled.
 - **Text enhancement and translation.** Refine or translate rich-text (TipTap) post bodies from the editor.
-- **AI-powered HTML/CSS authoring.** Describe what you want in plain language — the AI generates production-ready HTML & CSS with semantic markup, responsive layouts, and accessible design. Includes 9 quick-start presets (hero, pricing, testimonials, features, CTA, FAQ, stats, contact, newsletter) and iterative refinement — the AI can modify existing HTML based on your follow-up instructions. Your media library images are automatically surfaced as context. This replaces the need for a drag-and-drop page builder: describe, generate, refine, ship.
+- **AI-powered HTML/CSS authoring.** Describe what you want in plain language — the AI generates production-ready HTML & CSS with semantic markup, responsive layouts, and accessible design. Output is on-brand by default: the AI reuses your active theme's design tokens (`var(--color-primary)`, spacing, radius, fonts) and component classes rather than inventing arbitrary colors and fonts. Includes 9 quick-start presets (hero, pricing, testimonials, features, CTA, FAQ, stats, contact, newsletter) and iterative refinement — the AI can modify existing HTML based on your follow-up instructions. Your media library images are automatically surfaced as context. This replaces the need for a drag-and-drop page builder: describe, generate, refine, ship.
 - **Image generation.** Generate images from the media library and the editor.
 - **Built for agents.** `lesstruct-cli` is a thin Cobra client over `/api/v1`
   designed for AI agents and terminal-first humans. Markdown ingest, cursor
@@ -133,6 +144,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   embedded default. Theme authors can ship a `page.html` without blog chrome
   (related posts, author box, date metadata) while keeping the full layout
   for blog posts — no config changes needed.
+- **Per-slug template overrides.** A theme can ship a template that applies
+  to one specific content row by naming the file `<postType>-<slug>.html`
+  (e.g. `page-about.html`, `article-spotlight.html`). Mirrors the WordPress
+  `page-{slug}.php` convention but generalizes to every post type. Pure
+  additive fallback — no existing theme breaks. See
+  [theme-development.md](theme-development.md).
 - **Multi-type aware.** Every post card and single-page template receives the
   item's `.PostType`, so a theme can branch layouts for articles, events, and any
   custom post type from one template set.
@@ -191,6 +208,18 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   serve rendered content, search, post types, and a **published-authors listing**
   (`/v1/public/authors`) for author directories and "most active contributors"
   widgets — only safe fields, never email/role/custom-fields.
+- **Public custom-field filter & sort.** `/api/v1/public/content_items` and
+  `/api/v1/public/authors` accept `cf_<field>`, `cf_<field>_min`,
+  `cf_<field>_max`, and `sort_by=cf:<field>&order=asc|desc` so theme authors
+  can build dynamic regions (recent-posts grids, "top N by ranking"
+  sidebars, scoped directories) client-side without server-side queries.
+  Each publicly-queryable field must be opted in via a `[[public_field]]`
+  block in `config.toml` — the default is fail-closed (400
+   `field_not_queryable`) so sensitive fields are never accidentally exposed.
+   Fields allowlisted with the `"expose"` operation are also included in the
+   response body (`publicFields` map on the authors endpoint), enabling client-side
+   rendering of points, ranks, badges, and other live values.
+   See [api-reference.md](api-reference.md) and [configuration.md](configuration.md).
 
 ## Users, roles & security {#users-roles-security}
 
@@ -212,7 +241,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Rate limiting.** Separate per-minute limits for auth, API, and public realms;
   per-key limiting on the agent API.
 - **CSRF and security headers.** CSRF token validation plus CSP,
-  `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`.
+  `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`. The CSP is
+  [configurable from `config.toml`](configuration.md#csp) — operators append
+  sources per directive, switch to Report-Only for safe rollout, add new
+  directives, or override entirely (or disable when behind a CDN that manages
+  its own CSP). Built-in defaults include `youtube-nocookie.com` (privacy-enhanced
+  YouTube) alongside the existing `unsafe-inline` / known CDN hosts.
 
 ## Engagement {#engagement}
 

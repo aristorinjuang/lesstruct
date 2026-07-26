@@ -119,7 +119,7 @@ func (n Name) Full() string {
 - Always use packages that end with `_test` for all test files. Do not test private functions directly, but through the public ones.
 - Always use `github.com/stretchr/testify` for writing unit tests.
 - Make sure the domain layer ( @internal/domain/ ) has 100% test coverage! Remove unreachable code or skip errors using `_` variables if needed.
-- Ensure your works pass `make lint`, `make test`, and `make vulncheck`! Run `make test-race` before opening a PR, before merging, or whenever you touch concurrency code (`goroutine`, `sync`, channels, `http.Handler`).
+- Ensure your works pass `make lint`, `make test`, and `make vulncheck`! Run `make test-race` **only** when you touch concurrency code (`goroutine`, `sync`, channels, `http.Handler`, or code that shares mutable state across requests) — CI (`/.github/workflows/ci.yml`) already runs the race detector on every push, so a local run is slow and redundant for non-concurrent changes. For a fast scoped check, invoke the toolchain directly on the package you touched instead of the `./...` target: `go test -race ./internal/domain/<name>/...`.
 
 ### Before Touching Any Test File
 - **Read the entire test file first.** Never edit based on partial context.
@@ -229,6 +229,7 @@ The docs under `docs/` are contracts, not afterthoughts. When you change code th
 | `internal/api/template/pages/*.gohtml` (formatting/whitespace) | `docs/coding-standards/html.md` |
 | `internal/plugin/` (SDK/hooks/capabilities), `pkg/sdk/` | `docs/plugin-development.md`, `docs/plugin-capabilities.md` AND the matching snapshots under `skills/lesstruct-plugin-development/references/` |
 | `internal/api/handlers/agent/`, `internal/api/middleware/apikey.go`, `/api/v1` route shape, response envelope | `docs/api-reference.md` |
+| `internal/api/routes/routes.go`, `internal/api/handlers/` (new/removed/renamed endpoints, method changes, query/body param changes, auth-realm changes) | `docs/bruno/` — one `.yml` request per route; add new requests in the matching resource folder and update existing requests' body/query/path/auth in lockstep |
 | A user-facing feature added, removed, or behavior-changed (UI, CLI, or config) | `docs/features.md` (canonical catalog) AND, if it is in the homepage's curated subset, the card copy in `site/layouts/landing.html` |
 | `site/`, `site/themes/hugo-book/`, `.github/workflows/docs.yml` | the `site/` build (the docs site renders from `docs/` and `skills/*/references/` via Hugo mounts — see "Docs site" below) |
 
@@ -236,6 +237,7 @@ Rules:
 - If you cannot tell whether a doc applies, read its first section — each doc states its scope at the top.
 - For theme/plugin docs, the `docs/` copy is developer-facing (source-tree paths) and the `skills/.../references/` copy is user-facing (binary install paths). Keep both in sync.
 - `docs/features.md` is the canonical feature catalog. The homepage grid (`site/layouts/landing.html`) and `README.md` curate subsets from it — keep the three in sync when feature wording changes.
+- `docs/bruno/` is the executable mirror of `internal/api/routes/routes.go` — one request file per HTTP route. When you add or change an endpoint, add or update the matching `.yml` in the same change; if a request references a new variable, also add it to `docs/bruno/environments/Local.example.yml`. Two auth realms coexist: browser (JWT/CSRF, tested in Bruno with `{{TOKEN}}` bearer) and agent (Bearer `{{API_KEY}}`, whose requests live under `Agent (API Key)/`).
 - If the change is large enough to need its own commit, the doc update goes in the SAME commit as the code change.
 
 ### Docs site

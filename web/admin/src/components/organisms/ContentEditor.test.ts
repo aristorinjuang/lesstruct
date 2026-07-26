@@ -863,6 +863,76 @@ describe('ContentEditor', () => {
       )
     })
 
+    it('includes slug in the create payload for any role', async () => {
+      const contentStore = useContentStore()
+      vi.spyOn(contentStore, 'fetchPostTypes').mockResolvedValue([postTypeWithFields])
+      const createSpy = vi.spyOn(contentStore, 'create').mockResolvedValue({
+        id: 1,
+        userId: 1,
+        title: 'Test',
+        slug: 'custom-slug',
+        content: '{"type":"doc"}',
+        tags: [],
+        status: 'draft',
+        postType: 'menu-item',
+          language: 'en',
+        createdAt: '2026-05-10T00:00:00Z',
+        updatedAt: '2026-05-10T00:00:00Z',
+      })
+      mockUserRole.value = 'Admin'
+
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: defaultStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.form.postType = 'menu-item'
+      vm.form.title = 'Test'
+      vm.slug = 'custom-slug'
+      await wrapper.vm.$nextTick()
+
+      await vm.saveDraft()
+
+      expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ slug: 'custom-slug' }))
+    })
+
+    it('includes user-set slug in the create payload for non-admins', async () => {
+      const contentStore = useContentStore()
+      vi.spyOn(contentStore, 'fetchPostTypes').mockResolvedValue([postTypeWithFields])
+      const createSpy = vi.spyOn(contentStore, 'create').mockResolvedValue({
+        id: 1,
+        userId: 1,
+        title: 'Test',
+        slug: 'user-slug',
+        content: '{"type":"doc"}',
+        tags: [],
+        status: 'draft',
+        postType: 'menu-item',
+          language: 'en',
+        createdAt: '2026-05-10T00:00:00Z',
+        updatedAt: '2026-05-10T00:00:00Z',
+      })
+      mockUserRole.value = null
+
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: defaultStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.form.postType = 'menu-item'
+      vm.form.title = 'Test'
+      vm.slug = 'user-slug'
+      await wrapper.vm.$nextTick()
+
+      await vm.saveDraft()
+
+      expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ slug: 'user-slug' }))
+    })
+
     it('includes customFields in unpublish API call', async () => {
       const contentStore = useContentStore()
       vi.spyOn(contentStore, 'fetchPostTypes').mockResolvedValue([postTypeWithFields])

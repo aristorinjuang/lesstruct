@@ -1,0 +1,26 @@
+info:
+  name: Translate
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/text/translate"
+  body:
+    type: json
+    data: |-
+      {
+        "content": "Hello world, this is a test.",
+        "sourceLang": "en",
+        "targetLang": "de",
+        "format": "html"
+      }
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

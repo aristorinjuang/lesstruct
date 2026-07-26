@@ -361,3 +361,214 @@ func TestRenderContent_PostTypeDispatch(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderContent_PerSlugOverride(t *testing.T) {
+	tests := []struct {
+		name         string
+		postType     string
+		slug         string
+		postTypes    []string
+		setupTheme   func(t *testing.T) *template.Theme
+		wantInOutput string
+	}{
+		{
+			name:      "per-slug template applies when post type and slug match",
+			postType:  "page",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				content := `{{define "body"}}<div class="page-about">ABOUT SLUG TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page-about.html"), []byte(content), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "ABOUT SLUG TEMPLATE",
+		},
+		{
+			name:      "per-slug template does not apply when slug differs",
+			postType:  "page",
+			slug:      "contact",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				content := `{{define "body"}}<div class="page-about">ABOUT SLUG TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page-about.html"), []byte(content), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "content-article",
+		},
+		{
+			name:      "per-slug template does not apply when post type differs",
+			postType:  "post",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				content := `{{define "body"}}<div class="page-about">ABOUT SLUG TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page-about.html"), []byte(content), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "content-article",
+		},
+		{
+			name:      "falls through to per-post-type template when per-slug file missing",
+			postType:  "page",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				pageHTML := `{{define "body"}}<div class="page-only">PAGE POST-TYPE TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page.html"), []byte(pageHTML), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "PAGE POST-TYPE TEMPLATE",
+		},
+		{
+			name:      "falls through to default when neither per-slug nor per-post-type present",
+			postType:  "page",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "content-article",
+		},
+		{
+			name:      "per-slug template with hyphenated slug (page-about-us.html)",
+			postType:  "page",
+			slug:      "about-us",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				content := `{{define "body"}}<div class="page-about-us">HYHENATED SLUG TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page-about-us.html"), []byte(content), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "HYHENATED SLUG TEMPLATE",
+		},
+		{
+			name:      "per-slug template with hyphenated post type (menu-item-special.html)",
+			postType:  "menu-item",
+			slug:      "special",
+			postTypes: []string{"post", "page", "menu-item"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				content := `{{define "body"}}<div class="menu-item-special">HYPHENATED TYPE TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "menu-item-special.html"), []byte(content), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "HYPHENATED TYPE TEMPLATE",
+		},
+		{
+			name:      "longest post-type prefix wins when both menu and menu-item are registered",
+			postType:  "menu-item",
+			slug:      "special",
+			postTypes: []string{"post", "page", "menu", "menu-item"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				shortMatch := `{{define "body"}}<div>SHORT MATCH (menu, item-special)</div>{{end}}`
+				longMatch := `{{define "body"}}<div>LONG MATCH (menu-item, special)</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "menu-item-special.html"), []byte(longMatch), 0644))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "menu-item.html"), []byte(shortMatch), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "LONG MATCH (menu-item, special)",
+		},
+		{
+			name:      "per-post-type template file is not mistaken for per-slug override",
+			postType:  "page",
+			slug:      "page",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				pageHTML := `{{define "body"}}<div class="page-post-type">PAGE POST-TYPE TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page.html"), []byte(pageHTML), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "PAGE POST-TYPE TEMPLATE",
+		},
+		{
+			name:      "unknown post-type prefix is ignored (random-foo.html)",
+			postType:  "page",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				content := `{{define "body"}}<div>UNKNOWN TYPE TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "random-foo.html"), []byte(content), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "content-article",
+		},
+		{
+			name:      "nil theme skips per-slug scan entirely",
+			postType:  "page",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				return nil
+			},
+			wantInOutput: "content-article",
+		},
+		{
+			name:      "empty theme dir skips per-slug scan entirely",
+			postType:  "page",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				return &template.Theme{Dir: ""}
+			},
+			wantInOutput: "content-article",
+		},
+		{
+			name:      "per-slug takes precedence over per-post-type when both exist",
+			postType:  "page",
+			slug:      "about",
+			postTypes: []string{"post", "page"},
+			setupTheme: func(t *testing.T) *template.Theme {
+				dir := t.TempDir()
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "templates"), 0755))
+				pageHTML := `{{define "body"}}<div>PAGE POST-TYPE TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page.html"), []byte(pageHTML), 0644))
+				slugHTML := `{{define "body"}}<div>PAGE-SPECIFIC SLUG TEMPLATE</div>{{end}}`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "templates", "page-about.html"), []byte(slugHTML), 0644))
+				return &template.Theme{Dir: dir}
+			},
+			wantInOutput: "PAGE-SPECIFIC SLUG TEMPLATE",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			theme := tt.setupTheme(t)
+			templates, err := template.NewTemplates(theme, nil, tt.postTypes...)
+			require.NoError(t, err)
+
+			w := httptest.NewRecorder()
+			data := template.ContentData{
+				LayoutData: template.LayoutData{
+					Title:     "Test",
+					PageTitle: "Test",
+					Lang:      "en",
+				},
+				Slug:     tt.slug,
+				Body:     "<p>Body</p>",
+				PostType: tt.postType,
+			}
+
+			require.NoError(t, templates.RenderContent(w, data))
+			assert.Contains(t, w.Body.String(), tt.wantInOutput)
+		})
+	}
+}

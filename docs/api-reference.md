@@ -140,7 +140,7 @@ The Content resource lets you publish posts, pages, and other content types over
 |---|---|---|
 | `id` | int | Stable identifier. |
 | `title` | string | 1–200 chars. |
-| `slug` | string | URL slug. Auto-generated from the title; the `slug` you send in create/update is **not honored**. |
+| `slug` | string | URL slug. **Immutable**: on create, any authenticated user may supply a custom slug (validated, unique per language); otherwise it is auto-generated from the title. The slug can never be changed via update — editing the title does not regenerate it (it is the public URL). |
 | `body` | string | The canonical content — a Tiptap JSON document string. |
 | `status` | string | `"draft"` or `"published"`. |
 | `postType` | string | Content type (e.g. `post`, `page`), from your configured post types. |
@@ -177,7 +177,7 @@ POST /api/v1/content
 | `postType` | no | Content type. |
 | `tags` | no | Array of tag strings. Server normalizes (trim, lowercase, dedupe, length-bound) via `ValidateTags`; an invalid tag returns 400 `VALIDATION_ERROR`. |
 | `language` | no | Language code (e.g. `"en"`, `"id"`). Must be in the server's configured languages list (`config.toml` `[languages]`); an unknown code returns 400 `VALIDATION_ERROR` (`ErrInvalidLanguage`). |
-| `slug` | no | Accepted for API stability but **not honored** — the server auto-generates the slug from the title. |
+| `slug` | no | A custom slug (lowercase letters, digits, and hyphens; 1–200 chars; unique per language, else 400 `ErrSlugAlreadyExists`). Omit to auto-generate from the title. The slug is **immutable after creation** — see [Update content](#update-content). |
 | `customFields` | no | Custom-field values, validated through the same path the admin uses. Admin-managed **system fields** (declared per post type) are rejected here with `400 VALIDATION_ERROR` — set them via [Set system fields](#set-system-fields). |
 | `translationGroupId` | no | ID of an existing content item whose translation group this item joins. The server validates the ID exists; a miss returns 400 `ErrTranslationGroupNotFound`. |
 | `isPublished` | no | `true` → `"published"`; `false`/omitted → `"draft"`. |
@@ -240,7 +240,7 @@ Query parameters:
 PUT /api/v1/content/{id}
 ```
 
-Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, and `language`. SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. `slug` is accepted for API stability but not honored (the server auto-generates the slug from the title). `format: markdown` converts the body to Tiptap before storing. `format: html` stores raw HTML directly.
+Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, and `language`. SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. The `slug` is **immutable** and never changes on update (editing the title does not regenerate it — it is the public URL); any `slug` you send here is ignored. `format: markdown` converts the body to Tiptap before storing. `format: html` stores raw HTML directly.
 
 **Response** `200 OK`: `{"data":{"content":{…}}}` with the updated item.
 
@@ -733,7 +733,7 @@ paths:
                 body: { type: string, description: "Tiptap JSON (format=tiptap), Markdown (format=markdown), or raw HTML (format=html)" }
                 format: { type: string, enum: [markdown, tiptap, html], default: tiptap, description: "Server matches case-insensitively after trimming whitespace. 'html' stores raw HTML directly." }
                 postType: { type: string }
-                slug: { type: string, description: "Accepted but not honored; slug is auto-generated." }
+                slug: { type: string, description: "Create-only. A custom slug (validated, unique per language); omit to auto-generate from the title. Immutable after creation." }
                 customFields: { type: object, additionalProperties: true }
                 isPublished: { type: boolean, default: false }
       responses:
@@ -783,7 +783,7 @@ Lesstruct also exposes a family of **unauthenticated** JSON endpoints under `/ap
 GET /api/v1/public/authors
 ```
 
-Returns the users who have published at least one content item, with **only safe, public fields** — never email, role, status, or custom fields (per the no-enumeration model). Ordered by published-content count (desc) then username (asc), so the first entries are the most active contributors — useful for author directories and "most active" widgets.
+Returns the users who have published at least one content item, with **only safe, public fields** — never email, role, or status. Custom and system fields that are allowlisted with the `"expose"` operation in the `[[public_field]]` config are included in the `publicFields` map (see [Public custom-field query](#public-custom-field-query) below). With no `cf_*` or `sort_by` parameter, results are ordered by published-content count (desc) then username (asc), so the first entries are the most active contributors — useful for author directories and "most active" widgets. When `sort_by=cf:<field>` is supplied, the order is driven by that custom-field's numeric value instead (see [Public custom-field query](#public-custom-field-query) below).
 
 **Query parameters:**
 
@@ -791,6 +791,11 @@ Returns the users who have published at least one content item, with **only safe
 |---|---|---|---|
 | `limit` | `100` | `1`–`100` | Missing/invalid/negative → `100`; over `100` → clamped to `100`. |
 | `offset` | `0` | `≥ 0` | Standard offset pagination (use `limit` + `offset` to page through). |
+| `cf_<field>` | *(unset)* | string | Exact-match filter on a user custom field (e.g. `cf_tier=gold`). Allowlisted via `[[public_field resource="user"]]`. |
+| `cf_<field>_min` | *(unset)* | numeric | Inclusive lower-bound filter on a numeric user custom field (e.g. `cf_points_min=10`). |
+| `cf_<field>_max` | *(unset)* | numeric | Inclusive upper-bound filter on a numeric user custom field. |
+| `sort_by` | *(unset)* | `cf:<field>` | Sort by a user custom field. The `cf:` prefix is required; bare field names are rejected with `400 invalid_sort`. |
+| `order` | `desc` | `asc` \| `desc` | Sort direction. Defaults to `desc` when omitted — the natural choice for "top N" rankings. |
 
 **Response** (`200`):
 
@@ -803,7 +808,12 @@ Returns the users who have published at least one content item, with **only safe
       "avatarURL": "http://your-lesstruct.example/uploads/profile_pictures/abc.jpg",
       "profileURL": "http://your-lesstruct.example/authors/johndoe",
       "contentCount": 42,
-      "postTypes": ["article", "event"]
+      "postTypes": ["article", "event"],
+      "publicFields": {
+        "tier_point": 500,
+        "current_point": 3200,
+        "stars": 4
+      }
     }
   ],
   "error": null,
@@ -816,13 +826,51 @@ Returns the users who have published at least one content item, with **only safe
 | `username` | Author username. |
 | `displayName` | `users.name`, falling back to `username` when name is unset. |
 | `avatarURL` | Absolute profile-picture URL; empty string when the author has no picture. |
-| `profileURL` | Absolute URL of the server-rendered author page (`<baseURL>/authors/<username>`), which renders profile custom fields server-side. |
+| `profileURL` | Absolute URL of the server-rendered author page (`<baseURL>/authors/<username>`), which renders profile custom and exposed system fields server-side. |
 | `contentCount` | Number of published content items by the author. |
 | `postTypes` | Distinct post types the author publishes under. Always a non-nil array (renders `[]` when single-type). |
+| `publicFields` | Map of custom/system field slugs and their raw values. Only fields that are allowlisted with the `"expose"` operation in `[[public_field]]` are included. The key is omitted entirely when no field has been opted in (backward-compatible default). |
 
 An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"Failed to list published authors"}}`.
 
-**Related public endpoints** (same envelope, same rate-limit bucket): `GET /api/v1/public/content_items`, `GET /api/v1/public/content_items/{slug}`, `GET /api/v1/public/authors/{username}/content_items`, `GET /api/v1/public/content_items/{slug}/comments`, `GET /api/v1/public/post_types`, `GET /api/v1/public/search`, `GET /api/v1/public/archive`.
+**Related public endpoints** (same envelope, same rate-limit bucket): `GET /api/v1/public/content_items`, `GET /api/v1/public/content_items/{slug}`, `GET /api/v1/public/authors/{username}`, `GET /api/v1/public/authors/{username}/content_items`, `GET /api/v1/public/content_items/{slug}/comments`, `GET /api/v1/public/post_types`, `GET /api/v1/public/search`, `GET /api/v1/public/archive`.
+
+---
+
+```http
+GET /api/v1/public/authors/{username}
+```
+
+Returns a single published author's public profile, using the same response shape as the list endpoint above. Returns `404` when the author has no published content or the username does not exist.
+
+**Path parameter:**
+
+| Parameter | Description |
+|---|---|
+| `username` | The username of the author to fetch. |
+
+**Response** (`200`): Same as `GET /api/v1/public/authors` but a single object in `data` instead of an array. The same `publicFields` map is populated when `"expose"`-allowlisted fields are configured.
+
+```json
+{
+  "data": {
+    "username": "johndoe",
+    "displayName": "John Doe",
+    "avatarURL": "http://your-lesstruct.example/uploads/profile_pictures/abc.jpg",
+    "profileURL": "http://your-lesstruct.example/authors/johndoe",
+    "contentCount": 42,
+    "postTypes": ["article", "event"],
+    "publicFields": {
+      "tier_point": 500,
+      "stars": 4
+    }
+  },
+  "error": null,
+  "meta": { "timestamp": "2026-07-12T09:30:00Z" }
+}
+```
+
+**Error codes:** `404 author_not_found`, `400 invalid_username`, `500 internal_error`.
 
 ---
 
@@ -830,7 +878,7 @@ An empty result returns `"data": []`. On a server failure the endpoint returns `
 GET /api/v1/public/content_items
 ```
 
-Returns published content items, newest first. Each item includes all content fields plus a `featuredImage` URL when the item has an image in its body. Useful for sidebar widgets, "latest posts" lists, and external app rendering.
+Returns published content items. With no `cf_*` or `sort_by` parameter, results are newest first. When `sort_by=cf:<field>` is supplied, results are ordered by that custom-field's numeric value instead (see [Public custom-field query](#public-custom-field-query) below). Each item includes all content fields plus a `featuredImage` URL when the item has an image in its body. Useful for sidebar widgets, "latest posts" lists, and external app rendering.
 
 **Query parameters:**
 
@@ -839,6 +887,11 @@ Returns published content items, newest first. Each item includes all content fi
 | `limit` | 100 | Max items returned (clamped to 1–1000). |
 | `offset` | 0 | Pagination offset. |
 | `post_type` | *(all types)* | Restrict to a single post type (e.g. `article`). |
+| `cf_<field>` | *(unset)* | Exact-match filter on a content custom field (e.g. `cf_category=News`). Allowlisted via `[[public_field resource="content"]]`; entries can be post-type-scoped. |
+| `cf_<field>_min` | *(unset)* | Inclusive lower-bound filter on a numeric content custom field (e.g. `cf_price_min=5`). |
+| `cf_<field>_max` | *(unset)* | Inclusive upper-bound filter on a numeric content custom field. |
+| `sort_by` | *(unset)* | `cf:<field>` to sort by a content custom field. The `cf:` prefix is required. |
+| `order` | `desc` | `asc` \| `desc`. Sort direction. |
 
 **Response** (`200`):
 
@@ -901,4 +954,77 @@ Returns published-content counts grouped by year and month, newest first — for
 | `url` | Absolute URL of the listing page for that month. When `post_type` is set, points to `/<post_type>?year=…&month=…`; otherwise points to `/?year=…&month=…`. |
 
 An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"Failed to list published archive"}}`.
+
+---
+
+## Public custom-field query
+
+`GET /api/v1/public/content_items` and `GET /api/v1/public/authors` accept four custom-field parameter shapes that let theme authors build dynamic regions client-side:
+
+| Parameter shape | Operation | Example |
+|---|---|---|
+| `cf_<field>=<value>` | equality filter (works best on string fields) | `cf_category=News` |
+| `cf_<field>_min=<n>` | inclusive numeric lower bound | `cf_points_min=10` |
+| `cf_<field>_max=<n>` | inclusive numeric upper bound | `cf_price_max=20` |
+| `sort_by=cf:<field>&order=<asc|desc>` | numeric sort (non-numeric values sort as 0) | `sort_by=cf:points&order=desc` |
+
+Multiple filters AND together. `sort_by` and the cf filters are independent — both can be supplied, and either can be omitted.
+
+> **Admin-managed system fields** (declared under `[[post_type.system_fields]]` or
+> `[user_fields].system_fields` in `config.toml`) are also queryable via `cf_*` and
+> `sort_by=cf:*`, since they are stored in the same `custom_fields` JSON column as
+> regular custom fields. A field like `total_point` declared under
+> `[user_fields].system_fields` can be sorted on the public authors endpoint with
+> `sort_by=cf:total_point&order=desc` — the only requirement is a `[[public_field]]`
+> allowlist entry with `resource = "user"`.
+
+### The `[[public_field]]` allowlist
+
+Every `cf_*` and `sort_by=cf:*` parameter is **rejected by default** with `400 field_not_queryable`. The site operator must opt fields in by adding one or more `[[public_field]]` blocks to `config.toml`:
+
+```toml
+# Allow sorting users by their numeric "points" system field.
+[[public_field]]
+resource   = "user"
+field      = "points"
+operations = ["sort"]
+
+# Include the user's tier_point value in the author response body
+# and also allow sorting by it.
+[[public_field]]
+resource   = "user"
+field      = "tier_point"
+operations = ["sort", "expose"]
+
+# Allow filtering and sorting articles by "views", scoped to the article post type.
+[[public_field]]
+resource   = "content"
+field      = "views"
+post_type  = "article"
+operations = ["sort", "filter"]
+```
+
+The `"expose"` operation additionally includes the field's value in the public response body (in the `publicFields` map on the `authors` endpoint). Without it, fields can only be used for sort/filter queries (the original behaviour). Currently only the `"user"` resource supports the `"expose"` operation.
+
+See [`docs/configuration.md`](configuration.md#public_field) for the full schema. Admin endpoints (e.g. `GET /api/v1/content_items`) are **not** gated — they remain unrestricted for operator-side tooling.
+
+### Numeric safety
+
+`cf_<field>_min`, `cf_<field>_max`, and `sort_by=cf:<field>` all cast the field value to a number before comparing or ordering. Non-numeric values are treated as `0`:
+
+- SQLite: silent cast via `CAST(json_extract(...) AS REAL)`.
+- PostgreSQL: a `CASE WHEN … ~ '^-?[0-9]+(\.[0-9]+)?$'` wrapper casts matching values and falls back to `0` for the rest, so a single bad row does not poison the query.
+- MySQL: equivalent `CASE WHEN … REGEXP …` wrapper.
+
+`cf_<field>=<value>` (equality) does no cast — it compares the raw JSON value against the literal string the caller sent. This is the right shape for string fields like `category` or `tier`, but it does **not** match when the JSON value is a number and the URL param is its string form (so `cf_points=87` will not match `{"points":87}` — use `cf_points_min=87&cf_points_max=87` instead, or store the value as a string).
+
+### Error catalog (public query)
+
+| HTTP | `error.code` | When |
+|---|---|---|
+| `400` | `field_not_queryable` | The referenced field is not in the `[[public_field]]` allowlist (or the allowlist is empty / the registry was not wired in `main.go`). The message tells the operator to add an entry to `config.toml`. |
+| `400` | `invalid_sort` | `sort_by` is non-empty but is not of the form `cf:<field>`, or `<field>` does not match `^[a-z][a-z0-9_]*$`, or `order` is not one of `asc`/`desc`/empty. |
+| `400` | `invalid_filter_field` / `invalid_filter_operator` / `invalid_filter_value` | The cf filter failed domain-level validation (empty field, unknown operator, empty value). |
+| `500` | `internal_error` | Repository failure. |
+
 
