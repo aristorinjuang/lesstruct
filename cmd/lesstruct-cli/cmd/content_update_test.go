@@ -68,8 +68,7 @@ func TestContentUpdate_PositionalBody(t *testing.T) {
 	assert.Equal(t, http.MethodPut, info.method)
 	assert.Equal(t, "/api/v1/content/7", info.path)
 	assert.Equal(t, "# Hello v2", info.payload["body"])
-	_, hasFormat := info.payload["format"]
-	assert.False(t, hasFormat, "format omitted when --format not passed")
+	assert.Equal(t, "markdown", info.payload["format"], "update defaults to format: markdown when --format not passed")
 	assert.Equal(t, "Hello v2", info.payload["title"], "title derived from the first heading")
 	// Patch semantics: --published is omitted, so the existing status ("published"
 	// in the GET response) is carried forward → isPublished=true is sent.

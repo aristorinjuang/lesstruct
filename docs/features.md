@@ -15,6 +15,10 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   runs the whole CMS. SQLite is built in. No runtime, no container, no
   `node_modules` in production. Containerizing is fully supported if you prefer
   it — `FROM scratch` works.
+- **Static site generation (SSG).** Generate a fully static HTML site (tar.gz) with
+  AMP variants for content pages, listing pages, author pages, tag pages, a
+  sitemap, and robots.txt — all rendered from the same data layer as the live site.
+  Download via the admin or agent API, or via `lesstruct-cli ssg`.
 - **Multi-database.** Embedded SQLite is the default; PostgreSQL and MySQL are
   first-class via `DB_DRIVER`. Schema migrations run automatically on first start,
   per driver.
@@ -32,6 +36,11 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Custom post types, built in.** Define post types in `config.toml` — no plugin,
   no library. The admin list, form, storage, and queries all read from that file.
   Built-in slugs (`post`, `page`, `media`, `comment`) extend instead of collide.
+- **Admin content list with lazy loading.** The admin list pages through every
+  item server-side (`limit`/`offset` + a total count) instead of capping at the
+  first page, so sites with thousands of articles stay fully browsable. Scrolling
+  loads the next page automatically, and a total-count badge on the page header
+  shows how many items the current filter matches.
 - **Custom fields, built in.** Add typed fields to any post type (and to user
   profiles) in `config.toml`. The admin form renders them, the service validates
   them, and they are queryable. No code required.
@@ -79,6 +88,37 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   back to hotlinking the original WordPress URL. Elementor-built pages are
   imported as `format=html` using the rendered HTML from the Elementor cache,
   preserving their original layout.
+  - **Skip-media option.** When importing, you can optionally skip downloading
+    media (inline images and featured images). Content imports with original
+    WordPress URLs hotlinked — useful for fast imports when you already have
+    the media or want to defer downloading. Available in the admin UI
+    (checkbox) and the CLI (`--skip-media` flag).
+  - **CLI import.** The `lesstruct-cli import wordpress --file <path> [--skip-media]`
+    command imports the same WXR file via the `/api/v1` agent-realm endpoint
+    using an API key. It uploads the file, then polls the status every few
+    seconds, printing live progress until the job completes.
+- **Hugo importer.** Upload a `tar.gz` archive of a Hugo project to migrate
+  posts (HTML or Markdown with YAML frontmatter) into Lesstruct. Hugo
+  `{{< highlight >}}` shortcodes are converted to `<pre><code>` blocks and
+  `{{< iframe >}}` shortcodes to `<iframe>` elements. YAML frontmatter fields
+  (`title`, `date`, `tags`, `description`, `url`, `aliases`, `draft`,
+  `language`, `hasMath`, etc.) are mapped to their Lesstruct equivalents.
+  Old `.html` URLs are stored as aliases in the `content_aliases` table so
+  the public content site can issue 301 redirects from the old path to the
+  new clean slug. Bilingual en/id pairs are linked as translations when they
+   share a directory. See [project-context.md](project-context.md) for the
+   architecture and [api-reference.md](api-reference.md) for the endpoint.
+
+- **Content export.** Download all content as a Hugo-compatible `tar.gz`
+  archive (`lesstruct-export-<timestamp>.tar.gz`). Each content item becomes a
+  `<postType>/<slug>.<language>.html` file with YAML frontmatter (`title`,
+  `date`, `description`, `tags`, `url`, `language`, `aliases`, `draft`,
+  `lastmod`, custom fields). TipTip body content is rendered to HTML before
+  export. Referenced media files are bundled under `static/uploads/media/`
+  with the HTML `src` attributes unchanged (Hugo serves `static/` at site
+  root, matching Lesstruct's own `/uploads/media/` path). Available via the
+  admin panel (`/api/admin/export`) and CLI (`lesstruct-cli export
+  --output-dir <dir>`).
 
 ## Media & images {#media-images}
 
@@ -257,7 +297,8 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   toggle.
 - **Public search.** An on-site search box backed by `/api/v1/public/search`.
 - **Dashboard.** Published/draft counts, users, pending registrations, media
-  stats, and recent content in one view.
+  stats, recent content, and a per-post-type content breakdown (each card links
+  to that type's filtered list) in one view.
 
 ---
 

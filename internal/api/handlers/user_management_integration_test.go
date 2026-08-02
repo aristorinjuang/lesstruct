@@ -461,6 +461,9 @@ func TestSuspendUserFlow(t *testing.T) {
 				Role:     "Author",
 			},
 		}, nil)
+	userRepo.EXPECT().
+		CountUsers(mock.Anything, "").
+		Return(1, nil)
 
 	// SuspendUser: handler calls GetUserByID, service calls GetUserStatus + UpdateUserStatusIfCurrentStatus,
 	// handler calls GetUserByID again, then SendUserSuspendedEmail
@@ -981,6 +984,22 @@ func TestStatusFilteringInUserList(t *testing.T) {
 
 			return users, nil
 		})
+
+	userRepo.EXPECT().
+		CountUsers(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, status string) (int, error) {
+			switch status {
+			case "suspended":
+				return 2, nil
+			case "verified":
+				return 1, nil
+			case "soft_deleted":
+				return 1, nil
+			default:
+				return 4, nil
+			}
+		}).
+		Times(7)
 
 	r := setupTestRouter(t, userRepo, blockedEmailRepo, emailService, softDeleteRepo)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")

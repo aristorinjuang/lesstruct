@@ -145,7 +145,7 @@ func TestImporter_RealSample(t *testing.T) {
 			defer func() { _ = f.Close() }()
 
 			importer := newTestImporter(tt.creator, tt.resolver)
-			result, err := importer.Import(context.Background(), f, 1, nil)
+			result, err := importer.Import(context.Background(), f, 1, wordpress.ImportOptions{}, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			assert.Equal(t, tt.wantSkipped, result.Skipped)
@@ -155,6 +155,23 @@ func TestImporter_RealSample(t *testing.T) {
 			assert.Equal(t, "page", tt.creator.created[1].PostType)
 		})
 	}
+}
+
+func TestImporter_SkipMedia(t *testing.T) {
+	f, err := os.Open("../../../samples/wordpress-export.xml")
+	require.NoError(t, err)
+	defer func() { _ = f.Close() }()
+
+	creator := &fakeContentCreator{failOn: -1}
+	importer := newTestImporter(creator, &fakeUserResolver{})
+	result, err := importer.Import(context.Background(), f, 1, wordpress.ImportOptions{SkipMedia: true}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 4, result.Imported)
+	assert.Equal(t, 0, result.Skipped)
+	assert.Equal(t, 1, result.UsersImported)
+	require.Len(t, creator.created, 4)
+	// With SkipMedia=true, no download attempts are made, but content still
+	// imports with original WordPress image URLs intact (not remapped).
 }
 
 func TestImporter_InvalidXML(t *testing.T) {
@@ -167,7 +184,7 @@ func TestImporter_InvalidXML(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			importer := newTestImporter(&fakeContentCreator{failOn: -1}, &fakeUserResolver{})
-			result, err := importer.Import(context.Background(), strings.NewReader("<<<broken"), 1, nil)
+			result, err := importer.Import(context.Background(), strings.NewReader("<<<broken"), 1, wordpress.ImportOptions{}, nil)
 			require.Error(t, err)
 			require.Nil(t, result)
 		})
@@ -225,13 +242,73 @@ func TestImporter_MapsStatusAndTags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			creator := &fakeContentCreator{failOn: -1}
 			importer := newTestImporter(creator, &fakeUserResolver{})
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, nil)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, wordpress.ImportOptions{}, nil)
 			require.NoError(t, err)
 			assert.Equal(t, 1, result.Imported)
 			require.Len(t, creator.created, 1)
 			assert.Equal(t, tt.wantStatus, creator.created[0].Status)
 			assert.Equal(t, tt.wantTags, creator.created[0].Tags)
 			assert.Equal(t, tt.wantType, creator.created[0].PostType)
+		})
+	}
+}
+
+func TestImporter_TruncatesLongTitlesAndDropsInvalidTags(t *testing.T) {
+	longTitle := strings.Repeat("é", 220)
+	tests := []struct {
+		name      string
+		xml       string
+		wantTitle string
+		wantTags  []string
+	}{
+		{
+			name: "success - title over the 200-rune limit is truncated",
+			xml: fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title><![CDATA[%s]]></title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>long-title</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+</item>
+</channel>
+</rss>`, longTitle),
+			wantTitle: strings.Repeat("é", 200),
+			wantTags:  []string{},
+		},
+		{
+			name: "success - tags over the 50-rune limit are dropped",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Tagged Post</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>tagged-post</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+<category domain="post_tag" nicename="ok"><![CDATA[ok]]></category>
+<category domain="post_tag" nicename="toolong"><![CDATA[` + strings.Repeat("x", 51) + `]]></category>
+</item>
+</channel>
+</rss>`,
+			wantTitle: "Tagged Post",
+			wantTags:  []string{"ok"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			creator := &fakeContentCreator{failOn: -1}
+			importer := newTestImporter(creator, &fakeUserResolver{})
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, wordpress.ImportOptions{}, nil)
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.Imported)
+			require.Len(t, creator.created, 1)
+			assert.Equal(t, tt.wantTitle, creator.created[0].Title)
+			assert.Equal(t, tt.wantTags, creator.created[0].Tags)
 		})
 	}
 }
@@ -321,7 +398,7 @@ func TestImporter_AssignsPostsToCreators(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			importer := newTestImporter(tt.creator, tt.resolver)
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 99, nil)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 99, wordpress.ImportOptions{}, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			assert.Equal(t, tt.wantUsersImported, result.UsersImported)
@@ -340,6 +417,9 @@ func TestImporter_CustomFields(t *testing.T) {
 		{Slug: "location", Type: customfield.FieldTypeText, Required: true},
 		{Slug: "type", Type: customfield.FieldTypeSelect, Required: true, Options: []string{"journalist", "community", "point"}},
 		{Slug: "point", Type: customfield.FieldTypeNumber, Required: true, Min: float64Ptr(1)},
+		{Slug: "created_at", Type: customfield.FieldTypeDate},
+		{Slug: "image_pdf", Type: customfield.FieldTypeUrl},
+		{Slug: "link", Type: customfield.FieldTypeUrl},
 	}
 
 	tests := []struct {
@@ -378,6 +458,35 @@ func TestImporter_CustomFields(t *testing.T) {
 			},
 		},
 		{
+			name: "success - ACF date field in Ymd storage format",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Published Article</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Ride</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>published-article</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>event</wp:post_type>
+<wp:postmeta><wp:meta_key><![CDATA[start]]></wp:meta_key><wp:meta_value><![CDATA[2018-10-27 00:00:00]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[location]]></wp:meta_key><wp:meta_value><![CDATA[Pontianak]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[type]]></wp:meta_key><wp:meta_value><![CDATA[journalist]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[point]]></wp:meta_key><wp:meta_value><![CDATA[3]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[created_at]]></wp:meta_key><wp:meta_value><![CDATA[20250601]]></wp:meta_value></wp:postmeta>
+</item>
+</channel>
+</rss>`,
+			wantImported: 1,
+			wantSkipped:  0,
+			wantCustomFields: map[string]any{
+				"start":      "2018-10-27T00:00:00Z",
+				"location":   "Pontianak",
+				"type":       "journalist",
+				"point":      float64(3),
+				"created_at": "2025-06-01",
+			},
+		},
+		{
 			name: "skip - missing required field",
 			xml: `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
@@ -398,6 +507,63 @@ func TestImporter_CustomFields(t *testing.T) {
 			wantSkipped:      1,
 			wantCustomFields: nil,
 		},
+		{
+			name: "success - optional url field with attachment ID value is dropped",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Article With Attachment ID</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Ride</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>article-with-attachment-id</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>event</wp:post_type>
+<wp:postmeta><wp:meta_key><![CDATA[start]]></wp:meta_key><wp:meta_value><![CDATA[2018-10-27 00:00:00]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[location]]></wp:meta_key><wp:meta_value><![CDATA[Pontianak]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[type]]></wp:meta_key><wp:meta_value><![CDATA[journalist]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[point]]></wp:meta_key><wp:meta_value><![CDATA[3]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[image_pdf]]></wp:meta_key><wp:meta_value><![CDATA[130720]]></wp:meta_value></wp:postmeta>
+</item>
+</channel>
+</rss>`,
+			wantImported: 1,
+			wantSkipped:  0,
+			wantCustomFields: map[string]any{
+				"start":    "2018-10-27T00:00:00Z",
+				"location": "Pontianak",
+				"type":     "journalist",
+				"point":    float64(3),
+			},
+		},
+		{
+			name: "success - url field value is trimmed",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Article With Messy Link</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Ride</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>article-with-messy-link</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>event</wp:post_type>
+<wp:postmeta><wp:meta_key><![CDATA[start]]></wp:meta_key><wp:meta_value><![CDATA[2018-10-27 00:00:00]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[location]]></wp:meta_key><wp:meta_value><![CDATA[Pontianak]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[type]]></wp:meta_key><wp:meta_value><![CDATA[journalist]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[point]]></wp:meta_key><wp:meta_value><![CDATA[3]]></wp:meta_value></wp:postmeta>
+<wp:postmeta><wp:meta_key><![CDATA[link]]></wp:meta_key><wp:meta_value><![CDATA[ https://equator.co.id/news/]]></wp:meta_value></wp:postmeta>
+</item>
+</channel>
+</rss>`,
+			wantImported: 1,
+			wantSkipped:  0,
+			wantCustomFields: map[string]any{
+				"start":    "2018-10-27T00:00:00Z",
+				"location": "Pontianak",
+				"type":     "journalist",
+				"point":    float64(3),
+				"link":     "https://equator.co.id/news/",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -409,7 +575,7 @@ func TestImporter_CustomFields(t *testing.T) {
 				},
 			}
 			importer := newTestImporterWithPostTypes(creator, &fakeUserResolver{}, postTypes)
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, nil)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, wordpress.ImportOptions{}, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			assert.Equal(t, tt.wantSkipped, result.Skipped)
@@ -467,7 +633,7 @@ func TestImporter_FeaturedImage(t *testing.T) {
 			"en",
 			nil,
 		)
-		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, nil)
+		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, wordpress.ImportOptions{}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Imported)
 		assert.Equal(t, 0, result.Skipped)
@@ -519,7 +685,7 @@ func TestImporter_FeaturedImage(t *testing.T) {
 </channel>
 </rss>`
 
-		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, nil)
+		result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, wordpress.ImportOptions{}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Imported)
 		require.Len(t, creator.created, 1)
@@ -578,7 +744,7 @@ func TestImporter_FeaturedImage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			creator := &fakeContentCreator{failOn: -1}
 			importer := newTestImporter(creator, &fakeUserResolver{})
-			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, nil)
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, wordpress.ImportOptions{}, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantImported, result.Imported)
 			require.Len(t, creator.created, tt.wantImported)
@@ -628,7 +794,7 @@ func TestImporter_ForwardsLanguage(t *testing.T) {
 				tt.language,
 				nil,
 			)
-			result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, nil)
+			result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, wordpress.ImportOptions{}, nil)
 			require.NoError(t, err)
 			assert.Equal(t, 1, result.Imported)
 			require.Len(t, creator.created, 1)

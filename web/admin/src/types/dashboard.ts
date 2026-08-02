@@ -11,6 +11,16 @@ export interface DashboardStats {
   registeredUsers: number
   pendingRegistrations: number
   mediaItems: number
+  totalContent?: number
+  contentByType?: ContentByTypeEntry[]
+}
+
+/**
+ * Content count for a single post type on the dashboard
+ */
+export interface ContentByTypeEntry {
+  postType: string
+  count: number
 }
 
 /**

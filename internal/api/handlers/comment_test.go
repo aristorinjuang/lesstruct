@@ -968,3 +968,124 @@ func TestCommentHandler_DeleteOwnComment(t *testing.T) {
 		})
 	}
 }
+
+func TestCommentHandler_GetMyComments(t *testing.T) {
+	tests := []struct {
+		name           string
+		role           string
+		setupContext   func(*http.Request) *http.Request
+		setupService   func(*contentmocks.MockServiceInterface)
+		expectedStatus int
+		wantTotal      int
+		validateResp   func(*testing.T, map[string]any)
+	}{
+		{
+			name: "regular user gets own comment count",
+			role: "Author",
+			setupContext: func(req *http.Request) *http.Request {
+				ctx := context.WithValue(req.Context(), middleware.UserIDKey, "7")
+				ctx = context.WithValue(ctx, middleware.RoleKey, "Author")
+				return req.WithContext(ctx)
+			},
+			setupService: func(s *contentmocks.MockServiceInterface) {
+				s.EXPECT().GetCommentsByUserID(mock.Anything, 7).Return([]*contentdomain.Comment{
+					{
+						ID:        1,
+						Comment:   "My comment",
+						Status:    contentdomain.CommentStatusPending,
+						CreatedAt: time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
+					},
+				}, nil)
+				s.EXPECT().CountComments(mock.Anything, 7).Return(3, nil)
+			},
+			expectedStatus: http.StatusOK,
+			wantTotal:      3,
+		},
+		{
+			name: "admin gets global comment count",
+			role: "Admin",
+			setupContext: func(req *http.Request) *http.Request {
+				ctx := context.WithValue(req.Context(), middleware.UserIDKey, "7")
+				ctx = context.WithValue(ctx, middleware.RoleKey, "Admin")
+				return req.WithContext(ctx)
+			},
+			setupService: func(s *contentmocks.MockServiceInterface) {
+				s.EXPECT().GetCommentsByUserID(mock.Anything, 7).Return([]*contentdomain.Comment{}, nil)
+				s.EXPECT().CountComments(mock.Anything, 0).Return(42, nil)
+			},
+			expectedStatus: http.StatusOK,
+			wantTotal:      42,
+		},
+		{
+			name: "unauthenticated request returns 401",
+			setupContext: func(req *http.Request) *http.Request {
+				return req
+			},
+			setupService:   func(s *contentmocks.MockServiceInterface) {},
+			expectedStatus: http.StatusUnauthorized,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				respErr, ok := resp["error"].(map[string]any)
+				if !ok {
+					t.Errorf("expected error field")
+					return
+				}
+				if respErr["code"] != "unauthorized" {
+					t.Errorf("expected code 'unauthorized', got %v", respErr["code"])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := contentmocks.NewMockServiceInterface(t)
+			tt.setupService(mockService)
+
+			handler := handlers.NewCommentHandler(mockService)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/my-comments", nil)
+			if tt.setupContext != nil {
+				req = tt.setupContext(req)
+			}
+
+			w := httptest.NewRecorder()
+
+			handler.GetMyComments(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
+			}
+
+			var resp map[string]any
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Errorf("failed to decode response: %v", err)
+				return
+			}
+
+			if tt.wantTotal > 0 {
+				meta, ok := resp["meta"].(map[string]any)
+				if !ok {
+					t.Errorf("expected meta field")
+					return
+				}
+				pagination, ok := meta["pagination"].(map[string]any)
+				if !ok {
+					t.Errorf("expected pagination field")
+					return
+				}
+				total, ok := pagination["total"].(float64)
+				if !ok {
+					t.Errorf("expected total field")
+					return
+				}
+				if int(total) != tt.wantTotal {
+					t.Errorf("expected total %d, got %v", tt.wantTotal, total)
+				}
+			}
+
+			if tt.validateResp != nil {
+				tt.validateResp(t, resp)
+			}
+		})
+	}
+}

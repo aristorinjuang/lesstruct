@@ -71,6 +71,9 @@ type UserRepo interface {
 	UnsuspendUser(ctx context.Context, userID int) error
 	SoftDeleteUser(ctx context.Context, userID int) error
 	GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*User, error)
+	// CountUsers returns the total number of users, optionally filtered by status — mirrors
+	// GetAllUsers' WHERE clause so a list's total always matches its rows.
+	CountUsers(ctx context.Context, status string) (int, error)
 	GetUserStatus(ctx context.Context, userID int) (string, error)
 	UpdateEmail(ctx context.Context, userID int, email string) error
 	UpdateName(ctx context.Context, userID int, name string) error
@@ -801,6 +804,28 @@ func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit i
 	}
 
 	return users, nil
+}
+
+// CountUsers returns the total number of users, optionally filtered by status. It mirrors
+// GetAllUsers' WHERE clause so a list's total always matches its rows.
+func (r *UserRepository) CountUsers(ctx context.Context, status string) (int, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	var total int
+	var err error
+	if status != "" {
+		err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE status = ?`, status).Scan(&total)
+	} else {
+		err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&total)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to count users: %w", err)
+	}
+	return total, nil
 }
 
 // GetUserStatus retrieves the current status of a user

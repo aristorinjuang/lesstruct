@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
@@ -24,6 +26,7 @@ var wpDatetimeFormats = []string{
 	"2006-01-02 15:04:05",
 	"2006-01-02T15:04:05",
 	"2006-01-02",
+	"20060102", // ACF date-picker "Ymd" storage format (e.g. 20250601)
 }
 
 // convertMetaValue converts a raw WordPress postmeta string to the Go type
@@ -66,9 +69,42 @@ func convertMetaValue(field customfield.FieldSchema, raw string) (any, error) {
 		}
 		return b, nil
 
+	case customfield.FieldTypeUrl:
+		// Mirror the content domain's URL rule so an invalid value (e.g. a
+		// stray ACF attachment ID) is caught here and dropped for optional
+		// fields instead of failing the whole item at Create.
+		u, err := url.Parse(trimmed)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return nil, fmt.Errorf("must be a valid http(s) URL")
+		}
+		return trimmed, nil
+
 	default:
-		return raw, nil
+		return strings.TrimSpace(raw), nil
 	}
+}
+
+// truncateRunes truncates s to at most max runes, preserving valid UTF-8.
+func truncateRunes(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max])
+}
+
+// cleanTags drops tags that would fail domain validation: tags that are empty
+// after trimming or longer than the rune limit. The result is never nil so the
+// request carries a stable empty slice when nothing survives.
+func cleanTags(tags []string) []string {
+	cleaned := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		t := strings.TrimSpace(tag)
+		if t != "" && utf8.RuneCountInString(t) <= contentdomain.MaxTagRunes {
+			cleaned = append(cleaned, t)
+		}
+	}
+	return cleaned
 }
 
 // contentCreator is the subset of the content domain service needed to create
@@ -103,6 +139,14 @@ type Progress struct {
 	Skipped       int `json:"skipped"`
 	UsersImported int `json:"usersImported"`
 	Total         int `json:"total"`
+}
+
+// ImportOptions controls per-import behaviour.
+type ImportOptions struct {
+	// SkipMedia, when true, skips downloading inline images and featured
+	// images. Content is imported with original WordPress image URLs
+	// (hotlinked) and no featured image is set.
+	SkipMedia bool
 }
 
 // Importer orchestrates a WordPress import: parse the WXR, download images,
@@ -220,9 +264,9 @@ func (imp *Importer) importItem(
 	}
 
 	req := contentdomain.CreateContentRequest{
-		Title:        item.Title,
+		Title:        truncateRunes(item.Title, contentdomain.MaxTitleRunes),
 		Content:      contentBody,
-		Tags:         item.Tags,
+		Tags:         cleanTags(item.Tags),
 		Status:       status,
 		Format:       format,
 		PostType:     item.PostType,
@@ -311,7 +355,13 @@ func (imp *Importer) buildCustomFields(item ParsedItem) (map[string]any, error) 
 		}
 		converted, err := convertMetaValue(field, raw)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", field.Name, err)
+			if field.Required {
+				return nil, fmt.Errorf("%s: %w", field.Name, err)
+			}
+			// Optional field with an unconvertible value (e.g. a stray ACF
+			// attachment ID in a URL field) — drop the value rather than
+			// skipping the whole item.
+			continue
 		}
 		customFields[field.Slug] = converted
 	}
@@ -432,13 +482,19 @@ func (imp *Importer) allowedPostTypes() map[string]bool {
 // aggregated result. The onProgress callback, if non-nil, is called after each
 // item with current cumulative totals.
 //
-// Images are downloaded per-item — each item's inline images are fetched just
-// before its content is created. The MediaDownloader cache deduplicates across
-// items so every unique image URL is fetched at most once for the entire import.
-// This means content starts appearing in the database immediately (no lengthy
-// "download all images first" phase), and progress updates are meaningful from
-// the very first item.
-func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int, onProgress func(Progress)) (*ImportResult, error) {
+// opts controls per-import behaviour:
+//   - SkipMedia (default false): when true, skips downloading inline images and
+//     featured images. Content is imported with original WordPress image URLs
+//     (hotlinked) and no featured image is set.
+//
+// Images are downloaded per-item when SkipMedia is false — each item's inline
+// images are fetched just before its content is created. The MediaDownloader
+// cache deduplicates across items so every unique image URL is fetched at most
+// once for the entire import. This means content starts appearing in the
+// database immediately (no lengthy "download all images first" phase), and
+// progress updates are meaningful from the very first item. When SkipMedia is
+// true, no download attempts are made and content is imported as-is.
+func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int, opts ImportOptions, onProgress func(Progress)) (*ImportResult, error) {
 	allowedTypes := imp.allowedPostTypes()
 
 	doc, err := Parse(wxrData, allowedTypes)
@@ -455,11 +511,16 @@ func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int, 
 	creatorCache := make(map[string]int)
 
 	for _, item := range doc.Items {
-		itemImageMap, downloadErrs := imp.downloadImages(ctx, []ParsedItem{item}, userID)
-		result.Errors = append(result.Errors, downloadErrs...)
+		var itemImageMap map[string]string
+		var featuredURL string
+		if !opts.SkipMedia {
+			var downloadErrs []string
+			itemImageMap, downloadErrs = imp.downloadImages(ctx, []ParsedItem{item}, userID)
+			result.Errors = append(result.Errors, downloadErrs...)
+			featuredURL = imp.resolveFeaturedImage(ctx, item, doc.Attachments, userID, result)
+		}
 
 		itemUserID := imp.resolveUserID(ctx, item.Creator, authorByLogin, userID, creatorCache, result)
-		featuredURL := imp.resolveFeaturedImage(ctx, item, doc.Attachments, userID, result)
 		imp.importItem(ctx, item, itemImageMap, featuredURL, itemUserID, result)
 
 		if onProgress != nil {

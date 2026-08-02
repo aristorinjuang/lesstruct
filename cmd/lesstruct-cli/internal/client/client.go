@@ -158,6 +158,32 @@ type CreateCommentRequest struct {
 	Comment string `json:"comment"`
 }
 
+// ImportWordPressRequest is the multipart payload sent to POST
+// /api/v1/wordpress/import. It carries the WXR XML file and optional
+// skipMedia flag.
+type ImportWordPressRequest struct {
+	// File is the WXR XML file reader.
+	File io.Reader
+	// Filename is the file name used in the multipart form.
+	Filename string
+	// SkipMedia, when true, tells the server to skip downloading
+	// inline images and featured images during import.
+	SkipMedia bool
+}
+
+// ImportJobStatus reflects the current state of an in-flight or completed
+// WordPress import job, mirroring the server's importJob JSON shape.
+type ImportJobStatus struct {
+	State         string   `json:"state"`
+	Imported      int      `json:"imported"`
+	Skipped       int      `json:"skipped"`
+	UsersImported int      `json:"usersImported"`
+	Total         int      `json:"total"`
+	Errors        []string `json:"errors,omitempty"`
+	StartedAt     string   `json:"startedAt"`
+	FinishedAt    string   `json:"finishedAt,omitempty"`
+}
+
 // Client is a typed HTTP client over the /api/v1 surface. It depends only on
 // the JSON contract (stdlib) — it imports no server internals — which is what
 // lets a future MCP server reuse it. Construct it with New.
@@ -214,10 +240,25 @@ func (c *Client) doRaw(
 }
 
 // doRequest is the shared core of do (JSON) and doRaw (arbitrary body). It
-// builds the URL, builds the request, sends it, and decodes the {data, error,
-// meta} envelope — including the 204/304/empty-2xx + 200+envelope defenses
-// (which are applied uniformly to every code path).
+// builds the URL, builds the request, sends it via the client's HTTP client,
+// and decodes the {data, error, meta} envelope — including the 204/304/empty-2xx
+// + 200+envelope defenses (which are applied uniformly to every code path).
 func (c *Client) doRequest(
+	ctx context.Context,
+	method string,
+	path string,
+	query url.Values,
+	contentType string,
+	body io.Reader,
+) (json.RawMessage, json.RawMessage, error) {
+	return c.doRequestWithClient(c.http, ctx, method, path, query, contentType, body)
+}
+
+// doRequestWithClient is like doRequest but uses the supplied http.Client
+// instead of c.http, so callers can supply a custom client (e.g. with a
+// different timeout) without mutating the shared c.http field.
+func (c *Client) doRequestWithClient(
+	httpClient *http.Client,
 	ctx context.Context,
 	method string,
 	path string,
@@ -239,7 +280,7 @@ func (c *Client) doRequest(
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, nil, &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: err.Error()}
 	}
@@ -578,6 +619,167 @@ func (c *Client) UpdateCommentStatus(
 		Status string `json:"status"`
 	}{Status: status}
 	return c.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/content/%d/comments/%d/status", contentID, commentID), nil, body)
+}
+
+// ExportContent streams the export tar.gz from GET /api/v1/export into output.
+// output receives the raw tar.gz bytes on success; any error is an *APIError.
+// Uses its own HTTP client without a hard timeout so large exports succeed;
+// the caller controls the overall deadline via ctx.
+func (c *Client) ExportContent(ctx context.Context, output io.Writer) error {
+	reqURL := c.baseURL.JoinPath("/api/v1/export")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
+	if err != nil {
+		return &APIError{StatusCode: 0, Code: "REQUEST_ERROR", Message: err.Error()}
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	downloadClient := &http.Client{
+		CheckRedirect: stripAuthOnCrossHostRedirect,
+	}
+
+	resp, err := downloadClient.Do(req)
+	if err != nil {
+		return &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: err.Error()}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			return &APIError{StatusCode: resp.StatusCode, Code: codeForStatus(resp.StatusCode), Message: fmt.Sprintf("request failed (status %d)", resp.StatusCode)}
+		}
+		return &APIError{StatusCode: resp.StatusCode, Code: codeForStatus(resp.StatusCode), Message: msg}
+	}
+
+	if _, err := io.Copy(output, resp.Body); err != nil {
+		return &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: fmt.Sprintf("download failed: %s", err)}
+	}
+
+	return nil
+}
+
+// GenerateSite streams the SSG tar.gz from GET /api/v1/ssg into output.
+// output receives the raw tar.gz bytes on success; any error is an *APIError.
+// Uses its own HTTP client without a hard timeout so large sites succeed;
+// the caller controls the overall deadline via ctx.
+func (c *Client) GenerateSite(ctx context.Context, output io.Writer) error {
+	reqURL := c.baseURL.JoinPath("/api/v1/ssg")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
+	if err != nil {
+		return &APIError{StatusCode: 0, Code: "REQUEST_ERROR", Message: err.Error()}
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	downloadClient := &http.Client{
+		CheckRedirect: stripAuthOnCrossHostRedirect,
+	}
+
+	resp, err := downloadClient.Do(req)
+	if err != nil {
+		return &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: err.Error()}
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			return &APIError{StatusCode: resp.StatusCode, Code: codeForStatus(resp.StatusCode), Message: fmt.Sprintf("request failed (status %d)", resp.StatusCode)}
+		}
+		return &APIError{StatusCode: resp.StatusCode, Code: codeForStatus(resp.StatusCode), Message: msg}
+	}
+
+	if _, err := io.Copy(output, resp.Body); err != nil {
+		return &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: fmt.Sprintf("download failed: %s", err)}
+	}
+
+	return nil
+}
+
+// ImportWordPress sends POST /api/v1/wordpress/import as multipart/form-data
+// with a `file` part and an optional `skipMedia` field, then returns the
+// decoded data (containing jobId and state) or an *APIError on failure.
+// Uses its own HTTP client without a hard timeout so large uploads succeed;
+// the caller controls the overall deadline via ctx.
+func (c *Client) ImportWordPress(
+	ctx context.Context,
+	req ImportWordPressRequest,
+) (json.RawMessage, json.RawMessage, error) {
+	if req.File == nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "VALIDATION_ERROR",
+			Message:    "File is required",
+		}
+	}
+	if req.Filename == "" {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "VALIDATION_ERROR",
+			Message:    "Filename is required",
+		}
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", req.Filename)
+	if err != nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "MULTIPART_ERROR",
+			Message:    fmt.Sprintf("create file part: %s", err),
+		}
+	}
+	if _, err = io.Copy(part, req.File); err != nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "MULTIPART_ERROR",
+			Message:    fmt.Sprintf("copy file bytes: %s", err),
+		}
+	}
+
+	if req.SkipMedia {
+		if err = writer.WriteField("skipMedia", "true"); err != nil {
+			return nil, nil, &APIError{
+				StatusCode: 0,
+				Code:       "MULTIPART_ERROR",
+				Message:    fmt.Sprintf("write skipMedia field: %s", err),
+			}
+		}
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "MULTIPART_ERROR",
+			Message:    fmt.Sprintf("close multipart writer: %s", err),
+		}
+	}
+
+	// Use a separate HTTP client without a hard timeout for the upload
+	// (the caller controls the deadline via ctx).
+	uploadClient := &http.Client{
+		CheckRedirect: stripAuthOnCrossHostRedirect,
+	}
+
+	data, meta, apiErr := c.doRequestWithClient(uploadClient, ctx, http.MethodPost, "/api/v1/wordpress/import", nil, writer.FormDataContentType(), &body)
+	return data, meta, apiErr
+}
+
+// GetImportStatus sends GET /api/v1/wordpress/import/status/{jobId} and
+// returns the decoded data (containing the job status) or an *APIError on
+// failure. When jobId is empty it fetches the most recent job.
+func (c *Client) GetImportStatus(
+	ctx context.Context,
+	jobID string,
+) (json.RawMessage, json.RawMessage, error) {
+	path := "/api/v1/wordpress/import/status"
+	if jobID != "" {
+		path = fmt.Sprintf("/api/v1/wordpress/import/status/%s", jobID)
+	}
+	return c.do(ctx, http.MethodGet, path, nil, nil)
 }
 
 // New builds a Client targeting baseURL authenticated with apiKey. The base URL

@@ -41,8 +41,8 @@ describe('ConfirmationDialog', () => {
     })
 
     const buttons = wrapper.findAll('button')
-    expect(buttons[0].text()).toBe('No, cancel')
-    expect(buttons[1].text()).toBe('Yes, do it')
+    expect(buttons[0]!.text()).toBe('No, cancel')
+    expect(buttons[1]!.text()).toBe('Yes, do it')
   })
 
   it('should use default button text when not provided', () => {
@@ -55,8 +55,8 @@ describe('ConfirmationDialog', () => {
     })
 
     const buttons = wrapper.findAll('button')
-    expect(buttons[0].text()).toBe('Cancel')
-    expect(buttons[1].text()).toBe('Confirm')
+    expect(buttons[0]!.text()).toBe('Cancel')
+    expect(buttons[1]!.text()).toBe('Confirm')
   })
 
   it('should emit confirm event when confirm button is clicked', async () => {
@@ -68,7 +68,7 @@ describe('ConfirmationDialog', () => {
       },
     })
 
-    const confirmButton = wrapper.findAll('button')[1]
+    const confirmButton = wrapper.findAll('button')[1]!
     await confirmButton.trigger('click')
 
     expect(wrapper.emitted('confirm')).toBeTruthy()
@@ -83,7 +83,7 @@ describe('ConfirmationDialog', () => {
       },
     })
 
-    const cancelButton = wrapper.findAll('button')[0]
+    const cancelButton = wrapper.findAll('button')[0]!
     await cancelButton.trigger('click')
 
     expect(wrapper.emitted('cancel')).toBeTruthy()

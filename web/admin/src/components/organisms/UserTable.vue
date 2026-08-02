@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { formatDate, formatDateTime } from '@/utils/date'
 import { useConfirmationDialog } from '@/composables/useConfirmationDialog'
-import type { UserTableProps } from '@/types/user'
+import type { UserTableProps, UserRole, UserStatus } from '@/types/user'
 import type { FieldSchema } from '@/types/customfield'
 import UserStatusBadge from '@/components/atoms/UserStatusBadge.vue'
 import UserRoleBadge from '@/components/atoms/UserRoleBadge.vue'
 import UserActions from '@/components/molecules/UserActions.vue'
 import ConfirmationDialog from '@/components/organisms/ConfirmationDialog.vue'
 
-const props = withDefaults(defineProps<UserTableProps>(), {
+withDefaults(defineProps<UserTableProps>(), {
   isLoading: false,
   userFields: () => [],
   userSystemFields: () => [],
@@ -82,7 +82,7 @@ function handleSoftDelete(userId: string) {
 }
 
 function handleEditProfile(userId: string) {
-  emit('edit-profile', userId)
+  emit('editProfile', userId)
 }
 </script>
 
@@ -135,21 +135,21 @@ function handleEditProfile(userId: string) {
               {{ formatFieldValue(field, user.customFields?.[field.slug]) }}
             </td>
             <td class="user-table__role">
-              <UserRoleBadge :role="user.role" />
+              <UserRoleBadge :role="user.role as UserRole" />
             </td>
             <td class="user-table__status">
-              <UserStatusBadge :status="user.status" />
+              <UserStatusBadge :status="user.status as UserStatus" />
             </td>
             <td class="user-table__date">{{ formatDate(user.createdAt) }}</td>
             <td class="user-table__actions">
               <UserActions
-                :user-status="user.status"
-                @approve="handleApprove(user.id)"
-                @reject="handleReject(user.id)"
-                @mark-as-spam="handleMarkAsSpam(user.id)"
-                @suspend="handleSuspend(user.id)"
-                @soft-delete="handleSoftDelete(user.id)"
-                @edit-profile="handleEditProfile(user.id)"
+                :user-status="user.status as UserStatus"
+                @approve="handleApprove(String(user.id))"
+                @reject="handleReject(String(user.id))"
+                @mark-as-spam="handleMarkAsSpam(String(user.id))"
+                @suspend="handleSuspend(String(user.id))"
+                @soft-delete="handleSoftDelete(String(user.id))"
+                @edit-profile="handleEditProfile(String(user.id))"
               />
             </td>
           </tr>

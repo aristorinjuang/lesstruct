@@ -87,7 +87,7 @@ describe('ContentEditView', () => {
   describe('userId from auth store', () => {
     it('should pass userId from useAuth to ContentEditor', async () => {
       const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent as any)
+      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent)
 
       const wrapper = mountView()
       await wrapper.vm.$nextTick()
@@ -118,7 +118,7 @@ describe('ContentEditView', () => {
   describe('content loading', () => {
     it('should load content by id and pass to editor', async () => {
       const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent as any)
+      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent)
 
       const wrapper = mountView()
       await wrapper.vm.$nextTick()
@@ -144,7 +144,7 @@ describe('ContentEditView', () => {
   describe('event handlers', () => {
     it('should handle saved event with redirect', async () => {
       const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent as any)
+      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent)
 
       const wrapper = mountView()
       await wrapper.vm.$nextTick()
@@ -158,7 +158,7 @@ describe('ContentEditView', () => {
 
     it('should handle cancel event by navigating to content list', async () => {
       const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent as any)
+      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent)
 
       const wrapper = mountView()
       await wrapper.vm.$nextTick()
@@ -172,7 +172,7 @@ describe('ContentEditView', () => {
 
     it('should handle deleted event by navigating to content list', async () => {
       const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent as any)
+      vi.spyOn(contentStore, 'getById').mockResolvedValue(mockContent)
 
       const wrapper = mountView()
       await wrapper.vm.$nextTick()

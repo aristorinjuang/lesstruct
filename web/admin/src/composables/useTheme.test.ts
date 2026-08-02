@@ -187,20 +187,20 @@ describe('useTheme', () => {
 
   describe('system preference change listener', () => {
     it('should update resolvedTheme when system preference changes', async () => {
-      let mediaQueryCallback: ((this: MediaQueryList, ev: any) => any) | null = null
+      let mediaQueryCallback: ((ev: MediaQueryListEvent) => void) | null = null
 
       const mockMediaQueryList = {
         matches: false,
         media: '(prefers-color-scheme: dark)',
         addEventListener: vi.fn((event, callback) => {
           if (event === 'change') {
-            mediaQueryCallback = callback as any
+            mediaQueryCallback = callback as (ev: MediaQueryListEvent) => void
           }
         }),
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn(),
         onchange: null,
-      } as any
+      } as any // eslint-disable-line @typescript-eslint/no-explicit-any
 
       window.matchMedia = vi.fn().mockReturnValue(mockMediaQueryList)
 
@@ -213,7 +213,7 @@ describe('useTheme', () => {
       // Simulate system preference change to dark mode
       if (mediaQueryCallback) {
         const event = { matches: true, media: '(prefers-color-scheme: dark)' }
-        mediaQueryCallback.call(mockMediaQueryList, event)
+        ;(mediaQueryCallback as (this: MediaQueryList, ev: unknown) => unknown).call(mockMediaQueryList, event)
       }
 
       await nextTick()
@@ -230,7 +230,7 @@ describe('useTheme', () => {
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn(),
         onchange: null,
-      } as any
+      } as any // eslint-disable-line @typescript-eslint/no-explicit-any
 
       window.matchMedia = vi.fn().mockReturnValue(mockMediaQueryList)
 

@@ -82,7 +82,7 @@ describe('CustomFieldRenderer', () => {
     })
 
     it('renders SwitchToggle for checkbox field type', () => {
-      const wrapper = createWrapper({ ...baseField, type: 'checkbox', modelValue: false })
+      const wrapper = createWrapper({ ...baseField, type: 'checkbox' }, { modelValue: false })
 
       expect(wrapper.findComponent(SwitchToggle).exists()).toBe(true)
     })
@@ -151,7 +151,7 @@ describe('CustomFieldRenderer', () => {
         options: ['Pastry', 'Bread', 'Cake']
       })
 
-      const select = wrapper.findComponent(Select)
+      const select = wrapper.findComponent(Select) as unknown as { props: (key: string) => unknown }
       expect(select.props('options')).toEqual([
         { value: 'Pastry', label: 'Pastry' },
         { value: 'Bread', label: 'Bread' },
@@ -162,7 +162,7 @@ describe('CustomFieldRenderer', () => {
     it('handles missing optional fields gracefully (no options)', () => {
       const wrapper = createWrapper({ ...baseField, type: 'select' })
 
-      const select = wrapper.findComponent(Select)
+      const select = wrapper.findComponent(Select) as unknown as { props: (key: string) => unknown }
       expect(select.props('options')).toEqual([])
     })
 
@@ -279,7 +279,7 @@ describe('CustomFieldRenderer', () => {
         { disabled: true }
       )
 
-      const select = wrapper.findComponent(Select)
+      const select = wrapper.findComponent(Select) as unknown as { props: (key: string) => unknown }
       expect(select.props('disabled')).toBe(true)
     })
   })

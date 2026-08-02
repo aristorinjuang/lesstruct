@@ -104,6 +104,8 @@ func TestDashboardRepository_GetStats_Empty(t *testing.T) {
 	assert.Equal(t, 0, stats.PublishedPosts, "GetStats() PublishedPosts mismatch")
 	assert.Equal(t, 0, stats.DraftPosts, "GetStats() DraftPosts mismatch")
 	assert.Equal(t, 0, stats.MediaItems, "GetStats() MediaItems mismatch")
+	assert.Equal(t, 0, stats.TotalContent, "GetStats() TotalContent mismatch")
+	assert.Empty(t, stats.ContentByType, "GetStats() ContentByType should be empty")
 	assert.Equal(t, 3, stats.RegisteredUsers, "GetStats() RegisteredUsers mismatch")
 	assert.Len(t, stats.RecentContent, 0, "GetStats() RecentContent should be empty")
 }
@@ -114,13 +116,13 @@ func TestDashboardRepository_GetStats_WithData(t *testing.T) {
 
 	// Insert test data
 	_, err := db.Exec(`
-		INSERT INTO content_items (user_id, title, slug, content, status) VALUES
-			(1, 'Published Post 1', 'published-post-1', 'Content 1', 'published'),
-			(1, 'Published Post 2', 'published-post-2', 'Content 2', 'published'),
-			(1, 'Draft Post 1', 'draft-post-1', 'Content 3', 'draft'),
-			(1, 'Draft Post 2', 'draft-post-2', 'Content 4', 'draft'),
-			(1, 'Draft Post 3', 'draft-post-3', 'Content 5', 'draft'),
-			(2, 'Other User Post', 'other-user-post', 'Content 6', 'published');
+		INSERT INTO content_items (user_id, title, slug, content, status, post_type) VALUES
+			(1, 'Published Post 1', 'published-post-1', 'Content 1', 'published', 'post'),
+			(1, 'Published Page 1', 'published-page-1', 'Content 2', 'published', 'page'),
+			(1, 'Draft Post 1', 'draft-post-1', 'Content 3', 'draft', 'post'),
+			(1, 'Draft Menu Item 1', 'draft-menu-item-1', 'Content 4', 'draft', 'menu-item'),
+			(1, 'Draft Post 2', 'draft-post-2', 'Content 5', 'draft', 'post'),
+			(2, 'Other User Post', 'other-user-post', 'Content 6', 'published', 'post');
 
 		INSERT INTO media_files (user_id, filename, original_filename, mime_type, file_size, file_path, url, hash) VALUES
 			(1, 'image1.webp', 'image1.jpg', 'image/webp', 1000, '/uploads/image1.webp', 'http://localhost:8080/uploads/image1.webp', 'hash1'),
@@ -140,6 +142,15 @@ func TestDashboardRepository_GetStats_WithData(t *testing.T) {
 	assert.Equal(t, 2, stats.MediaItems, "GetStats() MediaItems mismatch")
 	assert.Equal(t, 3, stats.RegisteredUsers, "GetStats() RegisteredUsers mismatch")
 	assert.Len(t, stats.RecentContent, 5, "GetStats() RecentContent should have 5 items")
+
+	assert.Equal(t, 5, stats.TotalContent, "GetStats() TotalContent should include every post type")
+	require.Len(t, stats.ContentByType, 3, "GetStats() ContentByType should have 3 post types")
+	assert.Equal(t, "menu-item", stats.ContentByType[0].PostType)
+	assert.Equal(t, 1, stats.ContentByType[0].Count)
+	assert.Equal(t, "page", stats.ContentByType[1].PostType)
+	assert.Equal(t, 1, stats.ContentByType[1].Count)
+	assert.Equal(t, "post", stats.ContentByType[2].PostType)
+	assert.Equal(t, 3, stats.ContentByType[2].Count)
 }
 
 func TestDashboardRepository_GetStats_RecentContentOrder(t *testing.T) {
@@ -192,15 +203,63 @@ func TestDashboardRepository_GetStats_UserFiltering(t *testing.T) {
 	require.NoError(t, err, "GetStats() failed for user 1")
 	assert.Equal(t, 1, stats1.PublishedPosts, "User 1 should have 1 content")
 	assert.Equal(t, 1, stats1.MediaItems, "User 1 should have 1 media")
+	assert.Equal(t, 1, stats1.TotalContent, "User 1 should have 1 content in total")
+	require.Len(t, stats1.ContentByType, 1, "User 1 should have 1 post type")
+	assert.Equal(t, "post", stats1.ContentByType[0].PostType)
+	assert.Equal(t, 1, stats1.ContentByType[0].Count)
 
 	// Check stats for user 2
 	stats2, err := repo.GetStats(ctx, 2)
 	require.NoError(t, err, "GetStats() failed for user 2")
 	assert.Equal(t, 1, stats2.PublishedPosts, "User 2 should have 1 content")
 	assert.Equal(t, 1, stats2.MediaItems, "User 2 should have 1 media")
+	assert.Equal(t, 1, stats2.TotalContent, "User 2 should have 1 content in total")
+	require.Len(t, stats2.ContentByType, 1, "User 2 should have 1 post type")
+	assert.Equal(t, "post", stats2.ContentByType[0].PostType)
 
 	// Both users should see the same total users count
 	assert.Equal(t, stats1.RegisteredUsers, stats2.RegisteredUsers, "RegisteredUsers should be the same for all users")
+}
+
+func TestDashboardRepository_GetStats_AdminScopeCountsAllUsers(t *testing.T) {
+	db := setupDashboardTestDB(t)
+	defer closeDashboardTestDB(db)
+
+	// Insert test data for different users
+	_, err := db.Exec(`
+		INSERT INTO content_items (user_id, title, slug, content, status, post_type) VALUES
+			(1, 'User 1 Published Post', 'user-1-published', 'Content', 'published', 'post'),
+			(1, 'User 1 Draft Page', 'user-1-draft', 'Content', 'draft', 'page'),
+			(2, 'User 2 Published Menu Item', 'user-2-published', 'Content', 'published', 'menu-item'),
+			(2, 'User 2 Published Post', 'user-2-published-post', 'Content', 'published', 'post'),
+			(3, 'User 3 Draft Post', 'user-3-draft', 'Content', 'draft', 'post');
+
+		INSERT INTO media_files (user_id, filename, original_filename, mime_type, file_size, file_path, url, hash) VALUES
+			(1, 'user1.webp', 'user1.jpg', 'image/webp', 1000, '/uploads/user1.webp', 'http://localhost:8080/uploads/user1.webp', 'hash-admin-1'),
+			(2, 'user2.webp', 'user2.jpg', 'image/webp', 2000, '/uploads/user2.webp', 'http://localhost:8080/uploads/user2.webp', 'hash-admin-2'),
+			(3, 'user3.webp', 'user3.jpg', 'image/webp', 3000, '/uploads/user3.webp', 'http://localhost:8080/uploads/user3.webp', 'hash-admin-3');
+	`)
+	require.NoError(t, err, "Failed to insert test data")
+
+	repo := appsqlite.NewDashboardRepository(db)
+	ctx := context.Background()
+
+	stats, err := repo.GetStats(ctx, 0)
+	require.NoError(t, err, "GetStats() failed")
+
+	assert.Equal(t, 3, stats.PublishedPosts, "PublishedPosts should count all users")
+	assert.Equal(t, 2, stats.DraftPosts, "DraftPosts should count all users")
+	assert.Equal(t, 5, stats.TotalContent, "TotalContent should count all users")
+	assert.Equal(t, 3, stats.MediaItems, "MediaItems should count all users")
+	assert.Len(t, stats.RecentContent, 5, "RecentContent should span all users")
+
+	require.Len(t, stats.ContentByType, 3, "ContentByType should cover all post types across users")
+	assert.Equal(t, "menu-item", stats.ContentByType[0].PostType)
+	assert.Equal(t, 1, stats.ContentByType[0].Count)
+	assert.Equal(t, "page", stats.ContentByType[1].PostType)
+	assert.Equal(t, 1, stats.ContentByType[1].Count)
+	assert.Equal(t, "post", stats.ContentByType[2].PostType)
+	assert.Equal(t, 3, stats.ContentByType[2].Count)
 }
 
 func TestDashboardRepository_GetStats_LimitRecentContent(t *testing.T) {
@@ -227,5 +286,6 @@ func TestDashboardRepository_GetStats_LimitRecentContent(t *testing.T) {
 	require.NoError(t, err, "GetStats() failed")
 
 	assert.Equal(t, 7, stats.PublishedPosts, "GetStats() PublishedPosts mismatch")
+	assert.Equal(t, 7, stats.TotalContent, "GetStats() TotalContent mismatch")
 	assert.Len(t, stats.RecentContent, 5, "GetStats() RecentContent should be limited to 5 items")
 }

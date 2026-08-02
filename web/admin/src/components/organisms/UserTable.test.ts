@@ -49,6 +49,8 @@ describe('UserTable', () => {
       props: {
         users: [],
         isLoading: true,
+        userFields: [],
+        userSystemFields: [],
       },
     })
 
@@ -60,6 +62,8 @@ describe('UserTable', () => {
       props: {
         users: [],
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
     })
 
@@ -71,6 +75,8 @@ describe('UserTable', () => {
       props: {
         users: mockUsers,
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
       global: {
         components: {
@@ -140,6 +146,8 @@ describe('UserTable', () => {
       props: {
         users: mockUsers,
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
       global: {
         components: {
@@ -151,11 +159,11 @@ describe('UserTable', () => {
     })
 
     const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].text()).toContain('johndoe')
-    expect(rows[0].text()).toContain('John Doe')
-    expect(rows[0].text()).toContain('john@example.com')
-    expect(rows[1].text()).toContain('janedoe')
-    expect(rows[1].text()).toContain('jane@example.com')
+    expect(rows[0]!.text()).toContain('johndoe')
+    expect(rows[0]!.text()).toContain('John Doe')
+    expect(rows[0]!.text()).toContain('john@example.com')
+    expect(rows[1]!.text()).toContain('janedoe')
+    expect(rows[1]!.text()).toContain('jane@example.com')
   })
 
   it('should render custom field values from user data', () => {
@@ -176,16 +184,16 @@ describe('UserTable', () => {
     })
 
     const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].text()).toContain('Developer')
-    expect(rows[0].text()).toContain('Acme')
-    expect(rows[0].text()).toContain('42')
-    expect(rows[0].text()).toContain('pro')
+    expect(rows[0]!.text()).toContain('Developer')
+    expect(rows[0]!.text()).toContain('Acme')
+    expect(rows[0]!.text()).toContain('42')
+    expect(rows[0]!.text()).toContain('pro')
   })
 
   it('should render dash for missing custom field values', () => {
     const wrapper = mount(UserTable, {
       props: {
-        users: [mockUsers[1]],
+        users: [mockUsers[1]!],
         userFields: mockUserFields,
         userSystemFields: [],
         isLoading: false,
@@ -199,7 +207,7 @@ describe('UserTable', () => {
       },
     })
 
-    const row = wrapper.findAll('tbody tr')[0]
+    const row = wrapper.findAll('tbody tr')[0]!
     expect(row.text()).toContain('janedoe')
   })
 
@@ -208,6 +216,8 @@ describe('UserTable', () => {
       props: {
         users: mockUsers,
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
       global: {
         components: {
@@ -227,6 +237,8 @@ describe('UserTable', () => {
       props: {
         users: mockUsers,
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
       global: {
         components: {
@@ -246,6 +258,8 @@ describe('UserTable', () => {
       props: {
         users: mockUsers,
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
       global: {
         components: {
@@ -265,6 +279,8 @@ describe('UserTable', () => {
       props: {
         users: mockUsers,
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
       global: {
         components: {
@@ -275,7 +291,7 @@ describe('UserTable', () => {
       },
     })
 
-    const userActionsComponent = wrapper.findAllComponents(UserActions)[1]
+    const userActionsComponent = wrapper.findAllComponents(UserActions)[1]!
     await userActionsComponent.vm.$emit('approve', '2')
 
     expect(wrapper.emitted('approve')).toBeTruthy()
@@ -287,6 +303,8 @@ describe('UserTable', () => {
       props: {
         users: mockUsers,
         isLoading: false,
+        userFields: [],
+        userSystemFields: [],
       },
       global: {
         components: {
@@ -297,12 +315,13 @@ describe('UserTable', () => {
       },
     })
 
-    const userActionsComponent = wrapper.findAllComponents(UserActions)[1]
+    const userActionsComponent = wrapper.findAllComponents(UserActions)[1]!
     await userActionsComponent.vm.$emit('reject', '2')
 
     // UserTable shows confirmation dialog instead of directly emitting
-    expect(wrapper.vm.confirmationDialog.title).toBe('Reject User')
-    expect(wrapper.vm.confirmationDialog.userId).toBe('2')
+    const userTable = wrapper.vm as unknown as { confirmationDialog: { title: string; userId: string } }
+    expect(userTable.confirmationDialog.title).toBe('Reject User')
+    expect(userTable.confirmationDialog.userId).toBe('2')
   })
 
   it('should have proper accessibility attributes', () => {

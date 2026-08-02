@@ -8,6 +8,7 @@ export const useUserStore = defineStore('user', () => {
   // State
   const users = ref<User[]>([])
   const pendingUsers = ref<User[]>([])
+  const total = ref(0)
   const isUsersLoading = ref(false)
   const isPendingUsersLoading = ref(false)
   const usersError = ref<Error | null>(null)
@@ -29,9 +30,10 @@ export const useUserStore = defineStore('user', () => {
     usersError.value = null
 
     try {
-      const response = await api.get<any>('/api/admin/users')
+      const response = await api.get<UserApiResponse<{ data: User[]; meta: { total: number } }>>('/api/admin/users')
       // Backend response structure: { data: { data: [...], meta: {...} } }
       users.value = response.data.data?.data || []
+      total.value = response.data.data?.meta?.total ?? users.value.length
     } catch (err) {
       usersError.value = err as Error
       throw err
@@ -45,7 +47,7 @@ export const useUserStore = defineStore('user', () => {
     pendingUsersError.value = null
 
     try {
-      const response = await api.get<any>('/api/admin/pending-users')
+      const response = await api.get<UserApiResponse<{ data: User[]; meta: { total: number } }>>('/api/admin/pending-users')
       // Backend response structure: { data: { data: [...], meta: {...} } }
       pendingUsers.value = response.data.data?.data || []
     } catch (err) {
@@ -134,7 +136,7 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  async function createUser(data: { username: string; name: string; email: string; role: string; customFields?: Record<string, any> }): Promise<string> {
+  async function createUser(data: { username: string; name: string; email: string; role: string; customFields?: Record<string, unknown> }): Promise<string> {
     if (isProcessing.value) return ''
     isProcessing.value = true
 
@@ -147,7 +149,7 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  async function updateUser(userId: string, data: { name?: string; email?: string; role?: string; customFields?: Record<string, any> }): Promise<void> {
+  async function updateUser(userId: string, data: { name?: string; email?: string; role?: string; customFields?: Record<string, unknown> }): Promise<void> {
     if (isProcessing.value) return
     isProcessing.value = true
 
@@ -172,6 +174,7 @@ export const useUserStore = defineStore('user', () => {
     // State
     users,
     pendingUsers,
+    total,
     isUsersLoading,
     isPendingUsersLoading,
     usersError,

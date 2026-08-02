@@ -33,7 +33,7 @@ export interface Content {
   author?: string
   username?: string
   allowComments?: boolean
-  customFields?: Record<string, any>
+  customFields?: Record<string, unknown>
   updatedBy?: number
   updatedByUsername?: string
   createdAt: string
@@ -56,7 +56,7 @@ export interface CreateContentRequest {
   ogTitle?: string
   ogDescription?: string
   allowComments?: boolean
-  customFields?: Record<string, any>
+  customFields?: Record<string, unknown>
   language?: string
   translationGroupId?: number
 }
@@ -72,7 +72,7 @@ export interface UpdateContentRequest {
   ogTitle?: string
   ogDescription?: string
   allowComments?: boolean
-  customFields?: Record<string, any>
+  customFields?: Record<string, unknown>
   language?: string
   translationGroupId?: number
 }

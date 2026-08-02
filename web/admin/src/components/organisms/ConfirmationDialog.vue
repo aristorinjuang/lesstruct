@@ -2,7 +2,7 @@
 import Modal from './Modal.vue'
 import type { ConfirmationDialogProps } from '@/types/user'
 
-const props = withDefaults(defineProps<ConfirmationDialogProps>(), {
+withDefaults(defineProps<ConfirmationDialogProps>(), {
   confirmButtonText: 'Confirm',
   cancelButtonText: 'Cancel',
 })

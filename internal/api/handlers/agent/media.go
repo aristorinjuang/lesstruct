@@ -157,8 +157,8 @@ func (h *MediaHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parseListLimit(r)
-	beforeID, err := decodeCursor(r.URL.Query().Get("cursor"))
+	limit := response.ParseListLimit(r)
+	beforeID, err := response.DecodeCursor(r.URL.Query().Get("cursor"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid cursor", nil)
 		return
@@ -177,7 +177,7 @@ func (h *MediaHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	nextCursor := ""
 	if hasMore && len(items) > 0 {
-		nextCursor = encodeCursor(items[len(items)-1].ID)
+		nextCursor = response.EncodeCursor(items[len(items)-1].ID)
 	}
 
 	projections := make([]MediaProjection, 0, len(items))

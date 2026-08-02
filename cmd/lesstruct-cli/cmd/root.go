@@ -62,6 +62,9 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newContentCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newMediaCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newCommentCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newImportCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newExportCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newSSGCmd(&apiKey, &baseURL, &output))
 	return root
 }
 

@@ -39,6 +39,78 @@ func (_m *MockRepository) EXPECT() *MockRepository_Expecter {
 	return &MockRepository_Expecter{mock: &_m.Mock}
 }
 
+// Count provides a mock function for the type MockRepository
+func (_mock *MockRepository) Count(ctx context.Context, search string, since time.Time) (int, error) {
+	ret := _mock.Called(ctx, search, since)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Count")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) (int, error)); ok {
+		return returnFunc(ctx, search, since)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time) int); ok {
+		r0 = returnFunc(ctx, search, since)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, time.Time) error); ok {
+		r1 = returnFunc(ctx, search, since)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_Count_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Count'
+type MockRepository_Count_Call struct {
+	*mock.Call
+}
+
+// Count is a helper method to define mock.On call
+//   - ctx context.Context
+//   - search string
+//   - since time.Time
+func (_e *MockRepository_Expecter) Count(ctx any, search any, since any) *MockRepository_Count_Call {
+	return &MockRepository_Count_Call{Call: _e.mock.On("Count", ctx, search, since)}
+}
+
+func (_c *MockRepository_Count_Call) Run(run func(ctx context.Context, search string, since time.Time)) *MockRepository_Count_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 time.Time
+		if args[2] != nil {
+			arg2 = args[2].(time.Time)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_Count_Call) Return(n int, err error) *MockRepository_Count_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockRepository_Count_Call) RunAndReturn(run func(ctx context.Context, search string, since time.Time) (int, error)) *MockRepository_Count_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Create provides a mock function for the type MockRepository
 func (_mock *MockRepository) Create(ctx context.Context, media1 *media.Media) error {
 	ret := _mock.Called(ctx, media1)
@@ -216,48 +288,48 @@ func (_c *MockRepository_DeleteByOwner_Call) RunAndReturn(run func(ctx context.C
 	return _c
 }
 
-// FindAll provides a mock function for the type MockRepository
-func (_mock *MockRepository) FindAll(ctx context.Context, limit int, offset int) ([]*media.Media, error) {
-	ret := _mock.Called(ctx, limit, offset)
+// FindAllByCursor provides a mock function for the type MockRepository
+func (_mock *MockRepository) FindAllByCursor(ctx context.Context, limit int, beforeID int) ([]*media.Media, error) {
+	ret := _mock.Called(ctx, limit, beforeID)
 
 	if len(ret) == 0 {
-		panic("no return value specified for FindAll")
+		panic("no return value specified for FindAllByCursor")
 	}
 
 	var r0 []*media.Media
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) ([]*media.Media, error)); ok {
-		return returnFunc(ctx, limit, offset)
+		return returnFunc(ctx, limit, beforeID)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) []*media.Media); ok {
-		r0 = returnFunc(ctx, limit, offset)
+		r0 = returnFunc(ctx, limit, beforeID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*media.Media)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
-		r1 = returnFunc(ctx, limit, offset)
+		r1 = returnFunc(ctx, limit, beforeID)
 	} else {
 		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
-// MockRepository_FindAll_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAll'
-type MockRepository_FindAll_Call struct {
+// MockRepository_FindAllByCursor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAllByCursor'
+type MockRepository_FindAllByCursor_Call struct {
 	*mock.Call
 }
 
-// FindAll is a helper method to define mock.On call
+// FindAllByCursor is a helper method to define mock.On call
 //   - ctx context.Context
 //   - limit int
-//   - offset int
-func (_e *MockRepository_Expecter) FindAll(ctx any, limit any, offset any) *MockRepository_FindAll_Call {
-	return &MockRepository_FindAll_Call{Call: _e.mock.On("FindAll", ctx, limit, offset)}
+//   - beforeID int
+func (_e *MockRepository_Expecter) FindAllByCursor(ctx any, limit any, beforeID any) *MockRepository_FindAllByCursor_Call {
+	return &MockRepository_FindAllByCursor_Call{Call: _e.mock.On("FindAllByCursor", ctx, limit, beforeID)}
 }
 
-func (_c *MockRepository_FindAll_Call) Run(run func(ctx context.Context, limit int, offset int)) *MockRepository_FindAll_Call {
+func (_c *MockRepository_FindAllByCursor_Call) Run(run func(ctx context.Context, limit int, beforeID int)) *MockRepository_FindAllByCursor_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -280,59 +352,59 @@ func (_c *MockRepository_FindAll_Call) Run(run func(ctx context.Context, limit i
 	return _c
 }
 
-func (_c *MockRepository_FindAll_Call) Return(medias []*media.Media, err error) *MockRepository_FindAll_Call {
+func (_c *MockRepository_FindAllByCursor_Call) Return(medias []*media.Media, err error) *MockRepository_FindAllByCursor_Call {
 	_c.Call.Return(medias, err)
 	return _c
 }
 
-func (_c *MockRepository_FindAll_Call) RunAndReturn(run func(ctx context.Context, limit int, offset int) ([]*media.Media, error)) *MockRepository_FindAll_Call {
+func (_c *MockRepository_FindAllByCursor_Call) RunAndReturn(run func(ctx context.Context, limit int, beforeID int) ([]*media.Media, error)) *MockRepository_FindAllByCursor_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// FindAllByDateRange provides a mock function for the type MockRepository
-func (_mock *MockRepository) FindAllByDateRange(ctx context.Context, since time.Time, limit int, offset int) ([]*media.Media, error) {
-	ret := _mock.Called(ctx, since, limit, offset)
+// FindAllByDateRangeByCursor provides a mock function for the type MockRepository
+func (_mock *MockRepository) FindAllByDateRangeByCursor(ctx context.Context, since time.Time, limit int, beforeID int) ([]*media.Media, error) {
+	ret := _mock.Called(ctx, since, limit, beforeID)
 
 	if len(ret) == 0 {
-		panic("no return value specified for FindAllByDateRange")
+		panic("no return value specified for FindAllByDateRangeByCursor")
 	}
 
 	var r0 []*media.Media
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int, int) ([]*media.Media, error)); ok {
-		return returnFunc(ctx, since, limit, offset)
+		return returnFunc(ctx, since, limit, beforeID)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, time.Time, int, int) []*media.Media); ok {
-		r0 = returnFunc(ctx, since, limit, offset)
+		r0 = returnFunc(ctx, since, limit, beforeID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*media.Media)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, time.Time, int, int) error); ok {
-		r1 = returnFunc(ctx, since, limit, offset)
+		r1 = returnFunc(ctx, since, limit, beforeID)
 	} else {
 		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
-// MockRepository_FindAllByDateRange_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAllByDateRange'
-type MockRepository_FindAllByDateRange_Call struct {
+// MockRepository_FindAllByDateRangeByCursor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAllByDateRangeByCursor'
+type MockRepository_FindAllByDateRangeByCursor_Call struct {
 	*mock.Call
 }
 
-// FindAllByDateRange is a helper method to define mock.On call
+// FindAllByDateRangeByCursor is a helper method to define mock.On call
 //   - ctx context.Context
 //   - since time.Time
 //   - limit int
-//   - offset int
-func (_e *MockRepository_Expecter) FindAllByDateRange(ctx any, since any, limit any, offset any) *MockRepository_FindAllByDateRange_Call {
-	return &MockRepository_FindAllByDateRange_Call{Call: _e.mock.On("FindAllByDateRange", ctx, since, limit, offset)}
+//   - beforeID int
+func (_e *MockRepository_Expecter) FindAllByDateRangeByCursor(ctx any, since any, limit any, beforeID any) *MockRepository_FindAllByDateRangeByCursor_Call {
+	return &MockRepository_FindAllByDateRangeByCursor_Call{Call: _e.mock.On("FindAllByDateRangeByCursor", ctx, since, limit, beforeID)}
 }
 
-func (_c *MockRepository_FindAllByDateRange_Call) Run(run func(ctx context.Context, since time.Time, limit int, offset int)) *MockRepository_FindAllByDateRange_Call {
+func (_c *MockRepository_FindAllByDateRangeByCursor_Call) Run(run func(ctx context.Context, since time.Time, limit int, beforeID int)) *MockRepository_FindAllByDateRangeByCursor_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -360,140 +432,60 @@ func (_c *MockRepository_FindAllByDateRange_Call) Run(run func(ctx context.Conte
 	return _c
 }
 
-func (_c *MockRepository_FindAllByDateRange_Call) Return(medias []*media.Media, err error) *MockRepository_FindAllByDateRange_Call {
+func (_c *MockRepository_FindAllByDateRangeByCursor_Call) Return(medias []*media.Media, err error) *MockRepository_FindAllByDateRangeByCursor_Call {
 	_c.Call.Return(medias, err)
 	return _c
 }
 
-func (_c *MockRepository_FindAllByDateRange_Call) RunAndReturn(run func(ctx context.Context, since time.Time, limit int, offset int) ([]*media.Media, error)) *MockRepository_FindAllByDateRange_Call {
+func (_c *MockRepository_FindAllByDateRangeByCursor_Call) RunAndReturn(run func(ctx context.Context, since time.Time, limit int, beforeID int) ([]*media.Media, error)) *MockRepository_FindAllByDateRangeByCursor_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// FindAllByFilename provides a mock function for the type MockRepository
-func (_mock *MockRepository) FindAllByFilename(ctx context.Context, filename string, limit int, offset int) ([]*media.Media, error) {
-	ret := _mock.Called(ctx, filename, limit, offset)
+// FindAllByFilenameAndDateRangeByCursor provides a mock function for the type MockRepository
+func (_mock *MockRepository) FindAllByFilenameAndDateRangeByCursor(ctx context.Context, filename string, since time.Time, limit int, beforeID int) ([]*media.Media, error) {
+	ret := _mock.Called(ctx, filename, since, limit, beforeID)
 
 	if len(ret) == 0 {
-		panic("no return value specified for FindAllByFilename")
-	}
-
-	var r0 []*media.Media
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) ([]*media.Media, error)); ok {
-		return returnFunc(ctx, filename, limit, offset)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) []*media.Media); ok {
-		r0 = returnFunc(ctx, filename, limit, offset)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*media.Media)
-		}
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, int) error); ok {
-		r1 = returnFunc(ctx, filename, limit, offset)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockRepository_FindAllByFilename_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAllByFilename'
-type MockRepository_FindAllByFilename_Call struct {
-	*mock.Call
-}
-
-// FindAllByFilename is a helper method to define mock.On call
-//   - ctx context.Context
-//   - filename string
-//   - limit int
-//   - offset int
-func (_e *MockRepository_Expecter) FindAllByFilename(ctx any, filename any, limit any, offset any) *MockRepository_FindAllByFilename_Call {
-	return &MockRepository_FindAllByFilename_Call{Call: _e.mock.On("FindAllByFilename", ctx, filename, limit, offset)}
-}
-
-func (_c *MockRepository_FindAllByFilename_Call) Run(run func(ctx context.Context, filename string, limit int, offset int)) *MockRepository_FindAllByFilename_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 int
-		if args[2] != nil {
-			arg2 = args[2].(int)
-		}
-		var arg3 int
-		if args[3] != nil {
-			arg3 = args[3].(int)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-			arg3,
-		)
-	})
-	return _c
-}
-
-func (_c *MockRepository_FindAllByFilename_Call) Return(medias []*media.Media, err error) *MockRepository_FindAllByFilename_Call {
-	_c.Call.Return(medias, err)
-	return _c
-}
-
-func (_c *MockRepository_FindAllByFilename_Call) RunAndReturn(run func(ctx context.Context, filename string, limit int, offset int) ([]*media.Media, error)) *MockRepository_FindAllByFilename_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// FindAllByFilenameAndDateRange provides a mock function for the type MockRepository
-func (_mock *MockRepository) FindAllByFilenameAndDateRange(ctx context.Context, filename string, since time.Time, limit int, offset int) ([]*media.Media, error) {
-	ret := _mock.Called(ctx, filename, since, limit, offset)
-
-	if len(ret) == 0 {
-		panic("no return value specified for FindAllByFilenameAndDateRange")
+		panic("no return value specified for FindAllByFilenameAndDateRangeByCursor")
 	}
 
 	var r0 []*media.Media
 	var r1 error
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, int, int) ([]*media.Media, error)); ok {
-		return returnFunc(ctx, filename, since, limit, offset)
+		return returnFunc(ctx, filename, since, limit, beforeID)
 	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string, time.Time, int, int) []*media.Media); ok {
-		r0 = returnFunc(ctx, filename, since, limit, offset)
+		r0 = returnFunc(ctx, filename, since, limit, beforeID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*media.Media)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, time.Time, int, int) error); ok {
-		r1 = returnFunc(ctx, filename, since, limit, offset)
+		r1 = returnFunc(ctx, filename, since, limit, beforeID)
 	} else {
 		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
-// MockRepository_FindAllByFilenameAndDateRange_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAllByFilenameAndDateRange'
-type MockRepository_FindAllByFilenameAndDateRange_Call struct {
+// MockRepository_FindAllByFilenameAndDateRangeByCursor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAllByFilenameAndDateRangeByCursor'
+type MockRepository_FindAllByFilenameAndDateRangeByCursor_Call struct {
 	*mock.Call
 }
 
-// FindAllByFilenameAndDateRange is a helper method to define mock.On call
+// FindAllByFilenameAndDateRangeByCursor is a helper method to define mock.On call
 //   - ctx context.Context
 //   - filename string
 //   - since time.Time
 //   - limit int
-//   - offset int
-func (_e *MockRepository_Expecter) FindAllByFilenameAndDateRange(ctx any, filename any, since any, limit any, offset any) *MockRepository_FindAllByFilenameAndDateRange_Call {
-	return &MockRepository_FindAllByFilenameAndDateRange_Call{Call: _e.mock.On("FindAllByFilenameAndDateRange", ctx, filename, since, limit, offset)}
+//   - beforeID int
+func (_e *MockRepository_Expecter) FindAllByFilenameAndDateRangeByCursor(ctx any, filename any, since any, limit any, beforeID any) *MockRepository_FindAllByFilenameAndDateRangeByCursor_Call {
+	return &MockRepository_FindAllByFilenameAndDateRangeByCursor_Call{Call: _e.mock.On("FindAllByFilenameAndDateRangeByCursor", ctx, filename, since, limit, beforeID)}
 }
 
-func (_c *MockRepository_FindAllByFilenameAndDateRange_Call) Run(run func(ctx context.Context, filename string, since time.Time, limit int, offset int)) *MockRepository_FindAllByFilenameAndDateRange_Call {
+func (_c *MockRepository_FindAllByFilenameAndDateRangeByCursor_Call) Run(run func(ctx context.Context, filename string, since time.Time, limit int, beforeID int)) *MockRepository_FindAllByFilenameAndDateRangeByCursor_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -526,12 +518,92 @@ func (_c *MockRepository_FindAllByFilenameAndDateRange_Call) Run(run func(ctx co
 	return _c
 }
 
-func (_c *MockRepository_FindAllByFilenameAndDateRange_Call) Return(medias []*media.Media, err error) *MockRepository_FindAllByFilenameAndDateRange_Call {
+func (_c *MockRepository_FindAllByFilenameAndDateRangeByCursor_Call) Return(medias []*media.Media, err error) *MockRepository_FindAllByFilenameAndDateRangeByCursor_Call {
 	_c.Call.Return(medias, err)
 	return _c
 }
 
-func (_c *MockRepository_FindAllByFilenameAndDateRange_Call) RunAndReturn(run func(ctx context.Context, filename string, since time.Time, limit int, offset int) ([]*media.Media, error)) *MockRepository_FindAllByFilenameAndDateRange_Call {
+func (_c *MockRepository_FindAllByFilenameAndDateRangeByCursor_Call) RunAndReturn(run func(ctx context.Context, filename string, since time.Time, limit int, beforeID int) ([]*media.Media, error)) *MockRepository_FindAllByFilenameAndDateRangeByCursor_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// FindAllByFilenameByCursor provides a mock function for the type MockRepository
+func (_mock *MockRepository) FindAllByFilenameByCursor(ctx context.Context, filename string, limit int, beforeID int) ([]*media.Media, error) {
+	ret := _mock.Called(ctx, filename, limit, beforeID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindAllByFilenameByCursor")
+	}
+
+	var r0 []*media.Media
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) ([]*media.Media, error)); ok {
+		return returnFunc(ctx, filename, limit, beforeID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) []*media.Media); ok {
+		r0 = returnFunc(ctx, filename, limit, beforeID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*media.Media)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, int) error); ok {
+		r1 = returnFunc(ctx, filename, limit, beforeID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockRepository_FindAllByFilenameByCursor_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindAllByFilenameByCursor'
+type MockRepository_FindAllByFilenameByCursor_Call struct {
+	*mock.Call
+}
+
+// FindAllByFilenameByCursor is a helper method to define mock.On call
+//   - ctx context.Context
+//   - filename string
+//   - limit int
+//   - beforeID int
+func (_e *MockRepository_Expecter) FindAllByFilenameByCursor(ctx any, filename any, limit any, beforeID any) *MockRepository_FindAllByFilenameByCursor_Call {
+	return &MockRepository_FindAllByFilenameByCursor_Call{Call: _e.mock.On("FindAllByFilenameByCursor", ctx, filename, limit, beforeID)}
+}
+
+func (_c *MockRepository_FindAllByFilenameByCursor_Call) Run(run func(ctx context.Context, filename string, limit int, beforeID int)) *MockRepository_FindAllByFilenameByCursor_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_FindAllByFilenameByCursor_Call) Return(medias []*media.Media, err error) *MockRepository_FindAllByFilenameByCursor_Call {
+	_c.Call.Return(medias, err)
+	return _c
+}
+
+func (_c *MockRepository_FindAllByFilenameByCursor_Call) RunAndReturn(run func(ctx context.Context, filename string, limit int, beforeID int) ([]*media.Media, error)) *MockRepository_FindAllByFilenameByCursor_Call {
 	_c.Call.Return(run)
 	return _c
 }

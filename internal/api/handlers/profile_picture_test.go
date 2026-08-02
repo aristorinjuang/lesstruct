@@ -127,6 +127,11 @@ func (m *mockUserRepoForHandler) GetAllUsers(ctx context.Context, status string,
 	return args.Get(0).([]*repository.User), args.Error(1)
 }
 
+func (m *mockUserRepoForHandler) CountUsers(ctx context.Context, status string) (int, error) {
+	args := m.Called(ctx, status)
+	return args.Int(0), args.Error(1)
+}
+
 func (m *mockUserRepoForHandler) GetUserStatus(ctx context.Context, userID int) (string, error) {
 	args := m.Called(ctx, userID)
 	return args.String(0), args.Error(1)

@@ -328,24 +328,69 @@ func (s *Service) GetByID(ctx context.Context, id int) (*Media, error) {
 	return media, nil
 }
 
-// GetAll retrieves all media
-func (s *Service) GetAll(ctx context.Context, limit int, offset int) ([]*Media, error) {
-	mediaList, err := s.repo.FindAll(ctx, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all media: %w", err)
-	}
-	return mediaList, nil
-}
-
 // ListByCursor retrieves the caller's media in newest-first (id DESC) order using keyset
-// pagination (beforeID <= 0 means first page). Thin pass-through mirroring GetAll; all
-// pagination/encoding intelligence lives in the agent handler.
+// pagination (beforeID <= 0 means first page). Thin pass-through; all pagination/encoding
+// intelligence lives in the agent handler.
 func (s *Service) ListByCursor(ctx context.Context, userID int, limit int, beforeID int) ([]*Media, error) {
 	mediaList, err := s.repo.ListByCursor(ctx, userID, limit, beforeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list media: %w", err)
 	}
 	return mediaList, nil
+}
+
+// SearchMediaByCursor retrieves ALL media (not user-scoped) with optional search and date
+// filters in newest-first (id DESC) order using keyset pagination (beforeID <= 0 means
+// first page). Global counterpart of ListByCursor for the browser admin media library;
+// all pagination/encoding intelligence lives in the browser handler.
+func (s *Service) SearchMediaByCursor(
+	ctx context.Context,
+	search string,
+	dateFilter string,
+	limit int,
+	beforeID int,
+) ([]*Media, error) {
+	trimmed := strings.TrimSpace(search)
+	hasSearch := trimmed != ""
+
+	since, hasDateFilter := ParseDateFilter(dateFilter)
+
+	var result []*Media
+	var err error
+
+	switch {
+	case hasSearch && hasDateFilter:
+		result, err = s.repo.FindAllByFilenameAndDateRangeByCursor(ctx, trimmed, since, limit, beforeID)
+	case hasSearch:
+		result, err = s.repo.FindAllByFilenameByCursor(ctx, trimmed, limit, beforeID)
+	case hasDateFilter:
+		result, err = s.repo.FindAllByDateRangeByCursor(ctx, since, limit, beforeID)
+	default:
+		result, err = s.repo.FindAllByCursor(ctx, limit, beforeID)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to search media: %w", err)
+	}
+	return result, nil
+}
+
+// Count returns the total number of ALL media (not user-scoped) matching the given search
+// and date filters — the global counterpart of the search queries above, used to render
+// the total badge next to the browser admin media library's title.
+func (s *Service) Count(ctx context.Context, search string, dateFilter string) (int, error) {
+	trimmed := strings.TrimSpace(search)
+
+	since, hasDateFilter := ParseDateFilter(dateFilter)
+	if !hasDateFilter {
+		since = time.Time{}
+	}
+
+	total, err := s.repo.Count(ctx, trimmed, since)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count media: %w", err)
+	}
+	return total, nil
 }
 
 // GenerateFromBytes creates a media record from raw image bytes by converting to WebP,
@@ -478,39 +523,6 @@ func (s *Service) Delete(ctx context.Context, id int, userID int, userRole strin
 	}
 
 	return nil
-}
-
-// SearchMedia retrieves media with optional search and date filter
-func (s *Service) SearchMedia(
-	ctx context.Context,
-	search string,
-	dateFilter string,
-	limit int,
-	offset int,
-) ([]*Media, error) {
-	trimmed := strings.TrimSpace(search)
-	hasSearch := trimmed != ""
-
-	since, hasDateFilter := ParseDateFilter(dateFilter)
-
-	var result []*Media
-	var err error
-
-	switch {
-	case hasSearch && hasDateFilter:
-		result, err = s.repo.FindAllByFilenameAndDateRange(ctx, trimmed, since, limit, offset)
-	case hasSearch:
-		result, err = s.repo.FindAllByFilename(ctx, trimmed, limit, offset)
-	case hasDateFilter:
-		result, err = s.repo.FindAllByDateRange(ctx, since, limit, offset)
-	default:
-		result, err = s.repo.FindAll(ctx, limit, offset)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to search media: %w", err)
-	}
-	return result, nil
 }
 
 // NewService creates a new media service

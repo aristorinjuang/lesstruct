@@ -23,6 +23,11 @@ test-race:
 test-verbose:
 	go test ./... -v
 
+# GO-2026-5932 (golang.org/x/crypto/openpgp) is an accepted, unfixable advisory:
+# it affects every x/crypto version and has no upstream patch. This module is
+# required only for x/crypto/argon2 (internal/auth); openpgp is never imported.
+# govulncheck reports it as a module-level finding only, which does not affect
+# the exit code, so the gate stays green without suppressing it.
 vulncheck:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	govulncheck ./...

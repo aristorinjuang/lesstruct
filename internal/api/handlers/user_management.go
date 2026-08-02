@@ -90,6 +90,7 @@ type UserInList struct {
 // UsersMeta represents metadata for users list
 type UsersMeta struct {
 	Count     int    `json:"count"`
+	Total     int    `json:"total"`
 	Limit     int    `json:"limit"`
 	Offset    int    `json:"offset"`
 	Timestamp string `json:"timestamp"`
@@ -514,11 +515,19 @@ func (h *UserManagementHandler) GetAllUsers(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	total, err := h.userService.CountUsers(r.Context(), status)
+	if err != nil {
+		h.logger.Error("Failed to count users: %v", err)
+		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve users", nil)
+		return
+	}
+
 	// Send response
 	resp := GetAllUsersResponse{
 		Data: usersList,
 		Meta: &UsersMeta{
 			Count:     len(usersList),
+			Total:     total,
 			Limit:     limit,
 			Offset:    offset,
 			Timestamp: time.Now().Format(time.RFC3339),

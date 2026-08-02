@@ -31,6 +31,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'published',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T12:00:00Z',
       }
@@ -41,7 +42,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T12:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.put>)
+      } as unknown as Awaited<ReturnType<typeof api.put>>)
 
       const store = useContentStore()
       store.content = {
@@ -53,6 +54,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -84,6 +86,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -118,6 +121,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T12:00:00Z',
       }
@@ -128,7 +132,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T12:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.put>)
+      } as unknown as Awaited<ReturnType<typeof api.put>>)
 
       const store = useContentStore()
       store.content = {
@@ -140,6 +144,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'published',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -168,6 +173,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'published',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T12:00:00Z',
       }
@@ -178,7 +184,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T12:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.put>)
+      } as unknown as Awaited<ReturnType<typeof api.put>>)
 
       const store = useContentStore()
       store.content = {
@@ -190,6 +196,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -217,7 +224,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T00:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.post>)
+      } as unknown as Awaited<ReturnType<typeof api.post>>)
 
       const store = useContentStore()
 
@@ -247,6 +254,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'published',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T12:00:00Z',
       }
@@ -257,7 +265,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T00:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.get>)
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
 
       const store = useContentStore()
 
@@ -291,6 +299,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -301,7 +310,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T00:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.post>)
+      } as unknown as Awaited<ReturnType<typeof api.post>>)
 
       const store = useContentStore()
 
@@ -334,6 +343,7 @@ describe('Content Store', () => {
           tags: [],
           status: 'draft',
           postType: 'post',
+          language: 'en',
           createdAt: '2026-04-08T00:00:00Z',
           updatedAt: '2026-04-08T00:00:00Z',
         },
@@ -346,6 +356,7 @@ describe('Content Store', () => {
           tags: [],
           status: 'published',
           postType: 'post',
+          language: 'en',
           createdAt: '2026-04-08T00:00:00Z',
           updatedAt: '2026-04-08T00:00:00Z',
         },
@@ -355,17 +366,236 @@ describe('Content Store', () => {
         data: {
           data: mockContents,
           error: null,
-          meta: { timestamp: '2026-04-08T00:00:00Z' },
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 2, limit: 50, offset: 0, hasMore: false },
+          },
         },
-      } as unknown as ReturnType<typeof api.get>)
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
 
       const store = useContentStore()
 
       const result = await store.getByUser()
 
-      expect(api.get).toHaveBeenCalledWith('/api/v1/content_items')
+      expect(api.get).toHaveBeenCalledWith('/api/v1/content_items', { params: { limit: 50, offset: 0 } })
       expect(result).toEqual(mockContents)
       expect(store.contents).toEqual(mockContents)
+      expect(store.total).toBe(2)
+      expect(store.hasMore).toBe(false)
+    })
+  })
+
+  describe('fetchContents', () => {
+    function buildContent(id: number): Content {
+      return {
+        id,
+        userId: 1,
+        title: `Content ${id}`,
+        slug: `content-${id}`,
+        content: '{"type":"doc"}',
+        tags: [],
+        status: 'draft',
+        postType: 'post',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      }
+    }
+
+    it('should reset and fetch first page with pagination meta', async () => {
+      const pageOne: Content[] = [buildContent(1), buildContent(2)]
+
+      vi.mocked(api.get).mockResolvedValue({
+        data: {
+          data: pageOne,
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 3, limit: 50, offset: 0, hasMore: true },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+
+      const store = useContentStore()
+
+      const result = await store.fetchContents({ postType: 'post' })
+
+      expect(api.get).toHaveBeenCalledWith('/api/v1/content_items', { params: { limit: 50, offset: 0, post_type: 'post' } })
+      expect(result).toEqual(pageOne)
+      expect(store.contents).toEqual(pageOne)
+      expect(store.total).toBe(3)
+      expect(store.hasMore).toBe(true)
+      expect(store.nextOffset).toBe(2)
+      expect(store.isLoading).toBe(false)
+      expect(store.isLoadingMore).toBe(false)
+    })
+
+    it('should include search and language params', async () => {
+      vi.mocked(api.get).mockResolvedValue({
+        data: {
+          data: [],
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 0, limit: 50, offset: 0, hasMore: false },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+
+      const store = useContentStore()
+
+      await store.fetchContents({ search: 'motor', language: 'id' })
+
+      expect(api.get).toHaveBeenCalledWith('/api/v1/content_items', {
+        params: { limit: 50, offset: 0, search: 'motor', language: 'id' },
+      })
+    })
+
+    it('should include status param and keep it for loadMore', async () => {
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: {
+          data: [buildContent(1)],
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 3, limit: 50, offset: 0, hasMore: true },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: {
+          data: [buildContent(2)],
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 3, limit: 50, offset: 1, hasMore: false },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+
+      const store = useContentStore()
+
+      await store.fetchContents({ status: 'draft' })
+      expect(api.get).toHaveBeenCalledWith('/api/v1/content_items', {
+        params: { limit: 50, offset: 0, status: 'draft' },
+      })
+
+      await store.loadMore()
+      expect(api.get).toHaveBeenLastCalledWith('/api/v1/content_items', {
+        params: { limit: 50, offset: 1, status: 'draft' },
+      })
+      expect(store.total).toBe(3)
+    })
+
+    it('should propagate fetch errors', async () => {
+      vi.mocked(api.get).mockRejectedValue(new Error('Failed to fetch contents'))
+
+      const store = useContentStore()
+
+      await expect(store.fetchContents()).rejects.toThrow('Failed to fetch contents')
+      expect(store.error).toBeInstanceOf(Error)
+      expect(store.isLoading).toBe(false)
+    })
+  })
+
+  describe('loadMore', () => {
+    function buildContent(id: number): Content {
+      return {
+        id,
+        userId: 1,
+        title: `Content ${id}`,
+        slug: `content-${id}`,
+        content: '{"type":"doc"}',
+        tags: [],
+        status: 'draft',
+        postType: 'post',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      }
+    }
+
+    it('should append next page items and advance offset', async () => {
+      const pageOne: Content[] = [buildContent(1), buildContent(2)]
+      const pageTwo: Content[] = [buildContent(3)]
+
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: {
+          data: pageOne,
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 3, limit: 50, offset: 0, hasMore: true },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: {
+          data: pageTwo,
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 3, limit: 50, offset: 2, hasMore: false },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+
+      const store = useContentStore()
+
+      await store.fetchContents()
+      await store.loadMore()
+
+      expect(api.get).toHaveBeenLastCalledWith('/api/v1/content_items', { params: { limit: 50, offset: 2 } })
+      expect(store.contents).toEqual([...pageOne, ...pageTwo])
+      expect(store.total).toBe(3)
+      expect(store.hasMore).toBe(false)
+      expect(store.nextOffset).toBe(3)
+      expect(store.isLoadingMore).toBe(false)
+    })
+
+    it('should no-op when there are no more pages', async () => {
+      vi.mocked(api.get).mockResolvedValue({
+        data: {
+          data: [],
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 0, limit: 50, offset: 0, hasMore: false },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+
+      const store = useContentStore()
+
+      await store.fetchContents()
+      await store.loadMore()
+
+      expect(api.get).toHaveBeenCalledTimes(1)
+      expect(store.contents).toEqual([])
+    })
+
+    it('should propagate loadMore errors', async () => {
+      const pageOne: Content[] = [buildContent(1)]
+
+      vi.mocked(api.get).mockResolvedValueOnce({
+        data: {
+          data: pageOne,
+          error: null,
+          meta: {
+            timestamp: '2026-04-08T00:00:00Z',
+            pagination: { total: 2, limit: 50, offset: 0, hasMore: true },
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
+      vi.mocked(api.get).mockRejectedValueOnce(new Error('Failed to load more'))
+
+      const store = useContentStore()
+
+      await store.fetchContents()
+      await expect(store.loadMore()).rejects.toThrow('Failed to load more')
+      expect(store.error).toBeInstanceOf(Error)
+      expect(store.contents).toEqual(pageOne)
+      expect(store.isLoadingMore).toBe(false)
     })
   })
 
@@ -380,6 +610,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'published',
         postType: 'post',
+        language: 'en',
         metaDescription: 'Custom meta description',
         ogTitle: 'Custom OG Title',
         ogDescription: 'Custom OG description',
@@ -393,7 +624,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T12:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.put>)
+      } as unknown as Awaited<ReturnType<typeof api.put>>)
 
       const store = useContentStore()
       store.content = {
@@ -405,6 +636,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -415,6 +647,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'published',
         postType: 'post',
+        language: 'en',
         metaDescription: 'Custom meta description',
         ogTitle: 'Custom OG Title',
         ogDescription: 'Custom OG description',
@@ -438,6 +671,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         metaDescription: 'Initial meta description',
         ogTitle: 'Initial OG Title',
         ogDescription: 'Initial OG description',
@@ -451,7 +685,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T00:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.post>)
+      } as unknown as Awaited<ReturnType<typeof api.post>>)
 
       const store = useContentStore()
 
@@ -485,6 +719,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'published',
         postType: 'post',
+        language: 'en',
         metaDescription: '',
         ogTitle: '',
         ogDescription: '',
@@ -498,7 +733,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T12:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.put>)
+      } as unknown as Awaited<ReturnType<typeof api.put>>)
 
       const store = useContentStore()
       store.content = {
@@ -510,6 +745,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -520,6 +756,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'published',
         postType: 'post',
+        language: 'en',
         metaDescription: '',
         ogTitle: '',
         ogDescription: '',
@@ -542,6 +779,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'published',
         postType: 'post',
+        language: 'en',
         metaDescription: 'Only meta description provided',
         ogTitle: '',
         ogDescription: '',
@@ -555,7 +793,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T12:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.put>)
+      } as unknown as Awaited<ReturnType<typeof api.put>>)
 
       const store = useContentStore()
       store.content = {
@@ -567,6 +805,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
       }
@@ -577,6 +816,7 @@ describe('Content Store', () => {
         tags: ['tag1'],
         status: 'published',
         postType: 'post',
+        language: 'en',
         metaDescription: 'Only meta description provided',
       }
 
@@ -616,7 +856,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T00:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.get>)
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
 
       const store = useContentStore()
 
@@ -669,7 +909,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-10T00:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.get>)
+      } as unknown as Awaited<ReturnType<typeof api.get>>)
 
       const store = useContentStore()
 
@@ -685,17 +925,19 @@ describe('Content Store', () => {
   describe('deleteContent', () => {
     it('should delete content and remove from contents array', async () => {
       const store = useContentStore()
+      store.total = 2
       store.contents = [
         { id: 1, userId: 1, title: 'Post 1', slug: 'post-1', content: '{}', tags: [], status: 'draft', postType: 'post', language: 'en', createdAt: '2026-04-08T00:00:00Z', updatedAt: '2026-04-08T00:00:00Z' },
         { id: 2, userId: 1, title: 'Post 2', slug: 'post-2', content: '{}', tags: [], status: 'draft', postType: 'post', language: 'en', createdAt: '2026-04-08T00:00:00Z', updatedAt: '2026-04-08T00:00:00Z' },
       ]
 
-      vi.mocked(api.delete).mockResolvedValue({} as unknown as ReturnType<typeof api.delete>)
+      vi.mocked(api.delete).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof api.delete>>)
 
       await store.deleteContent(1)
 
       expect(store.contents.length).toBe(1)
-      expect(store.contents[0].id).toBe(2)
+      expect(store.contents[0]!.id).toBe(2)
+      expect(store.total).toBe(1)
       expect(api.delete).toHaveBeenCalledWith('/api/v1/content_items/1')
     })
 
@@ -703,7 +945,7 @@ describe('Content Store', () => {
       const store = useContentStore()
       store.content = { id: 1, userId: 1, title: 'Post 1', slug: 'post-1', content: '{}', tags: [], status: 'draft', postType: 'post', language: 'en', createdAt: '2026-04-08T00:00:00Z', updatedAt: '2026-04-08T00:00:00Z' }
 
-      vi.mocked(api.delete).mockResolvedValue({} as unknown as ReturnType<typeof api.delete>)
+      vi.mocked(api.delete).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof api.delete>>)
 
       await store.deleteContent(1)
 
@@ -735,6 +977,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
         customFields: { price: 10, internal_sku: 'SKU-001' },
@@ -746,7 +989,7 @@ describe('Content Store', () => {
           error: null,
           meta: { timestamp: '2026-04-08T12:00:00Z' },
         },
-      } as unknown as ReturnType<typeof api.put>)
+      } as unknown as Awaited<ReturnType<typeof api.put>>)
 
       const store = useContentStore()
       store.content = {
@@ -758,6 +1001,7 @@ describe('Content Store', () => {
         tags: [],
         status: 'draft',
         postType: 'post',
+        language: 'en',
         createdAt: '2026-04-08T00:00:00Z',
         updatedAt: '2026-04-08T00:00:00Z',
         customFields: { price: 10 },

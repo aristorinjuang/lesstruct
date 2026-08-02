@@ -847,6 +847,43 @@ func TestUserManagementService_GetAllUsers_Failure(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestUserManagementService_CountUsers_Success tests successful user counting
+func TestUserManagementService_CountUsers_Success(t *testing.T) {
+	// Arrange
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil)
+
+	mockUserRepo.EXPECT().
+		CountUsers(mock.Anything, "verified").
+		Return(5, nil)
+
+	// Act
+	total, err := service.CountUsers(context.Background(), "verified")
+
+	// Assert
+	require.NoError(t, err)
+	assert.Equal(t, 5, total)
+}
+
+// TestUserManagementService_CountUsers_Failure tests user counting failure
+func TestUserManagementService_CountUsers_Failure(t *testing.T) {
+	// Arrange
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil)
+
+	mockUserRepo.EXPECT().
+		CountUsers(mock.Anything, "").
+		Return(0, errors.New("database error"))
+
+	// Act
+	_, err := service.CountUsers(context.Background(), "")
+
+	// Assert
+	require.Error(t, err)
+}
+
 // TestUserManagementService_GetUserStatus_Success tests successful retrieval of user status
 func TestUserManagementService_GetUserStatus_Success(t *testing.T) {
 	// Arrange

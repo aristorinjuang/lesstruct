@@ -2,7 +2,6 @@ package main_test
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/config"
@@ -36,18 +35,13 @@ func TestServerConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment
-			if tt.port != "" {
-				_ = os.Setenv("PORT", tt.port)
-			} else {
-				_ = os.Unsetenv("PORT")
-			}
-			if tt.host != "" {
-				_ = os.Setenv("HOST", tt.host)
-			} else {
-				_ = os.Unsetenv("HOST")
-			}
-			_ = os.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+			// Set the variables explicitly (empty string = "use default") rather
+			// than unsetting them: godotenv.Load() inside config.Load() only fills
+			// vars that are absent from the environment, so an empty-but-set var
+			// keeps a local .env file (e.g. PORT=8081) from overriding the default.
+			t.Setenv("PORT", tt.port)
+			t.Setenv("HOST", tt.host)
+			t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
 
 			// Load configuration to verify it works
 			cfg, err := loadConfigForTest()

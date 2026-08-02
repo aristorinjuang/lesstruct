@@ -120,7 +120,12 @@ onMounted(() => {
 <template>
   <div class="user-management">
     <header class="page-header--stacked">
-      <h1 class="page-title">User Management</h1>
+      <h1 class="page-title">
+        User Management
+        <span v-if="userStore.total > 0" class="user-management__total-badge">
+          {{ userStore.total.toLocaleString() }}
+        </span>
+      </h1>
       <p class="page-subtitle">
         Manage user registrations, approve new users, and control system access.
       </p>
@@ -207,6 +212,18 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.user-management__total-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+  background-color: var(--color-info-bg, var(--color-bg-muted));
+  color: var(--color-info, var(--color-text-secondary));
+}
+
 .user-management__error {
   padding: 2rem;
   text-align: center;

@@ -69,6 +69,50 @@ func TestDashboardHandler_GetStats_Success(t *testing.T) {
 	assert.Equal(t, float64(25), data["mediaItems"])
 }
 
+func TestDashboardHandler_GetStats_AdminUsesGlobalScope(t *testing.T) {
+	mockService := handlersmocks.NewMockDashboardServiceInterface(t)
+	mockService.EXPECT().
+		GetStats(mock.Anything, 0).
+		Return(&dashboarddomain.Stats{
+			PublishedPosts:       42,
+			DraftPosts:           3,
+			RegisteredUsers:      10,
+			PendingRegistrations: 1,
+			MediaItems:           100,
+			TotalContent:         45,
+			ContentByType: []*dashboarddomain.PostTypeCount{
+				{PostType: "post", Count: 30},
+				{PostType: "page", Count: 15},
+			},
+			RecentContent: []*dashboarddomain.RecentItem{},
+		}, nil)
+
+	handler := handlers.NewDashboardHandler(mockService, util.NewLogger(os.Stdout))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
+	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "7")
+	ctx = context.WithValue(ctx, middleware.RoleKey, "Admin")
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	handler.GetStats(w, req)
+
+	resp := w.Result()
+	defer func() { _ = resp.Body.Close() }()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var response map[string]any
+	err := json.NewDecoder(resp.Body).Decode(&response)
+	require.NoError(t, err)
+
+	data, ok := response["data"].(map[string]any)
+	require.True(t, ok, "Response data should be an object")
+
+	assert.Equal(t, float64(42), data["publishedPosts"])
+	assert.Equal(t, float64(45), data["totalContent"])
+}
+
 func TestDashboardHandler_GetStats_EmptyStats(t *testing.T) {
 	mockService := handlersmocks.NewMockDashboardServiceInterface(t)
 	mockService.EXPECT().

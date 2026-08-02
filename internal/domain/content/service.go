@@ -771,6 +771,27 @@ func (s *Service) ListByFilters(ctx context.Context, userID int, filters Content
 	return contents, nil
 }
 
+// Count returns the number of content items matching the given filters, sharing the
+// same validation (sort order, custom field filters) as ListByFilters. userID <= 0
+// counts across all users (admin scope).
+func (s *Service) Count(ctx context.Context, userID int, filters ContentFilters) (int, error) {
+	if err := ValidateSortOrder(filters.SortOrder); err != nil {
+		return 0, err
+	}
+	for _, f := range filters.CustomFieldFilters {
+		if err := ValidateCustomFieldFilter(f); err != nil {
+			return 0, fmt.Errorf("invalid custom field filter: %w", err)
+		}
+	}
+
+	total, err := s.repo.Count(ctx, userID, filters)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count content: %w", err)
+	}
+
+	return total, nil
+}
+
 func (s *Service) GenerateSlugFromTitle(ctx context.Context, title string) (string, error) {
 	if err := ValidateTitle(title); err != nil {
 		return "", fmt.Errorf("title validation failed: %w", err)
@@ -1328,6 +1349,17 @@ func (s *Service) GetCommentsByUserID(ctx context.Context, userID int) ([]*Comme
 	}
 
 	return comments, nil
+}
+
+// CountComments returns the total number of comments. userID <= 0 counts ALL comments
+// (admin global scope); otherwise it counts only the given user's comments, mirroring
+// GetCommentsByUserID's scope so a list's total matches its rows.
+func (s *Service) CountComments(ctx context.Context, userID int) (int, error) {
+	total, err := s.commentRepo.Count(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count comments: %w", err)
+	}
+	return total, nil
 }
 
 func (s *Service) GetCommentsForContent(ctx context.Context, contentID int) ([]*Comment, error) {

@@ -777,6 +777,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 	tests := []struct {
 		name           string
 		queryParams    string
+		role           string
 		setupService   func(s *handlersmocks.MockContentServiceInterface)
 		expectedStatus int
 		validateResp   func(*testing.T, map[string]any)
@@ -805,6 +806,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 						Status:  contentdomain.StatusPublished,
 					},
 				}, nil)
+				s.EXPECT().Count(mock.Anything, 1, mock.AnythingOfType("content.ContentFilters")).Return(2, nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -816,6 +818,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 				if len(data) != 2 {
 					t.Errorf("expected 2 contents, got %d", len(data))
 				}
+				assertPaginationMeta(t, resp, 2, 100, 0, false)
 			},
 		},
 		{
@@ -823,6 +826,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 			queryParams: "?limit=10&offset=5",
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().GetByUser(mock.Anything, 1, 10, 5).Return([]*contentdomain.Content{}, nil)
+				s.EXPECT().Count(mock.Anything, 1, mock.AnythingOfType("content.ContentFilters")).Return(15, nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -831,6 +835,38 @@ func TestContentHandler_ListContents(t *testing.T) {
 					t.Errorf("expected data to be an array, got %T", resp["data"])
 					return
 				}
+				assertPaginationMeta(t, resp, 15, 10, 5, true)
+			},
+		},
+		{
+			name:        "successful list all contents as admin",
+			queryParams: "",
+			role:        "Admin",
+			setupService: func(s *handlersmocks.MockContentServiceInterface) {
+				s.EXPECT().GetAll(mock.Anything, 100, 0).Return([]*contentdomain.Content{
+					{
+						ID:      1,
+						UserID:  2,
+						Title:   "Someone Else's Post",
+						Slug:    "someone-elses-post",
+						Content: "Body",
+						Tags:    []string{},
+						Status:  contentdomain.StatusPublished,
+					},
+				}, nil)
+				s.EXPECT().Count(mock.Anything, 0, mock.AnythingOfType("content.ContentFilters")).Return(1, nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				data, ok := resp["data"].([]any)
+				if !ok {
+					t.Errorf("expected data to be an array, got %T", resp["data"])
+					return
+				}
+				if len(data) != 1 {
+					t.Errorf("expected 1 content, got %d", len(data))
+				}
+				assertPaginationMeta(t, resp, 1, 100, 0, false)
 			},
 		},
 		{
@@ -854,6 +890,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 			queryParams: "",
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().GetByUser(mock.Anything, 1, 100, 0).Return([]*contentdomain.Content{}, nil)
+				s.EXPECT().Count(mock.Anything, 1, mock.AnythingOfType("content.ContentFilters")).Return(0, nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -865,6 +902,7 @@ func TestContentHandler_ListContents(t *testing.T) {
 				if len(data) != 0 {
 					t.Errorf("expected 0 contents, got %d", len(data))
 				}
+				assertPaginationMeta(t, resp, 0, 100, 0, false)
 			},
 		},
 	}
@@ -881,6 +919,9 @@ func TestContentHandler_ListContents(t *testing.T) {
 
 			if tt.name != "unauthorized - no user context" {
 				ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+				if tt.role != "" {
+					ctx = context.WithValue(ctx, middleware.RoleKey, tt.role)
+				}
 				req = req.WithContext(ctx)
 			}
 
@@ -902,6 +943,51 @@ func TestContentHandler_ListContents(t *testing.T) {
 			}
 		})
 	}
+}
+
+// assertPaginationMeta verifies the offset-pagination metadata the list endpoint
+// returns: total, limit, offset, and hasMore.
+func assertPaginationMeta(t *testing.T, resp map[string]any, wantTotal, wantLimit, wantOffset int, wantHasMore bool) {
+	t.Helper()
+
+	meta, ok := resp["meta"].(map[string]any)
+	if !ok {
+		t.Errorf("expected meta field, got %T", resp["meta"])
+		return
+	}
+	pagination, ok := meta["pagination"].(map[string]any)
+	if !ok {
+		t.Errorf("expected meta.pagination field, got %T", meta["pagination"])
+		return
+	}
+
+	total, ok := pagination["total"].(float64)
+	if !ok {
+		t.Errorf("expected meta.pagination.total, got %T", pagination["total"])
+		return
+	}
+	assert.Equal(t, float64(wantTotal), total, "meta.pagination.total mismatch")
+
+	limit, ok := pagination["limit"].(float64)
+	if !ok {
+		t.Errorf("expected meta.pagination.limit, got %T", pagination["limit"])
+		return
+	}
+	assert.Equal(t, float64(wantLimit), limit, "meta.pagination.limit mismatch")
+
+	offset, ok := pagination["offset"].(float64)
+	if !ok {
+		t.Errorf("expected meta.pagination.offset, got %T", pagination["offset"])
+		return
+	}
+	assert.Equal(t, float64(wantOffset), offset, "meta.pagination.offset mismatch")
+
+	hasMore, ok := pagination["hasMore"].(bool)
+	if !ok {
+		t.Errorf("expected meta.pagination.hasMore, got %T", pagination["hasMore"])
+		return
+	}
+	assert.Equal(t, wantHasMore, hasMore, "meta.pagination.hasMore mismatch")
 }
 
 func TestContentHandler_ListContents_WithSearch(t *testing.T) {
@@ -927,6 +1013,7 @@ func TestContentHandler_ListContents_WithSearch(t *testing.T) {
 						Slug:  "hello-world",
 					},
 				}, nil)
+				s.EXPECT().Count(mock.Anything, 1, mock.MatchedBy(func(f contentdomain.ContentFilters) bool { return f.Search == "hello" })).Return(1, nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -938,6 +1025,7 @@ func TestContentHandler_ListContents_WithSearch(t *testing.T) {
 				if len(data) != 1 {
 					t.Errorf("expected 1 content, got %d", len(data))
 				}
+				assertPaginationMeta(t, resp, 1, 100, 0, false)
 			},
 		},
 		{
@@ -949,6 +1037,7 @@ func TestContentHandler_ListContents_WithSearch(t *testing.T) {
 					1,
 					mock.AnythingOfType("content.ContentFilters"),
 				).Return([]*contentdomain.Content{}, nil)
+				s.EXPECT().Count(mock.Anything, 1, mock.AnythingOfType("content.ContentFilters")).Return(0, nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -960,6 +1049,7 @@ func TestContentHandler_ListContents_WithSearch(t *testing.T) {
 				if len(data) != 0 {
 					t.Errorf("expected 0 contents, got %d", len(data))
 				}
+				assertPaginationMeta(t, resp, 0, 100, 0, false)
 			},
 		},
 	}

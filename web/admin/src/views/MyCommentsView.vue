@@ -20,6 +20,7 @@ const isAdmin = computed(() => role.value === 'Admin')
 
 // My comments (all roles)
 const myComments = ref<MyComment[]>([])
+const totalComments = ref(0)
 const isLoading = ref(false)
 const error = ref('')
 const successMessage = ref('')
@@ -43,8 +44,9 @@ async function loadComments() {
   error.value = ''
 
   try {
-    const response = await api.get<{ data: MyComment[] }>('/api/v1/my-comments')
+    const response = await api.get<{ data: MyComment[]; meta?: { pagination?: { total?: number } } }>('/api/v1/my-comments')
     myComments.value = response.data.data
+    totalComments.value = response.data.meta?.pagination?.total ?? response.data.data.length
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load comments'
   } finally {
@@ -82,6 +84,7 @@ async function deleteComment(comment: MyComment) {
   try {
     await api.delete('/api/v1/my-comments/' + comment.id)
     myComments.value = myComments.value.filter(c => c.id !== comment.id)
+    totalComments.value = Math.max(0, totalComments.value - 1)
     successMessage.value = 'Comment deleted.'
     setTimeout(() => { successMessage.value = '' }, 3000)
   } catch (err) {
@@ -187,7 +190,12 @@ function formatDate(dateStr: string): string {
 
 <template>
   <div class="my-comments">
-    <h1 class="page-title">Comments</h1>
+    <h1 class="page-title">
+      Comments
+      <span v-if="totalComments > 0" class="my-comments__total-badge">
+        {{ totalComments.toLocaleString() }}
+      </span>
+    </h1>
 
     <section v-if="isAdmin" class="pending-section">
       <div class="pending-section__header">
@@ -327,6 +335,18 @@ function formatDate(dateStr: string): string {
 </template>
 
 <style scoped>
+.my-comments__total-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+  background-color: var(--color-info-bg, var(--color-bg-muted));
+  color: var(--color-info, var(--color-text-secondary));
+}
+
 .my-comments h1 {
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;

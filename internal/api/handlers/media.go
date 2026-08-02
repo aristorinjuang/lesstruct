@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/domain/media"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
@@ -75,9 +76,9 @@ type MediaServiceInterface interface {
 	ForceUpload(ctx context.Context, req media.UploadRequest) (*media.Media, error)
 	GenerateFromBytes(ctx context.Context, imageBytes []byte, userID int, altText string, originalFilename string) (*media.Media, error)
 	GetByID(ctx context.Context, id int) (*media.Media, error)
-	GetAll(ctx context.Context, limit int, offset int) ([]*media.Media, error)
 	Delete(ctx context.Context, id int, userID int, userRole string) error
-	SearchMedia(ctx context.Context, search string, dateFilter string, limit int, offset int) ([]*media.Media, error)
+	SearchMediaByCursor(ctx context.Context, search string, dateFilter string, limit int, beforeID int) ([]*media.Media, error)
+	Count(ctx context.Context, search string, dateFilter string) (int, error)
 }
 
 type MediaHandler struct {
@@ -138,37 +139,33 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	sendSuccessResponse(w, http.StatusCreated, uploadedMedia)
 }
 
+// GetMedia handles GET /api/v1/media (browser admin realm). It returns ALL media (admins
+// manage all site media) in newest-first (id DESC) order using opaque keyset (cursor)
+// pagination — the SAME contract as the agent media list (bare data array +
+// meta.pagination). It reuses the response package's cursor helpers and SuccessList/
+// Pagination/ListMeta types so both auth realms share one envelope.
 func (h *MediaHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
 	if _, ok := middleware.GetUserID(r); !ok {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
 		return
 	}
 
-	limit := 100
-	limitQuery := r.URL.Query().Get("limit")
-	if limitQuery != "" {
-		if l, err := strconv.Atoi(limitQuery); err == nil && l > 0 && l <= 1000 {
-			limit = l
-		}
-	}
-
-	offset := 0
-	offsetQuery := r.URL.Query().Get("offset")
-	if offsetQuery != "" {
-		if o, err := strconv.Atoi(offsetQuery); err == nil && o >= 0 {
-			offset = o
-		}
+	limit := response.ParseListLimit(r)
+	beforeID, err := response.DecodeCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_cursor", "Invalid cursor", nil)
+		return
 	}
 
 	search := r.URL.Query().Get(mediaSearchParam)
 	dateFilter := r.URL.Query().Get(mediaDateFilterParam)
 
-	mediaList, err := h.mediaService.SearchMedia(
+	mediaList, err := h.mediaService.SearchMediaByCursor(
 		r.Context(),
 		search,
 		dateFilter,
-		limit,
-		offset,
+		limit+1,
+		beforeID,
 	)
 	if err != nil {
 		h.logger.Error("Failed to get media: %v", err)
@@ -176,9 +173,33 @@ func (h *MediaHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendSuccessResponse(w, http.StatusOK, map[string]any{
-		"media": mediaList,
-	})
+	hasMore := len(mediaList) > limit
+	if hasMore {
+		mediaList = mediaList[:limit]
+	}
+	nextCursor := ""
+	if hasMore && len(mediaList) > 0 {
+		nextCursor = response.EncodeCursor(mediaList[len(mediaList)-1].ID)
+	}
+
+	total, err := h.mediaService.Count(r.Context(), search, dateFilter)
+	if err != nil {
+		h.logger.Error("Failed to count media: %v", err)
+		handleMediaError(w, err)
+		return
+	}
+
+	response.SuccessList(
+		w,
+		mediaList,
+		response.ListMeta{
+			Pagination: response.Pagination{
+				NextCursor: nextCursor,
+				HasMore:    hasMore,
+				Total:      &total,
+			},
+		},
+	)
 }
 
 func (h *MediaHandler) GetMediaByID(w http.ResponseWriter, r *http.Request) {

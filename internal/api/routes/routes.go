@@ -11,6 +11,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/agent"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/api/static"
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	apikey "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
@@ -52,6 +53,20 @@ func dispatchByAuth(agentChain, browserChain http.Handler) http.HandlerFunc {
 	}
 }
 
+// agentAdminOnly is a middleware for the agent (Bearer API key) realm that rejects
+// non-admin users. It reads the role from request context, which is populated by the
+// APIKeyAuthMiddleware (same role key as the JWT middleware), so it is realm-agnostic.
+func agentAdminOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		role, ok := middleware.GetRole(r)
+		if !ok || role != middleware.RoleAdmin {
+			response.Error(w, http.StatusForbidden, "INSUFFICIENT_PERMISSIONS", "Only administrators can perform this action", nil)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // Setup configures and returns the HTTP router
 func Setup(
 	authHandler *handlers.AuthHandler,
@@ -68,6 +83,9 @@ func Setup(
 	profilePictureHandler *handlers.ProfilePictureHandler,
 	wordPressHandler *handlers.WordPressHandler,
 	apiKeyHandler *handlers.APIKeyHandler,
+	hugoHandler *handlers.HugoHandler,
+	exportHandler *handlers.ExportHandler,
+	ssgHandler *handlers.SSGHandler,
 	apiKeyAuthMiddleware *middleware.APIKeyAuthMiddleware,
 	agentContentHandler *agent.ContentHandler,
 	agentMediaHandler *agent.MediaHandler,
@@ -85,6 +103,7 @@ func Setup(
 	textGenEnabled bool,
 	textGenHandler *handlers.TextGenHandler,
 	languages []string,
+	aliasRedirectHandler *handlers.AliasRedirectHandler,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -198,6 +217,22 @@ func Setup(
 		// dual-auth dispatch routes (the browser admin media list/get co-owns the same path;
 		// Chi routes by path, not auth realm, so a single registration dispatches by credential).
 		r.With(maxBodySizeMiddleware(10<<20)).Post("/api/v1/media", agentMediaHandler.Upload)
+
+		// Content export (agent-only) — streams a tar.gz of all content as
+		// Hugo-compatible source files with bundled media.
+		r.Get("/api/v1/export", exportHandler.Export)
+
+		// Static site generation (agent-only) — streams a tar.gz of the
+		// fully rendered static site with AMP variants.
+		r.Get("/api/v1/ssg", ssgHandler.Generate)
+
+		// WordPress import — large upload, no body-size middleware (handler applies
+		// its own MaxBytesReader at IMPORT_MAX_SIZE_MB). Admin-only (only administrators
+		// may import content via API key). Reuses the same handler and in-memory job
+		// store as the browser realm, so a CLI-started job is visible in the admin UI.
+		r.With(agentAdminOnly).Post("/api/v1/wordpress/import", wordPressHandler.Import)
+		r.With(agentAdminOnly).Get("/api/v1/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
+		r.With(agentAdminOnly).Get("/api/v1/wordpress/import/status", wordPressHandler.ImportStatus)
 	})
 
 	// Shared /api/v1/media GET routes — co-owned by the agent (Bearer API key) and browser
@@ -271,6 +306,14 @@ func Setup(
 			r.Post("/wordpress/import", wordPressHandler.Import)
 			r.Get("/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
 			r.Get("/wordpress/import/status", wordPressHandler.ImportStatus)
+			// Hugo import (admin only) — same import ceiling as WordPress.
+			r.Post("/hugo/import", hugoHandler.Import)
+			// Content export (admin only) — streams a tar.gz of all content as
+			// Hugo-compatible source files with bundled media.
+			r.Get("/export", exportHandler.Export)
+			// Static site generation (admin only) — streams a tar.gz of the
+			// fully rendered static site with AMP variants.
+			r.Get("/ssg", ssgHandler.Generate)
 		})
 
 		// API key management routes (browser-realm, any authenticated role) - Story 1.1 + 1.2
@@ -405,8 +448,8 @@ func Setup(
 		r.Handle("/admin/*", http.StripPrefix("/admin", http.HandlerFunc(staticServer.ServeAdmin)))
 		r.HandleFunc("/admin", staticServer.ServeAdmin)
 
-		// Content site (Go template renderer or dev proxy)
-		r.Handle("/*", http.HandlerFunc(staticServer.ServeContent))
+		// Content site (Go template renderer or dev proxy) with alias redirect wrapping
+		r.Handle("/*", aliasRedirectHandler)
 	}
 
 	return r

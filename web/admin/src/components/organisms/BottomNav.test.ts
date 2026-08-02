@@ -143,7 +143,7 @@ describe('BottomNav', () => {
       const wrapper = mountBottomNav()
       await wrapper.vm.$nextTick()
 
-      const dashboardLink = wrapper.findAll('.bottom-nav__item')[0]
+      const dashboardLink = wrapper.findAll('.bottom-nav__item')[0]!
 
       expect(dashboardLink).toBeDefined()
       // The navigation should have updated the route

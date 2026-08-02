@@ -30,15 +30,40 @@ export interface Media {
 }
 
 interface MediaListResponse {
-  media: Media[]
+  data: Media[]
+  meta?: {
+    pagination?: {
+      nextCursor?: string
+      hasMore: boolean
+      total?: number
+    }
+  }
 }
 
 export const useMediaStore = defineStore('media', () => {
   const media = ref<Media[]>([])
   const isLoading = ref(false)
+  const isLoadingMore = ref(false)
+  const hasMore = ref(false)
+  const total = ref(0)
+  const nextCursor = ref('')
   const error = ref<Error | null>(null)
 
-  async function upload(file: File, altText: string, options?: { force?: boolean }): Promise<Media> {
+  // Filters active on the last (re)load. loadMore() must re-send them: the cursor only
+  // encodes the id boundary, the server still needs the same WHERE clause on every page.
+  const activeSearch = ref('')
+  const activeDateFilter = ref('')
+
+  // Monotonic token discarding responses that were superseded by a newer request (e.g. a
+  // loadMore still in flight when the user changes the search filter). Only the request
+  // holding the latest token may mutate state.
+  let requestToken = 0
+
+  async function upload(
+    file: File,
+    altText: string,
+    options?: { force?: boolean },
+  ): Promise<Media> {
     isLoading.value = true
     error.value = null
 
@@ -47,15 +72,13 @@ export const useMediaStore = defineStore('media', () => {
       formData.append('image', file)
       formData.append('alt_text', altText)
 
-      const url = options?.force
-        ? '/api/v1/media/upload?force=true'
-        : '/api/v1/media/upload'
+      const url = options?.force ? '/api/v1/media/upload?force=true' : '/api/v1/media/upload'
 
-      const response = await api.post<Media>(url, formData)
+      const response = await api.post<{ data: Media }>(url, formData)
 
-      const data = response.data.data as any
+      const data = response.data.data as Media & { duplicate?: boolean; existingMedia?: Media }
       if (data?.duplicate) {
-        const duplicateError = new Error('Duplicate media detected') as any
+        const duplicateError = new Error('Duplicate media detected') as Error & { duplicate: true; existingMedia: Media }
         duplicateError.duplicate = true
         duplicateError.existingMedia = data.existingMedia as Media
         throw duplicateError
@@ -75,26 +98,85 @@ export const useMediaStore = defineStore('media', () => {
   }
 
   async function fetchMedia(options?: { search?: string; dateFilter?: string }): Promise<Media[]> {
+    const token = ++requestToken
     isLoading.value = true
+    isLoadingMore.value = false
     error.value = null
+    activeSearch.value = options?.search || ''
+    activeDateFilter.value = options?.dateFilter || ''
 
     try {
       const params: Record<string, string> = {}
-      if (options?.search) {
-        params.search = options.search
+      if (activeSearch.value) {
+        params.search = activeSearch.value
       }
-      if (options?.dateFilter) {
-        params.date_filter = options.dateFilter
+      if (activeDateFilter.value) {
+        params.date_filter = activeDateFilter.value
       }
       const response = await api.get<MediaListResponse>('/api/v1/media', { params })
-      const mediaList = response.data.data.media || []
+      if (token !== requestToken) {
+        return media.value
+      }
+      const mediaList = response.data.data || []
+      const pagination = response.data.meta?.pagination
       media.value = mediaList
+      hasMore.value = pagination?.hasMore === true
+      total.value = pagination?.total ?? mediaList.length
+      nextCursor.value = pagination?.nextCursor || ''
       return media.value
     } catch (err) {
+      if (token !== requestToken) {
+        return media.value
+      }
       error.value = err as Error
       throw err
     } finally {
-      isLoading.value = false
+      if (token === requestToken) {
+        isLoading.value = false
+      }
+    }
+  }
+
+  async function loadMore(): Promise<Media[]> {
+    if (isLoading.value || isLoadingMore.value || !hasMore.value || !nextCursor.value) {
+      return media.value
+    }
+
+    const token = ++requestToken
+    isLoadingMore.value = true
+    error.value = null
+
+    try {
+      const params: Record<string, string> = { cursor: nextCursor.value }
+      if (activeSearch.value) {
+        params.search = activeSearch.value
+      }
+      if (activeDateFilter.value) {
+        params.date_filter = activeDateFilter.value
+      }
+      const response = await api.get<MediaListResponse>('/api/v1/media', {
+        params,
+      })
+      if (token !== requestToken) {
+        return media.value
+      }
+      const mediaList = response.data.data || []
+      const pagination = response.data.meta?.pagination
+      media.value = [...media.value, ...mediaList]
+      hasMore.value = pagination?.hasMore === true
+      total.value = pagination?.total ?? total.value
+      nextCursor.value = pagination?.nextCursor || ''
+      return media.value
+    } catch (err) {
+      if (token !== requestToken) {
+        return media.value
+      }
+      error.value = err as Error
+      throw err
+    } finally {
+      if (token === requestToken) {
+        isLoadingMore.value = false
+      }
     }
   }
 
@@ -104,7 +186,11 @@ export const useMediaStore = defineStore('media', () => {
 
     try {
       // at least two minutes for waiting the image generation
-      const response = await api.postWithTimeout<Media>('/api/v1/media/generate', { prompt }, 130_000)
+      const response = await api.postWithTimeout<{ data: Media }>(
+        '/api/v1/media/generate',
+        { prompt },
+        130_000,
+      )
       const data = response.data.data
       if (!data) {
         throw new Error('Failed to generate image: No data returned')
@@ -119,20 +205,12 @@ export const useMediaStore = defineStore('media', () => {
     }
   }
 
-  async function searchMedia(query: string, dateFilter?: string): Promise<Media[]> {
-    return fetchMedia({ search: query, dateFilter })
-  }
-
-  async function filterByDate(dateFilter: string): Promise<Media[]> {
-    return fetchMedia({ dateFilter })
-  }
-
   async function getById(id: number): Promise<Media> {
     isLoading.value = true
     error.value = null
 
     try {
-      const response = await api.get<Media>(`/api/v1/media/${id}`)
+      const response = await api.get<{ data: Media }>(`/api/v1/media/${id}`)
       const mediaItem = response.data.data
       if (!mediaItem) {
         throw new Error('Failed to get media: No data returned')
@@ -168,14 +246,17 @@ export const useMediaStore = defineStore('media', () => {
   return {
     media,
     isLoading,
+    isLoadingMore,
+    hasMore,
+    total,
+    nextCursor,
     error,
     upload,
     generateImage,
     fetchMedia,
-    searchMedia,
-    filterByDate,
+    loadMore,
     getById,
     deleteMedia,
-    clearError
+    clearError,
   }
 })

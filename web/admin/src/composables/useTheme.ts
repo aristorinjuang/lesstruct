@@ -12,7 +12,7 @@ let theme: Ref<Theme> | null = null
 let initialized = false
 
 // Track system preference media query listener
-let mediaQueryListener: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null = null
+let mediaQueryListener: ((ev: MediaQueryListEvent) => void) | null = null
 
 // Reactive ref for system preference to trigger Vue reactivity on matchMedia changes
 let systemPreference: Ref<ResolvedTheme> | null = null

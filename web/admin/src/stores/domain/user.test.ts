@@ -67,7 +67,7 @@ describe('useUserStore', () => {
   describe('computed properties', () => {
     it('should compute pending count correctly', () => {
       const store = useUserStore()
-      store.pendingUsers = [mockUsers[1]]
+      store.pendingUsers = [mockUsers[1]!]
 
       expect(store.pendingCount).toBe(1)
     })
@@ -109,12 +109,15 @@ describe('useUserStore', () => {
     it('should fetch users successfully', async () => {
       const store = useUserStore()
       vi.mocked(api.get).mockResolvedValue({
-        data: { data: { data: mockUsers, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123' } } },
+        data: {
+          data: { data: mockUsers, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123', total: 25 } },
+        },
       })
 
       await store.fetchUsers()
 
       expect(store.users).toEqual(mockUsers)
+      expect(store.total).toBe(25)
       expect(store.isLoading).toBe(false)
       expect(store.error).toBe(null)
     })
@@ -132,16 +135,20 @@ describe('useUserStore', () => {
 
     it('should set loading state during fetch', async () => {
       const store = useUserStore()
-      let resolveFetch: (value: any) => void
+      let resolveFetch: (value: unknown) => void
       const fetchPromise = new Promise((resolve) => {
         resolveFetch = resolve
       })
-      vi.mocked(api.get).mockReturnValue(fetchPromise as any)
+      vi.mocked(api.get).mockReturnValue(fetchPromise as unknown as ReturnType<typeof api.get>)
 
       const fetchCall = store.fetchUsers()
       expect(store.isLoading).toBe(true)
 
-      resolveFetch!({ data: { data: { data: mockUsers, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123' } } } })
+      resolveFetch!({
+        data: {
+          data: { data: mockUsers, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123', total: 25 } },
+        },
+      })
       await fetchCall
 
       expect(store.isLoading).toBe(false)
@@ -178,7 +185,7 @@ describe('useUserStore', () => {
   describe('approveUser', () => {
     it('should approve user and refresh lists', async () => {
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: mockUsers, error: null, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123' } },
       })
@@ -194,10 +201,10 @@ describe('useUserStore', () => {
       const mockDecrementCount = vi.fn()
       vi.mocked(useNotificationStore).mockReturnValue({
         decrementCount: mockDecrementCount,
-      } as any)
+      } as unknown as ReturnType<typeof useNotificationStore>)
 
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: mockUsers, error: null, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123' } },
       })
@@ -211,7 +218,7 @@ describe('useUserStore', () => {
   describe('rejectUser', () => {
     it('should reject user and refresh pending users', async () => {
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: [mockUsers[1]], error: null, meta: { timestamp: '2026-03-27T10:00:00Z', requestId: '124' } },
       })
@@ -227,10 +234,10 @@ describe('useUserStore', () => {
       const mockDecrementCount = vi.fn()
       vi.mocked(useNotificationStore).mockReturnValue({
         decrementCount: mockDecrementCount,
-      } as any)
+      } as unknown as ReturnType<typeof useNotificationStore>)
 
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: [], error: null, meta: { timestamp: '2026-03-27T10:00:00Z', requestId: '124' } },
       })
@@ -244,7 +251,7 @@ describe('useUserStore', () => {
   describe('markAsSpam', () => {
     it('should mark user as spam and refresh pending users', async () => {
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: [], error: null, meta: { timestamp: '2026-03-27T10:00:00Z', requestId: '124' } },
       })
@@ -260,10 +267,10 @@ describe('useUserStore', () => {
       const mockDecrementCount = vi.fn()
       vi.mocked(useNotificationStore).mockReturnValue({
         decrementCount: mockDecrementCount,
-      } as any)
+      } as unknown as ReturnType<typeof useNotificationStore>)
 
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: [], error: null, meta: { timestamp: '2026-03-27T10:00:00Z', requestId: '124' } },
       })
@@ -277,7 +284,7 @@ describe('useUserStore', () => {
   describe('suspendUser', () => {
     it('should suspend user and refresh users', async () => {
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: mockUsers, error: null, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123' } },
       })
@@ -292,7 +299,7 @@ describe('useUserStore', () => {
   describe('softDeleteUser', () => {
     it('should soft delete user and refresh users', async () => {
       const store = useUserStore()
-      vi.mocked(api.post).mockResolvedValue({ data: {} as any })
+      vi.mocked(api.post).mockResolvedValue({ data: {} })
       vi.mocked(api.get).mockResolvedValue({
         data: { data: mockUsers, error: null, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123' } },
       })

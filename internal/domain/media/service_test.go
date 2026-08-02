@@ -215,43 +215,6 @@ func TestService_GetByID(t *testing.T) {
 	}
 }
 
-func TestService_GetAll(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
-
-	mockMedia := &media.Media{
-		ID:     1,
-		UserID: 1,
-		URL:    "http://localhost:8080/uploads/media/test.webp",
-	}
-
-	mockRepo.On("FindAll", mock.Anything, 10, 0).Return([]*media.Media{mockMedia}, nil)
-
-	svc := media.NewService(mockRepo, mockStorage, nil)
-
-	got, err := svc.GetAll(context.Background(), 10, 0)
-
-	require.NoError(t, err)
-	require.NotEmpty(t, got)
-
-	mockRepo.AssertExpectations(t)
-}
-
-func TestService_GetAll_Error(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
-
-	mockRepo.On("FindAll", mock.Anything, 10, 0).Return([]*media.Media(nil), errors.New("database error"))
-
-	svc := media.NewService(mockRepo, mockStorage, nil)
-
-	_, err := svc.GetAll(context.Background(), 10, 0)
-
-	require.Error(t, err)
-
-	mockRepo.AssertExpectations(t)
-}
-
 func TestService_ListByCursor(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1199,52 +1162,91 @@ func TestGenerateDuplicateFilename(t *testing.T) {
 	}
 }
 
-func TestService_SearchMedia(t *testing.T) {
+func TestService_SearchMediaByCursor(t *testing.T) {
 	tests := []struct {
-		name       string
-		search     string
-		dateFilter string
-		setupMock  func(*mocks.MockRepository)
+		name        string
+		search      string
+		dateFilter  string
+		limit       int
+		beforeID    int
+		setupMock   func(*mocks.MockRepository)
+		expectedLen int
+		expectedErr error
 	}{
 		{
-			name:       "no filters falls back to FindAll",
+			name:       "no filters falls back to FindAllByCursor",
 			search:     "",
 			dateFilter: "",
+			limit:      50,
+			beforeID:   0,
 			setupMock: func(repo *mocks.MockRepository) {
-				repo.On("FindAll", mock.Anything, 100, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
-			name:       "search only calls FindAllByFilename",
+			name:       "search only calls FindAllByFilenameByCursor",
 			search:     "sunset",
 			dateFilter: "",
+			limit:      50,
+			beforeID:   0,
 			setupMock: func(repo *mocks.MockRepository) {
-				repo.On("FindAllByFilename", mock.Anything, "sunset", 100, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByFilenameByCursor", mock.Anything, "sunset", 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
-			name:       "date filter only calls FindAllByDateRange",
+			name:       "date filter only calls FindAllByDateRangeByCursor",
 			search:     "",
 			dateFilter: "today",
+			limit:      50,
+			beforeID:   0,
 			setupMock: func(repo *mocks.MockRepository) {
-				repo.On("FindAllByDateRange", mock.Anything, mock.AnythingOfType("time.Time"), 100, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByDateRangeByCursor", mock.Anything, mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
-			name:       "both filters calls FindAllByFilenameAndDateRange",
+			name:       "both filters calls FindAllByFilenameAndDateRangeByCursor",
 			search:     "sunset",
 			dateFilter: "this_week",
+			limit:      50,
+			beforeID:   0,
 			setupMock: func(repo *mocks.MockRepository) {
-				repo.On("FindAllByFilenameAndDateRange", mock.Anything, "sunset", mock.AnythingOfType("time.Time"), 100, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByFilenameAndDateRangeByCursor", mock.Anything, "sunset", mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
 			},
+		},
+		{
+			name:       "next page passes beforeID through",
+			search:     "",
+			dateFilter: "",
+			limit:      50,
+			beforeID:   100,
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("FindAllByCursor", mock.Anything, 50, 100).Return([]*media.Media{
+					{ID: 99, UserID: 1},
+					{ID: 98, UserID: 1},
+				}, nil)
+			},
+			expectedLen: 2,
 		},
 		{
 			name:       "whitespace search is treated as no search",
 			search:     "   ",
 			dateFilter: "",
+			limit:      50,
+			beforeID:   0,
 			setupMock: func(repo *mocks.MockRepository) {
-				repo.On("FindAll", mock.Anything, 100, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media{}, nil)
 			},
+		},
+		{
+			name:       "repository error - wrapped as failed to search media",
+			search:     "",
+			dateFilter: "",
+			limit:      50,
+			beforeID:   0,
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media(nil), errors.New("database error"))
+			},
+			expectedErr: errors.New("failed to search media"),
 		},
 	}
 
@@ -1256,10 +1258,109 @@ func TestService_SearchMedia(t *testing.T) {
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
 
-			got, err := svc.SearchMedia(context.Background(), tt.search, tt.dateFilter, 100, 0)
+			got, err := svc.SearchMediaByCursor(context.Background(), tt.search, tt.dateFilter, tt.limit, tt.beforeID)
+
+			if tt.expectedErr != nil {
+				require.Error(t, err, "Service.SearchMediaByCursor() expected error, got nil")
+				assert.Contains(t, err.Error(), tt.expectedErr.Error(), "Service.SearchMediaByCursor() error message")
+				mockRepo.AssertExpectations(t)
+				return
+			}
 
 			require.NoError(t, err)
 			assert.NotNil(t, got)
+			if tt.expectedLen > 0 {
+				assert.Len(t, got, tt.expectedLen)
+			}
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_Count(t *testing.T) {
+	tests := []struct {
+		name        string
+		search      string
+		dateFilter  string
+		setupMock   func(*mocks.MockRepository)
+		expected    int
+		expectedErr error
+	}{
+		{
+			name:       "no filters passes zero time to Count",
+			search:     "",
+			dateFilter: "",
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("Count", mock.Anything, "", time.Time{}).Return(12, nil)
+			},
+			expected: 12,
+		},
+		{
+			name:       "search only is forwarded",
+			search:     "sunset",
+			dateFilter: "",
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("Count", mock.Anything, "sunset", time.Time{}).Return(3, nil)
+			},
+			expected: 3,
+		},
+		{
+			name:       "date filter only passes a non-zero since",
+			search:     "",
+			dateFilter: "today",
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("Count", mock.Anything, "", mock.AnythingOfType("time.Time")).Return(5, nil)
+			},
+			expected: 5,
+		},
+		{
+			name:       "both filters are forwarded",
+			search:     "sunset",
+			dateFilter: "this_week",
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("Count", mock.Anything, "sunset", mock.AnythingOfType("time.Time")).Return(2, nil)
+			},
+			expected: 2,
+		},
+		{
+			name:       "whitespace search is treated as no search",
+			search:     "   ",
+			dateFilter: "",
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("Count", mock.Anything, "", time.Time{}).Return(0, nil)
+			},
+			expected: 0,
+		},
+		{
+			name:       "repository error - wrapped as failed to count media",
+			search:     "",
+			dateFilter: "",
+			setupMock: func(repo *mocks.MockRepository) {
+				repo.On("Count", mock.Anything, "", time.Time{}).Return(0, errors.New("database error"))
+			},
+			expectedErr: errors.New("failed to count media"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := mocks.NewMockRepository(t)
+			mockStorage := mocks.NewMockStorage(t)
+			tt.setupMock(mockRepo)
+
+			svc := media.NewService(mockRepo, mockStorage, nil)
+
+			got, err := svc.Count(context.Background(), tt.search, tt.dateFilter)
+
+			if tt.expectedErr != nil {
+				require.Error(t, err, "Service.Count() expected error, got nil")
+				assert.Contains(t, err.Error(), tt.expectedErr.Error(), "Service.Count() error message")
+				mockRepo.AssertExpectations(t)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
 			mockRepo.AssertExpectations(t)
 		})
 	}

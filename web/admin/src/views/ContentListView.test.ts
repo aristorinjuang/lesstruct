@@ -5,10 +5,20 @@ import ContentListView from './ContentListView.vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useContentStore } from '@/stores/domain/content'
 import type { Content } from '@/types/content'
+import api from '@/utils/request'
+
+vi.mock('@/utils/request', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+    postWithTimeout: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
+}))
 
 // Helper to access internal component properties in tests
 type ContentListViewInstance = ComponentPublicInstance & {
-  contents: Content[]
   getStatusBadgeClass: (status: string) => string
   loadContents: () => Promise<void>
   editContent: (content: Content) => void
@@ -71,6 +81,26 @@ vi.mock('@tiptap/vue-3', () => ({
   EditorContent: { name: 'EditorContent', template: '<div />', props: ['editor'] },
 }))
 
+function mockContentApi(mockContents: Content[]) {
+  vi.mocked(api.get).mockImplementation(((path: string) => {
+    if (path === '/api/v1/post_types') {
+      return Promise.resolve({
+        data: { data: [], error: null, meta: { timestamp: '2026-04-08T00:00:00Z' } },
+      })
+    }
+    return Promise.resolve({
+      data: {
+        data: mockContents,
+        error: null,
+        meta: {
+          timestamp: '2026-04-08T00:00:00Z',
+          pagination: { total: mockContents.length, limit: 50, offset: 0, hasMore: false },
+        },
+      },
+    })
+  }) as never)
+}
+
 describe('ContentListView', () => {
   let pinia: ReturnType<typeof createPinia>
 
@@ -99,9 +129,7 @@ describe('ContentListView', () => {
         },
       ]
 
-      // Set up mock before mounting
-      const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getByUser').mockResolvedValue(mockContents)
+      mockContentApi(mockContents)
 
       const wrapper = mount(ContentListView, {
         global: {
@@ -116,7 +144,8 @@ describe('ContentListView', () => {
       await new Promise(resolve => setTimeout(resolve, 0))
       await wrapper.vm.$nextTick()
 
-      expect(vm(wrapper).contents).toEqual(mockContents)
+      const contentStore = useContentStore()
+      expect(contentStore.contents).toEqual(mockContents)
       expect(vm(wrapper).getStatusBadgeClass('draft')).toBe('content-list__status--draft')
     })
 
@@ -137,9 +166,7 @@ describe('ContentListView', () => {
         },
       ]
 
-      // Set up mock before mounting
-      const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getByUser').mockResolvedValue(mockContents)
+      mockContentApi(mockContents)
 
       const wrapper = mount(ContentListView, {
         global: {
@@ -154,13 +181,13 @@ describe('ContentListView', () => {
       await new Promise(resolve => setTimeout(resolve, 0))
       await wrapper.vm.$nextTick()
 
-      expect(vm(wrapper).contents).toEqual(mockContents)
+      const contentStore = useContentStore()
+      expect(contentStore.contents).toEqual(mockContents)
       expect(vm(wrapper).getStatusBadgeClass('published')).toBe('content-list__status--published')
     })
 
     it('shows empty state when no content exists', async () => {
-      const contentStore = useContentStore()
-      vi.spyOn(contentStore, 'getByUser').mockResolvedValue([])
+      mockContentApi([])
 
       const wrapper = mount(ContentListView, {
         global: {
@@ -173,11 +200,11 @@ describe('ContentListView', () => {
       await wrapper.vm.$nextTick()
       await vm(wrapper).loadContents()
 
-      expect(vm(wrapper).contents.length).toBe(0)
+      const contentStore = useContentStore()
+      expect(contentStore.contents.length).toBe(0)
     })
 
-    it('displays content with correct badge text', () => {
-      const contentStore = useContentStore()
+    it('displays content with correct badge text', async () => {
       const mockContents: Content[] = [
         {
           id: 1,
@@ -207,7 +234,7 @@ describe('ContentListView', () => {
         },
       ]
 
-      vi.spyOn(contentStore, 'getByUser').mockResolvedValue(mockContents)
+      mockContentApi(mockContents)
 
       const wrapper = mount(ContentListView, {
         global: {
@@ -217,16 +244,17 @@ describe('ContentListView', () => {
         },
       })
 
-      wrapper.vm.contents = mockContents
+      await new Promise(resolve => setTimeout(resolve, 0))
+      await wrapper.vm.$nextTick()
 
-      expect(vm(wrapper).contents[0].status).toBe('draft')
-      expect(vm(wrapper).contents[1].status).toBe('published')
+      const contentStore = useContentStore()
+      expect(contentStore.contents[0]!.status).toBe('draft')
+      expect(contentStore.contents[1]!.status).toBe('published')
     })
   })
 
   describe('Click to Edit', () => {
     it('navigates to edit page when content is clicked', async () => {
-      const contentStore = useContentStore()
       const mockContents: Content[] = [
         {
           id: 1,
@@ -243,7 +271,7 @@ describe('ContentListView', () => {
         },
       ]
 
-      vi.spyOn(contentStore, 'getByUser').mockResolvedValue(mockContents)
+      mockContentApi(mockContents)
 
       const wrapper = mount(ContentListView, {
         global: {
@@ -256,7 +284,7 @@ describe('ContentListView', () => {
       await wrapper.vm.$nextTick()
       await vm(wrapper).loadContents()
 
-      vm(wrapper).editContent(mockContents[0])
+      vm(wrapper).editContent(mockContents[0]!)
 
       expect(mockPush).toHaveBeenCalledWith('/content/1/edit?type=post')
     })

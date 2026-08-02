@@ -1,6 +1,7 @@
 package template
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"embed"
 	"fmt"
@@ -313,6 +314,56 @@ func (t *Templates) RenderVerifyEmail(w http.ResponseWriter, data VerifyEmailDat
 func (t *Templates) RenderResetPassword(w http.ResponseWriter, data ResetPasswordData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	return t.resetPassword.Execute(w, data)
+}
+
+func (t *Templates) renderToString(tmpl *template.Template, data any) (string, error) {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func (t *Templates) RenderIndexToString(data IndexData) (string, error) {
+	return t.renderToString(t.index, data)
+}
+
+func (t *Templates) RenderHomeToString(data IndexData) (string, error) {
+	return t.renderToString(t.home, data)
+}
+
+func (t *Templates) RenderContentToString(data ContentData) (string, error) {
+	if data.PostType != "" && data.Slug != "" {
+		if tpl, ok := t.contentBySlug[data.PostType+":"+data.Slug]; ok {
+			return t.renderToString(tpl, data)
+		}
+	}
+
+	tmpl := t.contentDefault
+	if specific, ok := t.content[data.PostType]; ok {
+		tmpl = specific
+	}
+	return t.renderToString(tmpl, data)
+}
+
+func (t *Templates) RenderAuthorToString(data AuthorData) (string, error) {
+	return t.renderToString(t.author, data)
+}
+
+func (t *Templates) RenderTagToString(data TagData) (string, error) {
+	return t.renderToString(t.tag, data)
+}
+
+func (t *Templates) RenderNotFoundToString(data NotFoundData) (string, error) {
+	return t.renderToString(t.notFound, data)
+}
+
+func (t *Templates) RenderLoginToString(data AuthPageData) (string, error) {
+	return t.renderToString(t.login, data)
+}
+
+func (t *Templates) RenderRegisterToString(data AuthPageData) (string, error) {
+	return t.renderToString(t.register, data)
 }
 
 func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) (*Templates, error) {

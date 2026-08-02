@@ -82,6 +82,92 @@ func pgUniqueError(err error) bool {
 	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "SQLSTATE 23505")
 }
 
+// buildContentFilterWhereClause builds the shared WHERE clause (including the leading
+// WHERE keyword) for both ListByFilters and Count, so a list's total always matches
+// the rows the list returns. userID <= 0 means "all users" (admin scope) and yields
+// WHERE 1=1. SortBy/SortOrder and Limit/Offset are NOT part of the WHERE and stay in
+// the caller.
+func buildContentFilterWhereClause(userID int, filters contentdomain.ContentFilters) (string, []any, error) {
+	var queryBuilder strings.Builder
+	var args []any
+	argN := 0
+
+	if userID > 0 {
+		argN++
+		fmt.Fprintf(&queryBuilder, ` WHERE c.user_id = $%d`, argN)
+		args = append(args, userID)
+	} else {
+		queryBuilder.WriteString(` WHERE 1=1`)
+	}
+
+	if filters.Language != "" {
+		argN++
+		fmt.Fprintf(&queryBuilder, ` AND c.language = $%d`, argN)
+		args = append(args, filters.Language)
+	}
+
+	if filters.PostType != "" {
+		argN++
+		fmt.Fprintf(&queryBuilder, ` AND c.post_type = $%d`, argN)
+		args = append(args, filters.PostType)
+	}
+
+	if filters.Status != "" {
+		argN++
+		fmt.Fprintf(&queryBuilder, ` AND c.status = $%d`, argN)
+		args = append(args, filters.Status)
+	}
+
+	if filters.Author != "" {
+		argN++
+		fmt.Fprintf(&queryBuilder, ` AND LOWER(COALESCE(u.name, u.username)) = LOWER($%d)`, argN)
+		args = append(args, filters.Author)
+	}
+
+	if filters.Search != "" {
+		escapedQuery := strings.ReplaceAll(filters.Search, "%", `\%`)
+		escapedQuery = strings.ReplaceAll(escapedQuery, "_", `\_`)
+		likePattern := "%" + escapedQuery + "%"
+		argN++
+		argN++
+		fmt.Fprintf(&queryBuilder, ` AND (LOWER(c.title) LIKE LOWER($%d) ESCAPE '\' OR LOWER(c.meta_description) LIKE LOWER($%d) ESCAPE '\')`, argN-1, argN)
+		args = append(args, likePattern, likePattern)
+	}
+
+	for _, tag := range filters.Tags {
+		escapedTag := strings.ReplaceAll(tag, "%", `\%`)
+		escapedTag = strings.ReplaceAll(escapedTag, "_", `\_`)
+		likePattern := `%"` + escapedTag + `"%`
+		argN++
+		fmt.Fprintf(&queryBuilder, ` AND c.tags LIKE $%d ESCAPE '\'`, argN)
+		args = append(args, likePattern)
+	}
+
+	for _, f := range filters.CustomFieldFilters {
+		switch f.Operator {
+		case contentdomain.FilterOpEqual:
+			argN++
+			argN++
+			fmt.Fprintf(&queryBuilder, ` AND c.custom_fields::jsonb->>$%d = $%d`, argN-1, argN)
+			args = append(args, f.Field, f.Value)
+		case contentdomain.FilterOpMin:
+			argN++
+			argN++
+			fmt.Fprintf(&queryBuilder, ` AND (c.custom_fields::jsonb->>$%d)::numeric >= $%d`, argN-1, argN)
+			args = append(args, f.Field, f.Value)
+		case contentdomain.FilterOpMax:
+			argN++
+			argN++
+			fmt.Fprintf(&queryBuilder, ` AND (c.custom_fields::jsonb->>$%d)::numeric <= $%d`, argN-1, argN)
+			args = append(args, f.Field, f.Value)
+		default:
+			return "", nil, fmt.Errorf("unsupported filter operator: %s", f.Operator)
+		}
+	}
+
+	return queryBuilder.String(), args, nil
+}
+
 func scanContentRowsWithAuthorAndUsername(rows *sql.Rows) ([]*contentdomain.Content, error) {
 	var items []*contentdomain.Content
 	for rows.Next() {
@@ -1159,80 +1245,24 @@ func (r *ContentRepository) ListByFilters(ctx context.Context, userID int, filte
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString(`SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at, COALESCE(u.name, u.username) as author, u.username, c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username FROM content_items c LEFT JOIN users u ON c.user_id = u.id LEFT JOIN users u2 ON c.updated_by = u2.id`)
 
-	var args []any
-	argN := 0
+	whereClause, args, err := buildContentFilterWhereClause(userID, filters)
+	if err != nil {
+		return nil, err
+	}
+	queryBuilder.WriteString(whereClause)
 
-	if userID > 0 {
+	argN := len(args)
+
+	if filters.SortBy != "" {
+		direction := repository.SortDirectionSQL(filters.SortOrder)
 		argN++
-		fmt.Fprintf(&queryBuilder, ` WHERE c.user_id = $%d`, argN)
-		args = append(args, userID)
+		argN++
+		fmt.Fprintf(&queryBuilder,
+			` ORDER BY CASE WHEN (c.custom_fields::jsonb->>$%d) ~ '^-?[0-9]+(\.[0-9]+)?$' THEN (c.custom_fields::jsonb->>$%d)::numeric ELSE 0 END %s, c.created_at DESC`,
+			argN-1, argN, direction)
+		args = append(args, filters.SortBy, filters.SortBy)
 	} else {
-		queryBuilder.WriteString(` WHERE 1=1`)
-	}
-
-	if filters.Language != "" {
-		argN++
-		fmt.Fprintf(&queryBuilder, ` AND c.language = $%d`, argN)
-		args = append(args, filters.Language)
-	}
-
-	if filters.PostType != "" {
-		argN++
-		fmt.Fprintf(&queryBuilder, ` AND c.post_type = $%d`, argN)
-		args = append(args, filters.PostType)
-	}
-
-	if filters.Status != "" {
-		argN++
-		fmt.Fprintf(&queryBuilder, ` AND c.status = $%d`, argN)
-		args = append(args, filters.Status)
-	}
-
-	if filters.Author != "" {
-		argN++
-		fmt.Fprintf(&queryBuilder, ` AND LOWER(COALESCE(u.name, u.username)) = LOWER($%d)`, argN)
-		args = append(args, filters.Author)
-	}
-
-	if filters.Search != "" {
-		escapedQuery := strings.ReplaceAll(filters.Search, "%", `\%`)
-		escapedQuery = strings.ReplaceAll(escapedQuery, "_", `\_`)
-		likePattern := "%" + escapedQuery + "%"
-		argN++
-		argN++
-		fmt.Fprintf(&queryBuilder, ` AND (LOWER(c.title) LIKE LOWER($%d) ESCAPE '\' OR LOWER(c.meta_description) LIKE LOWER($%d) ESCAPE '\')`, argN-1, argN)
-		args = append(args, likePattern, likePattern)
-	}
-
-	for _, tag := range filters.Tags {
-		escapedTag := strings.ReplaceAll(tag, "%", `\%`)
-		escapedTag = strings.ReplaceAll(escapedTag, "_", `\_`)
-		likePattern := `%"` + escapedTag + `"%`
-		argN++
-		fmt.Fprintf(&queryBuilder, ` AND c.tags LIKE $%d ESCAPE '\'`, argN)
-		args = append(args, likePattern)
-	}
-
-	for _, f := range filters.CustomFieldFilters {
-		switch f.Operator {
-		case contentdomain.FilterOpEqual:
-			argN++
-			argN++
-			fmt.Fprintf(&queryBuilder, ` AND c.custom_fields::jsonb->>$%d = $%d`, argN-1, argN)
-			args = append(args, f.Field, f.Value)
-		case contentdomain.FilterOpMin:
-			argN++
-			argN++
-			fmt.Fprintf(&queryBuilder, ` AND (c.custom_fields::jsonb->>$%d)::numeric >= $%d`, argN-1, argN)
-			args = append(args, f.Field, f.Value)
-		case contentdomain.FilterOpMax:
-			argN++
-			argN++
-			fmt.Fprintf(&queryBuilder, ` AND (c.custom_fields::jsonb->>$%d)::numeric <= $%d`, argN-1, argN)
-			args = append(args, f.Field, f.Value)
-		default:
-			return nil, fmt.Errorf("unsupported filter operator: %s", f.Operator)
-		}
+		queryBuilder.WriteString(` ORDER BY c.created_at DESC`)
 	}
 
 	if filters.SortBy != "" {
@@ -1259,6 +1289,28 @@ func (r *ContentRepository) ListByFilters(ctx context.Context, userID int, filte
 	defer func() { _ = rows.Close() }()
 
 	return scanContentRowsWithAuditInfo(rows)
+}
+
+// Count returns the number of content items matching the filters, using the same WHERE
+// clause as ListByFilters (see buildContentFilterWhereClause). userID <= 0 counts
+// across all users.
+func (r *ContentRepository) Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error) {
+	whereClause, args, err := buildContentFilterWhereClause(userID, filters)
+	if err != nil {
+		return 0, err
+	}
+
+	var total int
+	err = r.db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM content_items c LEFT JOIN users u ON c.user_id = u.id`+whereClause,
+		args...,
+	).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count content: %w", err)
+	}
+
+	return total, nil
 }
 
 func (r *ContentRepository) GetPublishedPages(ctx context.Context) ([]*contentdomain.Content, error) {

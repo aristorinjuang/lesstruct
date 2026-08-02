@@ -173,7 +173,7 @@ describe('MediaDetailModal', () => {
   it('formats file size correctly', () => {
     const wrapper = createWrapper({ media: mockMedia })
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as { formatFileSize: (bytes: number) => string }
     expect(vm.formatFileSize(1024)).toBe('1.0 KB')
     expect(vm.formatFileSize(500)).toBe('500 B')
     expect(vm.formatFileSize(2 * 1024 * 1024)).toBe('2.0 MB')

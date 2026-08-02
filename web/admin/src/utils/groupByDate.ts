@@ -31,7 +31,6 @@ export function groupByDate(media: Media[]): DateGroup[] {
   if (media.length === 0) return []
 
   const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const thisWeekStart = getStartOfWeek(now)
   const lastWeekStart = getStartOfLastWeek(now)
 

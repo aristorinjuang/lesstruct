@@ -38,6 +38,7 @@ type UserRepo interface {
 	UnsuspendUser(ctx context.Context, userID int) error
 	SoftDeleteUser(ctx context.Context, userID int) error
 	GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*repository.User, error)
+	CountUsers(ctx context.Context, status string) (int, error)
 	GetUserStatus(ctx context.Context, userID int) (string, error)
 	UpdateProfile(ctx context.Context, userID int, name string, email string, role string, customFields map[string]any) error
 	CheckEmailExistsForOtherUser(ctx context.Context, userID int, email string) (bool, error)
@@ -207,6 +208,16 @@ func (s *UserManagementService) GetAllUsers(ctx context.Context, status string, 
 		return nil, fmt.Errorf("failed to get all users: %w", err)
 	}
 	return users, nil
+}
+
+// CountUsers returns the total number of users, optionally filtered by status — mirrors
+// GetAllUsers' WHERE clause so a list's total always matches its rows.
+func (s *UserManagementService) CountUsers(ctx context.Context, status string) (int, error) {
+	total, err := s.userRepo.CountUsers(ctx, status)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count users: %w", err)
+	}
+	return total, nil
 }
 
 // GetUserStatus retrieves the current status of a user

@@ -178,8 +178,7 @@ func (r *CommentRepository) GetByUserID(ctx context.Context, userID int) ([]*con
 	return scanCommentRows(rows)
 }
 
-func (r *CommentRepository) GetByStatus(ctx context.Context, status contentdomain.CommentStatus) ([]*contentdomain.Comment, error) {
-	if ctx == nil {
+func (r *CommentRepository) GetByStatus(ctx context.Context, status contentdomain.CommentStatus) ([]*contentdomain.Comment, error) {	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -229,6 +228,30 @@ func (r *CommentRepository) GetByStatus(ctx context.Context, status contentdomai
 	}
 
 	return items, nil
+}
+
+func (r *CommentRepository) Count(ctx context.Context, userID int) (int, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	if err := r.db.PingContext(ctx); err != nil {
+		return 0, fmt.Errorf("database connection lost: %w", err)
+	}
+
+	var total int
+	var err error
+	if userID > 0 {
+		err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM comments WHERE user_id = ?`, userID).Scan(&total)
+	} else {
+		err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM comments`).Scan(&total)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to count comments: %w", err)
+	}
+	return total, nil
 }
 
 func (r *CommentRepository) UpdateStatus(ctx context.Context, id int, status contentdomain.CommentStatus) error {

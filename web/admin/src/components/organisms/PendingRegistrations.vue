@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { formatDateTime } from '@/utils/date'
 import { useConfirmationDialog } from '@/composables/useConfirmationDialog'
-import type { PendingRegistrationsProps } from '@/types/user'
+import type { PendingRegistrationsProps, UserStatus } from '@/types/user'
 import UserActions from '@/components/molecules/UserActions.vue'
 import ConfirmationDialog from '@/components/organisms/ConfirmationDialog.vue'
 
-const props = withDefaults(defineProps<PendingRegistrationsProps>(), {
+withDefaults(defineProps<PendingRegistrationsProps>(), {
   isLoading: false,
 })
 
@@ -66,10 +66,10 @@ function handleMarkAsSpam(userId: string) {
         </div>
 
         <UserActions
-          :user-status="user.status"
-          @approve="handleApprove(user.id)"
-          @reject="handleReject(user.id)"
-          @mark-as-spam="handleMarkAsSpam(user.id)"
+          :user-status="user.status as UserStatus"
+          @approve="handleApprove(String(user.id))"
+          @reject="handleReject(String(user.id))"
+          @mark-as-spam="handleMarkAsSpam(String(user.id))"
         />
       </div>
     </div>

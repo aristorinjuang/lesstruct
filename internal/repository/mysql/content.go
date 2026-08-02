@@ -170,6 +170,73 @@ func scanContentRowsWithAuditInfo(rows *sql.Rows) ([]*contentdomain.Content, err
 	return items, nil
 }
 
+// buildContentFilterWhereClause builds the shared WHERE clause (including the leading
+// WHERE keyword) for both ListByFilters and Count, so a list's total always matches
+// the rows the list returns. userID <= 0 means "all users" (admin scope) and yields
+// WHERE 1=1. SortBy/SortOrder and Limit/Offset are NOT part of the WHERE and stay in
+// the caller.
+func buildContentFilterWhereClause(userID int, filters contentdomain.ContentFilters) (string, []any, error) {
+	var queryBuilder strings.Builder
+	var args []any
+
+	if userID > 0 {
+		queryBuilder.WriteString(" WHERE ci.user_id = ?")
+		args = append(args, userID)
+	} else {
+		queryBuilder.WriteString(" WHERE 1=1")
+	}
+
+	if filters.PostType != "" {
+		queryBuilder.WriteString(" AND ci.post_type = ?")
+		args = append(args, filters.PostType)
+	}
+
+	if filters.Status != "" {
+		queryBuilder.WriteString(" AND ci.status = ?")
+		args = append(args, filters.Status)
+	}
+
+	if filters.Author != "" {
+		queryBuilder.WriteString(" AND LOWER(COALESCE(u.name, u.username)) = LOWER(?)")
+		args = append(args, filters.Author)
+	}
+
+	if filters.Search != "" {
+		searchParam := "%" + escapeLike(filters.Search) + "%"
+		queryBuilder.WriteString(" AND (ci.title LIKE ? OR ci.meta_description LIKE ?)")
+		args = append(args, searchParam, searchParam)
+	}
+
+	if filters.Language != "" {
+		queryBuilder.WriteString(" AND ci.language = ?")
+		args = append(args, filters.Language)
+	}
+
+	for _, tag := range filters.Tags {
+		tagParam := "%\"" + escapeLike(tag) + "\"%"
+		queryBuilder.WriteString(" AND ci.tags LIKE ?")
+		args = append(args, tagParam)
+	}
+
+	for _, cf := range filters.CustomFieldFilters {
+		switch cf.Operator {
+		case contentdomain.FilterOpEqual:
+			queryBuilder.WriteString(" AND JSON_EXTRACT(ci.custom_fields, ?) = ?")
+			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
+		case contentdomain.FilterOpMin:
+			queryBuilder.WriteString(" AND CAST(JSON_EXTRACT(ci.custom_fields, ?) AS DECIMAL) >= ?")
+			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
+		case contentdomain.FilterOpMax:
+			queryBuilder.WriteString(" AND CAST(JSON_EXTRACT(ci.custom_fields, ?) AS DECIMAL) <= ?")
+			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
+		default:
+			return "", nil, fmt.Errorf("unsupported filter operator: %s", cf.Operator)
+		}
+	}
+
+	return queryBuilder.String(), args, nil
+}
+
 // ---------------------------------------------------------------------------
 // Private model
 // ---------------------------------------------------------------------------
@@ -886,61 +953,11 @@ func (r *ContentRepository) ListByFilters(
 		LEFT JOIN users u2 ON ci.updated_by = u2.id
 	`)
 
-	if userID > 0 {
-		queryBuilder.WriteString(" WHERE ci.user_id = ?")
-		args = append(args, userID)
-	} else {
-		queryBuilder.WriteString(" WHERE 1=1")
+	whereClause, args, err := buildContentFilterWhereClause(userID, filters)
+	if err != nil {
+		return nil, err
 	}
-
-	if filters.PostType != "" {
-		queryBuilder.WriteString(" AND ci.post_type = ?")
-		args = append(args, filters.PostType)
-	}
-
-	if filters.Status != "" {
-		queryBuilder.WriteString(" AND ci.status = ?")
-		args = append(args, filters.Status)
-	}
-
-	if filters.Author != "" {
-		queryBuilder.WriteString(" AND LOWER(COALESCE(u.name, u.username)) = LOWER(?)")
-		args = append(args, filters.Author)
-	}
-
-	if filters.Search != "" {
-		searchParam := "%" + escapeLike(filters.Search) + "%"
-		queryBuilder.WriteString(" AND (ci.title LIKE ? OR ci.meta_description LIKE ?)")
-		args = append(args, searchParam, searchParam)
-	}
-
-	if filters.Language != "" {
-		queryBuilder.WriteString(" AND ci.language = ?")
-		args = append(args, filters.Language)
-	}
-
-	for _, tag := range filters.Tags {
-		tagParam := "%\"" + escapeLike(tag) + "\"%"
-		queryBuilder.WriteString(" AND ci.tags LIKE ?")
-		args = append(args, tagParam)
-	}
-
-	// Custom field filters — filter on JSON column
-	for _, cf := range filters.CustomFieldFilters {
-		switch cf.Operator {
-		case contentdomain.FilterOpEqual:
-			queryBuilder.WriteString(" AND JSON_EXTRACT(ci.custom_fields, ?) = ?")
-			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
-		case contentdomain.FilterOpMin:
-			queryBuilder.WriteString(" AND CAST(JSON_EXTRACT(ci.custom_fields, ?) AS DECIMAL) >= ?")
-			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
-		case contentdomain.FilterOpMax:
-			queryBuilder.WriteString(" AND CAST(JSON_EXTRACT(ci.custom_fields, ?) AS DECIMAL) <= ?")
-			args = append(args, fmt.Sprintf("$.%s", cf.Field), cf.Value)
-		default:
-			return nil, fmt.Errorf("unsupported filter operator: %s", cf.Operator)
-		}
-	}
+	queryBuilder.WriteString(whereClause)
 
 	if filters.SortBy != "" {
 		direction := repository.SortDirectionSQL(filters.SortOrder)
@@ -970,6 +987,28 @@ func (r *ContentRepository) ListByFilters(
 	defer func() { _ = rows.Close() }()
 
 	return scanContentRowsWithAuditInfo(rows)
+}
+
+// Count returns the number of content items matching the filters, using the same WHERE
+// clause as ListByFilters (see buildContentFilterWhereClause). userID <= 0 counts
+// across all users.
+func (r *ContentRepository) Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error) {
+	whereClause, args, err := buildContentFilterWhereClause(userID, filters)
+	if err != nil {
+		return 0, err
+	}
+
+	var total int
+	err = r.db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM content_items ci LEFT JOIN users u ON ci.user_id = u.id`+whereClause,
+		args...,
+	).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count content: %w", err)
+	}
+
+	return total, nil
 }
 
 // GetPublishedPages returns all published pages.

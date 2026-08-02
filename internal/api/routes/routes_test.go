@@ -174,6 +174,9 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
+		nil,
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
@@ -191,6 +194,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 		false,
 		nil,
 		[]string{"en"},
+		nil,
 	)
 	return r, deps
 }
@@ -281,6 +285,9 @@ func TestSetup(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
+		nil,
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
@@ -298,6 +305,7 @@ func TestSetup(t *testing.T) {
 		false,
 		nil,
 		[]string{"en"},
+		nil,
 	)
 
 	assert.NotNil(t, r, "Setup() returned nil router")

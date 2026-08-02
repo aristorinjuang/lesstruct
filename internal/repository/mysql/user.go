@@ -407,6 +407,22 @@ func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit i
 	return scanUserRows(rows)
 }
 
+// CountUsers returns the total number of users, optionally filtered by status. It mirrors
+// GetAllUsers' WHERE clause so a list's total always matches its rows.
+func (r *UserRepository) CountUsers(ctx context.Context, status string) (int, error) {
+	var total int
+	var err error
+	if status == "" {
+		err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&total)
+	} else {
+		err = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE status = ?`, status).Scan(&total)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("failed to count users: %w", err)
+	}
+	return total, nil
+}
+
 // GetUserStatus returns the status of a user.
 func (r *UserRepository) GetUserStatus(ctx context.Context, userID int) (string, error) {
 	var status string

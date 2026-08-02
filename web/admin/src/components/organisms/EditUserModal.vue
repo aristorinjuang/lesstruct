@@ -164,7 +164,7 @@ async function handleSubmit() {
       EMAIL_EXISTS: 'Email address already in use by another user',
       USER_NOT_FOUND: 'User not found',
     }
-    errors.value = { general: errorMap[code] || apiErr?.message || 'Failed to update user' }
+    errors.value = { general: errorMap[code ?? ''] || apiErr?.message || 'Failed to update user' }
   }
 }
 

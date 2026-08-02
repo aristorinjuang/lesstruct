@@ -33,16 +33,6 @@ const (
 	formatHTML = "html"
 )
 
-// List pagination bounds for the agent v1 list surface. Missing/invalid/negative limit
-// falls back to the default; anything over the max is clamped down (clamp, never reject,
-// so agents can pass a large limit safely). The handler always requests limit+1 from the
-// service to compute hasMore.
-const (
-	defaultListLimit = 50
-	minListLimit     = 1
-	maxListLimit     = 100
-)
-
 // authenticatedUserID reads the injected owning user id from request context using
 // the shared, auth-agnostic identity accessor (works for JWT and API key). Returns
 // ok=false when the user is missing — a defensive case that only occurs if the
@@ -107,24 +97,6 @@ func convertContentBody(req ContentRequest, normalized string) (body string, err
 		return sanitize.SanitizeHTMLDocument(req.Body), ""
 	}
 	return req.Body, ""
-}
-
-// parseListLimit clamps the ?limit query param into [minListLimit, maxListLimit] with a
-// default. Missing/invalid/negative → default; over-max → max. Mirrors the admin
-// ListContents clamp convention with tighter agent bounds.
-func parseListLimit(r *http.Request) int {
-	raw := r.URL.Query().Get("limit")
-	if raw == "" {
-		return defaultListLimit
-	}
-	limit, err := strconv.Atoi(raw)
-	if err != nil || limit < minListLimit {
-		return defaultListLimit
-	}
-	if limit > maxListLimit {
-		return maxListLimit
-	}
-	return limit
 }
 
 // ContentService is the narrow slice of the content domain service the agent
@@ -399,8 +371,8 @@ func (h *ContentHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parseListLimit(r)
-	beforeID, err := decodeCursor(r.URL.Query().Get("cursor"))
+	limit := response.ParseListLimit(r)
+	beforeID, err := response.DecodeCursor(r.URL.Query().Get("cursor"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid cursor", nil)
 		return
@@ -433,7 +405,7 @@ func (h *ContentHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	nextCursor := ""
 	if hasMore && len(items) > 0 {
-		nextCursor = encodeCursor(items[len(items)-1].ID)
+		nextCursor = response.EncodeCursor(items[len(items)-1].ID)
 	}
 
 	projections := make([]ContentProjection, 0, len(items))

@@ -38,6 +38,72 @@ func (_m *MockServiceInterface) EXPECT() *MockServiceInterface_Expecter {
 	return &MockServiceInterface_Expecter{mock: &_m.Mock}
 }
 
+// CountComments provides a mock function for the type MockServiceInterface
+func (_mock *MockServiceInterface) CountComments(ctx context.Context, userID int) (int, error) {
+	ret := _mock.Called(ctx, userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountComments")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (int, error)); ok {
+		return returnFunc(ctx, userID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) int); ok {
+		r0 = returnFunc(ctx, userID)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
+		r1 = returnFunc(ctx, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockServiceInterface_CountComments_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountComments'
+type MockServiceInterface_CountComments_Call struct {
+	*mock.Call
+}
+
+// CountComments is a helper method to define mock.On call
+//   - ctx context.Context
+//   - userID int
+func (_e *MockServiceInterface_Expecter) CountComments(ctx any, userID any) *MockServiceInterface_CountComments_Call {
+	return &MockServiceInterface_CountComments_Call{Call: _e.mock.On("CountComments", ctx, userID)}
+}
+
+func (_c *MockServiceInterface_CountComments_Call) Run(run func(ctx context.Context, userID int)) *MockServiceInterface_CountComments_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockServiceInterface_CountComments_Call) Return(n int, err error) *MockServiceInterface_CountComments_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockServiceInterface_CountComments_Call) RunAndReturn(run func(ctx context.Context, userID int) (int, error)) *MockServiceInterface_CountComments_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteComment provides a mock function for the type MockServiceInterface
 func (_mock *MockServiceInterface) DeleteComment(ctx context.Context, commentID int) error {
 	ret := _mock.Called(ctx, commentID)

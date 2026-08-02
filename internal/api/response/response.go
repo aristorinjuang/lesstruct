@@ -55,11 +55,21 @@ type listResponse struct {
 	Meta any `json:"meta,omitempty"`
 }
 
-// Pagination is the cursor-pagination metadata carried in a list response's meta. It is
-// generic so the media list (Story 2.3) reuses the same envelope.
+// Pagination is the list-pagination metadata carried in a list response's meta. It is
+// generic so the media list (Story 2.3) reuses the same envelope. Two pagination models
+// share this struct: cursor endpoints populate NextCursor (keyset, stable under
+// concurrent inserts/deletes), while offset endpoints populate Total/Limit/Offset so
+// clients know how many items match the current filters.
 type Pagination struct {
 	NextCursor string `json:"nextCursor,omitempty"`
 	HasMore    bool   `json:"hasMore"`
+	// Total is the number of items matching the current filters, regardless of the
+	// page. Populated only by offset-paginated endpoints.
+	Total *int `json:"total,omitempty"`
+	// Limit and Offset echo the page parameters the client requested. Populated only
+	// by offset-paginated endpoints.
+	Limit  *int `json:"limit,omitempty"`
+	Offset *int `json:"offset,omitempty"`
 }
 
 // ListMeta wraps pagination metadata under the canonical "pagination" key.

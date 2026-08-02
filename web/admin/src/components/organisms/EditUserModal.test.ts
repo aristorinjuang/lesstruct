@@ -133,7 +133,7 @@ describe('EditUserModal', () => {
 
       const systemRenderers = wrapper.findAllComponents({ name: 'CustomFieldRenderer' })
       // System fields come after custom fields; last renderer is the system field
-      const systemRenderer = systemRenderers[systemRenderers.length - 1]
+      const systemRenderer = systemRenderers[systemRenderers.length - 1]!
       expect(systemRenderer.props('disabled')).toBe(true)
       expect(systemRenderer.props('systemField')).toBe(true)
     })
@@ -165,7 +165,7 @@ describe('EditUserModal', () => {
     it('includes customFields in updateUser call', async () => {
       const store = useUserStore()
       store.users = [mockUser]
-      vi.spyOn(store, 'updateUser').mockResolvedValue(mockUser)
+      vi.spyOn(store, 'updateUser').mockResolvedValue(undefined)
 
       const wrapper = mountModal({
         isOpen: false,
@@ -193,7 +193,7 @@ describe('EditUserModal', () => {
       const store = useUserStore()
       const userWithoutCustomFields = { ...mockUser, customFields: undefined }
       store.users = [userWithoutCustomFields]
-      vi.spyOn(store, 'updateUser').mockResolvedValue(userWithoutCustomFields)
+      vi.spyOn(store, 'updateUser').mockResolvedValue(undefined)
 
       const wrapper = mountModal({
         isOpen: false,
@@ -219,7 +219,7 @@ describe('EditUserModal', () => {
     it('excludes system field slugs from submit payload', async () => {
       const store = useUserStore()
       store.users = [mockUser]
-      vi.spyOn(store, 'updateUser').mockResolvedValue(mockUser)
+      vi.spyOn(store, 'updateUser').mockResolvedValue(undefined)
 
       const wrapper = mountModal({
         isOpen: false,
@@ -256,7 +256,7 @@ describe('EditUserModal', () => {
       await wrapper.setProps({ isOpen: true })
       await flushPromises()
 
-      expect(store.users[0].customFields).toEqual(originalCustomFields)
+      expect(store.users[0]!.customFields).toEqual(originalCustomFields)
     })
   })
 

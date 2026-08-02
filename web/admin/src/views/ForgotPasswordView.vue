@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import request, { ApiError } from '@/utils/request'
 import ThemeToggle from '@/components/atoms/ThemeToggle.vue'
-
-const router = useRouter()
 
 const email = ref('')
 const isLoading = ref(false)

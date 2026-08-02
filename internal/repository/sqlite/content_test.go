@@ -1328,6 +1328,131 @@ func TestContentRepository_ListByFilters_WithSearch(t *testing.T) {
 	}
 }
 
+func TestContentRepository_Count(t *testing.T) {
+	tests := []struct {
+		name      string
+		setupDB   func(*sql.DB)
+		userID    int
+		filters   content.ContentFilters
+		wantCount int
+		wantErr   bool
+	}{
+		{
+			name: "counts all content for admin",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Post One', 'post-one', 'body', '[]', 'draft', 'post')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Page One', 'page-one', 'body', '[]', 'published', 'page')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Menu Item One', 'menu-item-one', 'body', '[]', 'draft', 'menu-item')`)
+			},
+			userID:    0,
+			filters:   content.ContentFilters{},
+			wantCount: 3,
+		},
+		{
+			name: "counts only the user's content",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (2, 'other', 'hash', 'user', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Post One', 'post-one', 'body', '[]', 'draft', 'post')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Post Two', 'post-two', 'body', '[]', 'draft', 'post')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (2, 'Other Post', 'other-post', 'body', '[]', 'draft', 'post')`)
+			},
+			userID:    1,
+			filters:   content.ContentFilters{},
+			wantCount: 2,
+		},
+		{
+			name: "counts by post type",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Post One', 'post-one', 'body', '[]', 'draft', 'post')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Page One', 'page-one', 'body', '[]', 'published', 'page')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Menu Item One', 'menu-item-one', 'body', '[]', 'draft', 'menu-item')`)
+			},
+			userID:    0,
+			filters:   content.ContentFilters{PostType: "page"},
+			wantCount: 1,
+		},
+		{
+			name: "counts by search",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Tutorial', 'golang-tut', 'body', '[]', 'draft', 'post')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Python Guide', 'python-guide', 'body', '[]', 'draft', 'post')`)
+			},
+			userID:    0,
+			filters:   content.ContentFilters{Search: "golang"},
+			wantCount: 1,
+		},
+		{
+			name: "counts by language",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type, language) VALUES (1, 'Post One', 'post-one', 'body', '[]', 'draft', 'post', 'en')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type, language) VALUES (1, 'Post Dua', 'post-dua', 'body', '[]', 'draft', 'post', 'id')`)
+			},
+			userID:    0,
+			filters:   content.ContentFilters{Language: "id"},
+			wantCount: 1,
+		},
+		{
+			name: "counts by custom field filter",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type, custom_fields) VALUES (1, 'News Post', 'news-post', 'body', '[]', 'draft', 'post', '{"category":"News"}')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type, custom_fields) VALUES (1, 'Sports Post', 'sports-post', 'body', '[]', 'draft', 'post', '{"category":"Sports"}')`)
+			},
+			userID: 0,
+			filters: content.ContentFilters{
+				CustomFieldFilters: []content.CustomFieldFilter{
+					{Field: "category", Operator: content.FilterOpEqual, Value: "News"},
+				},
+			},
+			wantCount: 1,
+		},
+		{
+			name: "counts with no matches",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Post One', 'post-one', 'body', '[]', 'draft', 'post')`)
+			},
+			userID:    0,
+			filters:   content.ContentFilters{PostType: "page"},
+			wantCount: 0,
+		},
+		{
+			name:      "returns error for unsupported filter operator",
+			setupDB:   func(db *sql.DB) {},
+			userID:    0,
+			filters:   content.ContentFilters{CustomFieldFilters: []content.CustomFieldFilter{{Field: "price", Operator: content.FilterOperator("invalid"), Value: "5"}}},
+			wantCount: 0,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupContentTestDB(t)
+			defer teardownContentTestDB(t, db)
+
+			if tt.setupDB != nil {
+				tt.setupDB(db)
+			}
+
+			repo := sqlite.NewContentRepository(db)
+			total, err := repo.Count(context.Background(), tt.userID, tt.filters)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantCount, total)
+		})
+	}
+}
+
 func TestContentRepository_GetRelatedByTags(t *testing.T) {
 	db := setupContentTestDB(t)
 	defer teardownContentTestDB(t, db)

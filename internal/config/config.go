@@ -84,6 +84,21 @@ type Config struct {
 	ThemeDir           string
 	PostPerPage        int
 
+	// ServerReadHeaderTimeout is the maximum duration to read request headers
+	// (Slowloris protection). Read via SERVER_READ_HEADER_TIMEOUT.
+	ServerReadHeaderTimeout time.Duration
+
+	// ServerReadTimeout is the maximum duration to read the entire request
+	// including the body. A zero value means no timeout — body size is capped
+	// per-handler via MaxBytesReader / maxBodySizeMiddleware. Read via
+	// SERVER_READ_TIMEOUT.
+	ServerReadTimeout time.Duration
+
+	// ServerWriteTimeout is the maximum duration to write the response after
+	// the request headers have been read. A zero value means no timeout. Read
+	// via SERVER_WRITE_TIMEOUT.
+	ServerWriteTimeout time.Duration
+
 	RateLimitEnabled         bool
 	RateLimitAuthPerMinute   int
 	RateLimitAPIPerMinute    int
@@ -139,6 +154,16 @@ func Load() (*Config, error) {
 		AdminDevURL:        getEnv("ADMIN_DEV_URL", "http://localhost:5173"),
 		ThemeDir:           getEnv("THEME_DIR", ""),
 		PostPerPage:        getEnvInt("POSTS_PER_PAGE", 50),
+
+		// ServerReadHeaderTimeout defaults to 15s for Slowloris protection.
+		ServerReadHeaderTimeout: getEnvDuration("SERVER_READ_HEADER_TIMEOUT", 15*time.Second),
+		// ReadTimeout defaults to zero (off) so large import uploads are not
+		// capped by a global timeout — per-handler MaxBytesReader limits body
+		// size, and ReadHeaderTimeout provides Slowloris protection.
+		ServerReadTimeout: getEnvDuration("SERVER_READ_TIMEOUT", 0),
+		// WriteTimeout defaults to zero (off). Per-handler context deadlines
+		// (e.g. WORDPRESS_IMPORT_TIMEOUT) bound long-running operations.
+		ServerWriteTimeout: getEnvDuration("SERVER_WRITE_TIMEOUT", 0),
 
 		RateLimitEnabled:         getEnvBool("RATE_LIMIT_ENABLED", true),
 		RateLimitAuthPerMinute:   getEnvInt("RATE_LIMIT_AUTH_PER_MINUTE", 5),

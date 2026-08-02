@@ -27,8 +27,12 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/constants"
 	"github.com/aristorinjuang/lesstruct/internal/content/tiptap"
+	"github.com/aristorinjuang/lesstruct/internal/content/export"
+	"github.com/aristorinjuang/lesstruct/internal/content/hugo"
+	"github.com/aristorinjuang/lesstruct/internal/content/ssg"
 	"github.com/aristorinjuang/lesstruct/internal/content/wordpress"
 	appdatabase "github.com/aristorinjuang/lesstruct/internal/database"
+	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
 	apikeydomain "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 	authdomain "github.com/aristorinjuang/lesstruct/internal/domain/auth"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -218,6 +222,16 @@ func newAPIKeyRepo(driver string, db *sql.DB) apikeydomain.Repository {
 	return sqliterepository.NewAPIKeyRepository(db)
 }
 
+func newAliasRepo(driver string, db *sql.DB) aliasdomain.Repository {
+	if isPostgres(driver) {
+		return postgresqlrepository.NewAliasRepository(db)
+	}
+	if isMySQL(driver) {
+		return mysqlrepository.NewAliasRepository(db)
+	}
+	return sqliterepository.NewAliasRepository(db)
+}
+
 func ensureDirectories(cfg *config.Config, logger *util.Logger) error {
 	directories := []string{
 		"plugins",
@@ -256,6 +270,9 @@ func startServer(
 	profilePictureHandler *handlers.ProfilePictureHandler,
 	wordPressHandler *handlers.WordPressHandler,
 	apiKeyHandler *handlers.APIKeyHandler,
+	hugoHandler *handlers.HugoHandler,
+	exportHandler *handlers.ExportHandler,
+	ssgHandler *handlers.SSGHandler,
 	apiKeyAuthMiddleware *middleware.APIKeyAuthMiddleware,
 	agentContentHandler *agent.ContentHandler,
 	agentMediaHandler *agent.MediaHandler,
@@ -273,6 +290,7 @@ func startServer(
 	textGenEnabled bool,
 	textGenHandler *handlers.TextGenHandler,
 	languages []string,
+	aliasRedirectHandler *handlers.AliasRedirectHandler,
 ) *http.Server {
 	// Setup HTTP router
 	router := routes.Setup(
@@ -290,6 +308,9 @@ func startServer(
 		profilePictureHandler,
 		wordPressHandler,
 		apiKeyHandler,
+		hugoHandler,
+		exportHandler,
+		ssgHandler,
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
@@ -307,15 +328,20 @@ func startServer(
 		textGenEnabled,
 		textGenHandler,
 		languages,
+		aliasRedirectHandler,
 	)
 
-	// Create HTTP server with timeouts
+	// Create HTTP server with timeouts. ReadHeaderTimeout guards against
+	// Slowloris while ReadTimeout and WriteTimeout are zero (off) by default
+	// so large uploads (WordPress import, media upload) are not capped by a
+	// global deadline — per-handler body limiters and context deadlines apply.
 	server := &http.Server{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 3 * time.Minute, // at least two minutes for waiting the image generation
-		IdleTimeout:  60 * time.Second,
+		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		Handler:           router,
+		ReadHeaderTimeout: cfg.ServerReadHeaderTimeout,
+		ReadTimeout:       cfg.ServerReadTimeout,
+		WriteTimeout:      cfg.ServerWriteTimeout,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Start server in goroutine
@@ -693,6 +719,23 @@ func main() {
 		cfg.WordPressImportTimeout,
 	)
 
+	// Initialize alias/redirect service (Hugo import depends on it)
+	aliasRepo := newAliasRepo(cfg.DBDriver, db.DB())
+	aliasService := aliasdomain.NewService(aliasRepo)
+
+	// Initialize Hugo import handler (admin-only content migration)
+	hugoImporter := hugo.NewImporter(
+		contentService,
+		aliasService,
+		primaryLanguage,
+		utilLogger,
+	)
+	hugoHandler := handlers.NewHugoHandler(
+		hugoImporter,
+		utilLogger,
+		cfg.ImportMaxSize(),
+	)
+
 	// Initialize API key service and handler (Story 1.1)
 	apiKeyRepo := newAPIKeyRepo(cfg.DBDriver, db.DB())
 	apiKeyService := apikeydomain.NewService(apiKeyRepo, cfg.APIKeyPepper)
@@ -840,6 +883,38 @@ func main() {
 	// Static file handler for content site (uses theme from above)
 	staticHandler := template.StaticFiles(theme)
 
+	// Alias redirect handler wraps the content site catch-all to serve 301s.
+	aliasRedirectHandler := handlers.NewAliasRedirectHandler(
+		aliasService,
+		contentService,
+		http.HandlerFunc(staticServer.ServeContent),
+	)
+
+	// Initialize content exporter (Phase 2) — exports all content as Hugo-compatible
+	// source files with bundled media.
+	exporter := export.NewExporter(
+		contentService,
+		aliasService,
+		func(s string) (string, error) {
+			return tiptap.NewRenderer(nil).Render(s)
+		},
+		filepath.Join("data", "uploads", "media"),
+		utilLogger,
+	)
+	exportHandler := handlers.NewExportHandler(exporter, utilLogger)
+
+	// Initialize static site generator (Phase 3) — generates a fully rendered
+	// static site with AMP variants as a tar.gz archive.
+	ssgGenerator := ssg.NewGenerator(
+		contentPageHandler.Assembler(),
+		contentTemplates,
+		contentService,
+		filepath.Join("data", "uploads", "media"),
+		theme,
+		cfg.SiteURL,
+	)
+	ssgHandler := handlers.NewSSGHandler(ssgGenerator, utilLogger)
+
 	// Start HTTP server
 	server := startServer(
 		cfg,
@@ -858,6 +933,9 @@ func main() {
 		profilePictureHandler,
 		wordPressHandler,
 		apiKeyHandler,
+		hugoHandler,
+		exportHandler,
+		ssgHandler,
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
@@ -875,6 +953,7 @@ func main() {
 		cfg.IsTextGenerationEnabled(),
 		textGenHandler,
 		languages,
+		aliasRedirectHandler,
 	)
 
 	// Wait for interrupt signal for graceful shutdown

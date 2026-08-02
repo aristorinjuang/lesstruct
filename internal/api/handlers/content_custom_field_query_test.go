@@ -33,6 +33,11 @@ func TestContentHandler_CustomFieldQuery_ExactMatch(t *testing.T) {
 			{ID: 1, Title: "Croissant", CustomFields: map[string]any{"category": "Pastry"}},
 			{ID: 2, Title: "Eclair", CustomFields: map[string]any{"category": "Pastry"}},
 		}, nil)
+		mockService.EXPECT().Count(
+			mock.Anything,
+			1,
+			mock.AnythingOfType("content.ContentFilters"),
+		).Return(2, nil)
 
 		handler := handlers.NewContentHandler(
 			mockService,
@@ -83,6 +88,11 @@ func TestContentHandler_CustomFieldQuery_NumberRange(t *testing.T) {
 		).Return([]*contentdomain.Content{
 			{ID: 1, Title: "Croissant", CustomFields: map[string]any{"price": 7.5}},
 		}, nil)
+		mockService.EXPECT().Count(
+			mock.Anything,
+			1,
+			mock.AnythingOfType("content.ContentFilters"),
+		).Return(1, nil)
 
 		handler := handlers.NewContentHandler(
 			mockService,
@@ -119,6 +129,11 @@ func TestContentHandler_CustomFieldQuery_CombinedFilter(t *testing.T) {
 		).Return([]*contentdomain.Content{
 			{ID: 1, Title: "Croissant", PostType: "menu-item", CustomFields: map[string]any{"category": "Pastry"}},
 		}, nil)
+		mockService.EXPECT().Count(
+			mock.Anything,
+			1,
+			mock.AnythingOfType("content.ContentFilters"),
+		).Return(1, nil)
 
 		handler := handlers.NewContentHandler(
 			mockService,
@@ -148,6 +163,11 @@ func TestContentHandler_CustomFieldQuery_InvalidSlug(t *testing.T) {
 			100,
 			0,
 		).Return([]*contentdomain.Content{}, nil)
+		mockService.EXPECT().Count(
+			mock.Anything,
+			1,
+			mock.AnythingOfType("content.ContentFilters"),
+		).Return(0, nil)
 
 		handler := handlers.NewContentHandler(
 			mockService,
@@ -179,6 +199,11 @@ func TestContentHandler_CustomFieldQuery_InvalidSlug(t *testing.T) {
 					f.CustomFieldFilters[0].Value == "Pastry"
 			}),
 		).Return([]*contentdomain.Content{}, nil)
+		mockService.EXPECT().Count(
+			mock.Anything,
+			1,
+			mock.AnythingOfType("content.ContentFilters"),
+		).Return(0, nil)
 
 		handler := handlers.NewContentHandler(
 			mockService,
@@ -211,6 +236,11 @@ func TestContentHandler_CustomFieldQuery_NoFilters(t *testing.T) {
 			{ID: 1, Title: "Post 1"},
 			{ID: 2, Title: "Post 2"},
 		}, nil)
+		mockService.EXPECT().Count(
+			mock.Anything,
+			1,
+			mock.AnythingOfType("content.ContentFilters"),
+		).Return(2, nil)
 
 		handler := handlers.NewContentHandler(
 			mockService,
@@ -246,6 +276,11 @@ func TestContentHandler_CustomFieldQuery_PostTypeOnly(t *testing.T) {
 				return f.PostType == "page" && len(f.CustomFieldFilters) == 0
 			}),
 		).Return([]*contentdomain.Content{}, nil)
+		mockService.EXPECT().Count(
+			mock.Anything,
+			1,
+			mock.AnythingOfType("content.ContentFilters"),
+		).Return(0, nil)
 
 		handler := handlers.NewContentHandler(
 			mockService,

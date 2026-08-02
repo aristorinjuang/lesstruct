@@ -201,6 +201,8 @@ func (h *WordPressHandler) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	skipMedia := r.FormValue("skipMedia") == "true"
+
 	go func() {
 		defer func() { _ = os.Remove(tmpFile.Name()) }()
 		defer func() { _ = f.Close() }()
@@ -219,7 +221,8 @@ func (h *WordPressHandler) Import(w http.ResponseWriter, r *http.Request) {
 			h.jobStore.updateProgress(jobID, p)
 		}
 
-		result, err := h.importer.Import(ctx, f, userID, onProgress)
+		opts := wordpress.ImportOptions{SkipMedia: skipMedia}
+		result, err := h.importer.Import(ctx, f, userID, opts, onProgress)
 		if err != nil {
 			h.logger.Error("WordPress import job %s failed: %v", jobID, err)
 			h.jobStore.finish(jobID, jobStateFailed, result)

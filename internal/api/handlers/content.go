@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -413,6 +414,7 @@ type ContentServiceInterface interface {
 	GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*contentdomain.Content, error)
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
+	Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error)
 	SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*contentdomain.Content, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
 	GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error)
@@ -585,49 +587,81 @@ func (h *ContentHandler) ListContents(w http.ResponseWriter, r *http.Request) {
 	}
 	customFieldFilters := parseCustomFieldFilters(r)
 	language := r.URL.Query().Get("language")
+	status := r.URL.Query().Get("status")
+	if status != "" && !contentdomain.Status(status).IsValid() {
+		status = ""
+	}
 
-	if postType != "" || search != "" || len(customFieldFilters) > 0 || language != "" {
+	var (
+		contents []*contentdomain.Content
+		total    int
+	)
+
+	if postType != "" || search != "" || len(customFieldFilters) > 0 || language != "" || status != "" {
 		filters := contentdomain.ContentFilters{
 			Limit:              limit,
 			Offset:             offset,
 			PostType:           postType,
 			Search:             search,
 			Language:           language,
+			Status:             status,
 			CustomFieldFilters: customFieldFilters,
 		}
 		filterUserID := userID
 		if isAdmin {
 			filterUserID = 0
 		}
-		contents, err := h.contentService.ListByFilters(r.Context(), filterUserID, filters)
+		contents, err = h.contentService.ListByFilters(r.Context(), filterUserID, filters)
 		if err != nil {
 			h.logger.Error("Failed to list contents by filters: %v", err)
 			handleContentError(w, err)
 			return
 		}
-		sendSuccessResponse(w, http.StatusOK, contents)
-		return
-	}
-
-	if isAdmin {
-		contents, err := h.contentService.GetAll(r.Context(), limit, offset)
+		total, err = h.contentService.Count(r.Context(), filterUserID, filters)
+		if err != nil {
+			h.logger.Error("Failed to count contents by filters: %v", err)
+			handleContentError(w, err)
+			return
+		}
+	} else if isAdmin {
+		contents, err = h.contentService.GetAll(r.Context(), limit, offset)
 		if err != nil {
 			h.logger.Error("Failed to list all contents: %v", err)
 			handleContentError(w, err)
 			return
 		}
-		sendSuccessResponse(w, http.StatusOK, contents)
-		return
+		total, err = h.contentService.Count(r.Context(), 0, contentdomain.ContentFilters{})
+		if err != nil {
+			h.logger.Error("Failed to count all contents: %v", err)
+			handleContentError(w, err)
+			return
+		}
+	} else {
+		contents, err = h.contentService.GetByUser(r.Context(), userID, limit, offset)
+		if err != nil {
+			h.logger.Error("Failed to list contents: %v", err)
+			handleContentError(w, err)
+			return
+		}
+		total, err = h.contentService.Count(r.Context(), userID, contentdomain.ContentFilters{})
+		if err != nil {
+			h.logger.Error("Failed to count contents: %v", err)
+			handleContentError(w, err)
+			return
+		}
 	}
 
-	contents, err := h.contentService.GetByUser(r.Context(), userID, limit, offset)
-	if err != nil {
-		h.logger.Error("Failed to list contents: %v", err)
-		handleContentError(w, err)
-		return
-	}
-
-	sendSuccessResponse(w, http.StatusOK, contents)
+	hasMore := total > offset+len(contents)
+	response.SuccessList(
+		w,
+		contents,
+		response.ListMeta{Pagination: response.Pagination{
+			Total:   &total,
+			Limit:   &limit,
+			Offset:  &offset,
+			HasMore: hasMore,
+		}},
+	)
 }
 
 func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {

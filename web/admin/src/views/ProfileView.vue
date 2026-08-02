@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import api from '@/utils/request'
+import api, { ApiError } from '@/utils/request'
 import { useAuth } from '@/composables/useAuth'
 import Toast from '@/components/molecules/Toast.vue'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
@@ -19,7 +19,7 @@ interface UserProfile {
   profilePicture?: string
   createdAt: string
   updatedAt: string
-  customFields?: Record<string, any>
+  customFields?: Record<string, unknown>
 }
 
 const profile = ref<UserProfile | null>(null)
@@ -48,8 +48,8 @@ async function handleFileSelect(event: Event) {
       profile.value.profilePicture = response.data.data.profilePicture
     }
     displayToast('Profile picture updated successfully')
-  } catch (err: any) {
-    displayToast(err?.message || 'Failed to upload profile picture', 'error')
+  } catch (err: unknown) {
+    displayToast((err as Error)?.message || 'Failed to upload profile picture', 'error')
   } finally {
     isUploadingPicture.value = false
     if (fileInputRef.value) fileInputRef.value.value = ''
@@ -64,8 +64,8 @@ async function handleDeletePicture() {
       profile.value.profilePicture = undefined
     }
     displayToast('Profile picture deleted successfully')
-  } catch (err: any) {
-    displayToast(err?.message || 'Failed to delete profile picture', 'error')
+  } catch (err: unknown) {
+    displayToast((err as Error)?.message || 'Failed to delete profile picture', 'error')
   } finally {
     isDeletingPicture.value = false
   }
@@ -92,7 +92,7 @@ const emailError = ref('')
 const emailSuccess = ref('')
 
 // Custom fields state
-const customFields = ref<Record<string, any>>({})
+const customFields = ref<Record<string, unknown>>({})
 const userFields = ref<FieldSchema[]>([])
 const userSystemFields = ref<FieldSchema[]>([])
 const customFieldErrors = ref<Record<string, string>>({})
@@ -116,7 +116,7 @@ function displayToast(message: string, type: 'success' | 'error' = 'success') {
 
 let schemaFetchId = 0
 
-function getDefaultFieldValue(field: FieldSchema): any {
+function getDefaultFieldValue(field: FieldSchema): string | boolean | undefined {
   switch (field.type) {
     case 'checkbox': return false
     case 'number': return undefined
@@ -149,7 +149,7 @@ async function fetchUserFieldSchemas() {
   const id = ++schemaFetchId
   isFieldsLoading.value = true
   try {
-    const response = await api.get<any>('/api/profile/user-fields')
+    const response = await api.get<{ data: { fields: FieldSchema[]; systemFields: FieldSchema[] } }>('/api/profile/user-fields')
     if (id !== schemaFetchId) return
     userFields.value = response.data.data?.fields || []
     userSystemFields.value = response.data.data?.systemFields || []
@@ -170,7 +170,7 @@ async function handleSaveFields() {
   isSavingFields.value = true
   fieldsError.value = ''
 
-  const payload: Record<string, any> = {}
+  const payload: Record<string, unknown> = {}
   if (isAdmin.value) {
     for (const [key, value] of Object.entries(customFields.value)) {
       payload[key] = value
@@ -194,8 +194,8 @@ async function handleSaveFields() {
     }
     showFieldErrorSummary.value = false
     displayToast('Profile fields updated successfully')
-  } catch (err: any) {
-    fieldsError.value = err?.message || 'Failed to update profile fields'
+  } catch (err: unknown) {
+    fieldsError.value = (err as Error)?.message || 'Failed to update profile fields'
   } finally {
     isSavingFields.value = false
   }
@@ -277,18 +277,19 @@ async function handleChangePassword() {
     currentPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
-  } catch (err: any) {
-    if (!err?.statusCode) {
+  } catch (err: unknown) {
+    const apiErr = err as ApiError
+    if (!apiErr?.statusCode) {
       passwordError.value = 'Unable to connect to server. Please check your connection.'
       return
     }
-    const code = err?.code
+    const code = apiErr?.code
     if (code === 'INVALID_PASSWORD') {
       passwordError.value = 'Current password is incorrect or new password does not meet requirements'
     } else if (code === 'MISSING_FIELDS') {
       passwordError.value = 'Current password and new password are required'
     } else {
-      passwordError.value = err?.message || 'Failed to update password'
+      passwordError.value = apiErr?.message || 'Failed to update password'
     }
   } finally {
     isChangingPassword.value = false

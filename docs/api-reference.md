@@ -407,7 +407,7 @@ GET /api/v1/media?limit=50&cursor=<cursor>
 
 Returns the caller's own media, newest-first, using [cursor pagination](#pagination). Same envelope as the [content list](#list-content): a bare `data` array plus `meta.pagination`.
 
-> **Shared path note.** `GET /api/v1/media` and `GET /api/v1/media/{id}` are shared with the browser admin panel; the server dispatches to the agent handler when the request presents a `lesstruct_`-prefixed Bearer token, and to the browser handler otherwise. For agent clients this is transparent — always send the Bearer key. `POST /api/v1/media` (upload) is agent/Bearer-only.
+> **Shared path note.** `GET /api/v1/media` and `GET /api/v1/media/{id}` are shared with the browser admin panel; the server dispatches to the agent handler when the request presents a `lesstruct_`-prefixed Bearer token, and to the browser handler otherwise. For agent clients this is transparent — always send the Bearer key. `POST /api/v1/media` (upload) is agent/Bearer-only. The browser admin handler speaks the **same contract**: `limit` (default `50`, clamped to `100`) plus `cursor`, returning the same bare-array list with `meta.pagination` — the admin media library pages through it with infinite scroll.
 
 ## Comments
 
@@ -1026,5 +1026,74 @@ See [`docs/configuration.md`](configuration.md#public_field) for the full schema
 | `400` | `invalid_sort` | `sort_by` is non-empty but is not of the form `cf:<field>`, or `<field>` does not match `^[a-z][a-z0-9_]*$`, or `order` is not one of `asc`/`desc`/empty. |
 | `400` | `invalid_filter_field` / `invalid_filter_operator` / `invalid_filter_value` | The cf filter failed domain-level validation (empty field, unknown operator, empty value). |
 | `500` | `internal_error` | Repository failure. |
+
+## WordPress import (`/api/v1/wordpress/import`)
+
+The WordPress import endpoint is also available in the agent (Bearer API key) realm, so the `lesstruct-cli` and programmatic callers can trigger and track imports without a browser session.
+
+### Start an import
+
+`POST /api/v1/wordpress/import` — multipart/form-data with a `file` part (the WXR XML) and an optional `skipMedia` form field.
+
+**Auth:** API key belonging to an **Admin** role (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+
+**Request**
+
+```
+POST /api/v1/wordpress/import
+Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>
+Content-Type: multipart/form-data; boundary=----boundary
+
+------boundary
+Content-Disposition: form-data; name="file"; filename="export.xml"
+
+<WXR XML content>
+------boundary
+Content-Disposition: form-data; name="skipMedia"
+
+true
+------boundary--
+```
+
+The `skipMedia` field is optional — when set to `"true"` the server skips downloading inline images and featured images during import (content is imported with original WordPress URLs hotlinked).
+
+**Response** (`202 Accepted`):
+
+```json
+{
+  "data": {
+    "jobId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "state": "running"
+  },
+  "error": null
+}
+```
+
+### Track import progress
+
+`GET /api/v1/wordpress/import/status/{jobId}` — poll for the current state of an import job. When `{jobId}` is omitted, returns the most recent job (if any).
+
+**Auth:** API key belonging to an **Admin** role (same as the import endpoint).
+
+**Response** (`200 OK`):
+
+```json
+{
+  "data": {
+    "jobId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "job": {
+      "state": "running",
+      "imported": 42,
+      "skipped": 0,
+      "usersImported": 3,
+      "total": 150,
+      "startedAt": "2026-07-26T10:00:00Z"
+    }
+  },
+  "error": null
+}
+```
+
+`state` is one of `"running"`, `"done"`, or `"failed"`. When `total` is zero the import is still in its initialisation phase (parsing the WXR). When `state` is `"done"` or `"failed"`, `finishedAt` is also populated.
 
 

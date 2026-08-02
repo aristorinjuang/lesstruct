@@ -228,9 +228,9 @@ function getSystemFieldSlugs(): Set<string> {
   return new Set(currentSystemFields.value.map(f => f.slug))
 }
 
-function getCustomFieldsOnly(): Record<string, any> {
+function getCustomFieldsOnly(): Record<string, unknown> {
   const systemSlugs = getSystemFieldSlugs()
-  const values: Record<string, any> = {}
+  const values: Record<string, unknown> = {}
   for (const [key, val] of Object.entries(customFields.value)) {
     if (!systemSlugs.has(key)) {
       values[key] = val
@@ -239,9 +239,9 @@ function getCustomFieldsOnly(): Record<string, any> {
   return values
 }
 
-function getSystemFieldsOnly(): Record<string, any> {
+function getSystemFieldsOnly(): Record<string, unknown> {
   const systemSlugs = getSystemFieldSlugs()
-  const values: Record<string, any> = {}
+  const values: Record<string, unknown> = {}
   for (const slug of systemSlugs) {
     if (customFields.value[slug] !== undefined) {
       values[slug] = customFields.value[slug]
@@ -311,7 +311,7 @@ async function switchLanguage(lang: string) {
       isLoading.value = true
       const fetched = await contentStore.getById(primaryContentId.value)
       loadContentIntoForm(fetched)
-    } catch (err) {
+    } catch {
       error.value = 'Failed to load primary content'
     } finally {
       isLoading.value = false
@@ -327,7 +327,7 @@ async function switchLanguage(lang: string) {
       isLoading.value = true
       const fetched = await contentStore.getById(targetTranslation.id)
       loadContentIntoForm(fetched)
-    } catch (err) {
+    } catch {
       error.value = 'Failed to load translation'
     } finally {
       isLoading.value = false
@@ -638,7 +638,7 @@ function cancel() {
 }
 
 function mapBackendErrors(err: unknown) {
-  const details = (err as any)?.response?.data?.error?.details
+  const details = (err as { response?: { data?: { error?: { details?: Array<{ field?: string; message?: string }> } } } })?.response?.data?.error?.details
   if (details) {
     for (const detail of details) {
       const fieldSlug = detail.field?.replace('customFields.', '')
@@ -748,10 +748,15 @@ async function handleTranslate() {
     isTranslating.value = false
   }
 }
+
+function focusValidationField(slug: string) {
+  const el = document.querySelector(`[data-field-slug='${slug}']`)?.querySelector('input, select, textarea') as HTMLElement
+  el?.focus()
+}
 </script>
 
 <template>
-  <form @submit.prevent="saveDraft" class="content-editor">
+  <form @submit.prevent="() => saveDraft()" class="content-editor">
     <div v-if="!isNewContent" class="content-editor__links">
       <router-link
         :to="`/content/${savedContentId}/comments?slug=${slug}`"
@@ -820,7 +825,7 @@ async function handleTranslate() {
     <MediaPanel
       :is-open="isMediaPanelOpen"
       @insert-image="handleInsertImage"
-      @show-toast="displayToast"
+      @show-toast="(msg, type) => displayToast(msg, type === 'error' ? 'error' : 'success')"
     />
 
     <FormField v-if="showFormatSelector" label="Content Format">
@@ -933,7 +938,7 @@ async function handleTranslate() {
       </p>
       <ul>
         <li v-for="(msg, slug) in customFieldErrors" :key="slug">
-          <a href="#" class="content-editor__validation-link" @click.prevent="() => { const el = document.querySelector(`[data-field-slug='${slug}']`)?.querySelector('input, select, textarea') as HTMLElement; el?.focus() }">{{ msg }}</a>
+          <a href="#" class="content-editor__validation-link" @click.prevent="focusValidationField(slug)">{{ msg }}</a>
         </li>
       </ul>
     </div>

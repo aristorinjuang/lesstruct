@@ -128,7 +128,7 @@ async function handleSetup() {
     }, 1500)
   } catch (err) {
     if (err instanceof ApiError && err.code === 'SETUP_ALREADY_COMPLETE') {
-      error.value = ERROR_MESSAGES.SETUP_ALREADY_COMPLETE
+      error.value = ERROR_MESSAGES.SETUP_ALREADY_COMPLETE ?? ''
       handleSetupAlreadyComplete()
       return
     }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useMediaStore, type Media } from '@/stores/domain/media'
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import MediaThumbnail from '@/components/molecules/MediaThumbnail.vue'
 import DuplicateMediaDialog from '@/components/organisms/DuplicateMediaDialog.vue'
 import GenerateImageModal from '@/components/organisms/GenerateImageModal.vue'
@@ -17,7 +18,7 @@ interface Emits {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  isOpen: false
+  isOpen: false,
 })
 
 const emit = defineEmits<Emits>()
@@ -41,11 +42,14 @@ const displayedMedia = computed(() => {
   return mediaStore.media
 })
 
-watch(() => props.isOpen, async (isOpen) => {
-  if (isOpen) {
-    await loadMedia()
-  }
-})
+watch(
+  () => props.isOpen,
+  async (isOpen) => {
+    if (isOpen) {
+      await loadMedia()
+    }
+  },
+)
 
 async function loadMedia() {
   try {
@@ -55,6 +59,18 @@ async function loadMedia() {
     errorMessage.value = err.response?.data?.error?.message || 'Failed to load media'
   }
 }
+
+async function loadMore() {
+  try {
+    await mediaStore.loadMore()
+  } catch {
+    // error handled by store
+  }
+}
+
+const { sentinel } = useInfiniteScroll(loadMore, {
+  disabled: computed(() => mediaStore.isLoading || mediaStore.isLoadingMore || !mediaStore.hasMore),
+})
 
 async function handleFileSelect(event: Event) {
   const target = event.target as HTMLInputElement
@@ -85,7 +101,7 @@ async function handleFileSelect(event: Event) {
     await mediaStore.upload(file, altTextInput.value.trim())
     clearUploadForm()
   } catch (error: unknown) {
-    const err = error as any
+    const err = error as Error & { duplicate?: boolean; existingMedia?: Media }
     if (err.duplicate && err.existingMedia) {
       duplicateMedia.value = err.existingMedia
       showDuplicateDialog.value = true
@@ -115,7 +131,7 @@ async function handleUploadAnyway() {
     clearUploadForm()
     emit('show-toast', `Image uploaded as ${result.originalFilename}`, 'success')
   } catch (error: unknown) {
-    const err = error as any
+    const err = error as Error
     errorMessage.value = err.message || 'Failed to upload image'
   } finally {
     isUploading.value = false
@@ -231,6 +247,19 @@ onMounted(async () => {
       />
     </div>
 
+    <!-- Load More -->
+    <div
+      ref="sentinel"
+      v-if="displayedMedia.length > 0"
+      class="media-panel__load-more"
+      aria-hidden="true"
+    >
+      <div v-if="mediaStore.isLoadingMore" class="media-panel__load-more-spinner"></div>
+      <span v-if="mediaStore.isLoadingMore" class="media-panel__load-more-text"
+        >Loading more...</span
+      >
+    </div>
+
     <!-- Empty State -->
     <div v-else class="media-panel__empty">
       <svg
@@ -248,9 +277,7 @@ onMounted(async () => {
         />
       </svg>
       <p class="media-panel__empty-text">No images uploaded yet</p>
-      <p class="media-panel__empty-hint">
-        Upload an image to get started
-      </p>
+      <p class="media-panel__empty-hint">Upload an image to get started</p>
     </div>
 
     <!-- Duplicate Media Dialog -->
@@ -354,6 +381,34 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
+}
+
+.media-panel__load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: var(--brand-dark-2, #6b7280);
+}
+
+.media-panel__load-more-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--brand-light-2, #e5e7eb);
+  border-top-color: var(--color-info);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.media-panel__load-more-text {
+  font-size: 0.8125rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .media-panel__empty {

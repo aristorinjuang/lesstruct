@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	dashboarddomain "github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
@@ -37,7 +38,15 @@ func (h *DashboardHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := h.dashboardService.GetStats(r.Context(), userID)
+	// Admins manage the whole site: scope their stats globally (userID=0) so the
+	// dashboard matches what the admin content list shows. Regular users stay
+	// scoped to their own content.
+	statsUserID := userID
+	if role, ok := middleware.GetRole(r); ok && role == contentdomain.RoleAdmin {
+		statsUserID = 0
+	}
+
+	stats, err := h.dashboardService.GetStats(r.Context(), statsUserID)
 	if err != nil {
 		h.logger.Error("Failed to get dashboard stats: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to retrieve dashboard statistics", nil)

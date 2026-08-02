@@ -42,40 +42,39 @@ describe('groupByDate', () => {
 
     const groups = groupByDate(media)
     expect(groups).toHaveLength(1)
-    expect(groups[0].label).toBe('Today')
-    expect(groups[0].items).toHaveLength(2)
+    expect(groups[0]!.label).toBe('Today')
+    expect(groups[0]!.items).toHaveLength(2)
   })
 
   it('separates Today from This Week', () => {
+    const now = new Date()
+    const day = now.getDay()
+    const diff = day === 0 ? 6 : day - 1
+
+    // Today is Monday — nothing is "This Week" but not "Today"
+    if (diff === 0) {
+      return
+    }
+
     const todayItem = createMedia({ id: 1, createdAt: dateStr(0) })
     const thisWeekItem = createMedia({ id: 2, createdAt: dateStr(0) })
 
     const thisWeekDate = new Date(thisWeekItem.createdAt)
     thisWeekDate.setHours(0, 0, 0, 0)
-    const now = new Date()
-    const day = now.getDay()
-    const diff = day === 0 ? 6 : day - 1
     const mondayThisWeek = new Date(now)
     mondayThisWeek.setDate(now.getDate() - diff)
     mondayThisWeek.setHours(0, 0, 0, 0)
 
-    if (diff > 0) {
-      thisWeekDate.setDate(mondayThisWeek.getDate() + Math.floor(diff / 2))
-      thisWeekItem.createdAt = thisWeekDate.toISOString()
-    }
+    thisWeekDate.setDate(mondayThisWeek.getDate() + Math.floor(diff / 2))
+    thisWeekItem.createdAt = thisWeekDate.toISOString()
 
     const media = [todayItem, thisWeekItem]
 
     const groups = groupByDate(media)
     const labels = groups.map((g) => g.label)
-    if (diff > 0) {
-      expect(labels).toContain('Today')
-      expect(labels).toContain('This Week')
-      expect(groups).toHaveLength(2)
-    } else {
-      expect(groups).toHaveLength(1)
-      expect(groups[0].label).toBe('Today')
-    }
+    expect(labels).toContain('Today')
+    expect(labels).toContain('This Week')
+    expect(groups).toHaveLength(2)
   })
 
   it('separates This Week from Older', () => {
@@ -144,9 +143,9 @@ describe('groupByDate', () => {
 
     const groups = groupByDate(media)
     expect(groups).toHaveLength(1)
-    expect(groups[0].items[0].id).toBe(3)
-    expect(groups[0].items[1].id).toBe(1)
-    expect(groups[0].items[2].id).toBe(2)
+    expect(groups[0]!.items[0]!.id).toBe(3)
+    expect(groups[0]!.items[1]!.id).toBe(1)
+    expect(groups[0]!.items[2]!.id).toBe(2)
   })
 
   it('does not create empty groups', () => {

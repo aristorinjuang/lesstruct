@@ -1803,19 +1803,22 @@ func TestService_Update_SEOGenerationFailure(t *testing.T) {
 	seoService := seo.NewService("http://localhost:8080", "Test Site")
 	service := content.NewService(mockRepo, seoService, nil)
 
-	// Create a title that exceeds the OG title limit (60 characters)
-	longTitle := "This is a very long title that exceeds the sixty character limit for OG titles and should cause validation to fail"
+	// An explicit OG title override that exceeds the 60-character limit still
+	// fails validation (overrides are user-provided and validated strictly,
+	// unlike the auto-generated title which is truncated).
+	longOGTitle := "This is a very long og title override that exceeds the sixty character limit for OG titles and should cause validation to fail"
 
 	req := content.UpdateContentRequest{
-		Title:   longTitle,
+		Title:   "Test Article",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:    []string{},
 		Status:  content.StatusPublished,
+		OGTitle: longOGTitle,
 	}
 
 	_, err := service.Update(context.Background(), 1, 1, "", req)
 
-	require.Error(t, err, "Service.Update() expected error when title is too long for SEO, got nil")
+	require.Error(t, err, "Service.Update() expected error when OG title override is too long, got nil")
 	if !containsString(err.Error(), "failed to generate SEO metadata") {
 		t.Logf("Service.Update() error = %v", err)
 	}
@@ -2003,6 +2006,65 @@ func TestService_ListByFilters(t *testing.T) {
 	})
 }
 
+func TestService_Count(t *testing.T) {
+	t.Run("passes filters to repository", func(t *testing.T) {
+		mockRepo := new(mocks.MockRepository)
+		mockRepo.On("Count", mock.Anything, 1, mock.MatchedBy(func(f content.ContentFilters) bool {
+			return f.PostType == "menu-item" && f.Search == "news"
+		})).Return(42, nil)
+
+		service := content.NewService(mockRepo, nil, nil)
+		filters := content.ContentFilters{PostType: "menu-item", Search: "news"}
+
+		total, err := service.Count(context.Background(), 1, filters)
+
+		require.NoError(t, err)
+		assert.Equal(t, 42, total)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("returns error for invalid sort order", func(t *testing.T) {
+		mockRepo := new(mocks.MockRepository)
+		service := content.NewService(mockRepo, nil, nil)
+		filters := content.ContentFilters{SortOrder: "sideways"}
+
+		_, err := service.Count(context.Background(), 1, filters)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, content.ErrInvalidSortOrder)
+		mockRepo.AssertNotCalled(t, "Count")
+	})
+
+	t.Run("returns error for invalid custom field filter", func(t *testing.T) {
+		mockRepo := new(mocks.MockRepository)
+		service := content.NewService(mockRepo, nil, nil)
+		filters := content.ContentFilters{
+			CustomFieldFilters: []content.CustomFieldFilter{
+				{Field: "", Operator: content.FilterOpEqual, Value: "Pastry"},
+			},
+		}
+
+		_, err := service.Count(context.Background(), 1, filters)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, content.ErrInvalidFilterField)
+		mockRepo.AssertNotCalled(t, "Count")
+	})
+
+	t.Run("returns repository error", func(t *testing.T) {
+		mockRepo := new(mocks.MockRepository)
+		mockRepo.On("Count", mock.Anything, 1, mock.Anything).Return(0, errors.New("db error"))
+
+		service := content.NewService(mockRepo, nil, nil)
+
+		_, err := service.Count(context.Background(), 1, content.ContentFilters{})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to count content")
+		mockRepo.AssertExpectations(t)
+	})
+}
+
 func TestValidateCustomFieldFilter(t *testing.T) {
 	t.Run("valid filter passes", func(t *testing.T) {
 		f := content.CustomFieldFilter{Field: "category", Operator: content.FilterOpEqual, Value: "Pastry"}
@@ -2174,6 +2236,62 @@ func TestService_GetCommentsByStatus(t *testing.T) {
 				assert.Equal(t, "Getting Started with Go", result[0].ContentTitle)
 				assert.Equal(t, "getting-started-with-go", result[0].ContentSlug)
 			}
+			mockCommentRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_CountComments(t *testing.T) {
+	tests := []struct {
+		name        string
+		userID      int
+		setupMock   func(*mocks.MockCommentRepository)
+		expected    int
+		expectedErr error
+	}{
+		{
+			name:   "counts all comments for admin scope",
+			userID: 0,
+			setupMock: func(m *mocks.MockCommentRepository) {
+				m.On("Count", mock.Anything, 0).Return(42, nil)
+			},
+			expected: 42,
+		},
+		{
+			name:   "counts comments for a specific user",
+			userID: 7,
+			setupMock: func(m *mocks.MockCommentRepository) {
+				m.On("Count", mock.Anything, 7).Return(3, nil)
+			},
+			expected: 3,
+		},
+		{
+			name:   "wraps repository error",
+			userID: 0,
+			setupMock: func(m *mocks.MockCommentRepository) {
+				m.On("Count", mock.Anything, 0).Return(0, errors.New("database error"))
+			},
+			expectedErr: errors.New("failed to count comments"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCommentRepo := mocks.NewMockCommentRepository(t)
+			tt.setupMock(mockCommentRepo)
+
+			s := content.NewServiceWithComments(nil, mockCommentRepo, nil, nil)
+			total, err := s.CountComments(context.Background(), tt.userID)
+
+			if tt.expectedErr != nil {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr.Error())
+				mockCommentRepo.AssertExpectations(t)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, total)
 			mockCommentRepo.AssertExpectations(t)
 		})
 	}

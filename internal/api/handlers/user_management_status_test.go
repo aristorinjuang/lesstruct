@@ -267,6 +267,9 @@ func TestEmptyUserList(t *testing.T) {
 	userRepo.EXPECT().
 		GetAllUsers(mock.Anything, "", mock.Anything, mock.Anything).
 		Return([]*repository.User{}, nil)
+	userRepo.EXPECT().
+		CountUsers(mock.Anything, "").
+		Return(0, nil)
 
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
 

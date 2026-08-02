@@ -35,6 +35,12 @@ type Repository interface {
 	Delete(ctx context.Context, id int, userID int) error
 	DeleteByID(ctx context.Context, id int) error
 	ListByFilters(ctx context.Context, userID int, filters ContentFilters) ([]*Content, error)
+	// Count returns the number of content items matching the given filters, ignoring
+	// Limit/Offset. userID <= 0 counts across all users (admin scope); otherwise the
+	// count is restricted to that user's content. It shares the exact WHERE clause
+	// with ListByFilters so a list response's total always matches what the list
+	// returned.
+	Count(ctx context.Context, userID int, filters ContentFilters) (int, error)
 	GetPublishedPages(ctx context.Context) ([]*Content, error)
 	GetPublishedCustomPostTypes(ctx context.Context) ([]string, error)
 	// GetPublishedByPostType returns published content of the given post type.

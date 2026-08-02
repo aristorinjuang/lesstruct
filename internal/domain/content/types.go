@@ -12,6 +12,10 @@ import (
 )
 
 var (
+	// MaxTitleRunes is the maximum allowed length of a content title in runes
+	MaxTitleRunes = 200
+	// MaxTagRunes is the maximum allowed length of a single tag in runes
+	MaxTagRunes = 50
 	// ErrContentNotFound is returned when content cannot be found
 	ErrContentNotFound = errors.New("content not found")
 	// ErrInvalidTitle is returned when title validation fails
@@ -325,7 +329,7 @@ func ValidateCustomFieldFilter(f CustomFieldFilter) error {
 // ValidateTitle validates the title field
 func ValidateTitle(title string) error {
 	title = strings.TrimSpace(title)
-	if title == "" || utf8.RuneCountInString(title) > 200 {
+	if title == "" || utf8.RuneCountInString(title) > MaxTitleRunes {
 		return ErrInvalidTitle
 	}
 	if defaultSanitizer.ContainsHTML(title) {
@@ -388,7 +392,7 @@ func ValidateTags(tags []string) ([]string, error) {
 	trimmed := make([]string, 0, len(tags))
 	for _, tag := range tags {
 		t := strings.TrimSpace(tag)
-		if t == "" || utf8.RuneCountInString(t) > 50 {
+		if t == "" || utf8.RuneCountInString(t) > MaxTagRunes {
 			return nil, errors.New("each tag must be between 1 and 50 characters")
 		}
 		if defaultSanitizer.ContainsHTML(t) {

@@ -56,8 +56,7 @@ func TestContentCreate_PositionalArg(t *testing.T) {
 	assert.Equal(t, http.MethodPost, info.method)
 	assert.Equal(t, "/api/v1/content", info.path)
 	assert.Equal(t, "# Hello", info.payload["body"])
-	_, hasFormat := info.payload["format"]
-	assert.False(t, hasFormat, "format omitted when --format not passed")
+	assert.Equal(t, "markdown", info.payload["format"], "create defaults to format: markdown when --format not passed")
 	// Title derived from the first "# " line.
 	assert.Equal(t, "Hello", info.payload["title"])
 	_, hasPublished := info.payload["isPublished"]
@@ -528,7 +527,7 @@ func TestContentCreate_FormatValidation(t *testing.T) {
 			wantSubstr: "",
 		},
 		{
-			name:       "empty defaults to tiptap",
+			name:       "empty defaults to markdown",
 			format:     "",
 			wantCode:   0,
 			wantSubstr: "",
@@ -566,13 +565,13 @@ func TestContentCreate_FormatValidation(t *testing.T) {
 
 			if tt.wantCode == 0 {
 				require.Equal(t, 0, code, "stderr: %s", errOut)
-				// When format is empty, omitempty means it's absent from the payload
-				if tt.format == "" {
-					_, hasFormat := info.payload["format"]
-					assert.False(t, hasFormat, "format should be absent when empty")
-				} else {
-					assert.Equal(t, tt.format, info.payload["format"])
+				// An omitted --format resolves to markdown (the create command
+				// ingests Markdown); an explicit flag is passed through verbatim.
+				wantFormat := tt.format
+				if wantFormat == "" {
+					wantFormat = "markdown"
 				}
+				assert.Equal(t, wantFormat, info.payload["format"])
 			} else {
 				assert.Equal(t, tt.wantCode, code)
 				assert.Contains(t, errOut.String(), tt.wantSubstr)

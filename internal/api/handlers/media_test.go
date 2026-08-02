@@ -8,15 +8,17 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	appresponse "github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/domain/media"
 	mediamocks "github.com/aristorinjuang/lesstruct/internal/domain/media/mocks"
-	"os"
 
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/go-chi/chi/v5"
@@ -403,14 +405,106 @@ func TestMediaHandler_GetMediaByID_Variants(t *testing.T) {
 	}
 }
 
-func TestMediaHandler_GetMedia_Variants(t *testing.T) {
+func TestMediaHandler_GetMedia(t *testing.T) {
+	makeMedia := func(id int) *media.Media {
+		return &media.Media{
+			ID:               id,
+			UserID:           1,
+			Filename:         "media" + strconv.Itoa(id) + ".webp",
+			OriginalFilename: "image" + strconv.Itoa(id) + ".jpg",
+			MimeType:         media.MimeTypeWebP,
+			FileSize:         50000,
+			Width:            1920,
+			Height:           1280,
+			AltText:          "Image " + strconv.Itoa(id),
+			IsWebP:           true,
+			FilePath:         "data/uploads/media/media" + strconv.Itoa(id) + ".webp",
+			URL:              "http://localhost:8080/uploads/media/media" + strconv.Itoa(id) + ".webp",
+			Hash:             "hash-" + strconv.Itoa(id),
+			Variants:         map[string]media.MediaVariant{},
+			UploadedBy:       "Test User",
+			CreatedAt:        time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
+			UpdatedAt:        time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
+		}
+	}
+
 	tests := []struct {
-		name    string
-		wantErr bool
+		name           string
+		target         string
+		mockSearch     string
+		mockDateFilter string
+		mockLimit      int
+		mockBeforeID   int
+		mediaList      []*media.Media
+		mockTotal      int
+		wantTotal      int
+		wantCount      int
+		wantHasMore    bool
+		wantNextCursor int
+		wantCode       string
 	}{
 		{
-			name:    "list with mixed variants",
-			wantErr: false,
+			name:           "list with mixed variants returns bare array without pagination",
+			target:         "/api/v1/media",
+			mockSearch:     "",
+			mockDateFilter: "",
+			mockLimit:      51,
+			mockBeforeID:   0,
+			mediaList: func() []*media.Media {
+				first := makeMedia(1)
+				first.Filename = "abc123def456789a.webp"
+				first.OriginalFilename = "sunset.jpg"
+				first.Hash = "abc123def456789a"
+				first.FilePath = "data/uploads/media/abc123def456789a.webp"
+				first.URL = "http://localhost:8080/uploads/media/abc123def456789a.webp"
+				first.Variants = map[string]media.MediaVariant{
+					"_thumb": {
+						FilePath: "data/uploads/media/abc123def456789a_thumb.webp",
+						URL:      "http://localhost:8080/uploads/media/abc123def456789a_thumb.webp",
+						Width:    370,
+						Height:   247,
+					},
+				}
+				return []*media.Media{first, makeMedia(2)}
+			}(),
+			wantHasMore: false,
+		},
+		{
+			name:           "paginated list returns nextCursor and hasMore",
+			target:         "/api/v1/media?limit=10&cursor=" + appresponse.EncodeCursor(20),
+			mockSearch:     "",
+			mockDateFilter: "",
+			mockLimit:      11,
+			mockBeforeID:   20,
+			mediaList: func() []*media.Media {
+				items := make([]*media.Media, 0, 11)
+				for id := 20; id >= 10; id-- {
+					items = append(items, makeMedia(id))
+				}
+				return items
+			}(),
+			wantCount:      10,
+			wantHasMore:    true,
+			wantNextCursor: 11,
+			mockTotal:      42,
+			wantTotal:      42,
+		},
+		{
+			name:           "search and date filter are forwarded",
+			target:         "/api/v1/media?search=sunset&date_filter=today",
+			mockSearch:     "sunset",
+			mockDateFilter: "today",
+			mockLimit:      51,
+			mockBeforeID:   0,
+			mediaList:      []*media.Media{},
+			mockTotal:      3,
+			wantTotal:      3,
+			wantHasMore:    false,
+		},
+		{
+			name:     "invalid cursor returns 400",
+			target:   "/api/v1/media?cursor=not-a-cursor",
+			wantCode: "invalid_cursor",
 		},
 	}
 
@@ -418,70 +512,40 @@ func TestMediaHandler_GetMedia_Variants(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := util.NewLogger(os.Stdout)
 
-			mediaList := []*media.Media{
-				{
-					ID:               1,
-					UserID:           1,
-					Filename:         "abc123def456789a.webp",
-					OriginalFilename: "sunset.jpg",
-					MimeType:         media.MimeTypeWebP,
-					FileSize:         50000,
-					Width:            1920,
-					Height:           1280,
-					AltText:          "A beautiful sunset",
-					IsWebP:           true,
-					FilePath:         "data/uploads/media/abc123def456789a.webp",
-					URL:              "http://localhost:8080/uploads/media/abc123def456789a.webp",
-					Hash:             "abc123def456789a",
-					Variants: map[string]media.MediaVariant{
-						"_thumb": {
-							FilePath: "data/uploads/media/abc123def456789a_thumb.webp",
-							URL:      "http://localhost:8080/uploads/media/abc123def456789a_thumb.webp",
-							Width:    370,
-							Height:   247,
-						},
-					},
-					UploadedBy: "Test User",
-					CreatedAt:  time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
-					UpdatedAt:  time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC),
-				},
-				{
-					ID:               2,
-					UserID:           1,
-					Filename:         "def456abc7890.webp",
-					OriginalFilename: "mountain.jpg",
-					MimeType:         media.MimeTypeWebP,
-					FileSize:         30000,
-					Width:            1024,
-					Height:           768,
-					AltText:          "A mountain view",
-					IsWebP:           true,
-					FilePath:         "data/uploads/media/def456abc7890.webp",
-					URL:              "http://localhost:8080/uploads/media/def456abc7890.webp",
-					Hash:             "def456abc7890",
-					Variants:         map[string]media.MediaVariant{},
-					UploadedBy:       "Test User 2",
-					CreatedAt:        time.Date(2026, 5, 26, 10, 0, 0, 0, time.UTC),
-					UpdatedAt:        time.Date(2026, 5, 26, 10, 0, 0, 0, time.UTC),
-				},
-			}
-
 			mockService := handlersmocks.NewMockMediaServiceInterface(t)
-			mockService.EXPECT().SearchMedia(
-				mock.Anything,
-				"",
-				"",
-				100,
-				0,
-			).Return(mediaList, nil)
+			if tt.wantCode == "" {
+				mockService.EXPECT().SearchMediaByCursor(
+					mock.Anything,
+					tt.mockSearch,
+					tt.mockDateFilter,
+					tt.mockLimit,
+					tt.mockBeforeID,
+				).Return(tt.mediaList, nil)
+				mockService.EXPECT().Count(
+					mock.Anything,
+					tt.mockSearch,
+					tt.mockDateFilter,
+				).Return(tt.mockTotal, nil)
+			}
 
 			handler := handlers.NewMediaHandler(mockService, nil, logger)
 
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/media", nil)
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
 			req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "1"))
 
 			w := httptest.NewRecorder()
 			handler.GetMedia(w, req)
+
+			if tt.wantCode != "" {
+				require.Equal(t, http.StatusBadRequest, w.Code)
+
+				var errResp map[string]any
+				require.NoError(t, json.NewDecoder(w.Body).Decode(&errResp))
+				errorInfo, ok := errResp["error"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, tt.wantCode, errorInfo["code"])
+				return
+			}
 
 			require.Equal(t, http.StatusOK, w.Code)
 
@@ -489,12 +553,36 @@ func TestMediaHandler_GetMedia_Variants(t *testing.T) {
 			err := json.NewDecoder(w.Body).Decode(&resp)
 			require.NoError(t, err)
 
-			data, ok := resp["data"].(map[string]any)
-			require.True(t, ok)
+			mediaArr, ok := resp["data"].([]any)
+			require.True(t, ok, "data must be a bare JSON array")
+			wantCount := tt.wantCount
+			if wantCount == 0 {
+				wantCount = len(tt.mediaList)
+			}
+			require.Len(t, mediaArr, wantCount)
 
-			mediaArr, ok := data["media"].([]any)
+			meta, ok := resp["meta"].(map[string]any)
 			require.True(t, ok)
-			require.Len(t, mediaArr, 2)
+			pagination, ok := meta["pagination"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, tt.wantHasMore, pagination["hasMore"], "hasMore")
+			if tt.wantTotal > 0 {
+				total, ok := pagination["total"].(float64)
+				require.True(t, ok, "total must be present")
+				assert.Equal(t, float64(tt.wantTotal), total, "total")
+			}
+
+			if tt.wantHasMore {
+				nextCursor, ok := pagination["nextCursor"].(string)
+				require.True(t, ok)
+				nextID, err := appresponse.DecodeCursor(nextCursor)
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantNextCursor, nextID, "nextCursor id")
+			}
+
+			if len(tt.mediaList) == 0 {
+				return
+			}
 
 			first, ok := mediaArr[0].(map[string]any)
 			require.True(t, ok)
@@ -503,10 +591,12 @@ func TestMediaHandler_GetMedia_Variants(t *testing.T) {
 			require.True(t, ok)
 
 			thumb, ok := variants1["_thumb"].(map[string]any)
-			require.True(t, ok)
-			assert.Equal(t, "http://localhost:8080/uploads/media/abc123def456789a_thumb.webp", thumb["url"])
-			assert.Equal(t, float64(370), thumb["width"])
-			assert.Equal(t, float64(247), thumb["height"])
+			if tt.mediaList[0].OriginalFilename == "sunset.jpg" {
+				require.True(t, ok)
+				assert.Equal(t, "http://localhost:8080/uploads/media/abc123def456789a_thumb.webp", thumb["url"])
+				assert.Equal(t, float64(370), thumb["width"])
+				assert.Equal(t, float64(247), thumb["height"])
+			}
 
 			second, ok := mediaArr[1].(map[string]any)
 			require.True(t, ok)

@@ -5,6 +5,7 @@ import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
 import { useUserStore } from '@/stores/domain/user'
 import { useAuth } from '@/composables/useAuth'
 import { validateCustomField, validateCustomFields } from '@/utils/validation'
+import { ApiError } from '@/utils/request'
 import type { UserRole } from '@/types/user'
 import type { FieldSchema } from '@/types/customfield'
 
@@ -132,13 +133,14 @@ async function handleSubmit() {
     generatedPassword.value = password
     state.value = 'success'
     emit('created')
-  } catch (err: any) {
+  } catch (err: unknown) {
     state.value = 'form'
-    if (!err?.statusCode) {
+    const apiErr = err as ApiError
+    if (!apiErr?.statusCode) {
       errors.value = { general: 'Unable to connect to server. Please check your connection.' }
       return
     }
-    const code = err?.code
+    const code = apiErr?.code
     const errorMap: Record<string, string> = {
       VALIDATION_ERROR: 'Invalid username, email, or role',
       USERNAME_EXISTS: 'Username already exists',
@@ -147,7 +149,7 @@ async function handleSubmit() {
       INVALID_ROLE: 'Invalid user role',
       MISSING_FIELDS: 'Username, email, and role are required',
     }
-    errors.value = { general: errorMap[code] || err?.message || 'Failed to create user' }
+    errors.value = { general: errorMap[code ?? ''] || apiErr?.message || 'Failed to create user' }
   }
 }
 

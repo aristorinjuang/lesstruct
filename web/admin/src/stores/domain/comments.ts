@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/utils/request'
-import type { Comment, CommentStatus, UpdateCommentStatusRequest, CommentsResponse, CommentResponse } from '@/types/comment'
+import type { Comment, CommentStatus, CommentsResponse, CommentResponse } from '@/types/comment'
 
 export const useCommentsStore = defineStore('comments', () => {
   const comments = ref<Comment[]>([])
@@ -31,7 +31,7 @@ export const useCommentsStore = defineStore('comments', () => {
     try {
       const response = await api.put<CommentResponse>(
         `/api/v1/comments/${commentId}/status`,
-        { status } as UpdateCommentStatusRequest
+        { status } as unknown as Record<string, unknown>
       )
       const updated = response.data.data
 

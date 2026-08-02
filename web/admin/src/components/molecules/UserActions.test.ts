@@ -11,9 +11,9 @@ describe('UserActions', () => {
 
       const buttons = wrapper.findAll('button')
       expect(buttons).toHaveLength(3)
-      expect(buttons[0].text()).toBe('Approve')
-      expect(buttons[1].text()).toBe('Reject')
-      expect(buttons[2].text()).toBe('Mark as Spam')
+      expect(buttons[0]!.text()).toBe('Approve')
+      expect(buttons[1]!.text()).toBe('Reject')
+      expect(buttons[2]!.text()).toBe('Mark as Spam')
     })
 
     it('should emit approve event when Approve button is clicked', async () => {
@@ -21,7 +21,7 @@ describe('UserActions', () => {
         props: { userStatus: 'Pending' },
       })
 
-      const approveButton = wrapper.findAll('button')[0]
+      const approveButton = wrapper.findAll('button')[0]!
       await approveButton.trigger('click')
 
       expect(wrapper.emitted('approve')).toBeTruthy()
@@ -32,7 +32,7 @@ describe('UserActions', () => {
         props: { userStatus: 'Pending' },
       })
 
-      const rejectButton = wrapper.findAll('button')[1]
+      const rejectButton = wrapper.findAll('button')[1]!
       await rejectButton.trigger('click')
 
       expect(wrapper.emitted('reject')).toBeTruthy()
@@ -43,7 +43,7 @@ describe('UserActions', () => {
         props: { userStatus: 'Pending' },
       })
 
-      const spamButton = wrapper.findAll('button')[2]
+      const spamButton = wrapper.findAll('button')[2]!
       await spamButton.trigger('click')
 
       expect(wrapper.emitted('markAsSpam')).toBeTruthy()
@@ -58,9 +58,9 @@ describe('UserActions', () => {
 
       const buttons = wrapper.findAll('button')
       expect(buttons).toHaveLength(3)
-      expect(buttons[0].text()).toBe('Suspend')
-      expect(buttons[1].text()).toBe('Soft Delete')
-      expect(buttons[2].text()).toBe('Edit Profile')
+      expect(buttons[0]!.text()).toBe('Suspend')
+      expect(buttons[1]!.text()).toBe('Soft Delete')
+      expect(buttons[2]!.text()).toBe('Edit Profile')
     })
 
     it('should emit suspend event when Suspend button is clicked', async () => {
@@ -68,7 +68,7 @@ describe('UserActions', () => {
         props: { userStatus: 'Active' },
       })
 
-      const suspendButton = wrapper.findAll('button')[0]
+      const suspendButton = wrapper.findAll('button')[0]!
       await suspendButton.trigger('click')
 
       expect(wrapper.emitted('suspend')).toBeTruthy()
@@ -79,7 +79,7 @@ describe('UserActions', () => {
         props: { userStatus: 'Active' },
       })
 
-      const deleteButton = wrapper.findAll('button')[1]
+      const deleteButton = wrapper.findAll('button')[1]!
       await deleteButton.trigger('click')
 
       expect(wrapper.emitted('softDelete')).toBeTruthy()
@@ -90,7 +90,7 @@ describe('UserActions', () => {
         props: { userStatus: 'Active' },
       })
 
-      const editButton = wrapper.findAll('button')[2]
+      const editButton = wrapper.findAll('button')[2]!
       await editButton.trigger('click')
 
       expect(wrapper.emitted('editProfile')).toBeTruthy()
@@ -105,7 +105,7 @@ describe('UserActions', () => {
 
       const buttons = wrapper.findAll('button')
       expect(buttons).toHaveLength(1)
-      expect(buttons[0].text()).toBe('Soft Delete')
+      expect(buttons[0]!.text()).toBe('Soft Delete')
     })
   })
 
@@ -127,9 +127,9 @@ describe('UserActions', () => {
       })
 
       const buttons = wrapper.findAll('button')
-      expect(buttons[0].attributes('aria-label')).toBe('Approve user')
-      expect(buttons[1].attributes('aria-label')).toBe('Reject user')
-      expect(buttons[2].attributes('aria-label')).toBe('Mark as spam')
+      expect(buttons[0]!.attributes('aria-label')).toBe('Approve user')
+      expect(buttons[1]!.attributes('aria-label')).toBe('Reject user')
+      expect(buttons[2]!.attributes('aria-label')).toBe('Mark as spam')
     })
   })
 

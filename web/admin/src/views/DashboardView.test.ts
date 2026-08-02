@@ -40,7 +40,7 @@ describe('DashboardView', () => {
             template: '<a v-bind="$attrs" class="router-link-stub"><slot /></a>',
           },
           StatCard: {
-            template: '<div class="stat-card-stub"><slot /></div>',
+            template: '<div class="stat-card-stub">{{ label }}<slot /></div>',
             props: ['label', 'count', 'icon', 'route', 'notificationBadge'],
           },
           // Don't stub PendingRegistrationsAlert - we need to test its conditional rendering
@@ -176,6 +176,74 @@ describe('DashboardView', () => {
       await wrapper.vm.$nextTick()
 
       // StatCard stub should render 5 cards
+      const statCards = wrapper.findAll('.stat-card-stub')
+      expect(statCards.length).toBe(5)
+    })
+  })
+
+  describe('content by type cards', () => {
+    it('renders a card per post type with the total stats cards', async () => {
+      dashboardStore.stats = {
+        publishedPosts: 42,
+        draftPosts: 8,
+        registeredUsers: 156,
+        pendingRegistrations: 0,
+        mediaItems: 234,
+        totalContent: 7,
+        contentByType: [
+          { postType: 'post', count: 3 },
+          { postType: 'page', count: 2 },
+          { postType: 'menu-item', count: 2 },
+        ],
+      }
+
+      const wrapper = createWrapper()
+      await wrapper.vm.$nextTick()
+
+      // 5 general stat cards + 3 content-by-type cards
+      const statCards = wrapper.findAll('.stat-card-stub')
+      expect(statCards.length).toBe(8)
+      expect(wrapper.find('.dashboard-content-types').exists()).toBe(true)
+      expect(wrapper.find('.dashboard-content-types__title').text()).toBe('Content by Type')
+    })
+
+    it('title-cases custom post type labels in content by type cards', async () => {
+      dashboardStore.stats = {
+        publishedPosts: 42,
+        draftPosts: 8,
+        registeredUsers: 156,
+        pendingRegistrations: 0,
+        mediaItems: 234,
+        totalContent: 8,
+        contentByType: [
+          { postType: 'post', count: 3 },
+          { postType: 'article', count: 4 },
+          { postType: 'photo-album', count: 1 },
+        ],
+      }
+
+      const wrapper = createWrapper()
+      await wrapper.vm.$nextTick()
+
+      const labels = wrapper.findAll('.stat-card-stub').map(card => card.text())
+      expect(labels).toContain('Posts')
+      expect(labels).toContain('Article')
+      expect(labels).toContain('Photo Album')
+    })
+
+    it('does not render the content by type section when stats have no entries', async () => {
+      dashboardStore.stats = {
+        publishedPosts: 42,
+        draftPosts: 8,
+        registeredUsers: 156,
+        pendingRegistrations: 0,
+        mediaItems: 234,
+      }
+
+      const wrapper = createWrapper()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('.dashboard-content-types').exists()).toBe(false)
       const statCards = wrapper.findAll('.stat-card-stub')
       expect(statCards.length).toBe(5)
     })

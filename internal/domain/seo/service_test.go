@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/seo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewService(t *testing.T) {
@@ -534,5 +536,57 @@ func TestService_Generate_HTMLFormatWithImage(t *testing.T) {
 	}
 	if metadata.TwitterImage == "" {
 		t.Error("Service.Generate() TwitterImage is empty — HTML image extraction may have failed")
+	}
+}
+
+func TestService_Generate_EmptyContentFallsBackToTitle(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        seo.GenerateInput
+		wantMetaDesc string
+		wantOGTitle  string
+		wantOGDesc   string
+	}{
+		{
+			name: "success - empty content falls back to title for descriptions",
+			input: seo.GenerateInput{
+				Title:         "Test Title",
+				Content:       "",
+				URL:           "/posts/test-article",
+				DatePublished: "2026-04-10T00:00:00Z",
+				DateModified:  "2026-04-10T12:00:00Z",
+				AuthorName:    "John Doe",
+			},
+			wantMetaDesc: "Test Title",
+			wantOGTitle:  "Test Title",
+			wantOGDesc:   "Test Title",
+		},
+		{
+			name: "success - long title truncated for og title",
+			input: seo.GenerateInput{
+				Title:         "Lombakan Empat Kategori, Kompetisi Safety Riding Regional 2025 Astra Motor Kalbar Berjalan Meriah dan Semarak",
+				Content:       "",
+				URL:           "/posts/test-article",
+				DatePublished: "2026-04-10T00:00:00Z",
+				DateModified:  "2026-04-10T12:00:00Z",
+				AuthorName:    "John Doe",
+			},
+			wantMetaDesc: "Lombakan Empat Kategori, Kompetisi Safety Riding Regional 2025 Astra Motor Kalbar Berjalan Meriah dan Semarak",
+			wantOGTitle:  "Lombakan Empat Kategori, Kompetisi Safety Riding Regional...",
+			wantOGDesc:   "Lombakan Empat Kategori, Kompetisi Safety Riding Regional 2025 Astra Motor Kalbar Berjalan Meriah dan Semarak",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := seo.NewService("https://example.com", "Test Site")
+
+			metadata, err := service.Generate(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMetaDesc, metadata.MetaDescription)
+			assert.Equal(t, tt.wantOGTitle, metadata.OGTitle)
+			assert.Equal(t, tt.wantOGDesc, metadata.OGDescription)
+			assert.Equal(t, tt.wantOGTitle, metadata.TwitterTitle)
+		})
 	}
 }

@@ -12,14 +12,14 @@ import FormField from '@/components/molecules/FormField.vue'
 
 interface Props {
   field: FieldSchema
-  modelValue: any
+  modelValue: unknown
   error?: string
   disabled?: boolean
   systemField?: boolean
 }
 
 interface Emits {
-  (e: 'update:modelValue', value: any): void
+  (e: 'update:modelValue', value: unknown): void
   (e: 'blur'): void
 }
 
@@ -29,7 +29,7 @@ const props = withDefaults(defineProps<Props>(), {
   systemField: false
 })
 
-const emit = defineEmits<Emits>()
+defineEmits<Emits>()
 
 const labelId = computed(() => `field-label-${props.field.slug}`)
 
@@ -48,19 +48,19 @@ function getFieldComponent(type: FieldType): Component {
   return map[type]
 }
 
-function getFieldProps(field: FieldSchema): Record<string, any> {
+function getFieldProps(field: FieldSchema): Record<string, unknown> {
   const base = { disabled: props.disabled }
 
   switch (field.type) {
     case 'text':
       return base
     case 'textarea': {
-      const p: Record<string, any> = { ...base, multiline: true }
+      const p: Record<string, unknown> = { ...base, multiline: true }
       if (field.maxLength != null) p.maxLength = field.maxLength
       return p
     }
     case 'number': {
-      const p: Record<string, any> = { ...base }
+      const p: Record<string, unknown> = { ...base }
       if (field.min != null) p.min = field.min
       if (field.max != null) p.max = field.max
       return p

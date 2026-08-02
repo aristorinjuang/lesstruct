@@ -312,6 +312,66 @@ func TestGetAllUsers(t *testing.T) {
 	assert.Len(t, paginatedUsers, 2, "Expected 2 users with limit=2")
 }
 
+func TestCountUsers(t *testing.T) {
+	db := setupUserTestDB(t)
+	defer closeUserTestDB(db)
+
+	repo := repository.NewUserRepository(db.DB())
+
+	// Create test users with different statuses
+	users := []*repository.User{
+		{Username: "countuser1", PasswordHash: "hash", Email: "count1@example.com", Role: "Author", Status: "verified"},
+		{Username: "countuser2", PasswordHash: "hash", Email: "count2@example.com", Role: "Author", Status: "suspended"},
+		{Username: "countuser3", PasswordHash: "hash", Email: "count3@example.com", Role: "Author", Status: "verified"},
+		{Username: "countuser4", PasswordHash: "hash", Email: "count4@example.com", Role: "Author", Status: "soft_deleted"},
+	}
+
+	for _, user := range users {
+		err := repo.CreateUser(context.Background(), user)
+		require.NoError(t, err, "Failed to create user")
+	}
+
+	tests := []struct {
+		name     string
+		status   string
+		expected int
+	}{
+		{
+			name:     "no filter counts all users",
+			status:   "",
+			expected: 4,
+		},
+		{
+			name:     "filter by verified status",
+			status:   "verified",
+			expected: 2,
+		},
+		{
+			name:     "filter by suspended status",
+			status:   "suspended",
+			expected: 1,
+		},
+		{
+			name:     "filter by soft_deleted status",
+			status:   "soft_deleted",
+			expected: 1,
+		},
+		{
+			name:     "no match returns zero",
+			status:   "pending",
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			total, err := repo.CountUsers(context.Background(), tt.status)
+			require.NoError(t, err, "CountUsers failed")
+			assert.Equal(t, tt.expected, total, "CountUsers total mismatch")
+		})
+	}
+}
+
 func TestGetUserStatus(t *testing.T) {
 	db := setupUserTestDB(t)
 	defer closeUserTestDB(db)

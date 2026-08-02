@@ -25,16 +25,16 @@ const statsCards = computed(() => {
 
   return [
     {
-      label: 'Published Posts',
+      label: 'Published Content',
       count: dashboardStore.stats.publishedPosts,
       icon: 'document-text',
-      route: '/content?type=post&status=published',
+      route: '/content?status=published',
     },
     {
-      label: 'Draft Posts',
+      label: 'Draft Content',
       count: dashboardStore.stats.draftPosts,
       icon: 'document',
-      route: '/content?type=post&status=draft',
+      route: '/content?status=draft',
     },
     {
       label: 'Registered Users',
@@ -56,6 +56,29 @@ const statsCards = computed(() => {
       route: '/media',
     },
   ]
+})
+
+const postTypeLabels: Record<string, string> = {
+  post: 'Posts',
+  page: 'Pages',
+  'menu-item': 'Menu Items',
+}
+
+function titleCasePostType(slug: string): string {
+  return slug
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+const contentByTypeCards = computed(() => {
+  const entries = dashboardStore.stats?.contentByType ?? []
+  return entries.map(entry => ({
+    label: postTypeLabels[entry.postType] ?? titleCasePostType(entry.postType),
+    count: entry.count,
+    icon: entry.postType === 'post' ? 'document-text' : 'document',
+    route: `/content?type=${entry.postType}`,
+  }))
 })
 </script>
 
@@ -109,6 +132,21 @@ const statsCards = computed(() => {
         :pending-count="dashboardStore.stats.pendingRegistrations"
         class="dashboard-view__alert"
       />
+
+      <!-- Content by type -->
+      <section v-if="contentByTypeCards.length > 0" class="dashboard-content-types">
+        <h2 class="dashboard-content-types__title">Content by Type</h2>
+        <div class="dashboard-stats">
+          <StatCard
+            v-for="card in contentByTypeCards"
+            :key="card.label"
+            :label="card.label"
+            :count="card.count"
+            :icon="card.icon"
+            :route="card.route"
+          />
+        </div>
+      </section>
     </template>
   </div>
 </template>
@@ -177,6 +215,16 @@ const statsCards = computed(() => {
 
 .dashboard-view__alert {
   margin-bottom: 1.5rem;
+}
+
+.dashboard-content-types {
+  margin-top: 0.5rem;
+}
+
+.dashboard-content-types__title {
+  font-size: 1.125rem;
+  margin: 0 0 1rem 0;
+  color: var(--brand-dark-1);
 }
 
 /* Statistics grid - responsive layout */

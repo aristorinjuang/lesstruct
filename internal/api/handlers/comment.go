@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/go-chi/chi/v5"
 )
@@ -311,9 +312,20 @@ func (h *CommentHandler) GetMyComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := make([]map[string]any, 0, len(comments))
+	countUserID := userID
+	if role, ok := middleware.GetRole(r); ok && role == contentdomain.RoleAdmin {
+		countUserID = 0
+	}
+
+	total, err := h.contentService.CountComments(r.Context(), countUserID)
+	if err != nil {
+		handleCommentError(w, err)
+		return
+	}
+
+	commentList := make([]map[string]any, 0, len(comments))
 	for _, comment := range comments {
-		response = append(response, map[string]any{
+		commentList = append(commentList, map[string]any{
 			"id":        comment.ID,
 			"comment":   comment.Comment,
 			"status":    comment.Status,
@@ -321,7 +333,13 @@ func (h *CommentHandler) GetMyComments(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	sendSuccessResponse(w, http.StatusOK, response)
+	response.SuccessList(
+		w,
+		commentList,
+		response.ListMeta{
+			Pagination: response.Pagination{Total: &total, HasMore: false},
+		},
+	)
 }
 
 func (h *CommentHandler) DeleteOwnComment(w http.ResponseWriter, r *http.Request) {

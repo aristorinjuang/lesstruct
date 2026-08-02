@@ -13,6 +13,9 @@ http:
     - name: offset
       value: "0"
       type: query
+    - name: status
+      value: ""
+      type: query
   auth:
     type: bearer
     token: "{{TOKEN}}"

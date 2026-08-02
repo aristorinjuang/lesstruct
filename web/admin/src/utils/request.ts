@@ -10,7 +10,7 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const TIMEOUT = 10000
 
 interface RequestOptions {
@@ -27,7 +27,7 @@ async function request<T>(
 ): Promise<{ data: T }> {
   const token = localStorage.getItem('auth_token')
   const headers: Record<string, string> = {
-    ...(options?.headers as Record<string, string> || {}),
+    ...(options?.headers as Record<string, string>),
   }
 
   // Only set Content-Type for JSON requests (not FormData)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { ApiError } from '@/utils/request'
 import Button from '@/components/atoms/Button.vue'
@@ -16,6 +16,8 @@ interface ImportJob {
   finishedAt?: string
 }
 
+const STORAGE_KEY = 'wp_import_job_id'
+
 const router = useRouter()
 const selectedFile = ref<File | null>(null)
 const fileInput = ref<HTMLInputElement>()
@@ -23,6 +25,7 @@ const isUploading = ref(false)
 const isImporting = ref(false)
 const job = ref<ImportJob | null>(null)
 const importError = ref('')
+const skipMedia = ref(false)
 
 const toastMessage = ref('')
 const toastType = ref<'success' | 'error'>('success')
@@ -45,6 +48,17 @@ const progressLabel = computed(() => {
   }
   if (isImporting.value) return 'Starting import...'
   return ''
+})
+
+onMounted(() => {
+  const stored = localStorage.getItem(STORAGE_KEY)
+  if (stored) {
+    jobId = stored
+    isImporting.value = true
+    startPolling()
+    // Kick off the first poll immediately so progress appears without a 3-second delay.
+    pollStatus()
+  }
 })
 
 onUnmounted(() => {
@@ -76,6 +90,7 @@ async function pollStatus() {
     if (jobData.state === 'done') {
       stopPolling()
       isImporting.value = false
+      localStorage.removeItem(STORAGE_KEY)
       displayToast(
         `Successfully imported ${jobData.imported} item${jobData.imported === 1 ? '' : 's'}` +
           (jobData.skipped > 0 ? `, skipped ${jobData.skipped}` : ''),
@@ -84,10 +99,20 @@ async function pollStatus() {
     } else if (jobData.state === 'failed') {
       stopPolling()
       isImporting.value = false
+      localStorage.removeItem(STORAGE_KEY)
       displayToast('Import failed. See details below for more information.', 'error')
     }
-  } catch {
-    // Poll errors are transient — the next tick will retry.
+  } catch (err) {
+    // If the job is no longer on the server (server restart), give up.
+    if (err instanceof ApiError && err.statusCode === 404) {
+      stopPolling()
+      isImporting.value = false
+      localStorage.removeItem(STORAGE_KEY)
+      job.value = null
+      importError.value = 'Import job no longer exists on the server (server may have restarted).'
+      return
+    }
+    // Other poll errors are transient — the next tick will retry.
   }
 }
 
@@ -148,12 +173,16 @@ async function handleImport() {
   try {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
+    if (skipMedia.value) {
+      formData.append('skipMedia', 'true')
+    }
     const response = await api.postWithTimeout<{ data: { jobId: string; state: string } }>(
       '/api/admin/wordpress/import',
       formData,
-      5 * 60 * 1000,
+      30 * 60 * 1000,
     )
     jobId = response.data.data.jobId
+    localStorage.setItem(STORAGE_KEY, jobId)
     isUploading.value = false
     isImporting.value = true
     startPolling()
@@ -170,6 +199,7 @@ async function handleImport() {
 
 function resetForm() {
   stopPolling()
+  localStorage.removeItem(STORAGE_KEY)
   selectedFile.value = null
   job.value = null
   importError.value = ''
@@ -223,6 +253,11 @@ function resetForm() {
           <p class="dropzone__hint">WordPress export (.xml)</p>
         </template>
       </div>
+
+      <label class="wordpress-import-form__checkbox">
+        <input type="checkbox" v-model="skipMedia" :disabled="isUploading || isImporting" />
+        <span>Skip media — import text only; images stay linked to the original WordPress URLs</span>
+      </label>
 
       <div class="wordpress-import-form__actions">
         <Button
@@ -308,6 +343,21 @@ function resetForm() {
 
 .wordpress-import-form__file-input {
   display: none;
+}
+
+.wordpress-import-form__checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--color-gray-700);
+  cursor: pointer;
+}
+
+.wordpress-import-form__checkbox input[type="checkbox"] {
+  margin-top: 0.15rem;
+  flex-shrink: 0;
 }
 
 .wordpress-import-form__actions {

@@ -7,7 +7,7 @@ const route = useRoute()
 
 const contentId = computed(() => {
   const id = route.params.id
-  return typeof id === 'string' ? parseInt(id, 10) : Array.isArray(id) ? parseInt(id[0], 10) : 0
+  return typeof id === 'string' ? parseInt(id, 10) : Array.isArray(id) ? parseInt(id[0] ?? '', 10) : 0
 })
 
 const contentSlug = computed(() => {

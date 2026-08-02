@@ -18,7 +18,7 @@ const YOUTUBE_REGEX =
 
 function extractVideoId(url: string): string | null {
   const match = url.match(YOUTUBE_REGEX)
-  return match ? match[1] : null
+  return match?.[1] ?? null
 }
 
 function extractYoutubeSrc(url: string): string | null {

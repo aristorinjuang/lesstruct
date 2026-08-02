@@ -1,8 +1,8 @@
 <script setup lang="ts">
 
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth, setAuthToken, clearAuth } from '@/composables/useAuth'
+import { useAuth, clearAuth } from '@/composables/useAuth'
 import { useNavigation } from '@/composables/useNavigation'
 import IconMenu from '@/components/icons/IconMenu.vue'
 import IconUser from '@/components/icons/IconUser.vue'
@@ -12,8 +12,8 @@ import ThemeToggle from '@/components/atoms/ThemeToggle.vue'
 import api from '@/utils/request'
 
 const router = useRouter()
-const { userId, isAuthenticated, role } = useAuth()
-const { isMobileMenuOpen, sidebarCollapsed, toggleSidebar } = useNavigation()
+const { isAuthenticated, role } = useAuth()
+const { sidebarCollapsed, toggleSidebar } = useNavigation()
 
 const profileDropdownOpen = ref(false)
 const profileDropdownRef = ref<HTMLElement | null>(null)

@@ -13,6 +13,9 @@ http:
         type: file
         value:
           - ./export.xml
+      - name: skipMedia
+        type: text
+        value: "true"
   auth:
     type: bearer
     token: "{{TOKEN}}"

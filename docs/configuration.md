@@ -116,6 +116,14 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 | `IMPORT_MAX_SIZE_MB` | `100` | Max upload size (in megabytes) for any importer. Shared by all import types — today the WordPress WXR importer; future importers reuse the same cap. WordPress exports commonly reach tens or hundreds of MB for real sites, so the default is generous; raise it for very large sites. |
 | `WORDPRESS_IMPORT_TIMEOUT` | `2h` | Max duration (Go duration string, e.g. `4h`, `90m`) for a single WordPress import job. Imports run asynchronously in a background goroutine after the HTTP request returns `202 Accepted`. Set higher for very large exports with many images. |
 
+### Server timeouts
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SERVER_READ_HEADER_TIMEOUT` | `15s` | Max duration to read request headers (Slowloris protection). Recommended. |
+| `SERVER_READ_TIMEOUT` | `0` (off) | Max duration to read the **entire** request including the body. A zero value means no timeout — per-handler `MaxBytesReader` / `maxBodySizeMiddleware` caps body size on each route. Leave at `0` to allow large uploads (WordPress import, media upload). |
+| `SERVER_WRITE_TIMEOUT` | `0` (off) | Max duration to write the response after headers have been read. A zero value means no timeout — per-handler context deadlines (e.g. `WORDPRESS_IMPORT_TIMEOUT`) bound long-running operations. Leave at `0` to avoid interrupting large uploads or slow clients. |
+
 ### Logging
 
 | Variable | Default | Description |
@@ -142,6 +150,14 @@ When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhanc
 | `AI_TEXT_GENERATION_API_KEY` | empty | API key for the text provider. |
 | `AI_TEXT_GENERATION_BASE_URL` | empty | Override the API base URL. Default is OpenAI's API. For other providers: `https://api.deepseek.com`, `https://openrouter.ai/api/v1`, `http://localhost:11434/v1` (Ollama), etc. |
 | `AI_TEXT_GENERATION_MODEL` | `gpt-5-mini` | Chat model name. Examples by provider: OpenAI `gpt-5-mini`, DeepSeek `deepseek-chat`, OpenRouter `openai/gpt-5-mini`, Together `meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8`, Ollama `llama3`. |
+
+### Admin frontend (Vite)
+
+The admin SPA (served at `/admin/`) loads its API base URL from a Vite env var. In production (embedded assets, same origin), the SPA uses a relative base and follows whatever host:port the user opens in the browser — no config needed. Override only for cross-origin dev setups.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_BASE_URL` | `''` (same-origin) | Override the backend API URL. Set in `web/admin/.env.local` (gitignored). Used in dev mode when the Vite dev server and the Go backend run on different ports. Example: `http://localhost:8081`. |
 
 ### Duplicate-key gotcha
 

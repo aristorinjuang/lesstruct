@@ -150,7 +150,7 @@ describe('PendingRegistrations', () => {
       },
     })
 
-    const userActionsComponent = wrapper.findAllComponents(UserActions)[0]
+    const userActionsComponent = wrapper.findAllComponents(UserActions)[0]!
     await userActionsComponent.vm.$emit('approve', '1')
 
     expect(wrapper.emitted('approve')).toBeTruthy()
@@ -172,11 +172,12 @@ describe('PendingRegistrations', () => {
       },
     })
 
-    const userActionsComponent = wrapper.findAllComponents(UserActions)[0]
+    const userActionsComponent = wrapper.findAllComponents(UserActions)[0]!
     await userActionsComponent.vm.$emit('reject', '1')
 
     // After emit, confirmation dialog should be set (we can check for dialog title)
-    expect(wrapper.vm.confirmationDialog.title).toBe('Reject User')
+    const vm = wrapper.vm as unknown as { confirmationDialog: { title: string } }
+    expect(vm.confirmationDialog.title).toBe('Reject User')
   })
 
   it('should show confirmation dialog when mark as spam action is triggered', async () => {
@@ -194,10 +195,11 @@ describe('PendingRegistrations', () => {
       },
     })
 
-    const userActionsComponent = wrapper.findAllComponents(UserActions)[0]
+    const userActionsComponent = wrapper.findAllComponents(UserActions)[0]!
     await userActionsComponent.vm.$emit('markAsSpam', '1')
 
     // After emit, confirmation dialog should be set
-    expect(wrapper.vm.confirmationDialog.title).toBe('Mark as Spam')
+    const vm = wrapper.vm as unknown as { confirmationDialog: { title: string } }
+    expect(vm.confirmationDialog.title).toBe('Mark as Spam')
   })
 })

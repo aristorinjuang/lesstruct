@@ -67,9 +67,19 @@ func (s *Service) Generate(input GenerateInput) (*GeneratedMetadata, error) {
 		imageURL = input.FeaturedImage
 	}
 
+	// Fall back to the title when the content body yields no plain text (e.g.
+	// imported link articles whose body lives at an external URL, or HTML
+	// content that fails extraction). A title-based description is standard
+	// SEO practice and prevents valid content from being rejected on
+	// meta-description validation.
+	descriptionSource := plainText
+	if descriptionSource == "" {
+		descriptionSource = input.Title
+	}
+
 	metaDescription := input.MetaDescription
 	if metaDescription == "" {
-		metaDescription = seo.TruncateText(plainText, 160)
+		metaDescription = seo.TruncateText(descriptionSource, 160)
 	}
 
 	if err := ValidateMetaDescription(metaDescription); err != nil {
@@ -78,7 +88,7 @@ func (s *Service) Generate(input GenerateInput) (*GeneratedMetadata, error) {
 
 	ogTitle := input.OGTitle
 	if ogTitle == "" {
-		ogTitle = input.Title
+		ogTitle = seo.TruncateText(input.Title, 60)
 	}
 
 	if err := ValidateOGTitle(ogTitle); err != nil {
@@ -87,7 +97,7 @@ func (s *Service) Generate(input GenerateInput) (*GeneratedMetadata, error) {
 
 	ogDescription := input.OGDescription
 	if ogDescription == "" {
-		ogDescription = seo.TruncateText(plainText, 160)
+		ogDescription = seo.TruncateText(descriptionSource, 160)
 	}
 
 	if err := ValidateOGDescription(ogDescription); err != nil {

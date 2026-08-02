@@ -14,6 +14,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Supported content formats for create/update. The commands ingest Markdown by
+// default (positional arg, --file, or stdin), so an omitted --format resolves to
+// markdown — matching the server's format conversion (the server would otherwise
+// treat the body as Tiptap JSON and store the raw Markdown unparsed).
+const (
+	formatTiptap   = "tiptap"
+	formatMarkdown = "markdown"
+	formatHTML     = "html"
+)
+
 // contentSummary is the cmd-layer projection of a content item — it mirrors the
 // server's ContentProjection field set, so decoding a server envelope into it
 // drops unknown fields silently. Used by the text output of get/list/delete.
@@ -143,7 +153,7 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		&format,
 		"format",
 		"",
-		"content format: tiptap (default), markdown, or html",
+		"content format: markdown (default), tiptap, or html",
 	)
 
 	var (
@@ -239,7 +249,7 @@ func newContentCmd(apiKey, baseURL, output *string) *cobra.Command {
 		&updateFormat,
 		"format",
 		"",
-		"content format: tiptap (default), markdown, or html",
+		"content format: markdown (default), tiptap, or html",
 	)
 
 	var (
@@ -509,6 +519,12 @@ func runContentCreate(cmd *cobra.Command, args []string, opts contentCreateOptio
 	if err := validateFormatFlag(opts.format); err != nil {
 		return err
 	}
+	// The create command ingests Markdown (positional arg, --file, or stdin),
+	// so an omitted --format means markdown — never the server's tiptap default,
+	// which would store the raw Markdown body unparsed.
+	if opts.format == "" {
+		opts.format = formatMarkdown
+	}
 
 	apiKey, baseURL, err := resolveCredentials(opts.apiKey, opts.baseURL)
 	if err != nil {
@@ -585,6 +601,12 @@ func runContentUpdate(cmd *cobra.Command, args []string, opts contentUpdateOptio
 
 	if err := validateFormatFlag(opts.format); err != nil {
 		return err
+	}
+	// The update command ingests Markdown (--file, positional body, or stdin),
+	// so an omitted --format means markdown — never the server's tiptap default,
+	// which would store the raw Markdown body unparsed.
+	if opts.format == "" {
+		opts.format = formatMarkdown
 	}
 
 	id, err := parseIntID(args[0], "content")
@@ -983,12 +1005,12 @@ func validateFormatFlag(format string) error {
 		return nil
 	}
 	switch format {
-	case "tiptap", "markdown", "html":
+	case formatTiptap, formatMarkdown, formatHTML:
 		return nil
 	default:
 		return &exitError{
 			code: client.ExitValidation,
-			msg:  fmt.Sprintf("lesstruct-cli: invalid --format %q (want \"tiptap\", \"markdown\", or \"html\")", format),
+			msg:  fmt.Sprintf("lesstruct-cli: invalid --format %q (want %q, %q, or %q)", format, formatTiptap, formatMarkdown, formatHTML),
 		}
 	}
 }

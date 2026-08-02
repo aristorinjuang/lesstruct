@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMediaStore, type Media } from '@/stores/domain/media'
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { groupByDate, type DateGroup } from '@/utils/groupByDate'
 import MediaDetailModal from '@/components/organisms/MediaDetailModal.vue'
 import DuplicateMediaDialog from '@/components/organisms/DuplicateMediaDialog.vue'
@@ -41,7 +42,11 @@ function onGridImgError(id: number) {
 }
 
 const showNoResults = computed(() => {
-  return !mediaStore.isLoading && mediaStore.media.length === 0 && (searchQuery.value || dateFilter.value)
+  return (
+    !mediaStore.isLoading &&
+    mediaStore.media.length === 0 &&
+    (searchQuery.value || dateFilter.value)
+  )
 })
 
 const hasActiveFilters = computed(() => {
@@ -76,12 +81,24 @@ async function loadMedia() {
   try {
     await mediaStore.fetchMedia({
       search: searchQuery.value || undefined,
-      dateFilter: dateFilter.value || undefined
+      dateFilter: dateFilter.value || undefined,
     })
   } catch {
     // error handled by store
   }
 }
+
+async function loadMore() {
+  try {
+    await mediaStore.loadMore()
+  } catch {
+    // error handled by store
+  }
+}
+
+const { sentinel } = useInfiniteScroll(loadMore, {
+  disabled: computed(() => mediaStore.isLoading || mediaStore.isLoadingMore || !mediaStore.hasMore),
+})
 
 function openDetail(media: Media) {
   selectedMedia.value = media
@@ -95,11 +112,16 @@ function handleDelete() {
   if (!selectedMedia.value) return
   const mediaToDelete = selectedMedia.value
 
-  if (!confirm(`Are you sure you want to delete "${mediaToDelete.originalFilename}"? This action cannot be undone.`)) {
+  if (
+    !confirm(
+      `Are you sure you want to delete "${mediaToDelete.originalFilename}"? This action cannot be undone.`,
+    )
+  ) {
     return
   }
 
-  mediaStore.deleteMedia(mediaToDelete.id)
+  mediaStore
+    .deleteMedia(mediaToDelete.id)
     .then(() => {
       closeDetail()
       displayToast('Media deleted successfully', 'success')
@@ -152,7 +174,7 @@ async function handleUpload() {
     displayToast('Media uploaded successfully', 'success')
     await loadMedia()
   } catch (error: unknown) {
-    const err = error as any
+    const err = error as Error & { duplicate?: boolean; existingMedia?: Media }
     if (err.duplicate && err.existingMedia) {
       duplicateMedia.value = err.existingMedia
       pendingForceFile.value = uploadFile.value
@@ -172,13 +194,15 @@ async function handleUploadAnyway() {
   isUploading.value = true
 
   try {
-    const result = await mediaStore.upload(pendingForceFile.value, pendingForceAltText.value, { force: true })
+    const result = await mediaStore.upload(pendingForceFile.value, pendingForceAltText.value, {
+      force: true,
+    })
     closeDuplicateDialog()
     closeUploadForm()
     displayToast(`Image uploaded as ${result.originalFilename}`, 'success')
     await loadMedia()
   } catch (error: unknown) {
-    const err = error as any
+    const err = error as Error
     uploadError.value = err.message || 'Failed to upload image'
   } finally {
     isUploading.value = false
@@ -247,7 +271,12 @@ onUnmounted(() => {
   <div class="media-view">
     <!-- Header -->
     <div class="page-header">
-      <h1 class="page-title">Media Library</h1>
+      <h1 class="page-title">
+        Media Library
+        <span v-if="mediaStore.total > 0" class="media-view__total-badge">
+          {{ mediaStore.total.toLocaleString() }}
+        </span>
+      </h1>
       <div class="media-view__header-actions">
         <Button
           v-if="aiGenerationAvailable"
@@ -257,13 +286,7 @@ onUnmounted(() => {
         >
           Generate with AI
         </Button>
-        <Button
-          type="button"
-          variant="primary"
-          @click="openUploadForm"
-        >
-          Upload Media
-        </Button>
+        <Button type="button" variant="primary" @click="openUploadForm"> Upload Media </Button>
       </div>
     </div>
 
@@ -277,8 +300,18 @@ onUnmounted(() => {
           aria-label="Close upload form"
           @click="closeUploadForm"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            width="16"
+            height="16"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd"
+            />
           </svg>
         </button>
       </div>
@@ -337,8 +370,19 @@ onUnmounted(() => {
     <div class="media-view__controls">
       <div class="media-view__search">
         <div class="search-wrapper">
-          <svg class="search-wrapper__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-            <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />
+          <svg
+            class="search-wrapper__icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            width="16"
+            height="16"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+              clip-rule="evenodd"
+            />
           </svg>
           <input
             v-model="searchQuery"
@@ -353,18 +397,25 @@ onUnmounted(() => {
             aria-label="Clear search"
             @click="clearSearch"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="14" height="14">
-              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              width="14"
+              height="14"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd"
+              />
             </svg>
           </button>
         </div>
       </div>
 
       <div class="media-view__filter">
-        <select
-          v-model="dateFilter"
-          class="media-view__filter-select"
-        >
+        <select v-model="dateFilter" class="media-view__filter-select">
           <option value="">All Media</option>
           <option value="today">Today</option>
           <option value="this_week">This Week</option>
@@ -396,38 +447,48 @@ onUnmounted(() => {
 
       <!-- No Results -->
       <div v-else-if="showNoResults" class="state-empty">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="state-empty__icon">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="state-empty__icon"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+          />
         </svg>
         <h2 class="state-empty__title">No results found</h2>
-        <p class="state-empty__description">
-          Try adjusting your search or filter criteria.
-        </p>
-        <button
-          type="button"
-          class="media-view__empty-action"
-          @click="clearFilters"
-        >
+        <p class="state-empty__description">Try adjusting your search or filter criteria.</p>
+        <button type="button" class="media-view__empty-action" @click="clearFilters">
           Clear all filters
         </button>
       </div>
 
       <!-- Empty State -->
       <div v-else-if="mediaStore.media.length === 0" class="state-empty">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="state-empty__icon">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="1.5"
+          stroke="currentColor"
+          class="state-empty__icon"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
+          />
         </svg>
         <h2 class="state-empty__title">No media files yet</h2>
         <p class="state-empty__description">
           Upload your first image to get started with the media library.
         </p>
-        <Button
-          type="button"
-          variant="primary"
-          @click="openUploadForm"
-        >
-          Upload Media
-        </Button>
+        <Button type="button" variant="primary" @click="openUploadForm"> Upload Media </Button>
       </div>
 
       <!-- Grouped Grid -->
@@ -449,7 +510,7 @@ onUnmounted(() => {
             >
               <div class="media-view__grid-image-wrapper">
                 <img
-                  :src="gridImgErrors[item.id] ? item.url : (item.variants?._thumb?.url || item.url)"
+                  :src="gridImgErrors[item.id] ? item.url : item.variants?._thumb?.url || item.url"
                   :alt="item.altText"
                   class="media-view__grid-image"
                   loading="lazy"
@@ -470,10 +531,19 @@ onUnmounted(() => {
                   <span class="media-view__grid-date">{{ formatDate(item.createdAt) }}</span>
                   <span class="media-view__grid-size">{{ formatFileSize(item.fileSize) }}</span>
                 </div>
-                <span v-if="item.uploadedBy" class="media-view__grid-uploader">by {{ item.uploadedBy }}</span>
+                <span v-if="item.uploadedBy" class="media-view__grid-uploader"
+                  >by {{ item.uploadedBy }}</span
+                >
               </div>
             </div>
           </div>
+        </div>
+
+        <div ref="sentinel" class="media-view__load-more" aria-hidden="true">
+          <div v-if="mediaStore.isLoadingMore" class="media-view__load-more-spinner"></div>
+          <span v-if="mediaStore.isLoadingMore" class="media-view__load-more-text"
+            >Loading more...</span
+          >
         </div>
       </template>
     </div>
@@ -516,6 +586,18 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.media-view__total-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+  background-color: var(--color-info-bg, var(--color-bg-muted));
+  color: var(--color-info, var(--color-text-secondary));
+}
+
 .media-view__header-actions {
   display: flex;
   gap: 0.5rem;
@@ -715,7 +797,12 @@ onUnmounted(() => {
 
 .media-view__skeleton-image {
   aspect-ratio: 16 / 9;
-  background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--brand-light-2) 50%, var(--color-bg-muted) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-muted) 25%,
+    var(--brand-light-2) 50%,
+    var(--color-bg-muted) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -724,14 +811,23 @@ onUnmounted(() => {
   height: 0.75rem;
   margin: 0.5rem;
   border-radius: 0.25rem;
-  background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--brand-light-2) 50%, var(--color-bg-muted) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-muted) 25%,
+    var(--brand-light-2) 50%,
+    var(--color-bg-muted) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 /* Empty States */
@@ -743,6 +839,35 @@ onUnmounted(() => {
   font-size: 0.875rem;
   color: var(--brand-dark-1);
   cursor: pointer;
+}
+
+/* Load More */
+.media-view__load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: var(--brand-dark-2, #6b7280);
+}
+
+.media-view__load-more-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--brand-light-2, #e5e7eb);
+  border-top-color: var(--color-info);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.media-view__load-more-text {
+  font-size: 0.8125rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Date Separator */
@@ -773,7 +898,9 @@ onUnmounted(() => {
   border-radius: 0.5rem;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   background-color: var(--color-background, #fff);
 }
 

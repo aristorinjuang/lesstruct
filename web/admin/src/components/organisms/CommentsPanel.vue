@@ -20,7 +20,7 @@ const isLoading = ref(false)
 const error = ref('')
 const successMessage = ref('')
 
-const { showConfirmationDialog } = useConfirmationDialog()
+const { confirmationDialog, showDialog, handleConfirm, handleCancel } = useConfirmationDialog()
 
 const comments = computed(() => commentsStore.comments)
 const commentsCount = computed(() => comments.value.length)
@@ -76,24 +76,23 @@ async function markAsSpam(comment: Comment) {
   }
 }
 
-async function confirmDelete(comment: Comment) {
-  const confirmed = await showConfirmationDialog({
-    title: 'Delete Comment',
-    message: `Are you sure you want to delete this comment by ${comment.author}? This action cannot be undone.`,
-    confirmButtonText: 'Delete',
-    cancelButtonText: 'Cancel',
-  })
-
-  if (confirmed) {
-    try {
-      await commentsStore.deleteComment(comment.id)
-      successMessage.value = 'Comment deleted'
-      setTimeout(() => { successMessage.value = '' }, 3000)
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to delete comment'
-      setTimeout(() => { error.value = '' }, 5000)
-    }
-  }
+function confirmDelete(comment: Comment) {
+  showDialog(
+    'Delete Comment',
+    `Are you sure you want to delete this comment by ${comment.author}? This action cannot be undone.`,
+    'Delete',
+    async () => {
+      try {
+        await commentsStore.deleteComment(comment.id)
+        successMessage.value = 'Comment deleted'
+        setTimeout(() => { successMessage.value = '' }, 3000)
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to delete comment'
+        setTimeout(() => { error.value = '' }, 5000)
+      }
+    },
+    String(comment.id),
+  )
 }
 
 function getStatusBadgeClass(status: CommentStatus): string {
@@ -255,7 +254,14 @@ function viewPublicContent() {
       </article>
     </div>
 
-    <ConfirmationDialog />
+    <ConfirmationDialog
+      :is-open="confirmationDialog.isOpen"
+      :title="confirmationDialog.title"
+      :message="confirmationDialog.message"
+      :confirm-button-text="confirmationDialog.confirmButtonText"
+      @confirm="handleConfirm"
+      @cancel="handleCancel"
+    />
   </div>
 </template>
 

@@ -130,6 +130,18 @@ describe('MediaView', () => {
     expect(wrapper.find('h1').text()).toBe('Media Library')
   })
 
+  it('renders the total badge next to the heading', async () => {
+    mediaStore.total = 12
+    const wrapper = await createWrapper()
+    expect(wrapper.find('h1').text()).toContain('Media Library')
+    expect(wrapper.find('.media-view__total-badge').text()).toBe('12')
+  })
+
+  it('hides the total badge when total is zero', async () => {
+    const wrapper = await createWrapper()
+    expect(wrapper.find('.media-view__total-badge').exists()).toBe(false)
+  })
+
   it('renders the Upload Media button', async () => {
     const wrapper = await createWrapper()
     const uploadBtn = wrapper.findAll('button').find((btn) => btn.text().includes('Upload Media'))

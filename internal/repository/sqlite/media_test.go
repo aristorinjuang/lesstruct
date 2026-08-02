@@ -205,52 +205,64 @@ func TestMediaRepository_FindByHash_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, mediadomain.ErrMediaNotFound, "FindByHash() expected ErrMediaNotFound")
 }
 
-func TestMediaRepository_FindAll(t *testing.T) {
-	db := setupMediaTestDB(t)
-	defer closeMediaTestDB(db)
-
-	repo := appsqlite.NewMediaRepository(db)
-
-	media1 := &mediadomain.Media{
-		UserID:           1,
-		Filename:         "test1.webp",
-		OriginalFilename: "test1.jpg",
-		MimeType:         mediadomain.MimeTypeWebP,
-		FileSize:         1000,
-		Width:            100,
-		Height:           100,
-		AltText:          "Test 1",
-		IsWebP:           true,
-		FilePath:         "/uploads/media/test1.webp",
-		URL:              "http://localhost:8080/uploads/media/test1.webp",
-		Hash:             "hash-1",
+func TestMediaRepository_FindAllByCursor(t *testing.T) {
+	tests := []struct {
+		name     string
+		limit    int
+		beforeID int
+		seedN    int
+		wantIDs  []int
+	}{
+		{
+			name:     "first page returns newest-first across all users",
+			limit:    10,
+			beforeID: 0,
+			seedN:    3,
+			wantIDs:  []int{4, 3, 2, 1},
+		},
+		{
+			name:     "beforeID filters to older rows",
+			limit:    10,
+			beforeID: 2,
+			seedN:    3,
+			wantIDs:  []int{1},
+		},
+		{
+			name:     "limit is honored",
+			limit:    2,
+			beforeID: 0,
+			seedN:    3,
+			wantIDs:  []int{4, 3},
+		},
+		{
+			name:     "empty set when beforeID below minimum id",
+			limit:    10,
+			beforeID: 1,
+			seedN:    3,
+			wantIDs:  []int{},
+		},
 	}
 
-	media2 := &mediadomain.Media{
-		UserID:           1,
-		Filename:         "test2.webp",
-		OriginalFilename: "test2.jpg",
-		MimeType:         mediadomain.MimeTypeWebP,
-		FileSize:         1000,
-		Width:            100,
-		Height:           100,
-		AltText:          "Test 2",
-		IsWebP:           true,
-		FilePath:         "/uploads/media/test2.webp",
-		URL:              "http://localhost:8080/uploads/media/test2.webp",
-		Hash:             "hash-2",
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupMediaTestDB(t)
+			defer closeMediaTestDB(db)
+			repo := appsqlite.NewMediaRepository(db)
+			for i := 1; i <= tt.seedN; i++ {
+				createMediaForSearch(t, db, 1, "test"+strconv.Itoa(i)+".jpg", "hash-fa-"+strconv.Itoa(i))
+			}
+			// A different user's media must be INCLUDED (global, non-scoped list).
+			createMediaForSearch(t, db, 2, "other.jpg", "hash-fa-other")
 
-	ctx := context.Background()
-	_ = repo.Create(ctx, media1)
-	_ = repo.Create(ctx, media2)
+			got, err := repo.FindAllByCursor(context.Background(), tt.limit, tt.beforeID)
+			require.NoError(t, err, "FindAllByCursor() unexpected error")
 
-	found, err := repo.FindAll(ctx, 10, 0)
-	require.NoError(t, err, "FindAll() failed")
-
-	assert.Len(t, found, 2, "FindAll() expected 2 results")
-	for _, m := range found {
-		assert.Equal(t, "Test User", m.UploadedBy, "FindAll() should populate UploadedBy")
+			gotIDs := make([]int, 0, len(got))
+			for _, m := range got {
+				gotIDs = append(gotIDs, m.ID)
+			}
+			assert.Equal(t, tt.wantIDs, gotIDs, "FindAllByCursor() result order/IDs (must include other user's media)")
+		})
 	}
 }
 
@@ -525,7 +537,7 @@ func createMediaForSearch(t *testing.T, db *sql.DB, userID int, filename, hash s
 	return m
 }
 
-func TestMediaRepository_FindAllByFilename(t *testing.T) {
+func TestMediaRepository_FindAllByFilenameByCursor(t *testing.T) {
 	db := setupMediaTestDB(t)
 	defer closeMediaTestDB(db)
 
@@ -536,12 +548,17 @@ func TestMediaRepository_FindAllByFilename(t *testing.T) {
 	repo := appsqlite.NewMediaRepository(db)
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilename(ctx, "sunset", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, "sunset", 100, 0)
 	require.NoError(t, err)
-	assert.Len(t, found, 2, "FindAllByFilename() expected 2 results matching 'sunset'")
+	assert.Len(t, found, 2, "FindAllByFilenameByCursor() expected 2 results matching 'sunset'")
+
+	found, err = repo.FindAllByFilenameByCursor(ctx, "sunset", 100, 3)
+	require.NoError(t, err)
+	assert.Len(t, found, 1, "FindAllByFilenameByCursor() expected 1 result before ID 3")
+	assert.Equal(t, 1, found[0].ID, "FindAllByFilenameByCursor() should return the older row")
 }
 
-func TestMediaRepository_FindAllByFilename_CaseInsensitive(t *testing.T) {
+func TestMediaRepository_FindAllByFilenameByCursor_CaseInsensitive(t *testing.T) {
 	db := setupMediaTestDB(t)
 	defer closeMediaTestDB(db)
 
@@ -550,12 +567,12 @@ func TestMediaRepository_FindAllByFilename_CaseInsensitive(t *testing.T) {
 	repo := appsqlite.NewMediaRepository(db)
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilename(ctx, "SUNSET", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, "SUNSET", 100, 0)
 	require.NoError(t, err)
-	assert.Len(t, found, 1, "FindAllByFilename() should be case-insensitive")
+	assert.Len(t, found, 1, "FindAllByFilenameByCursor() should be case-insensitive")
 }
 
-func TestMediaRepository_FindAllByFilename_NoMatch(t *testing.T) {
+func TestMediaRepository_FindAllByFilenameByCursor_NoMatch(t *testing.T) {
 	db := setupMediaTestDB(t)
 	defer closeMediaTestDB(db)
 
@@ -564,12 +581,12 @@ func TestMediaRepository_FindAllByFilename_NoMatch(t *testing.T) {
 	repo := appsqlite.NewMediaRepository(db)
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilename(ctx, "mountain", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, "mountain", 100, 0)
 	require.NoError(t, err)
-	assert.Len(t, found, 0, "FindAllByFilename() expected 0 results for non-matching query")
+	assert.Len(t, found, 0, "FindAllByFilenameByCursor() expected 0 results for non-matching query")
 }
 
-func TestMediaRepository_FindAllByFilename_AcrossUsers(t *testing.T) {
+func TestMediaRepository_FindAllByFilenameByCursor_AcrossUsers(t *testing.T) {
 	db := setupMediaTestDB(t)
 	defer closeMediaTestDB(db)
 
@@ -582,12 +599,12 @@ func TestMediaRepository_FindAllByFilename_AcrossUsers(t *testing.T) {
 	repo := appsqlite.NewMediaRepository(db)
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilename(ctx, "sunset", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, "sunset", 100, 0)
 	require.NoError(t, err)
-	assert.Len(t, found, 2, "FindAllByFilename() should return results across all users")
+	assert.Len(t, found, 2, "FindAllByFilenameByCursor() should return results across all users")
 }
 
-func TestMediaRepository_FindAllByDateRange(t *testing.T) {
+func TestMediaRepository_FindAllByDateRangeByCursor(t *testing.T) {
 	db := setupMediaTestDB(t)
 	defer closeMediaTestDB(db)
 
@@ -602,13 +619,13 @@ func TestMediaRepository_FindAllByDateRange(t *testing.T) {
 	ctx := context.Background()
 
 	since := time.Now().AddDate(0, 0, -7)
-	found, err := repo.FindAllByDateRange(ctx, since, 100, 0)
+	found, err := repo.FindAllByDateRangeByCursor(ctx, since, 100, 0)
 	require.NoError(t, err)
-	assert.Len(t, found, 1, "FindAllByDateRange() expected 1 recent result")
+	assert.Len(t, found, 1, "FindAllByDateRangeByCursor() expected 1 recent result")
 	assert.Equal(t, "recent_photo.jpg", found[0].OriginalFilename)
 }
 
-func TestMediaRepository_FindAllByDateRange_NoResults(t *testing.T) {
+func TestMediaRepository_FindAllByDateRangeByCursor_NoResults(t *testing.T) {
 	db := setupMediaTestDB(t)
 	defer closeMediaTestDB(db)
 
@@ -621,12 +638,12 @@ func TestMediaRepository_FindAllByDateRange_NoResults(t *testing.T) {
 	ctx := context.Background()
 
 	since := time.Now().AddDate(0, 0, -7)
-	found, err := repo.FindAllByDateRange(ctx, since, 100, 0)
+	found, err := repo.FindAllByDateRangeByCursor(ctx, since, 100, 0)
 	require.NoError(t, err)
-	assert.Len(t, found, 0, "FindAllByDateRange() expected 0 results for old media")
+	assert.Len(t, found, 0, "FindAllByDateRangeByCursor() expected 0 results for old media")
 }
 
-func TestMediaRepository_FindAllByFilenameAndDateRange(t *testing.T) {
+func TestMediaRepository_FindAllByFilenameAndDateRangeByCursor(t *testing.T) {
 	db := setupMediaTestDB(t)
 	defer closeMediaTestDB(db)
 
@@ -642,10 +659,79 @@ func TestMediaRepository_FindAllByFilenameAndDateRange(t *testing.T) {
 	ctx := context.Background()
 
 	since := time.Now().AddDate(0, 0, -7)
-	found, err := repo.FindAllByFilenameAndDateRange(ctx, "sunset", since, 100, 0)
+	found, err := repo.FindAllByFilenameAndDateRangeByCursor(ctx, "sunset", since, 100, 0)
 	require.NoError(t, err)
-	assert.Len(t, found, 1, "FindAllByFilenameAndDateRange() expected 1 result matching both filters")
+	assert.Len(t, found, 1, "FindAllByFilenameAndDateRangeByCursor() expected 1 result matching both filters")
 	assert.Equal(t, "sunset_recent.jpg", found[0].OriginalFilename)
+}
+
+func TestMediaRepository_Count(t *testing.T) {
+	db := setupMediaTestDB(t)
+	defer closeMediaTestDB(db)
+
+	createMediaForSearch(t, db, 1, "sunset_old.jpg", "hash-count-1")
+
+	_, err := db.Exec(`UPDATE media_files SET created_at = datetime('now', '-30 days') WHERE hash = 'hash-count-1'`)
+	require.NoError(t, err)
+
+	createMediaForSearch(t, db, 1, "sunset_recent.jpg", "hash-count-2")
+	createMediaForSearch(t, db, 1, "mountain_recent.jpg", "hash-count-3")
+	createMediaForSearch(t, db, 2, "sunset_user2.jpg", "hash-count-4")
+
+	repo := appsqlite.NewMediaRepository(db)
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		search   string
+		since    time.Time
+		expected int
+	}{
+		{
+			name:     "no filters counts all media across users",
+			search:   "",
+			since:    time.Time{},
+			expected: 4,
+		},
+		{
+			name:     "search filters by filename",
+			search:   "sunset",
+			since:    time.Time{},
+			expected: 3,
+		},
+		{
+			name:     "case-insensitive search matches",
+			search:   "SUNSET",
+			since:    time.Time{},
+			expected: 3,
+		},
+		{
+			name:     "date filter counts only recent media",
+			search:   "",
+			since:    time.Now().AddDate(0, 0, -7),
+			expected: 3,
+		},
+		{
+			name:     "search and date filter combined",
+			search:   "sunset",
+			since:    time.Now().AddDate(0, 0, -7),
+			expected: 2,
+		},
+		{
+			name:     "no match returns zero",
+			search:   "nonexistent",
+			since:    time.Time{},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			total, err := repo.Count(ctx, tt.search, tt.since)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, total, "Count() mismatch for %q", tt.name)
+		})
+	}
 }
 
 func TestMediaRepository_Create_WithVariants(t *testing.T) {

@@ -58,7 +58,7 @@ describe('ContentCreateView', () => {
     mockUserId.value = 5
   })
 
-  const mountView = (query: Record<string, string> = {}) => {
+  const mountView = (_query: Record<string, string> = {}) => {
     return mount(ContentCreateView, {
       global: {
         plugins: [pinia],

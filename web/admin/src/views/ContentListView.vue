@@ -6,6 +6,7 @@ import Toast from '@/components/molecules/Toast.vue'
 import { useContentStore } from '@/stores/domain/content'
 import { useAuth } from '@/composables/useAuth'
 import { useConfig } from '@/composables/useConfig'
+import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import type { Content } from '@/types/content'
 import type { PostType } from '@/types/posttype'
 import { formatRelativeTime } from '@/utils/date'
@@ -18,10 +19,9 @@ const { languages, fetchConfig, primaryLanguage } = useConfig()
 
 const isAdmin = computed(() => role.value === 'Admin')
 
-const contents = ref<Content[]>([])
 const postTypes = ref<PostType[]>([])
-const isLoading = ref(false)
-const selectedPostType = ref<string>('all')
+const selectedPostType = ref<string>((route.query.type as string) || 'all')
+const selectedStatus = ref<string>((route.query.status as string) || '')
 const searchQuery = ref('')
 
 const deletingContent = ref<Content | null>(null)
@@ -40,7 +40,7 @@ function displayToast(message: string, type: 'success' | 'error' = 'success') {
   toastVisible.value = true
 }
 
-// Watch route query type to sync with selectedPostType
+// Watch route query to sync with selectedPostType and selectedStatus
 watch(() => route.fullPath, () => {
   const type = route.query.type as string | undefined
   if (type) {
@@ -48,7 +48,8 @@ watch(() => route.fullPath, () => {
   } else {
     selectedPostType.value = 'all'
   }
-}, { immediate: true })
+  selectedStatus.value = (route.query.status as string) || ''
+})
 
 onMounted(async () => {
   try {
@@ -73,6 +74,10 @@ watch(searchQuery, (val) => {
   }, 300)
 })
 
+watch(selectedPostType, () => {
+  loadContents()
+})
+
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)
 })
@@ -83,20 +88,14 @@ async function loadContents() {
     return
   }
 
-  isLoading.value = true
   try {
     const searchOptions = searchQuery.value.length >= 2 ? { search: searchQuery.value } : undefined
     const postTypeParam = selectedPostType.value !== 'all' ? selectedPostType.value : undefined
-    const lang = languages.value.length > 1 ? primaryLanguage() : undefined
-    const result = isAdmin.value
-      ? await contentStore.getAll(undefined, undefined, { ...searchOptions, postType: postTypeParam, language: lang })
-      : await contentStore.getByUser({ ...searchOptions, postType: postTypeParam })
-    contents.value = result ?? []
+    const statusParam = selectedStatus.value !== '' ? selectedStatus.value : undefined
+    const lang = isAdmin.value && languages.value.length > 1 ? primaryLanguage() : undefined
+    await contentStore.fetchContents({ ...searchOptions, postType: postTypeParam, status: statusParam, language: lang })
   } catch (err) {
     console.error('Failed to load contents:', err)
-    contents.value = []
-  } finally {
-    isLoading.value = false
   }
 }
 
@@ -107,6 +106,18 @@ async function loadPostTypes() {
     console.error('Failed to load post types:', err)
   }
 }
+
+async function loadMore() {
+  try {
+    await contentStore.loadMore()
+  } catch (err) {
+    console.error('Failed to load more contents:', err)
+  }
+}
+
+const { sentinel } = useInfiniteScroll(loadMore, {
+  disabled: computed(() => contentStore.isLoading || contentStore.isLoadingMore || !contentStore.hasMore),
+})
 
 function buildContentPath(base: string): string {
   const type = selectedPostType.value
@@ -148,9 +159,7 @@ async function confirmDelete() {
   deleteError.value = ''
 
   try {
-    const deletedId = deletingContent.value.id
-    await contentStore.deleteContent(deletedId)
-    contents.value = contents.value.filter(c => c.id !== deletedId)
+    await contentStore.deleteContent(deletingContent.value.id)
     deletingContent.value = null
     displayToast('Content deleted successfully')
   } catch (err) {
@@ -163,13 +172,6 @@ async function confirmDelete() {
 function getStatusBadgeClass(status: string) {
   return `content-list__status--${status}`
 }
-
-const filteredContents = computed(() => {
-  if (selectedPostType.value === 'all') {
-    return contents.value
-  }
-  return contents.value.filter(c => c.postType === selectedPostType.value)
-})
 
 const postTypeTabs = computed(() => {
   const postTypeOrder: Record<string, number> = {
@@ -202,7 +204,12 @@ const postTypeTabs = computed(() => {
 <template>
   <div class="content-list">
     <div class="page-header">
-      <h1 class="page-title">Content</h1>
+      <h1 class="page-title">
+        Content
+        <span v-if="contentStore.total > 0" class="content-list__total-badge">
+          {{ contentStore.total.toLocaleString() }}
+        </span>
+      </h1>
       <button @click="createNew" class="content-list__create-btn">
         Create New Post
       </button>
@@ -237,17 +244,17 @@ const postTypeTabs = computed(() => {
       </button>
     </div>
 
-    <div v-if="isLoading" class="state-loading">
+    <div v-if="contentStore.isLoading" class="state-loading">
       Loading...
     </div>
 
-    <div v-else-if="filteredContents.length === 0" class="state-loading">
+    <div v-else-if="contentStore.contents.length === 0" class="state-loading">
       <p>No content yet. Create your first post!</p>
     </div>
 
     <div v-else class="content-list__items">
       <div
-        v-for="item in filteredContents"
+        v-for="item in contentStore.contents"
         :key="item.id"
         class="content-list__item"
         @click="editContent(item)"
@@ -274,6 +281,13 @@ const postTypeTabs = computed(() => {
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
         </button>
       </div>
+    </div>
+
+    <div ref="sentinel" class="content-list__load-more" aria-hidden="true">
+      <div v-if="contentStore.isLoadingMore" class="content-list__load-more-spinner"></div>
+      <span v-if="contentStore.isLoadingMore" class="content-list__load-more-text"
+        >Loading more...</span
+      >
     </div>
 
     <DeleteConfirmDialog
@@ -446,6 +460,46 @@ const postTypeTabs = computed(() => {
   margin-left: 0.5rem;
   background-color: var(--color-bg-muted);
   color: var(--color-text-secondary);
+}
+
+.content-list__total-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+  background-color: var(--color-info-bg, var(--color-bg-muted));
+  color: var(--color-info, var(--color-text-secondary));
+}
+
+.content-list__load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: var(--brand-dark-2, #6b7280);
+}
+
+.content-list__load-more-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--brand-light-2, #e5e7eb);
+  border-top-color: var(--color-info);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.content-list__load-more-text {
+  font-size: 0.8125rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 640px) {
