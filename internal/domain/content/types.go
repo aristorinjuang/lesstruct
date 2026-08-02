@@ -16,6 +16,9 @@ var (
 	MaxTitleRunes = 200
 	// MaxTagRunes is the maximum allowed length of a single tag in runes
 	MaxTagRunes = 50
+	// MaxMetaDescriptionRunes is the maximum allowed length of a content meta
+	// description in runes (mirrors the SEO domain's 160-character limit).
+	MaxMetaDescriptionRunes = 160
 	// ErrContentNotFound is returned when content cannot be found
 	ErrContentNotFound = errors.New("content not found")
 	// ErrInvalidTitle is returned when title validation fails

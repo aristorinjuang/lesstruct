@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,10 +16,12 @@ import (
 )
 
 type importOptions struct {
-	source  string
-	apiKey  string
-	baseURL string
-	output  string
+	source       string
+	skipMedia    bool
+	pollInterval string
+	apiKey       string
+	baseURL      string
+	output       string
 }
 
 // importJobResponse is the envelope data from POST /api/v1/wordpress/import.
@@ -51,16 +56,16 @@ func newImportHugoCmd(apiKey, baseURL, output *string) *cobra.Command {
 		Short: "Import a Hugo site",
 		Long: `Import all content from a Hugo site.
 
-Upload a tar.gz archive of the Hugo project to the admin panel:
+The source may be a Hugo project directory or a .tar.gz archive of one.
+Directories are archived automatically (content/ and static/ only) before
+upload. The import runs asynchronously on the server; the CLI polls the job
+status and prints live progress:
   lesstruct-cli import hugo --source /path/to/hugo-site
-
-Or use curl directly:
-  curl -X POST <baseURL>/api/admin/hugo/import -F "file=@hugo-site.tar.gz" -b "token=..."
-
-The archive should contain at minimum a content/ directory with your
-Hugo posts (HTML or Markdown files with YAML frontmatter).
+  lesstruct-cli import hugo --source hugo-site.tar.gz
 `,
-		Args: cobra.NoArgs,
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.apiKey = *apiKey
 			opts.baseURL = *baseURL
@@ -71,17 +76,134 @@ Hugo posts (HTML or Markdown files with YAML frontmatter).
 
 	hugoCmd.Flags().StringVar(&opts.source, "source", "", "Path to Hugo project directory or .tar.gz archive")
 	_ = hugoCmd.MarkFlagRequired("source")
+	hugoCmd.Flags().BoolVar(
+		&opts.skipMedia,
+		"skip-media",
+		false,
+		"skip migrating static/ images into Lesstruct media; images stay linked to original paths/URLs",
+	)
+	hugoCmd.Flags().StringVar(
+		&opts.pollInterval,
+		"poll-interval",
+		"3s",
+		"polling interval for import progress (e.g. 1s, 5s)",
+	)
 
 	return hugoCmd
 }
 
-func runImportHugo(cmd *cobra.Command, opts importOptions) error {
-	output := opts.output
-	if output != "text" && output != "json" {
-		return &exitError{
-			code: client.ExitUsage,
-			msg:  fmt.Sprintf("lesstruct-cli: invalid --output %q (want \"text\" or \"json\")", output),
+// buildHugoArchive opens --source (a .tar.gz archive) or archives a Hugo
+// project directory (content/ and static/ only) into a temp tar.gz file. The
+// caller is responsible for removing the returned file.
+func buildHugoArchive(source string) (string, error) {
+	info, err := os.Stat(source)
+	if err != nil {
+		return "", fmt.Errorf("read --source %q: %w", source, err)
+	}
+
+	if !info.IsDir() {
+		if !strings.HasSuffix(strings.ToLower(source), ".tar.gz") && !strings.HasSuffix(strings.ToLower(source), ".tgz") {
+			return "", fmt.Errorf("--source %q is not a directory and not a .tar.gz archive", source)
 		}
+		return source, nil
+	}
+
+	tmpFile, err := os.CreateTemp("", "hugo-import-*.tar.gz")
+	if err != nil {
+		return "", fmt.Errorf("create temp archive: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	if err := archiveHugoProject(source, tmpFile); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("close temp archive: %w", err)
+	}
+	return tmpPath, nil
+}
+
+// archiveHugoProject writes content/ and static/ (when present) of a Hugo
+// project directory into w as a tar.gz archive.
+func archiveHugoProject(projectDir string, w io.Writer) error {
+	gzWriter := gzip.NewWriter(w)
+	tarWriter := tar.NewWriter(gzWriter)
+
+	writeDir := func(dir string) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// static/ is optional — a Hugo project may not have one.
+				return nil
+			}
+			return fmt.Errorf("read %s: %w", dir, err)
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+		return filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, err := filepath.Rel(projectDir, path)
+			if err != nil {
+				return err
+			}
+			if rel == "." {
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			header, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return err
+			}
+			header.Name = rel
+			if d.IsDir() {
+				header.Name += "/"
+			}
+			if err := tarWriter.WriteHeader(header); err != nil {
+				return err
+			}
+			if !d.IsDir() {
+				f, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				_, err = io.Copy(tarWriter, f)
+				_ = f.Close()
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+
+	if err := writeDir(filepath.Join(projectDir, "content")); err != nil {
+		return err
+	}
+	if err := writeDir(filepath.Join(projectDir, "static")); err != nil {
+		return err
+	}
+
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("finalize archive: %w", err)
+	}
+	if err := gzWriter.Close(); err != nil {
+		return fmt.Errorf("finalize archive: %w", err)
+	}
+	return nil
+}
+
+func runImportHugo(cmd *cobra.Command, opts importOptions) error {
+	if err := validateOutput(opts.output); err != nil {
+		return err
 	}
 
 	if opts.source == "" {
@@ -91,21 +213,145 @@ func runImportHugo(cmd *cobra.Command, opts importOptions) error {
 		}
 	}
 
+	parsedDuration, err := time.ParseDuration(opts.pollInterval)
+	if err != nil || parsedDuration <= 0 {
+		return &exitError{
+			code: client.ExitUsage,
+			msg:  fmt.Sprintf("lesstruct-cli: invalid --poll-interval %q (e.g. 1s, 5s)", opts.pollInterval),
+		}
+	}
+
+	archivePath, err := buildHugoArchive(opts.source)
+	if err != nil {
+		return &exitError{code: client.ExitValidation, msg: fmt.Sprintf("lesstruct-cli: %s", err)}
+	}
+	defer func() {
+		if archivePath != opts.source {
+			_ = os.Remove(archivePath)
+		}
+	}()
+
+	archiveFile, err := os.Open(archivePath)
+	if err != nil {
+		return &exitError{
+			code: client.ExitValidation,
+			msg:  fmt.Sprintf("lesstruct-cli: open archive %q: %s", archivePath, err),
+		}
+	}
+	defer func() { _ = archiveFile.Close() }()
+
 	apiKey, baseURL, err := resolveCredentials(opts.apiKey, opts.baseURL)
 	if err != nil {
 		return &exitError{code: client.ExitGeneric, msg: err.Error()}
 	}
 
-	if output == "json" {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "{\"message\":\"To import, upload the Hugo archive to the admin panel\",\"source\":%q,\"endpoint\":\"%s/api/admin/hugo/import\"}\n", opts.source, baseURL)
-	} else {
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Hugo import from %s\n\n", opts.source)
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "To import, upload the archive to the admin panel:\n")
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  curl -X POST %s/api/admin/hugo/import -F \"file=@%s\" -b \"token=...\"\n\n", baseURL, apiKey)
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Or tar.gz the project and upload via the admin UI.\n")
+	cl, err := client.New(baseURL, apiKey)
+	if err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
 	}
 
-	return nil
+	// Upload the archive.
+	data, _, err := cl.ImportHugo(
+		cmd.Context(),
+		client.ImportHugoRequest{
+			File:      archiveFile,
+			Filename:  filepath.Base(archivePath),
+			SkipMedia: opts.skipMedia,
+		},
+	)
+	if err != nil {
+		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
+	}
+
+	var resp importJobResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return &exitError{
+			code: client.ExitGeneric,
+			msg:  "lesstruct-cli: unexpected response from import endpoint",
+		}
+	}
+	if resp.JobID == "" {
+		return &exitError{
+			code: client.ExitGeneric,
+			msg:  "lesstruct-cli: server returned no job ID",
+		}
+	}
+
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Import started — job ID: %s\n", resp.JobID)
+	if opts.skipMedia {
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "  (media migration skipped)")
+	}
+
+	// Poll until done or failed.
+	ticker := time.NewTicker(parsedDuration)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-cmd.Context().Done():
+			return &exitError{
+				code: client.ExitGeneric,
+				msg:  "lesstruct-cli: import cancelled",
+			}
+		case <-ticker.C:
+			statusRaw, _, err := cl.GetHugoImportStatus(cmd.Context(), resp.JobID)
+			if err != nil {
+				// Transient poll error — retry on next tick.
+				continue
+			}
+
+			var env importStatusEnvelope
+			if err := json.Unmarshal(statusRaw, &env); err != nil {
+				continue
+			}
+
+			job := env.Job
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  Progress: %d / %d items imported, %d skipped\r",
+				job.Imported, job.Total, job.Skipped)
+
+			if job.State == "done" {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout())
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Import complete: %d imported, %d skipped\n",
+					job.Imported, job.Skipped)
+				if len(job.Errors) > 0 {
+					limit := len(job.Errors)
+					if limit > 10 {
+						limit = 10
+					}
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %d issue(s) encountered:\n", len(job.Errors))
+					for _, e := range job.Errors[:limit] {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "    - %s\n", e)
+					}
+					if len(job.Errors) > 10 {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "    ... and %d more\n", len(job.Errors)-10)
+					}
+				}
+				return nil
+			}
+
+			if job.State == "failed" {
+				_, _ = fmt.Fprintln(cmd.OutOrStdout())
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Import failed after importing %d items, %d skipped\n",
+					job.Imported, job.Skipped)
+				if len(job.Errors) > 0 {
+					limit := len(job.Errors)
+					if limit > 10 {
+						limit = 10
+					}
+					for _, e := range job.Errors[:limit] {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", e)
+					}
+					if len(job.Errors) > 10 {
+						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  ... and %d more\n", len(job.Errors)-10)
+					}
+				}
+				return &exitError{
+					code: client.ExitGeneric,
+					msg:  "lesstruct-cli: Hugo import job failed",
+				}
+			}
+		}
+	}
 }
 
 func newImportWordpressCmd(apiKey, baseURL, output *string) *cobra.Command {

@@ -84,6 +84,22 @@ func convertMetaValue(field customfield.FieldSchema, raw string) (any, error) {
 	}
 }
 
+// ParseWPDate parses a WordPress pubDate (RFC 1123 with zone) or the common
+// WXR datetime formats into a time.Time. Returns false when the value does not
+// match any known layout so callers can fall back to the server timestamp.
+func ParseWPDate(raw string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range append(wpDatetimeFormats, time.RFC1123, time.RFC1123Z) {
+		if t, err := time.Parse(layout, trimmed); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}
+
 // truncateRunes truncates s to at most max runes, preserving valid UTF-8.
 func truncateRunes(s string, max int) string {
 	runes := []rune(s)
@@ -272,6 +288,10 @@ func (imp *Importer) importItem(
 		PostType:     item.PostType,
 		CustomFields: customFields,
 		Language:     imp.language,
+	}
+
+	if publishedAt, ok := ParseWPDate(item.PubDate); ok {
+		req.PublishedAt = &publishedAt
 	}
 
 	if _, err := imp.contentService.Create(ctx, userID, req); err != nil {

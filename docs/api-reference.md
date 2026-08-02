@@ -1096,4 +1096,74 @@ The `skipMedia` field is optional — when set to `"true"` the server skips down
 
 `state` is one of `"running"`, `"done"`, or `"failed"`. When `total` is zero the import is still in its initialisation phase (parsing the WXR). When `state` is `"done"` or `"failed"`, `finishedAt` is also populated.
 
+## Hugo import (`/api/v1/hugo/import`)
+
+The Hugo import is available in both realms: the browser **admin** realm at `POST /api/admin/hugo/import` (JWT + CSRF, used by the admin UI under *Import → Hugo*) and the agent (Bearer API key) realm at `POST /api/v1/hugo/import` (used by `lesstruct-cli import hugo`). Both realms share the same handler and in-memory job store, so a CLI-started job is visible in the admin UI and vice versa. The flow mirrors the WordPress importer: upload a `.tar.gz` archive (containing at least a `content/` directory; `static/` is optional), receive a job ID, then poll the status endpoint.
+
+### Start an import
+
+`POST /api/v1/hugo/import` — multipart/form-data with a `file` part (a `.tar.gz` or `.tgz` archive of the Hugo project) and an optional `skipMedia` form field.
+
+**Auth:** API key belonging to an **Admin** role (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+
+**Request**
+
+```
+POST /api/v1/hugo/import
+Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>
+Content-Type: multipart/form-data; boundary=----boundary
+
+------boundary
+Content-Disposition: form-data; name="file"; filename="hugo-site.tar.gz"
+
+<tar.gz archive content>
+------boundary
+Content-Disposition: form-data; name="skipMedia"
+
+true
+------boundary--
+```
+
+The archive must contain a `content/` directory at its root with the Hugo posts (HTML or Markdown files with YAML frontmatter). A `static/` directory is optional — images referenced by the content (local `static/` files or remote `https://` URLs) are downloaded and re-uploaded as Lesstruct media (WebP transcode + SHA-256 dedup), with body `<img src>` paths rewritten and the first frontmatter `images:` entry prepended as a featured image. The `skipMedia` field is optional — when set to `"true"` the server skips media migration and images stay linked to their original paths or URLs.
+
+The importer also reads the site's `hugo.toml` / `config.toml` for `baseURL` and `defaultContentLanguage`, preserves the frontmatter `date` as the content's publish date, and skips items whose slug already exists (idempotent re-runs).
+
+**Response** (`202 Accepted`):
+
+```json
+{
+  "data": {
+    "jobId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "state": "running"
+  },
+  "error": null
+}
+```
+
+### Track import progress
+
+`GET /api/v1/hugo/import/status/{jobId}` — poll for the current state of an import job. When `{jobId}` is omitted, returns the most recent job (if any).
+
+**Auth:** API key belonging to an **Admin** role (same as the import endpoint).
+
+**Response** (`200 OK`):
+
+```json
+{
+  "data": {
+    "jobId": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "job": {
+      "state": "running",
+      "imported": 42,
+      "skipped": 0,
+      "total": 150,
+      "startedAt": "2026-07-26T10:00:00Z"
+    }
+  },
+  "error": null
+}
+```
+
+`state` is one of `"running"`, `"done"`, or `"failed"`. When `state` is `"done"` or `"failed"`, `finishedAt` is also populated and `errors` (if any) lists per-item issues (capped at 1000).
+
 

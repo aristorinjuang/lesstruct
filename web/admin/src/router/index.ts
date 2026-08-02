@@ -77,6 +77,12 @@ const router = createRouter({
           component: () => import('../views/WordPressImportView.vue'),
           meta: { title: 'Import from WordPress' },
         },
+        {
+          path: 'import/hugo',
+          name: 'import-hugo',
+          component: () => import('../views/HugoImportView.vue'),
+          meta: { title: 'Import from Hugo' },
+        },
       ],
     },
     {

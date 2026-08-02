@@ -161,6 +161,7 @@ type CreateContentRequest struct {
 	CustomFields       map[string]any `json:"customFields,omitempty"`
 	Language           string         `json:"language,omitempty"`
 	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
+	PublishedAt        *time.Time     `json:"publishedAt,omitempty"`
 }
 
 // UpdateContentRequest represents a request to update content
@@ -634,6 +635,13 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		TranslationGroupID: req.TranslationGroupID,
 	}
 
+	// Imports may carry their original publish date; surface it as the
+	// created-at timestamp so sorting, archives, and SEO datePublished all
+	// reflect the original publication time.
+	if req.PublishedAt != nil {
+		content.CreatedAt = *req.PublishedAt
+	}
+
 	// Creating directly as published runs the publish pipeline: auto-generate
 	// SEO metadata (honoring any overrides, like Update) so it lands in the
 	// initial insert, then fire AfterPublish after the row is persisted. This
@@ -714,6 +722,39 @@ func (s *Service) GetByID(ctx context.Context, id int) (*Content, error) {
 	}
 
 	return content, nil
+}
+
+// SlugExists reports whether a content item with the given slug already exists
+// in the given language. Importers use it for idempotent re-runs — items whose
+// slug already exists are skipped instead of failing or duplicating.
+func (s *Service) SlugExists(ctx context.Context, slug string, language string) (bool, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return false, nil
+	}
+	if language == "" {
+		language = s.defaultLanguage
+	}
+	unique, err := s.repo.CheckSlugUnique(ctx, slug, language)
+	if err != nil {
+		return false, err
+	}
+	return !unique, nil
+}
+
+// GetBySlugAndLanguage retrieves a content item by slug in the given language.
+// It returns ErrContentNotFound when the slug does not exist in that language.
+// Importers use it to resolve the ID of an already-imported item so translated
+// variants can still link to it on idempotent re-runs.
+func (s *Service) GetBySlugAndLanguage(ctx context.Context, slug string, language string) (*Content, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil, ErrContentNotFound
+	}
+	if language == "" {
+		language = s.defaultLanguage
+	}
+	return s.repo.GetBySlug(ctx, slug, language)
 }
 
 func (s *Service) GetByUser(ctx context.Context, userID int, limit int, offset int) ([]*Content, error) {
@@ -1185,6 +1226,13 @@ func (s *Service) generateSEOMetadata(
 	c *Content,
 	metaDescription, ogTitle, ogDescription string,
 ) (*seo.GeneratedMetadata, error) {
+	// datePublished mirrors the content's actual publish date (created_at);
+	// dateModified reflects when the row last changed. Fall back to now when
+	// created_at is unset (e.g. a content struct not yet persisted).
+	datePublished := time.Now().Format(time.RFC3339)
+	if !c.CreatedAt.IsZero() {
+		datePublished = c.CreatedAt.Format(time.RFC3339)
+	}
 	now := time.Now().Format(time.RFC3339)
 	urlPrefix := "/posts"
 	if c.PostType != "" && c.PostType != "post" {
@@ -1195,7 +1243,7 @@ func (s *Service) generateSEOMetadata(
 		Content:       c.Content,
 		Format:        string(c.Format),
 		URL:           fmt.Sprintf("%s/%s", urlPrefix, c.Slug),
-		DatePublished: now,
+		DatePublished: datePublished,
 		DateModified:  now,
 		AuthorName:    c.Author,
 		Tags:          c.Tags,

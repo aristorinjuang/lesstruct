@@ -212,10 +212,18 @@ func (r *ContentRepository) Create(ctx context.Context, content *contentdomain.C
 		translationGroupID = *content.TranslationGroupID
 	}
 
-	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID)
+	var result sql.Result
+	if content.CreatedAt.IsZero() {
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID)
+	} else {
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID, content.CreatedAt)
+	}
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			return contentdomain.ErrSlugAlreadyExists

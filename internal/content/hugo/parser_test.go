@@ -310,3 +310,148 @@ bad: [unclosed
 		})
 	}
 }
+
+func TestGroupTranslations(t *testing.T) {
+	tests := []struct {
+		name     string
+		items    []*hugo.HugoItem
+		wantN    int // number of import units
+		wantPair bool
+	}{
+		{
+			name: "success - leaf files in the same directory stay separate posts",
+			items: []*hugo.HugoItem{
+				{Title: "A", Language: "en", FilePath: "content/posts/2016/08/a.html"},
+				{Title: "B", Language: "en", FilePath: "content/posts/2016/08/b.html"},
+				{Title: "C", Language: "en", FilePath: "content/posts/2016/08/c.html"},
+			},
+			wantN: 3,
+		},
+		{
+			name: "success - page bundle en + id pair in the same directory",
+			items: []*hugo.HugoItem{
+				{Title: "Post", Language: "en", FilePath: "content/posts/2025/02/foo/index.html"},
+				{Title: "Postingan", Language: "id", FilePath: "content/posts/2025/02/foo/index.id.html"},
+			},
+			wantN:    1,
+			wantPair: true,
+		},
+		{
+			name: "success - leaf file en + id pair in the same directory",
+			items: []*hugo.HugoItem{
+				{Title: "Post", Language: "en", FilePath: "content/posts/2025/02/foo.html"},
+				{Title: "Postingan", Language: "id", FilePath: "content/posts/2025/02/foo.id.html"},
+			},
+			wantN:    1,
+			wantPair: true,
+		},
+		{
+			name: "success - translated pair among unrelated leaf posts",
+			items: []*hugo.HugoItem{
+				{Title: "A", Language: "en", FilePath: "content/posts/2025/02/a.html"},
+				{Title: "B", Language: "en", FilePath: "content/posts/2025/02/b.html"},
+				{Title: "Postingan B", Language: "id", FilePath: "content/posts/2025/02/b.id.html"},
+				{Title: "C", Language: "en", FilePath: "content/posts/2025/02/c.html"},
+			},
+			wantN:    3,
+			wantPair: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			groups := hugo.GroupTranslations(tt.items)
+			assert.Len(t, groups, tt.wantN)
+			if tt.wantPair {
+				for _, g := range groups {
+					if pair, ok := g.(hugo.TranslationGroup); ok {
+						assert.NotNil(t, pair.English)
+						assert.NotNil(t, pair.Indonesian)
+						return
+					}
+				}
+				t.Fatalf("expected a translation pair among %d groups", len(groups))
+			}
+		})
+	}
+}
+
+func TestLoadSiteConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   map[string]string
+		want    hugo.SiteConfig
+		wantErr bool
+	}{
+		{
+			name: "success - hugo.toml wins over config.toml",
+			files: map[string]string{
+				"hugo.toml": `baseURL = 'https://example.com/'
+defaultContentLanguage = 'id'
+`,
+				"config.toml": `baseURL = 'https://ignored.com/'
+`,
+			},
+			want: hugo.SiteConfig{
+				BaseURL:                "https://example.com",
+				DefaultContentLanguage: "id",
+			},
+		},
+		{
+			name: "success - config.toml used when hugo.toml missing",
+			files: map[string]string{
+				"config.toml": `baseURL = 'https://example.com/'
+defaultContentLanguage = 'id'
+`,
+			},
+			want: hugo.SiteConfig{
+				BaseURL:                "https://example.com",
+				DefaultContentLanguage: "id",
+			},
+		},
+		{
+			name: "success - YAML config parsed",
+			files: map[string]string{
+				"hugo.yaml": "baseURL: https://example.com/\ndefaultContentLanguage: id\n",
+			},
+			want: hugo.SiteConfig{
+				BaseURL:                "https://example.com",
+				DefaultContentLanguage: "id",
+			},
+		},
+		{
+			name:  "success - missing config falls back to en default language",
+			files: map[string]string{},
+			want: hugo.SiteConfig{
+				BaseURL:                "",
+				DefaultContentLanguage: "en",
+			},
+		},
+		{
+			name: "error - malformed TOML config",
+			files: map[string]string{
+				"hugo.toml": "baseURL = [unclosed\n",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			for relPath, content := range tt.files {
+				fullPath := filepath.Join(root, relPath)
+				err := os.WriteFile(fullPath, []byte(content), 0644)
+				require.NoError(t, err)
+			}
+
+			got, err := hugo.LoadSiteConfig(root)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -124,6 +124,11 @@ type Config struct {
 	// run after the HTTP response has been sent (the job runs in a background
 	// goroutine). Read via WORDPRESS_IMPORT_TIMEOUT.
 	WordPressImportTimeout time.Duration
+
+	// HugoImportTimeout is the maximum duration a Hugo import job may run after
+	// the HTTP response has been sent (the job runs in a background goroutine).
+	// Read via HUGO_IMPORT_TIMEOUT.
+	HugoImportTimeout time.Duration
 }
 
 // Load loads configuration from environment variables
@@ -183,6 +188,7 @@ func Load() (*Config, error) {
 
 		ImportMaxSizeMB:        getEnvInt("IMPORT_MAX_SIZE_MB", 100),
 		WordPressImportTimeout: getEnvDuration("WORDPRESS_IMPORT_TIMEOUT", 2*time.Hour),
+		HugoImportTimeout:      getEnvDuration("HUGO_IMPORT_TIMEOUT", 10*time.Minute),
 	}
 
 	// Validate JWT secret
@@ -242,6 +248,10 @@ func Load() (*Config, error) {
 
 	if cfg.WordPressImportTimeout <= 0 {
 		return nil, fmt.Errorf("WORDPRESS_IMPORT_TIMEOUT must be positive, got %v", cfg.WordPressImportTimeout)
+	}
+
+	if cfg.HugoImportTimeout <= 0 {
+		return nil, fmt.Errorf("HUGO_IMPORT_TIMEOUT must be positive, got %v", cfg.HugoImportTimeout)
 	}
 
 	return cfg, nil

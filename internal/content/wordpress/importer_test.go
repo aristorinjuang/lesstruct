@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/content/wordpress"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -799,6 +800,123 @@ func TestImporter_ForwardsLanguage(t *testing.T) {
 			assert.Equal(t, 1, result.Imported)
 			require.Len(t, creator.created, 1)
 			assert.Equal(t, tt.wantLanguage, creator.created[0].Language)
+		})
+	}
+}
+
+func TestImporter_PreservesPublishDate(t *testing.T) {
+	tests := []struct {
+		name       string
+		xml        string
+		wantDate   *time.Time
+		wantNilErr bool
+	}{
+		{
+			name: "success - RFC 1123 pubDate parsed into PublishedAt",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Dated Post</title>
+<pubDate>Mon, 08 Aug 2016 00:00:00 +0000</pubDate>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>dated-post</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+</item>
+</channel>
+</rss>`,
+			wantDate: func() *time.Time {
+				ts := time.Date(2016, 8, 8, 0, 0, 0, 0, time.UTC)
+				return &ts
+			}(),
+		},
+		{
+			name: "success - missing pubDate leaves PublishedAt nil",
+			xml: `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>No Date Post</title>
+<content:encoded><![CDATA[<!-- wp:paragraph --><p>Hi</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>no-date-post</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+</item>
+</channel>
+</rss>`,
+			wantDate: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			creator := &fakeContentCreator{failOn: -1}
+			importer := newTestImporter(creator, &fakeUserResolver{})
+			result, err := importer.Import(context.Background(), strings.NewReader(tt.xml), 1, wordpress.ImportOptions{}, nil)
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.Imported)
+			require.Len(t, creator.created, 1)
+			if tt.wantDate == nil {
+				assert.Nil(t, creator.created[0].PublishedAt)
+				return
+			}
+			require.NotNil(t, creator.created[0].PublishedAt)
+			assert.Equal(t, *tt.wantDate, *creator.created[0].PublishedAt)
+		})
+	}
+}
+
+func TestParseWPDate(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		want     string
+		wantBool bool
+	}{
+		{
+			name:     "success - RFC 1123 with zone",
+			raw:      "Mon, 08 Aug 2016 00:00:00 +0000",
+			want:     "2016-08-08T00:00:00Z",
+			wantBool: true,
+		},
+		{
+			name:     "success - RFC 3339",
+			raw:      "2016-08-08T00:00:00Z",
+			want:     "2016-08-08T00:00:00Z",
+			wantBool: true,
+		},
+		{
+			name:     "success - WP datetime without zone",
+			raw:      "2016-08-08 00:00:00",
+			want:     "2016-08-08T00:00:00Z",
+			wantBool: true,
+		},
+		{
+			name:     "success - ACF date picker Ymd",
+			raw:      "20160808",
+			want:     "2016-08-08T00:00:00Z",
+			wantBool: true,
+		},
+		{
+			name:     "failure - empty string",
+			raw:      "",
+			wantBool: false,
+		},
+		{
+			name:     "failure - unparseable value",
+			raw:      "not-a-date",
+			wantBool: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := wordpress.ParseWPDate(tt.raw)
+			assert.Equal(t, tt.wantBool, ok)
+			if tt.wantBool {
+				assert.Equal(t, tt.want, got.Format(time.RFC3339))
+			}
 		})
 	}
 }

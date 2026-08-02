@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 )
 
@@ -120,23 +121,44 @@ func ParseContentFile(path string) (*HugoItem, error) {
 	}, nil
 }
 
-func groupTranslations(items []*HugoItem) []any {
-	dirMap := make(map[string]*translationGroup)
+// translationKey identifies the logical post a HugoItem belongs to, so
+// language variants can be paired without collapsing distinct posts that share
+// a directory. The `.id` language suffix (or frontmatter `language: id`) is
+// stripped from the basename: `foo.html` and `foo.id.html` in the same
+// directory share a key, while `a.html` and `b.html` stay separate.
+func translationKey(item *HugoItem) string {
+	base := filepath.Base(item.FilePath)
+	if item.Language == "id" {
+		lower := strings.ToLower(base)
+		for _, ext := range []string{".id.html", ".id.md"} {
+			if strings.HasSuffix(lower, ext) {
+				// Strip the ".id" language marker, keeping the real extension
+				// (".id.html" -> ".html", ".id.md" -> ".md").
+				base = strings.TrimSuffix(lower, ext) + ext[3:]
+				break
+			}
+		}
+	}
+	return filepath.Join(filepath.Dir(item.FilePath), base)
+}
+
+func GroupTranslations(items []*HugoItem) []any {
+	pairMap := make(map[string]*TranslationGroup)
 
 	for _, item := range items {
-		dir := filepath.Dir(item.FilePath)
+		key := translationKey(item)
 
 		if item.Language == "id" {
-			if pair, ok := dirMap[dir]; ok {
+			if pair, ok := pairMap[key]; ok {
 				pair.Indonesian = item
 			} else {
-				dirMap[dir] = &translationGroup{Indonesian: item}
+				pairMap[key] = &TranslationGroup{Indonesian: item}
 			}
 		} else {
-			if pair, ok := dirMap[dir]; ok {
+			if pair, ok := pairMap[key]; ok {
 				pair.English = item
 			} else {
-				dirMap[dir] = &translationGroup{English: item}
+				pairMap[key] = &TranslationGroup{English: item}
 			}
 		}
 	}
@@ -145,13 +167,13 @@ func groupTranslations(items []*HugoItem) []any {
 	seen := make(map[string]bool)
 
 	for _, item := range items {
-		dir := filepath.Dir(item.FilePath)
-		if seen[dir] {
+		key := translationKey(item)
+		if seen[key] {
 			continue
 		}
-		seen[dir] = true
+		seen[key] = true
 
-		pair := dirMap[dir]
+		pair := pairMap[key]
 		if pair.English != nil && pair.Indonesian != nil {
 			result = append(result, *pair)
 		} else if pair.English != nil {
@@ -216,4 +238,64 @@ func removeDups(items []*HugoItem) []*HugoItem {
 		result = append(result, item)
 	}
 	return result
+}
+
+// hugoConfig is the subset of Hugo's site configuration that the importer
+// understands. Only top-level scalar keys are decoded; language/custom tables
+// are ignored. Tags cover both TOML and YAML config variants.
+type hugoConfig struct {
+	BaseURL                string `toml:"baseURL" yaml:"baseURL"`
+	DefaultContentLanguage string `toml:"defaultContentLanguage" yaml:"defaultContentLanguage"`
+}
+
+// configFileCandidates lists Hugo config file names in precedence order:
+// modern Hugo (0.110+) prefers hugo.toml over config.toml; both TOML and YAML
+// variants are recognized. The first existing file wins.
+func configFileCandidates(root string) []string {
+	return []string{
+		filepath.Join(root, "hugo.toml"),
+		filepath.Join(root, "config.toml"),
+		filepath.Join(root, "hugo.yaml"),
+		filepath.Join(root, "config.yaml"),
+	}
+}
+
+// LoadSiteConfig reads the Hugo site configuration from the archive root.
+// Missing config files are not an error — the importer falls back to defaults
+// (empty base URL, "en" default content language).
+func LoadSiteConfig(root string) (SiteConfig, error) {
+	cfg := SiteConfig{}
+
+	for _, candidate := range configFileCandidates(root) {
+		data, err := os.ReadFile(candidate)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return cfg, fmt.Errorf("failed to read %s: %w", candidate, err)
+		}
+
+		switch strings.ToLower(filepath.Ext(candidate)) {
+		case ".toml":
+			var parsed hugoConfig
+			if err := toml.Unmarshal(data, &parsed); err != nil {
+				return cfg, fmt.Errorf("failed to parse %s: %w", candidate, err)
+			}
+			cfg.BaseURL = strings.TrimSuffix(parsed.BaseURL, "/")
+			cfg.DefaultContentLanguage = parsed.DefaultContentLanguage
+		case ".yaml", ".yml":
+			var parsed hugoConfig
+			if err := yaml.Unmarshal(data, &parsed); err != nil {
+				return cfg, fmt.Errorf("failed to parse %s: %w", candidate, err)
+			}
+			cfg.BaseURL = strings.TrimSuffix(parsed.BaseURL, "/")
+			cfg.DefaultContentLanguage = parsed.DefaultContentLanguage
+		}
+		break
+	}
+
+	if cfg.DefaultContentLanguage == "" {
+		cfg.DefaultContentLanguage = "en"
+	}
+	return cfg, nil
 }

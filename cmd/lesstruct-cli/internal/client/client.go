@@ -171,6 +171,20 @@ type ImportWordPressRequest struct {
 	SkipMedia bool
 }
 
+// ImportHugoRequest is the multipart payload sent to POST
+// /api/v1/hugo/import. It carries a tar.gz archive of the Hugo project
+// (containing at least a content/ directory) and an optional skipMedia flag.
+type ImportHugoRequest struct {
+	// File is the tar.gz archive reader.
+	File io.Reader
+	// Filename is the archive file name used in the multipart form.
+	Filename string
+	// SkipMedia, when true, tells the server to skip migrating static
+	// images into Lesstruct media; images stay linked to their original
+	// paths or URLs.
+	SkipMedia bool
+}
+
 // ImportJobStatus reflects the current state of an in-flight or completed
 // WordPress import job, mirroring the server's importJob JSON shape.
 type ImportJobStatus struct {
@@ -778,6 +792,91 @@ func (c *Client) GetImportStatus(
 	path := "/api/v1/wordpress/import/status"
 	if jobID != "" {
 		path = fmt.Sprintf("/api/v1/wordpress/import/status/%s", jobID)
+	}
+	return c.do(ctx, http.MethodGet, path, nil, nil)
+}
+
+// ImportHugo sends POST /api/v1/hugo/import as multipart/form-data with a
+// `file` part (the tar.gz archive) and an optional `skipMedia` field, then
+// returns the decoded data (containing jobId and state) or an *APIError on
+// failure. Uses its own HTTP client without a hard timeout so large uploads
+// succeed; the caller controls the overall deadline via ctx.
+func (c *Client) ImportHugo(
+	ctx context.Context,
+	req ImportHugoRequest,
+) (json.RawMessage, json.RawMessage, error) {
+	if req.File == nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "VALIDATION_ERROR",
+			Message:    "File is required",
+		}
+	}
+	if req.Filename == "" {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "VALIDATION_ERROR",
+			Message:    "Filename is required",
+		}
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", req.Filename)
+	if err != nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "MULTIPART_ERROR",
+			Message:    fmt.Sprintf("create file part: %s", err),
+		}
+	}
+	if _, err = io.Copy(part, req.File); err != nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "MULTIPART_ERROR",
+			Message:    fmt.Sprintf("copy file bytes: %s", err),
+		}
+	}
+
+	if req.SkipMedia {
+		if err = writer.WriteField("skipMedia", "true"); err != nil {
+			return nil, nil, &APIError{
+				StatusCode: 0,
+				Code:       "MULTIPART_ERROR",
+				Message:    fmt.Sprintf("write skipMedia field: %s", err),
+			}
+		}
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, nil, &APIError{
+			StatusCode: 0,
+			Code:       "MULTIPART_ERROR",
+			Message:    fmt.Sprintf("close multipart writer: %s", err),
+		}
+	}
+
+	// Use a separate HTTP client without a hard timeout for the upload
+	// (the caller controls the deadline via ctx).
+	uploadClient := &http.Client{
+		CheckRedirect: stripAuthOnCrossHostRedirect,
+	}
+
+	data, meta, apiErr := c.doRequestWithClient(uploadClient, ctx, http.MethodPost, "/api/v1/hugo/import", nil, writer.FormDataContentType(), &body)
+	return data, meta, apiErr
+}
+
+// GetHugoImportStatus sends GET /api/v1/hugo/import/status/{jobId} and returns
+// the decoded data (containing the job status) or an *APIError on failure. When
+// jobId is empty it fetches the most recent job.
+func (c *Client) GetHugoImportStatus(
+	ctx context.Context,
+	jobID string,
+) (json.RawMessage, json.RawMessage, error) {
+	path := "/api/v1/hugo/import/status"
+	if jobID != "" {
+		path = fmt.Sprintf("/api/v1/hugo/import/status/%s", jobID)
 	}
 	return c.do(ctx, http.MethodGet, path, nil, nil)
 }

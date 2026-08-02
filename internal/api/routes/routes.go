@@ -233,6 +233,12 @@ func Setup(
 		r.With(agentAdminOnly).Post("/api/v1/wordpress/import", wordPressHandler.Import)
 		r.With(agentAdminOnly).Get("/api/v1/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
 		r.With(agentAdminOnly).Get("/api/v1/wordpress/import/status", wordPressHandler.ImportStatus)
+
+		// Hugo import — same contract as WordPress: admin-only, agent realm, and
+		// shares the browser realm's handler and job store.
+		r.With(agentAdminOnly).Post("/api/v1/hugo/import", hugoHandler.Import)
+		r.With(agentAdminOnly).Get("/api/v1/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
+		r.With(agentAdminOnly).Get("/api/v1/hugo/import/status", hugoHandler.ImportStatus)
 	})
 
 	// Shared /api/v1/media GET routes — co-owned by the agent (Bearer API key) and browser
@@ -308,6 +314,8 @@ func Setup(
 			r.Get("/wordpress/import/status", wordPressHandler.ImportStatus)
 			// Hugo import (admin only) — same import ceiling as WordPress.
 			r.Post("/hugo/import", hugoHandler.Import)
+			r.Get("/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
+			r.Get("/hugo/import/status", hugoHandler.ImportStatus)
 			// Content export (admin only) — streams a tar.gz of all content as
 			// Hugo-compatible source files with bundled media.
 			r.Get("/export", exportHandler.Export)

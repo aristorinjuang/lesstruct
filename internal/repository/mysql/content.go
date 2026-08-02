@@ -297,17 +297,32 @@ func (r *ContentRepository) Create(
 		language = "en"
 	}
 
-	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO content_items
-			(user_id, title, slug, content, tags, status, format, post_type,
-			 meta_description, og_title, og_description, allow_comments,
-			 custom_fields, language, translation_group_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, content.UserID, content.Title, content.Slug, content.Content,
-		string(tagsJSON), content.Status, content.Format, content.PostType,
-		content.MetaDescription, content.OGTitle, content.OGDescription,
-		content.AllowComments, customFieldsJSON, language,
-		content.TranslationGroupID)
+	var result sql.Result
+	if content.CreatedAt.IsZero() {
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO content_items
+				(user_id, title, slug, content, tags, status, format, post_type,
+				 meta_description, og_title, og_description, allow_comments,
+				 custom_fields, language, translation_group_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, content.UserID, content.Title, content.Slug, content.Content,
+			string(tagsJSON), content.Status, content.Format, content.PostType,
+			content.MetaDescription, content.OGTitle, content.OGDescription,
+			content.AllowComments, customFieldsJSON, language,
+			content.TranslationGroupID)
+	} else {
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO content_items
+				(user_id, title, slug, content, tags, status, format, post_type,
+				 meta_description, og_title, og_description, allow_comments,
+				 custom_fields, language, translation_group_id, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, content.UserID, content.Title, content.Slug, content.Content,
+			string(tagsJSON), content.Status, content.Format, content.PostType,
+			content.MetaDescription, content.OGTitle, content.OGDescription,
+			content.AllowComments, customFieldsJSON, language,
+			content.TranslationGroupID, content.CreatedAt)
+	}
 	if err != nil {
 		if isMySQLDuplicateError(err) {
 			return contentdomain.ErrSlugAlreadyExists

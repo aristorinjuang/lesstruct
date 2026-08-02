@@ -363,6 +363,60 @@ func TestService_Create(t *testing.T) {
 	}
 }
 
+func TestService_Create_PublishedAt(t *testing.T) {
+	tests := []struct {
+		name        string
+		publishedAt *time.Time
+		wantCreated bool
+	}{
+		{
+			name: "success - PublishedAt sets created timestamp",
+			publishedAt: func() *time.Time {
+				ts := time.Date(2016, 8, 8, 0, 0, 0, 0, time.UTC)
+				return &ts
+			}(),
+			wantCreated: true,
+		},
+		{
+			name:        "success - nil PublishedAt leaves timestamp to the database",
+			publishedAt: nil,
+			wantCreated: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &mocks.MockRepository{}
+			mockRepo.On("CheckSlugUnique", mock.Anything, "dated-title", "en").Return(true, nil)
+			var captured *content.Content
+			mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+				captured = args.Get(1).(*content.Content)
+				captured.ID = 1
+			})
+
+			seoService := seo.NewService("http://localhost:8080", "Test Site")
+			service := content.NewService(mockRepo, seoService, nil)
+			result, err := service.Create(context.Background(), 1, content.CreateContentRequest{
+				Title:       "Dated Title",
+				Content:     testTipTapJSON("Some content for SEO metadata generation purposes."),
+				Tags:        []string{},
+				Status:      content.StatusPublished,
+				PublishedAt: tt.publishedAt,
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, captured)
+			if tt.wantCreated {
+				require.NotNil(t, tt.publishedAt)
+				assert.Equal(t, *tt.publishedAt, captured.CreatedAt, "Service.Create() CreatedAt")
+				assert.Equal(t, *tt.publishedAt, result.CreatedAt, "Service.Create() returned CreatedAt")
+			} else {
+				assert.True(t, captured.CreatedAt.IsZero(), "Service.Create() CreatedAt stays zero without PublishedAt")
+			}
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
 func TestService_Create_DefaultLanguage(t *testing.T) {
 	tests := []struct {
 		name           string

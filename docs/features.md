@@ -97,17 +97,44 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
     command imports the same WXR file via the `/api/v1` agent-realm endpoint
     using an API key. It uploads the file, then polls the status every few
     seconds, printing live progress until the job completes.
-- **Hugo importer.** Upload a `tar.gz` archive of a Hugo project to migrate
-  posts (HTML or Markdown with YAML frontmatter) into Lesstruct. Hugo
-  `{{< highlight >}}` shortcodes are converted to `<pre><code>` blocks and
-  `{{< iframe >}}` shortcodes to `<iframe>` elements. YAML frontmatter fields
-  (`title`, `date`, `tags`, `description`, `url`, `aliases`, `draft`,
-  `language`, `hasMath`, etc.) are mapped to their Lesstruct equivalents.
-  Old `.html` URLs are stored as aliases in the `content_aliases` table so
-  the public content site can issue 301 redirects from the old path to the
-  new clean slug. Bilingual en/id pairs are linked as translations when they
-   share a directory. See [project-context.md](project-context.md) for the
-   architecture and [api-reference.md](api-reference.md) for the endpoint.
+- **Hugo importer.** Import a Hugo site to migrate posts (HTML or Markdown
+  with YAML frontmatter) into Lesstruct. The import runs asynchronously as a
+  background job (202 Accepted + job ID) with a status endpoint for progress
+  tracking — identical to the WordPress importer. Hugo `{{</* highlight */>}}`
+  shortcodes are converted to `<pre><code>` blocks and `{{</* iframe */>}}`
+  shortcodes to `<iframe>` elements. YAML frontmatter fields (`title`, `date`,
+  `tags`, `description`, `url`, `aliases`, `draft`, `language`, `hasMath`,
+  etc.) are mapped to their Lesstruct equivalents — including `date`, which
+  becomes the content's publish date instead of the import time. Old `.html`
+  URLs are stored as aliases in the `content_aliases` table so the public
+  content site can issue 301 redirects from the old path to the new clean
+  slug. Bilingual en/id pairs are linked as translations when they share a
+  directory.
+  - **Media migration.** Images referenced by the content (local `static/`
+    files and remote `https://` URLs) are downloaded and re-uploaded as
+    Lesstruct media (WebP transcode + SHA-256 dedup); body `<img src>` paths
+    are rewritten to the new media URLs and the first frontmatter `images:`
+    entry is prepended as a featured image. Use the **skip-media** option to
+    import text only with images hotlinked — available in the admin UI
+    (checkbox) and the CLI (`--skip-media` flag).
+  - **Idempotent re-runs.** Items whose slug already exists are skipped as
+    "already imported", so re-running after a partial failure is safe.
+  - **Admin UI.** Upload a `.tar.gz` archive (containing at least a
+    `content/` directory) under *Import → Hugo*; the UI polls the job status
+    and shows a progress bar plus per-item issues. The site's `config.toml` /
+    `hugo.toml` is read for `baseURL` and `defaultContentLanguage`.
+  - **CLI import.** `lesstruct-cli import hugo --source <path> [--skip-media]`
+    accepts either a Hugo project **directory** (auto-archived: only
+    `content/` and `static/` are sent) or an existing `.tar.gz` archive, and
+    uploads it via the `/api/v1/hugo/import` agent-realm endpoint using an API
+    key, then polls the job status until it completes.
+  - **Known limitations.** Hugo sections are imported as `post` type (custom
+    sections are not yet mapped to post types, and `_index.md` section
+    landing pages are not skipped); directory-based i18n (`content/en/` +
+    `content/id/`) is not yet detected — only the `.id.html` filename suffix
+    and `language:` frontmatter are recognized; Disqus comments are not
+    migrated. See [project-context.md](project-context.md) for the
+    architecture and [api-reference.md](api-reference.md) for the endpoint.
 
 - **Content export.** Download all content as a Hugo-compatible `tar.gz`
   archive (`lesstruct-export-<timestamp>.tar.gz`). Each content item becomes a

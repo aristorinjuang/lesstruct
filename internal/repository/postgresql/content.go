@@ -331,11 +331,19 @@ func (r *ContentRepository) Create(ctx context.Context, content *contentdomain.C
 
 	var id int
 	var createdAt, updatedAt time.Time
-	err = r.db.QueryRowContext(ctx, `
-		INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-		RETURNING id, created_at, updated_at
-	`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID).Scan(&id, &createdAt, &updatedAt)
+	if content.CreatedAt.IsZero() {
+		err = r.db.QueryRowContext(ctx, `
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			RETURNING id, created_at, updated_at
+		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID).Scan(&id, &createdAt, &updatedAt)
+	} else {
+		err = r.db.QueryRowContext(ctx, `
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			RETURNING id, created_at, updated_at
+		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID, content.CreatedAt).Scan(&id, &createdAt, &updatedAt)
+	}
 	if err != nil {
 		if pgUniqueError(err) {
 			return contentdomain.ErrSlugAlreadyExists

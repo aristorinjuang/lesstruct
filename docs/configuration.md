@@ -113,8 +113,9 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `IMPORT_MAX_SIZE_MB` | `100` | Max upload size (in megabytes) for any importer. Shared by all import types — today the WordPress WXR importer; future importers reuse the same cap. WordPress exports commonly reach tens or hundreds of MB for real sites, so the default is generous; raise it for very large sites. |
+| `IMPORT_MAX_SIZE_MB` | `100` | Max upload size (in megabytes) for any importer. Shared by all import types — the WordPress WXR importer and the Hugo archive importer. WordPress exports commonly reach tens or hundreds of MB for real sites, so the default is generous; raise it for very large sites. |
 | `WORDPRESS_IMPORT_TIMEOUT` | `2h` | Max duration (Go duration string, e.g. `4h`, `90m`) for a single WordPress import job. Imports run asynchronously in a background goroutine after the HTTP request returns `202 Accepted`. Set higher for very large exports with many images. |
+| `HUGO_IMPORT_TIMEOUT` | `10m` | Max duration (Go duration string, e.g. `10m`, `30m`) for a single Hugo import job. Imports run asynchronously in a background goroutine after the HTTP request returns `202 Accepted`. Set higher for sites with many images to migrate. |
 
 ### Server timeouts
 

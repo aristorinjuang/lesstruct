@@ -727,6 +727,9 @@ func main() {
 	hugoImporter := hugo.NewImporter(
 		contentService,
 		aliasService,
+		contentService,
+		mediaService,
+		wordpressDownloader,
 		primaryLanguage,
 		utilLogger,
 	)
@@ -734,6 +737,7 @@ func main() {
 		hugoImporter,
 		utilLogger,
 		cfg.ImportMaxSize(),
+		cfg.HugoImportTimeout,
 	)
 
 	// Initialize API key service and handler (Story 1.1)

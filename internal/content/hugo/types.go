@@ -2,7 +2,9 @@ package hugo
 
 import "time"
 
-type translationGroup struct {
+// TranslationGroup pairs an English Hugo item with its Indonesian variant
+// when both exist for the same logical post (page bundle or leaf file).
+type TranslationGroup struct {
 	English    *HugoItem
 	Indonesian *HugoItem
 }
@@ -30,6 +32,13 @@ type HugoSite struct {
 	Items      []*HugoItem
 	StaticDir  string
 	SourcePath string
+	Config     SiteConfig
+}
+
+// SiteConfig carries the minimal Hugo site configuration the importer acts on.
+type SiteConfig struct {
+	BaseURL                string
+	DefaultContentLanguage string
 }
 
 type ImportResult struct {
