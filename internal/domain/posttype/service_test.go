@@ -1536,3 +1536,75 @@ func TestService_GetUserFieldsEmpty(t *testing.T) {
 		t.Errorf("Expected empty user system fields from default service, got %d", len(systemFields))
 	}
 }
+
+func TestService_RegisterHiddenProtectedSlugsRejected(t *testing.T) {
+	// The page/media/comment built-ins cannot be hidden: the flag only applies
+	// to the "post" built-in and custom post types.
+	service := posttype.NewService()
+
+	for _, slug := range []string{"page", "media", "comment"} {
+		pt := posttype.PostType{
+			Slug:   slug,
+			Hidden: true,
+		}
+
+		err := service.Register(pt)
+		if err == nil {
+			t.Errorf("Register() with hidden=true on %q should error, got nil", slug)
+		}
+
+		// The built-in must be untouched.
+		retrieved, getErr := service.GetBySlug(slug)
+		if getErr != nil {
+			t.Fatalf("GetBySlug(%s) failed: %v", slug, getErr)
+		}
+		if retrieved.Hidden {
+			t.Errorf("Built-in %q became hidden: %+v", slug, retrieved)
+		}
+	}
+}
+
+func TestService_RegisterHiddenPostPropagates(t *testing.T) {
+	// hidden=true on the "post" built-in (an extension entry) is merged into
+	// the built-in so presentation layers can filter it out.
+	service := posttype.NewService()
+
+	pt := posttype.PostType{
+		Slug:   "post",
+		Hidden: true,
+	}
+	if err := service.Register(pt); err != nil {
+		t.Fatalf("Register() with hidden=true on post error = %v, want nil", err)
+	}
+
+	retrieved, err := service.GetBySlug("post")
+	if err != nil {
+		t.Fatalf("GetBySlug(post) failed: %v", err)
+	}
+	if !retrieved.Hidden {
+		t.Errorf("GetBySlug(post).Hidden = false, want true")
+	}
+}
+
+func TestService_RegisterHiddenCustomType(t *testing.T) {
+	// Custom post types may carry hidden=true and keep it through registration.
+	service := posttype.NewService()
+
+	pt := posttype.PostType{
+		Name:     "Projects",
+		Slug:     "project",
+		Supports: []string{"title", "content"},
+		Hidden:   true,
+	}
+	if err := service.Register(pt); err != nil {
+		t.Fatalf("Register() custom hidden type error = %v, want nil", err)
+	}
+
+	retrieved, err := service.GetBySlug("project")
+	if err != nil {
+		t.Fatalf("GetBySlug(project) failed: %v", err)
+	}
+	if !retrieved.Hidden {
+		t.Errorf("GetBySlug(project).Hidden = false, want true")
+	}
+}

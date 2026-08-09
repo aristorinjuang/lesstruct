@@ -56,12 +56,18 @@ func (uf UserFields) Validate() error {
 
 // PostType represents a custom post type configuration
 type PostType struct {
-	Name        string                    `json:"name" toml:"name"`
-	Slug        string                    `json:"slug" toml:"slug"`
-	Description string                    `json:"description,omitempty" toml:"description,omitempty"`
-	Supports    []string                  `json:"supports" toml:"supports"`
+	Name         string                    `json:"name" toml:"name"`
+	Slug         string                    `json:"slug" toml:"slug"`
+	Description  string                    `json:"description,omitempty" toml:"description,omitempty"`
+	Supports     []string                  `json:"supports" toml:"supports"`
 	Fields       []customfield.FieldSchema `json:"fields,omitempty" toml:"fields,omitempty"`
 	SystemFields []customfield.FieldSchema `json:"systemFields,omitempty" toml:"system_fields,omitempty"`
+	// Hidden hides the post type from the admin panel and the public post-type
+	// API. The type stays fully registered (content validation, templates, and
+	// the WordPress importer still resolve it) — hiding is presentation only.
+	// Built-in types other than "post" (i.e. page, media, comment) cannot be
+	// hidden; setting hidden=true on them is rejected at startup.
+	Hidden bool `json:"hidden,omitempty" toml:"hidden,omitempty"`
 }
 
 // Validate validates the entire PostType struct

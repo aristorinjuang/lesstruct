@@ -1,0 +1,1 @@
+var e=`/admin/assets/hugo-logo-ChU8XbWk.webp`;export{e as t};

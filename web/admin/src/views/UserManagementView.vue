@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useUserStore } from '@/stores/domain/user'
 import api from '@/utils/request'
 import Toast from '@/components/molecules/Toast.vue'
+import Button from '@/components/atoms/Button.vue'
 import PendingRegistrations from '@/components/organisms/PendingRegistrations.vue'
 import CreateUserModal from '@/components/organisms/CreateUserModal.vue'
 import EditUserModal from '@/components/organisms/EditUserModal.vue'
@@ -152,9 +153,9 @@ onMounted(() => {
       class="user-management__error"
     >
       <p>Failed to load users. Please try again.</p>
-      <button type="button" class="user-management__retry-button" @click="loadUsers">
+      <Button variant="danger" type="button" class="user-management__retry-button" @click="loadUsers">
         Retry
-      </button>
+      </Button>
     </div>
 
     <!-- Main content -->
@@ -172,9 +173,9 @@ onMounted(() => {
       <section class="user-management__all-users">
         <div class="user-management__section-header">
           <h2 class="card-title">All Users</h2>
-          <button type="button" class="user-management__create-button" @click="showCreateModal = true">
+          <Button type="button" variant="primary" class="user-management__create-button" @click="showCreateModal = true">
             Create User
-          </button>
+          </Button>
         </div>
         <UserTable
           :users="userStore.users"
@@ -232,19 +233,6 @@ onMounted(() => {
 
 .user-management__retry-button {
   margin-top: 1rem;
-  padding: 0.625rem 1rem;
-  background-color: var(--color-destructive);
-  color: var(--color-white);
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  min-height: 44px;
-}
-
-.user-management__retry-button:hover {
-  background-color: var(--color-destructive);
 }
 
 .user-management__content {
@@ -261,24 +249,6 @@ onMounted(() => {
 }
 
 .user-management__create-button {
-  padding: 0.5rem 1rem;
-  background-color: var(--brand-primary);
-  color: white;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  min-height: 44px;
-  transition: background-color 0.2s;
-}
-
-.user-management__create-button:hover {
-  background-color: var(--color-interactive-hover);
-}
-
-.user-management__create-button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
+  flex-shrink: 0;
 }
 </style>

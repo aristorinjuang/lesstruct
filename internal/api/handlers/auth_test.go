@@ -33,7 +33,7 @@ func TestLogin_ValidCredentials(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -135,7 +135,7 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -186,7 +186,7 @@ func TestLogin_InvalidRequestBody(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	userRepo := repomocks.NewMockUserRepo(t)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
@@ -219,7 +219,7 @@ func TestLogin_DefaultCredentialsAfterFirstLogin(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	// Simulate setup completion: admin password has been changed from default
 	changedHash, err := appauth.HashPassword("ChangedPassword456!")
@@ -283,7 +283,7 @@ func TestVerifyEmail_ValidToken(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 
 	// Create user to verify
 	testUser := &repository.User{
@@ -396,7 +396,7 @@ func TestVerifyEmail_EmptyToken(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
@@ -440,7 +440,7 @@ func TestVerifyEmail_InvalidToken(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
 	verificationTokenRepo.EXPECT().
@@ -487,7 +487,7 @@ func TestVerifyEmail_ExpiredToken(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 
 	// Configure user mock
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -568,7 +568,7 @@ func TestRegisterUser_Success(t *testing.T) {
 		CreateToken(mock.Anything, mock.Anything).
 		Return(nil)
 
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	notificationRepo.EXPECT().
@@ -613,6 +613,53 @@ func TestRegisterUser_Success(t *testing.T) {
 	assert.NotNil(t, resp.Data, "Response data should not be nil")
 }
 
+func TestRegisterUser_CommentsDisabled_ReturnsForbidden(t *testing.T) {
+	hash, _ := appauth.HashPassword("admin")
+	authService := authdomain.NewAuthService(hash)
+	jwtManager := appauth.NewJWTManager("test-secret")
+	logger := util.NewLogger(os.Stdout)
+	firstLoginService := authdomain.NewFirstLoginService()
+
+	// Comments disabled → registration blocked with 403 before any repo call
+	// (the blocked-email repo must NOT be queried).
+	registrationService := authdomain.NewRegistrationService(nil, false)
+	verificationService := authdomain.NewVerificationService(nil, nil, 24)
+	notificationRepo := repomocks.NewMockNotificationRepo(t)
+	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	loginService := authdomain.NewLoginService(nil, failedLoginRepo, nil)
+	emailService := emailmocks.NewMockEmailService(t)
+	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
+	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetService := authdomain.NewPasswordResetService(nil, passwordResetTokenRepo, 1)
+	handler := handlers.NewAuthHandler(authService, jwtManager, logger, firstLoginService, registrationService, verificationService, loginService, passwordResetService, nil, failedLoginRepo, notificationRepo, emailService, blockedEmailRepo)
+
+	reqBody := handlers.RegisterUserRequest{
+		Username: "newuser",
+		Email:    "newuser@example.com",
+		Password: "SecurePassword123!",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.RegisterUser(w, req)
+
+	// The gate must short-circuit before the blocked-email lookup.
+	blockedEmailRepo.AssertNotCalled(t, "IsEmailBlocked", mock.Anything, mock.Anything)
+
+	assert.Equal(t, http.StatusForbidden, w.Code, "registration must be 403 when comments are disabled")
+
+	var resp appresponse.Response
+	err := json.NewDecoder(w.Body).Decode(&resp)
+	require.NoError(t, err, "Failed to decode response")
+	require.NotNil(t, resp.Error, "Response error should not be nil")
+	errorMap, ok := resp.Error.(map[string]any)
+	require.True(t, ok, "error should be a JSON object")
+	assert.Equal(t, "REGISTRATION_DISABLED", errorMap["code"], "error code")
+}
+
 func TestRegisterUser_DuplicateUsername(t *testing.T) {
 	// Setup
 	hash, _ := appauth.HashPassword("admin")
@@ -627,7 +674,7 @@ func TestRegisterUser_DuplicateUsername(t *testing.T) {
 		Return(true, nil)
 
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -690,7 +737,7 @@ func TestRegisterUser_DuplicateEmail(t *testing.T) {
 		Return(true, nil)
 
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -746,7 +793,7 @@ func TestRegisterUser_InvalidPassword(t *testing.T) {
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -795,7 +842,7 @@ func TestRegisterUser_MissingFields(t *testing.T) {
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)

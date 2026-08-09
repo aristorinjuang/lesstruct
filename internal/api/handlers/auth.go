@@ -323,6 +323,14 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if registration is enabled before any repository work: the
+	// blocked-email lookup below would otherwise run (and leak whether the
+	// submitted email is blocked) even on instances that disable registration.
+	if !h.registrationService.RegistrationEnabled() {
+		response.Error(w, http.StatusForbidden, "REGISTRATION_DISABLED", "Self-registration is disabled on this instance", nil)
+		return
+	}
+
 	// Check if email is blocked (Task 1.5: User Registration Management)
 	blocked, err := h.blockedEmailRepo.IsEmailBlocked(r.Context(), req.Email)
 	if err != nil {
@@ -349,6 +357,8 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	// Handle specific errors
 	if err != nil {
 		switch err {
+		case authdomain.ErrRegistrationDisabled:
+			response.Error(w, http.StatusForbidden, "REGISTRATION_DISABLED", "Self-registration is disabled on this instance", nil)
 		case authdomain.ErrUsernameInvalid:
 			response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid username format", nil)
 		case authdomain.ErrUsernameExists, authdomain.ErrEmailExists:

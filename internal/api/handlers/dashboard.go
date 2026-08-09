@@ -8,6 +8,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	dashboarddomain "github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
+	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -15,9 +16,17 @@ type DashboardServiceInterface interface {
 	GetStats(ctx context.Context, userID int) (*dashboarddomain.Stats, error)
 }
 
+// PostTypeLister lists registered post types. It is satisfied by the post type
+// service, and lets the dashboard drop hidden post types from its per-type
+// breakdown cards.
+type PostTypeLister interface {
+	GetAll() []posttype.PostType
+}
+
 type DashboardHandler struct {
-	dashboardService DashboardServiceInterface
-	logger           *util.Logger
+	dashboardService  DashboardServiceInterface
+	postTypeLister    PostTypeLister
+	logger            *util.Logger
 }
 
 func (h *DashboardHandler) GetStats(w http.ResponseWriter, r *http.Request) {
@@ -53,12 +62,34 @@ func (h *DashboardHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Drop per-type breakdown entries for hidden post types. The repository
+	// GROUP BYs the content table directly, so it cannot know about the
+	// presentation-level Hidden flag — filter here.
+	if h.postTypeLister != nil {
+		hiddenSlugs := make(map[string]bool)
+		for _, pt := range h.postTypeLister.GetAll() {
+			if pt.Hidden {
+				hiddenSlugs[pt.Slug] = true
+			}
+		}
+		if len(hiddenSlugs) > 0 && stats != nil {
+			filtered := stats.ContentByType[:0]
+			for _, entry := range stats.ContentByType {
+				if !hiddenSlugs[entry.PostType] {
+					filtered = append(filtered, entry)
+				}
+			}
+			stats.ContentByType = filtered
+		}
+	}
+
 	sendSuccessResponse(w, http.StatusOK, stats)
 }
 
-func NewDashboardHandler(dashboardService DashboardServiceInterface, logger *util.Logger) *DashboardHandler {
+func NewDashboardHandler(dashboardService DashboardServiceInterface, postTypeLister PostTypeLister, logger *util.Logger) *DashboardHandler {
 	return &DashboardHandler{
 		dashboardService: dashboardService,
+		postTypeLister:   postTypeLister,
 		logger:           logger,
 	}
 }

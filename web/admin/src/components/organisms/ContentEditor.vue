@@ -40,7 +40,7 @@ const emit = defineEmits<Emits>()
 
 const contentStore = useContentStore()
 const { role } = useAuth()
-const { languages, fetchConfig, primaryLanguage } = useConfig()
+const { languages, commentsEnabled, fetchConfig, primaryLanguage } = useConfig()
 const isAdmin = computed(() => role.value === 'Admin')
 
 const activeLanguage = ref('en')
@@ -264,6 +264,7 @@ const reservedPostTypeSlugs = new Set(['media', 'comment', 'attachment'])
 const postTypeOptions = computed(() => {
   return postTypes.value
     .filter(pt => !reservedPostTypeSlugs.has(pt.slug.toLowerCase()))
+    .filter(pt => !pt.hidden)
     .map(pt => ({ value: pt.slug, label: pt.name }))
 })
 
@@ -757,7 +758,7 @@ function focusValidationField(slug: string) {
 
 <template>
   <form @submit.prevent="() => saveDraft()" class="content-editor">
-    <div v-if="!isNewContent" class="content-editor__links">
+    <div v-if="!isNewContent && commentsEnabled" class="content-editor__links">
       <router-link
         :to="`/content/${savedContentId}/comments?slug=${slug}`"
         class="content-editor__link"
@@ -815,7 +816,7 @@ function focusValidationField(slug: string) {
     <div class="content-editor__media-toggle" v-if="showFeaturedImage">
       <Button
         type="button"
-        variant="secondary"
+        variant="neutral"
         @click="toggleMediaPanel"
       >
         {{ isMediaPanelOpen ? 'Hide' : 'Show' }} Media
@@ -830,22 +831,22 @@ function focusValidationField(slug: string) {
 
     <FormField v-if="showFormatSelector" label="Content Format">
       <div class="content-editor__format-selector">
-        <button
-          type="button"
+        <Button
+          size="small"
+          :variant="contentFormat === 'tiptap' ? 'primary' : 'neutral'"
           class="content-editor__format-btn"
-          :class="{ 'content-editor__format-btn--active': contentFormat === 'tiptap' }"
           @click="contentFormat = 'tiptap'"
         >
           Rich Text
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          size="small"
+          :variant="contentFormat === 'html' ? 'primary' : 'neutral'"
           class="content-editor__format-btn"
-          :class="{ 'content-editor__format-btn--active': contentFormat === 'html' }"
           @click="contentFormat = 'html'"
         >
           HTML &amp; CSS
-        </button>
+        </Button>
       </div>
     </FormField>
 
@@ -880,7 +881,7 @@ function focusValidationField(slug: string) {
         <Button
           v-if="textGenAvailable && !isHTMLContent && activeLanguage === primaryLanguage()"
           type="button"
-          variant="secondary"
+          variant="neutral"
           :is-loading="isEnhancing"
           @click="handleEnhance"
         >
@@ -890,7 +891,7 @@ function focusValidationField(slug: string) {
         <Button
           v-if="textGenAvailable && isHTMLContent && activeLanguage === primaryLanguage()"
           type="button"
-          variant="secondary"
+          variant="neutral"
           :is-loading="isEnhancing"
           @click="openHtmlAiModal"
         >
@@ -900,7 +901,7 @@ function focusValidationField(slug: string) {
         <Button
           v-if="textGenAvailable && activeLanguage !== primaryLanguage() && (primaryContentId || savedContentId !== primaryContentId)"
           type="button"
-          variant="secondary"
+          variant="neutral"
           :is-loading="isTranslating"
           @click="handleTranslate"
         >
@@ -998,7 +999,7 @@ function focusValidationField(slug: string) {
       />
     </FormField>
 
-    <div class="content-editor__checkbox-field">
+    <div v-if="commentsEnabled" class="content-editor__checkbox-field">
       <label class="content-editor__checkbox-label">
         <input
           type="checkbox"
@@ -1067,7 +1068,7 @@ function focusValidationField(slug: string) {
 
       <Button
         type="button"
-        variant="secondary"
+        variant="neutral"
         @click="cancel"
       >
         Cancel
@@ -1095,7 +1096,7 @@ function focusValidationField(slug: string) {
       <template v-else-if="currentStatus === 'draft'">
         <Button
           type="button"
-          variant="secondary"
+          variant="neutral"
           :is-loading="isLoading"
           @click="() => saveDraft()"
         >
@@ -1114,7 +1115,7 @@ function focusValidationField(slug: string) {
       <template v-else>
         <Button
           type="button"
-          variant="secondary"
+          variant="neutral"
           :is-loading="isLoading"
           @click="unpublish"
         >
@@ -1235,25 +1236,7 @@ function focusValidationField(slug: string) {
 }
 
 .content-editor__format-btn {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--brand-light-2);
-  background-color: var(--color-background);
-  color: var(--brand-dark-2);
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
-}
-
-.content-editor__format-btn:hover {
-  background-color: var(--brand-light-1);
-}
-
-.content-editor__format-btn--active {
-  background-color: var(--color-info);
-  color: var(--color-white);
-  border-color: var(--color-info);
+  height: 2.25rem;
 }
 
 .content-editor__autosave-hint {

@@ -321,8 +321,9 @@ func displayLanguage(code string) string {
 }
 
 type ContentPageHandler struct {
-	assembler *DataAssembler
-	templates *tpl.Templates
+	assembler       *DataAssembler
+	templates       *tpl.Templates
+	commentsEnabled bool
 }
 
 func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
@@ -423,6 +424,7 @@ func (h *ContentPageHandler) serveLogin(w http.ResponseWriter, r *http.Request) 
 			Lang:            h.assembler.PrimaryLanguage(),
 			SiteConfig:      h.assembler.siteConfig,
 		},
+		ShowRegister: h.commentsEnabled,
 	}
 	if err := h.templates.RenderLogin(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -430,6 +432,12 @@ func (h *ContentPageHandler) serveLogin(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ContentPageHandler) serveRegister(w http.ResponseWriter, r *http.Request) {
+	if !h.commentsEnabled {
+		// Self-registration only ever creates Commentator users; with the
+		// comment system disabled the page has no purpose.
+		http.NotFound(w, r)
+		return
+	}
 	navItems := h.assembler.buildNavigationItems(r.Context(), "/register")
 	data := tpl.AuthPageData{
 		LayoutData: tpl.LayoutData{
@@ -440,6 +448,7 @@ func (h *ContentPageHandler) serveRegister(w http.ResponseWriter, r *http.Reques
 			Lang:            h.assembler.PrimaryLanguage(),
 			SiteConfig:      h.assembler.siteConfig,
 		},
+		ShowRegister: true,
 	}
 	if err := h.templates.RenderRegister(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -557,6 +566,7 @@ func NewContentPageHandler(
 	homepageSections []config.HomepageSection,
 	siteConfig config.SiteConfig,
 	postsPerPage int,
+	commentsEnabled bool,
 ) *ContentPageHandler {
 	return &ContentPageHandler{
 		assembler: NewDataAssembler(
@@ -571,6 +581,7 @@ func NewContentPageHandler(
 			siteConfig,
 			postsPerPage,
 		),
-		templates: templates,
+		templates:       templates,
+		commentsEnabled: commentsEnabled,
 	}
 }

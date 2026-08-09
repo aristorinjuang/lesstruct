@@ -112,7 +112,7 @@ func TestRegistrationService_RegisterUser_Success(t *testing.T) {
 		}).
 		Return(nil)
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "testuser",
@@ -131,7 +131,7 @@ func TestRegistrationService_RegisterUser_Success(t *testing.T) {
 func TestRegistrationService_RegisterUser_InvalidUsername(t *testing.T) {
 	mockRepo := repomocks.NewMockUserRepo(t)
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "test user", // Invalid: contains space
@@ -146,7 +146,7 @@ func TestRegistrationService_RegisterUser_InvalidUsername(t *testing.T) {
 func TestRegistrationService_RegisterUser_InvalidEmail(t *testing.T) {
 	mockRepo := repomocks.NewMockUserRepo(t)
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "testuser",
@@ -161,7 +161,7 @@ func TestRegistrationService_RegisterUser_InvalidEmail(t *testing.T) {
 func TestRegistrationService_RegisterUser_InvalidPassword(t *testing.T) {
 	mockRepo := repomocks.NewMockUserRepo(t)
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "testuser",
@@ -180,7 +180,7 @@ func TestRegistrationService_RegisterUser_UsernameExists(t *testing.T) {
 		CheckUsernameExists(mock.Anything, mock.Anything).
 		Return(true, nil)
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "existinguser",
@@ -203,7 +203,7 @@ func TestRegistrationService_RegisterUser_EmailExists(t *testing.T) {
 		CheckEmailExists(mock.Anything, mock.Anything).
 		Return(true, nil)
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "testuser",
@@ -230,7 +230,7 @@ func TestRegistrationService_RegisterUser_CreateUserFailure(t *testing.T) {
 		CreateUser(mock.Anything, mock.Anything).
 		Return(errors.New("database error"))
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "testuser",
@@ -250,7 +250,7 @@ func TestRegistrationService_RegisterUser_CheckUsernameExistsError(t *testing.T)
 		CheckUsernameExists(mock.Anything, mock.Anything).
 		Return(false, errors.New("database connection lost"))
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "testuser",
@@ -273,7 +273,7 @@ func TestRegistrationService_RegisterUser_CheckEmailExistsError(t *testing.T) {
 		CheckEmailExists(mock.Anything, mock.Anything).
 		Return(false, errors.New("database connection lost"))
 
-	service := auth.NewRegistrationService(mockRepo)
+	service := auth.NewRegistrationService(mockRepo, true)
 
 	req := auth.RegisterRequest{
 		Username: "testuser",
@@ -283,4 +283,48 @@ func TestRegistrationService_RegisterUser_CheckEmailExistsError(t *testing.T) {
 
 	_, err := service.RegisterUser(context.Background(), req)
 	assert.Error(t, err, "Should return error when CheckEmailExists fails")
+}
+
+func TestRegistrationService_RegisterUser_CommentsDisabled(t *testing.T) {
+	mockRepo := repomocks.NewMockUserRepo(t)
+
+	service := auth.NewRegistrationService(mockRepo, false)
+
+	req := auth.RegisterRequest{
+		Username: "testuser",
+		Email:    "test@example.com",
+		Password: "SecurePassword123!",
+	}
+
+	// No repo interaction happens: the gate rejects before any lookup.
+	mockRepo.AssertNotCalled(t, "CheckUsernameExists", mock.Anything, mock.Anything)
+
+	_, err := service.RegisterUser(context.Background(), req)
+	assert.ErrorIs(t, err, auth.ErrRegistrationDisabled, "Should return ErrRegistrationDisabled")
+}
+
+func TestRegistrationService_RegistrationEnabled(t *testing.T) {
+	tests := []struct {
+		name            string
+		commentsEnabled bool
+		expected        bool
+	}{
+		{
+			name:            "enabled when comments are on",
+			commentsEnabled: true,
+			expected:        true,
+		},
+		{
+			name:            "disabled when comments are off",
+			commentsEnabled: false,
+			expected:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := auth.NewRegistrationService(nil, tt.commentsEnabled)
+			assert.Equal(t, tt.expected, service.RegistrationEnabled())
+		})
+	}
 }

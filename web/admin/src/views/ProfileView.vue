@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import api, { ApiError } from '@/utils/request'
 import { useAuth } from '@/composables/useAuth'
 import Toast from '@/components/molecules/Toast.vue'
+import Button from '@/components/atoms/Button.vue'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
 import { validateCustomField } from '@/utils/validation'
 import type { FieldSchema } from '@/types/customfield'
@@ -404,18 +405,25 @@ async function handleChangeEmail() {
               @change="handleFileSelect"
               :disabled="isUploadingPicture"
             />
-            <label for="avatar-upload" class="profile-view__button profile-view__button--secondary" :class="{ 'profile-view__button--disabled': isUploadingPicture }">
+            <Button
+              variant="ghost"
+              class="profile-view__button profile-view__button--secondary"
+              :disabled="isUploadingPicture"
+              @click="fileInputRef?.click()"
+            >
               {{ isUploadingPicture ? 'Uploading...' : 'Upload Picture' }}
-            </label>
-            <button
+            </Button>
+            <Button
               v-if="profile.profilePicture"
               type="button"
+              variant="ghost"
+              tone="danger"
               class="profile-view__button profile-view__button--danger"
               :disabled="isDeletingPicture"
               @click="handleDeletePicture"
             >
               {{ isDeletingPicture ? 'Deleting...' : 'Delete Picture' }}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -433,13 +441,13 @@ async function handleChangeEmail() {
             />
             <p v-if="nameError" class="profile-view__field-error" role="alert">{{ nameError }}</p>
           </div>
-          <button
+          <Button
             type="submit"
             class="profile-view__button"
-            :disabled="isSavingName"
+            :is-loading="isSavingName"
           >
             {{ isSavingName ? 'Saving...' : 'Save Name' }}
-          </button>
+          </Button>
         </form>
         <div class="profile-view__field">
           <label class="profile-view__label">Username</label>
@@ -495,13 +503,13 @@ async function handleChangeEmail() {
             />
           </div>
 
-          <button
+          <Button
             type="submit"
             class="profile-view__button"
-            :disabled="isChangingEmail"
+            :is-loading="isChangingEmail"
           >
             {{ isChangingEmail ? 'Sending...' : 'Send Verification' }}
-          </button>
+          </Button>
         </form>
       </div>
 
@@ -549,15 +557,15 @@ async function handleChangeEmail() {
             />
           </div>
 
-          <button
+          <Button
             v-if="userFields.length > 0 || (isAdmin && userSystemFields.length > 0)"
             type="button"
             class="profile-view__button"
-            :disabled="isSavingFields"
+            :is-loading="isSavingFields"
             @click="handleSaveFields"
           >
             {{ isSavingFields ? 'Saving...' : 'Save Profile' }}
-          </button>
+          </Button>
         </template>
       </div>
 
@@ -605,13 +613,13 @@ async function handleChangeEmail() {
             />
           </div>
 
-          <button
+          <Button
             type="submit"
             class="profile-view__button"
-            :disabled="isChangingPassword"
+            :is-loading="isChangingPassword"
           >
             {{ isChangingPassword ? 'Updating...' : 'Update Password' }}
-          </button>
+          </Button>
         </form>
       </div>
     </div>
@@ -668,28 +676,11 @@ async function handleChangeEmail() {
 }
 
 .profile-view__button--secondary {
-  background-color: transparent;
-  color: var(--brand-primary);
-  border: 1px solid var(--brand-primary);
-  display: inline-block;
-  text-align: center;
-  line-height: 2.5;
   max-width: 200px;
-}
-
-.profile-view__button--secondary:hover:not(:disabled) {
-  background-color: var(--brand-primary-light);
 }
 
 .profile-view__button--danger {
-  background-color: transparent;
-  color: var(--color-error);
-  border: 1px solid var(--color-error);
   max-width: 200px;
-}
-
-.profile-view__button--danger:hover:not(:disabled) {
-  background-color: rgba(239, 68, 68, 0.1);
 }
 
 .profile-view__button--disabled {
@@ -752,31 +743,7 @@ async function handleChangeEmail() {
 }
 
 .profile-view__button {
-  padding: 0.625rem 1rem;
-  background-color: var(--brand-primary);
-  color: white;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  min-height: 44px;
   max-width: 200px;
-  transition: background-color 0.2s;
-}
-
-.profile-view__button:hover:not(:disabled) {
-  background-color: var(--color-interactive-hover);
-}
-
-.profile-view__button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.profile-view__button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
 }
 
 .profile-view__fields-section {

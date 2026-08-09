@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted } from 'vue'
 import Modal from './Modal.vue'
+import Button from '@/components/atoms/Button.vue'
 import { useApiKeys } from '@/composables/useApiKeys'
 
 const props = defineProps<{ isOpen: boolean }>()
@@ -146,21 +147,23 @@ function handleClose() {
       </div>
 
       <div class="api-key-create-dialog__actions">
-        <button
+        <Button
           type="button"
-          class="api-key-create-dialog__button api-key-create-dialog__button--cancel"
+          variant="neutral"
+          class="api-key-create-dialog__button"
           :disabled="state === 'loading'"
           @click="handleClose"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
-          class="api-key-create-dialog__button api-key-create-dialog__button--create"
-          :disabled="state === 'loading'"
+          variant="primary"
+          class="api-key-create-dialog__button"
+          :is-loading="state === 'loading'"
         >
           {{ state === 'loading' ? 'Creating...' : 'Create' }}
-        </button>
+        </Button>
       </div>
     </form>
 
@@ -170,27 +173,29 @@ function handleClose() {
         <label class="api-key-create-dialog__label">API key</label>
         <div class="api-key-create-dialog__key-row">
           <code class="api-key-create-dialog__key">{{ generatedKey }}</code>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             class="api-key-create-dialog__copy-button"
             :aria-label="keyCopied ? 'Copied' : 'Copy API key'"
             @click="copyKey"
           >
             {{ keyCopied ? 'Copied!' : 'Copy' }}
-          </button>
+          </Button>
         </div>
         <p class="api-key-create-dialog__warning">
           This key will not be shown again. Copy it now.
         </p>
       </div>
       <div class="api-key-create-dialog__actions">
-        <button
+        <Button
           type="button"
-          class="api-key-create-dialog__button api-key-create-dialog__button--done"
+          variant="primary"
+          class="api-key-create-dialog__button"
           @click="handleClose"
         >
           Done
-        </button>
+        </Button>
       </div>
     </div>
   </Modal>
@@ -254,53 +259,7 @@ function handleClose() {
 }
 
 .api-key-create-dialog__button {
-  padding: 0.625rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
-  border: 1px solid transparent;
-  min-height: 44px;
   min-width: 80px;
-}
-
-.api-key-create-dialog__button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.api-key-create-dialog__button--cancel {
-  background-color: var(--brand-light-1);
-  color: var(--brand-dark-2);
-  border-color: var(--brand-light-2);
-}
-
-.api-key-create-dialog__button--cancel:hover:not(:disabled) {
-  background-color: var(--brand-light-2);
-}
-
-.api-key-create-dialog__button--create {
-  background-color: var(--brand-primary);
-  color: white;
-}
-
-.api-key-create-dialog__button--create:hover:not(:disabled) {
-  background-color: var(--color-interactive-hover);
-}
-
-.api-key-create-dialog__button--done {
-  background-color: var(--brand-primary);
-  color: white;
-}
-
-.api-key-create-dialog__button--done:hover {
-  background-color: var(--color-interactive-hover);
-}
-
-.api-key-create-dialog__button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
 }
 
 .api-key-create-dialog__success {
@@ -341,20 +300,8 @@ function handleClose() {
 }
 
 .api-key-create-dialog__copy-button {
-  padding: 0.5rem 0.75rem;
-  background-color: var(--brand-light-1);
-  border: 1px solid var(--brand-light-2);
-  border-radius: 0.375rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
+  flex-shrink: 0;
   white-space: nowrap;
-  min-height: 44px;
-  transition: background-color 0.2s;
-}
-
-.api-key-create-dialog__copy-button:hover {
-  background-color: var(--brand-light-2);
 }
 
 .api-key-create-dialog__warning {

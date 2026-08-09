@@ -2,6 +2,7 @@
 import { ref, nextTick } from 'vue'
 import { type Editor } from '@tiptap/vue-3'
 import EditorButton from '@/components/atoms/EditorButton.vue'
+import Button from '@/components/atoms/Button.vue'
 
 type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
 
@@ -405,26 +406,26 @@ defineExpose({
           />
           <p class="dialog-hint">Selected text will be used as the link display text.</p>
           <div class="dialog-actions">
-            <button
+            <Button
               v-if="editor.isActive('link')"
               type="button"
-              class="dialog-button danger"
+              variant="danger"
               @click="removeLink(); closeLinkDialog()"
             >
               Remove Link
-            </button>
+            </Button>
             <div class="dialog-actions-right">
-              <button type="button" class="dialog-button" @click="closeLinkDialog">
+              <Button type="button" variant="neutral" @click="closeLinkDialog">
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                class="dialog-button primary"
+                variant="primary"
                 :disabled="!isValidUrl(linkUrl)"
                 @click="setLink"
               >
                 Insert
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -453,17 +454,17 @@ defineExpose({
             @keydown.enter="setImage"
           />
           <div class="dialog-actions">
-            <button type="button" class="dialog-button" @click="closeImageDialog">
+            <Button type="button" variant="neutral" @click="closeImageDialog">
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              class="dialog-button primary"
+              variant="primary"
               :disabled="!isValidUrl(imageUrl)"
               @click="setImage"
             >
               Insert
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -508,12 +509,12 @@ defineExpose({
             </label>
           </div>
           <div class="dialog-actions">
-            <button type="button" class="dialog-button" @click="closeTableDialog">
+            <Button type="button" variant="neutral" @click="closeTableDialog">
               Cancel
-            </button>
-            <button type="button" class="dialog-button primary" @click="insertTable">
+            </Button>
+            <Button type="button" variant="primary" @click="insertTable">
               Insert
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -544,17 +545,17 @@ defineExpose({
             Paste a YouTube URL (watch, embed, or short link).
           </p>
           <div class="dialog-actions">
-            <button type="button" class="dialog-button" @click="closeYoutubeDialog">
+            <Button type="button" variant="neutral" @click="closeYoutubeDialog">
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              class="dialog-button primary"
+              variant="primary"
               :disabled="!youtubeUrl"
               @click="insertYoutube"
             >
               Insert
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -583,17 +584,17 @@ defineExpose({
           />
           <p class="dialog-hint">Enter LaTeX expression. KaTeX will render it.</p>
           <div class="dialog-actions">
-            <button type="button" class="dialog-button" @click="closeMathDialog">
+            <Button type="button" variant="neutral" @click="closeMathDialog">
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              class="dialog-button primary"
+              variant="primary"
               :disabled="!mathLatex.trim()"
               @click="insertMath"
             >
               Insert
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -741,47 +742,6 @@ defineExpose({
 .dialog-actions-right {
   display: flex;
   gap: 0.5rem;
-}
-
-.dialog-button {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--brand-light-2);
-  border-radius: 0.375rem;
-  background-color: var(--color-background);
-  color: var(--brand-dark-1);
-  font-size: 0.875rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.dialog-button:hover {
-  background-color: var(--brand-light-1);
-}
-
-.dialog-button.primary {
-  background-color: var(--color-info);
-  color: var(--color-white);
-  border-color: var(--color-info);
-}
-
-.dialog-button.primary:hover {
-  background-color: var(--color-info);
-}
-
-.dialog-button.primary:disabled {
-  background-color: var(--color-info);
-  border-color: var(--color-info);
-  cursor: not-allowed;
-}
-
-.dialog-button.danger {
-  background-color: var(--color-error);
-  color: var(--color-white);
-  border-color: var(--color-error);
-}
-
-.dialog-button.danger:hover {
-  background-color: var(--color-error);
 }
 
 @media (max-width: 768px) {

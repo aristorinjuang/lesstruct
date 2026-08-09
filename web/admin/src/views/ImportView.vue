@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useTheme } from '@/composables/useTheme'
 import wordpressLogo from '@/assets/wordpress-logo.webp'
 import wordpressLogoDark from '@/assets/wordpress-logo-dark.webp'
+import hugoLogo from '@/assets/hugo-logo.webp'
 
 interface Platform {
   id: string
@@ -34,6 +35,8 @@ const platforms: Platform[] = [
     id: 'hugo',
     name: 'Hugo',
     description: 'Import posts from a Hugo site archive (.tar.gz).',
+    lightLogo: hugoLogo,
+    darkLogo: hugoLogo,
     target: '/import/hugo',
   },
 ]

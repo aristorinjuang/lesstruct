@@ -56,7 +56,7 @@ function togglePreview() {
     <div class="html-code-editor__toolbar">
       <Button
         type="button"
-        variant="secondary"
+        variant="neutral"
         size="small"
         @click="togglePreview"
       >

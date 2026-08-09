@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import request, { ApiError } from '@/utils/request'
+import Button from '@/components/atoms/Button.vue'
 import ThemeToggle from '@/components/atoms/ThemeToggle.vue'
 
 const email = ref('')
@@ -91,13 +92,14 @@ async function handleSubmit() {
             {{ error }}
           </div>
 
-          <button
+          <Button
             type="submit"
             class="login-view__button"
-            :disabled="isLoading"
+            :is-loading="isLoading"
+            full-width
           >
             {{ isLoading ? 'Sending...' : 'Send reset link' }}
-          </button>
+          </Button>
         </form>
 
         <div v-else class="login-view__success">
@@ -215,24 +217,7 @@ async function handleSubmit() {
 }
 
 .login-view__button {
-  padding: 0.625rem 1rem;
-  background-color: var(--brand-primary);
-  color: var(--brand-dark-1);
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.login-view__button:hover:not(:disabled) {
-  background-color: var(--brand-primary-hover);
-}
-
-.login-view__button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  margin-top: 0.25rem;
 }
 
 .login-view__success {

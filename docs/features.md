@@ -18,7 +18,8 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Static site generation (SSG).** Generate a fully static HTML site (tar.gz) with
   AMP variants for content pages, listing pages, author pages, tag pages, a
   sitemap, and robots.txt — all rendered from the same data layer as the live site.
-  Download via the admin or agent API, or via `lesstruct-cli ssg`.
+  Download from the admin panel under *Export*, via the agent API, or via
+  `lesstruct-cli ssg`.
 - **Multi-database.** Embedded SQLite is the default; PostgreSQL and MySQL are
   first-class via `DB_DRIVER`. Schema migrations run automatically on first start,
   per driver.
@@ -28,6 +29,15 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   sensible default. See [configuration.md](configuration.md).
 - **Plugin hot-reload.** In `DEV_MODE`, a file watcher reloads `.wasm` plugins
   without a server restart.
+- **Headless mode.** `[headless] enabled = true` in `config.toml` turns the
+  instance into a pure headless CMS: the server-rendered content site (catch-all
+  and `/static/*`) is not served, only the admin panel and the REST API. The
+  sitemap and robots.txt follow suit. See [configuration.md](configuration.md).
+- **Comments can be switched off entirely.** `[comments] enabled = false`
+  hard-disables the comment system end to end — no comment routes, no comment
+  UI, `allowComments` forced off on every item, and self-registration blocked
+  (the only self-registerable role, Commentator, exists solely for comments).
+  See [configuration.md](configuration.md).
 
 ## Content & authoring {#content-authoring}
 
@@ -143,9 +153,9 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   `lastmod`, custom fields). TipTip body content is rendered to HTML before
   export. Referenced media files are bundled under `static/uploads/media/`
   with the HTML `src` attributes unchanged (Hugo serves `static/` at site
-  root, matching Lesstruct's own `/uploads/media/` path). Available via the
-  admin panel (`/api/admin/export`) and CLI (`lesstruct-cli export
-  --output-dir <dir>`).
+  root, matching Lesstruct's own `/uploads/media/` path). Available from the
+  admin panel under *Export*, via the admin API (`/api/admin/export`), and via
+  CLI (`lesstruct-cli export --output-dir <dir>`).
 
 ## Media & images {#media-images}
 

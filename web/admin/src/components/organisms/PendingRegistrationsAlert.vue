@@ -122,8 +122,8 @@ const registrationText = computed(() =>
 .pending-registrations-alert__button {
   display: inline-block;
   padding: 0.5rem 1rem;
-  background-color: var(--color-warning-border);
-  color: white;
+  background-color: var(--btn-subtle-warning-bg);
+  color: var(--btn-subtle-warning-fg);
   border-radius: 0.375rem;
   font-size: 0.875rem;
   font-weight: 500;
@@ -131,7 +131,7 @@ const registrationText = computed(() =>
 }
 
 .pending-registrations-alert:hover .pending-registrations-alert__button {
-  background-color: var(--color-warning-border);
+  background-color: var(--btn-subtle-warning-hover-bg);
 }
 
 /* Focus styles for accessibility */

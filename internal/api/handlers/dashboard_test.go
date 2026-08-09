@@ -41,7 +41,7 @@ func TestDashboardHandler_GetStats_Success(t *testing.T) {
 			},
 		}, nil)
 
-	handler := handlers.NewDashboardHandler(mockService, util.NewLogger(os.Stdout))
+	handler := handlers.NewDashboardHandler(mockService, nil, util.NewLogger(os.Stdout))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
@@ -87,7 +87,7 @@ func TestDashboardHandler_GetStats_AdminUsesGlobalScope(t *testing.T) {
 			RecentContent: []*dashboarddomain.RecentItem{},
 		}, nil)
 
-	handler := handlers.NewDashboardHandler(mockService, util.NewLogger(os.Stdout))
+	handler := handlers.NewDashboardHandler(mockService, nil, util.NewLogger(os.Stdout))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "7")
@@ -126,7 +126,7 @@ func TestDashboardHandler_GetStats_EmptyStats(t *testing.T) {
 			RecentContent:        []*dashboarddomain.RecentItem{},
 		}, nil)
 
-	handler := handlers.NewDashboardHandler(mockService, util.NewLogger(os.Stdout))
+	handler := handlers.NewDashboardHandler(mockService, nil, util.NewLogger(os.Stdout))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
@@ -157,7 +157,7 @@ func TestDashboardHandler_GetStats_EmptyStats(t *testing.T) {
 func TestDashboardHandler_GetStats_Unauthorized(t *testing.T) {
 	mockService := handlersmocks.NewMockDashboardServiceInterface(t)
 
-	handler := handlers.NewDashboardHandler(mockService, util.NewLogger(os.Stdout))
+	handler := handlers.NewDashboardHandler(mockService, nil, util.NewLogger(os.Stdout))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	w := httptest.NewRecorder()
@@ -184,7 +184,7 @@ func TestDashboardHandler_GetStats_ServiceError(t *testing.T) {
 		GetStats(mock.Anything, 1).
 		Return(nil, errors.New("database error"))
 
-	handler := handlers.NewDashboardHandler(mockService, util.NewLogger(os.Stdout))
+	handler := handlers.NewDashboardHandler(mockService, nil, util.NewLogger(os.Stdout))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
@@ -221,7 +221,7 @@ func TestDashboardHandler_GetStats_InvalidUserID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := handlersmocks.NewMockDashboardServiceInterface(t)
 
-			handler := handlers.NewDashboardHandler(mockService, util.NewLogger(os.Stdout))
+			handler := handlers.NewDashboardHandler(mockService, nil, util.NewLogger(os.Stdout))
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)

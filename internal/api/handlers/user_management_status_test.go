@@ -25,7 +25,7 @@ func setupStatusTestRouter(t *testing.T, userRepo repository.UserRepo, blockedEm
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 	emailService := emailmocks.NewMockEmailService(t)
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	userManagementHandler := NewUserManagementHandler(userManagementService, nil, userRepo, softDeleteRepo, jwtManager, emailService, logger, nil)
 
 	r := chi.NewRouter()
@@ -320,7 +320,7 @@ func TestUnauthenticatedCannotAccessAccountAdministration(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 	emailService := emailmocks.NewMockEmailService(t)
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	userManagementHandler := NewUserManagementHandler(userManagementService, nil, userRepo, softDeleteRepo, jwtManager, emailService, logger, nil)
 
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)

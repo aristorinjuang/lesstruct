@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import Modal from './Modal.vue'
+import Button from '@/components/atoms/Button.vue'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
 import { useUserStore } from '@/stores/domain/user'
 import { useAuth } from '@/composables/useAuth'
+import { useConfig } from '@/composables/useConfig'
 import { validateCustomField, validateCustomFields } from '@/utils/validation'
 import type { UserRole } from '@/types/user'
 import type { FieldSchema } from '@/types/customfield'
@@ -22,6 +24,7 @@ const emit = defineEmits<{
 
 const userStore = useUserStore()
 const { role: currentUserRole, userId: currentUserId } = useAuth()
+const { commentsEnabled } = useConfig()
 
 const isAdmin = computed(() => currentUserRole.value === 'Admin')
 
@@ -31,17 +34,33 @@ type FormErrors = Record<string, string>
 const state = ref<FormState>('form')
 const name = ref('')
 const email = ref('')
-const role = ref<UserRole>('Commentator')
+const role = ref<UserRole>('Contributor')
 const errors = ref<FormErrors>({})
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const customFields = ref<Record<string, any>>({})
 const customFieldErrors = ref<Record<string, string>>({})
 
-const roles: { value: UserRole; label: string }[] = [
-  { value: 'Admin', label: 'Admin' },
-  { value: 'Contributor', label: 'Contributor' },
-  { value: 'Commentator', label: 'Commentator' },
-]
+// The Commentator role exists only for the comment system; it is not
+// assignable when comments are disabled. A legacy user who already holds the
+// role keeps it visible in the select so the form displays correctly (saving
+// with the role unchanged sends an empty role, which the backend keeps as-is).
+const roles = computed<{ value: UserRole; label: string }[]>(() => {
+  const all: { value: UserRole; label: string }[] = [
+    { value: 'Admin', label: 'Admin' },
+    { value: 'Contributor', label: 'Contributor' },
+  ]
+  if (commentsEnabled.value || editingUser.value?.role === 'Commentator') {
+    all.push({ value: 'Commentator', label: 'Commentator' })
+  }
+  return all
+})
+
+// When the role is left at the user's current value, submit an empty role so
+// the backend keeps it (this matters when comments are disabled and the user
+// is a legacy Commentator — the backend would otherwise reject the assignment).
+const roleChanged = computed(() =>
+  role.value !== (editingUser.value?.role || '')
+)
 
 const emailPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$/
 
@@ -71,7 +90,7 @@ function populateForm() {
   }
   name.value = user.name || ''
   email.value = user.email || ''
-  role.value = user.role as UserRole || 'Commentator'
+  role.value = user.role as UserRole || (commentsEnabled.value ? 'Commentator' : 'Contributor')
   customFields.value = { ...user.customFields }
   customFieldErrors.value = {}
   errors.value = {}
@@ -81,7 +100,7 @@ function populateForm() {
 function resetForm() {
   name.value = ''
   email.value = ''
-  role.value = 'Commentator'
+  role.value = commentsEnabled.value ? 'Commentator' : 'Contributor'
   customFields.value = {}
   customFieldErrors.value = {}
   errors.value = {}
@@ -143,7 +162,7 @@ async function handleSubmit() {
     await userStore.updateUser(props.userId, {
       name: name.value,
       email: email.value,
-      role: role.value,
+      role: roleChanged.value ? role.value : '',
       customFields: Object.keys(customFields.value).length > 0
         ? customFields.value
         : undefined,
@@ -277,21 +296,23 @@ function handleClose() {
       </div>
 
       <div class="edit-user-modal__actions">
-        <button
+        <Button
           type="button"
-          class="edit-user-modal__button edit-user-modal__button--cancel"
+          variant="neutral"
+          class="edit-user-modal__button"
           :disabled="state === 'loading'"
           @click="handleClose"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
-          class="edit-user-modal__button edit-user-modal__button--save"
-          :disabled="state === 'loading'"
+          variant="primary"
+          class="edit-user-modal__button"
+          :is-loading="state === 'loading'"
         >
           {{ state === 'loading' ? 'Saving...' : 'Save Changes' }}
-        </button>
+        </Button>
       </div>
     </form>
   </Modal>
@@ -384,44 +405,7 @@ function handleClose() {
 }
 
 .edit-user-modal__button {
-  padding: 0.625rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
-  border: 1px solid transparent;
-  min-height: 44px;
   min-width: 80px;
-}
-
-.edit-user-modal__button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.edit-user-modal__button--cancel {
-  background-color: var(--brand-light-1);
-  color: var(--brand-dark-2);
-  border-color: var(--brand-light-2);
-}
-
-.edit-user-modal__button--cancel:hover:not(:disabled) {
-  background-color: var(--brand-light-2);
-}
-
-.edit-user-modal__button--save {
-  background-color: var(--brand-primary);
-  color: white;
-}
-
-.edit-user-modal__button--save:hover:not(:disabled) {
-  background-color: var(--color-interactive-hover);
-}
-
-.edit-user-modal__button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
 }
 
 @media (max-width: 639px) {

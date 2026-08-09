@@ -3,9 +3,13 @@ import api from '@/utils/request'
 
 interface ConfigData {
   languages: string[]
+  commentsEnabled?: boolean
+  headless?: boolean
 }
 
 const languages = ref<string[]>(['en'])
+const commentsEnabled = ref<boolean>(true)
+const headless = ref<boolean>(false)
 const isLoaded = ref(false)
 
 export function useConfig() {
@@ -15,6 +19,8 @@ export function useConfig() {
     try {
       const response = await api.get<{ data: ConfigData }>('/api/v1/config')
       languages.value = response.data.data.languages
+      commentsEnabled.value = response.data.data.commentsEnabled ?? true
+      headless.value = response.data.data.headless ?? false
       isLoaded.value = true
     } catch {
       languages.value = ['en']
@@ -29,6 +35,8 @@ export function useConfig() {
 
   return {
     languages,
+    commentsEnabled,
+    headless,
     isLoaded,
     fetchConfig,
     primaryLanguage,

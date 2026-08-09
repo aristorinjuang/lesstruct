@@ -37,7 +37,7 @@ func setupTestRouter(
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	userManagementHandler := handlers.NewUserManagementHandler(
 		userManagementService,
 		nil,
@@ -370,7 +370,7 @@ func TestBlockedEmailPreventsRegistration(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	loginService := authdomain.NewLoginService(nil, repomocks.NewMockFailedLoginAttemptRepo(t), nil)
@@ -676,7 +676,7 @@ func TestSoftDeleteUserFlow(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	userManagementHandler := handlers.NewUserManagementHandler(
 		userManagementService,
 		nil,
@@ -746,7 +746,7 @@ func TestSuspendedUserCannotLogin(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -836,7 +836,7 @@ func TestSoftDeletedUserCannotLogin(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -1248,7 +1248,7 @@ func TestGetSoftDeletedContent(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	userManagementHandler := handlers.NewUserManagementHandler(
 		userManagementService,
 		nil,
@@ -1344,7 +1344,7 @@ func TestRestoreSoftDeletedContent(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	userManagementHandler := handlers.NewUserManagementHandler(
 		userManagementService,
 		nil,
@@ -1422,7 +1422,7 @@ func TestNonAdminCannotAccessAccountAdministration(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	userManagementHandler := handlers.NewUserManagementHandler(
 		userManagementService,
 		nil,
@@ -1570,7 +1570,7 @@ func TestEmailNotificationsSentOnAccountActions(t *testing.T) {
 			}).
 			Return(nil)
 
-		userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+		userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 		userManagementHandler := handlers.NewUserManagementHandler(
 			userManagementService,
 			nil,
@@ -1648,7 +1648,7 @@ func TestEmailNotificationsSentOnAccountActions(t *testing.T) {
 			}).
 			Return(nil)
 
-		unsuspendService := user.NewUserManagementService(unsuspendUserRepo, unsuspendBlockedEmailRepo)
+		unsuspendService := user.NewUserManagementService(unsuspendUserRepo, unsuspendBlockedEmailRepo, true)
 		unsuspendHandler := handlers.NewUserManagementHandler(
 			unsuspendService,
 			nil,
@@ -1724,7 +1724,7 @@ func TestEmailNotificationsSentOnAccountActions(t *testing.T) {
 			}).
 			Return(nil)
 
-		userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
+		userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 		userManagementHandler := handlers.NewUserManagementHandler(
 			userManagementService,
 			nil,
@@ -1781,8 +1781,8 @@ func TestCreateUser_Success(t *testing.T) {
 	logger := util.NewLogger(os.Stdout)
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
-	adminCreateService := user.NewAdminCreateUserService(adminCreateRepoMock, adminCreateBlockedMock)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
+	adminCreateService := user.NewAdminCreateUserService(adminCreateRepoMock, adminCreateBlockedMock, true)
 
 	userManagementHandler := handlers.NewUserManagementHandler(
 		userManagementService,

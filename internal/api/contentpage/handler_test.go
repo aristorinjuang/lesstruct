@@ -13,11 +13,11 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/template"
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/content/tiptap"
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
-	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
 	mediaMocks "github.com/aristorinjuang/lesstruct/internal/domain/media/mocks"
+	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -41,21 +41,21 @@ func setupHandlerWithLanguages(t *testing.T, mockService *mocks.MockContentServi
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0, true)
 }
 
 func setupHandlerWithResolver(t *testing.T, mockService *mocks.MockContentService, mockResolver *mocks.MockPostTypeResolver) *contentpage.ContentPageHandler {
 	t.Helper()
 	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true)
 }
 
 func setupHandlerWithLanguagesAndResolver(t *testing.T, mockService *mocks.MockContentService, languages []string, mockResolver *mocks.MockPostTypeResolver) *contentpage.ContentPageHandler {
 	t.Helper()
 	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0, true)
 }
 
 func setupNavMocks(mockService *mocks.MockContentService) {
@@ -322,7 +322,7 @@ func TestServeIndex_NavigationActiveClass(t *testing.T) {
 	mockService.On("GetPublishedBySlugAny", mock.Anything, "about").Return(&contentdomain.Content{
 		Slug: "about", Title: "About Us",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"About"}]}]}`,
-		Tags: []string{},
+		Tags:    []string{},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{
 		{Slug: "about", Title: "About", PostType: "page", Language: "en"},
@@ -378,7 +378,7 @@ func TestServePostTypeListing_NotPostTypeSlug_FallsThroughToContent(t *testing.T
 	mockService.On("GetPublishedBySlugAny", mock.Anything, "my-post").Return(&contentdomain.Content{
 		Slug: "my-post", Title: "My Post",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`,
-		Tags: []string{},
+		Tags:    []string{},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{}, nil)
 	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{}, nil)
@@ -783,6 +783,7 @@ func TestServeIndex_HomeSections(t *testing.T) {
 		[]config.HomepageSection{{PostType: "article", Limit: 4, Title: "Articles"}},
 		config.SiteConfig{},
 		0,
+		true,
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -1785,7 +1786,7 @@ func TestServeContent_CommentsJSIncluded(t *testing.T) {
 		ID: 5, Slug: "js-post", Title: "JS Post", Content: tiptapJSON,
 		Tags: []string{}, AllowComments: true,
 	}, nil)
-		mockService.On("GetCommentsForContent", mock.Anything, 5).Return([]*contentdomain.Comment{}, nil)
+	mockService.On("GetCommentsForContent", mock.Anything, 5).Return([]*contentdomain.Comment{}, nil)
 	setupNavMocks(mockService)
 
 	handler := setupHandler(t, mockService)
@@ -2021,7 +2022,7 @@ func setupHandlerWithSiteConfig(t *testing.T, mockService *mocks.MockContentServ
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, siteConfig, 0)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, siteConfig, 0, true)
 }
 
 func TestServeIndex_SiteConfigNameAppearsInTitleAndOG(t *testing.T) {
@@ -2559,7 +2560,7 @@ func setupAuthorHandler(t *testing.T, mockService *mocks.MockContentService, moc
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, mockUserFieldResolver, mockUserProvider, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, mockUserFieldResolver, mockUserProvider, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true)
 }
 
 func TestServeAuthor_CustomFieldsDisplayed(t *testing.T) {
@@ -2924,7 +2925,6 @@ func TestServeAuthor_ExistingFunctionalityPreserved(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-
 func TestExtractHashFromURL(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -2988,12 +2988,12 @@ func TestExtractHashFromURL(t *testing.T) {
 
 func TestResolvePostImage(t *testing.T) {
 	tests := []struct {
-		name            string
-		imageURL        string
-		setupMock       func(*mediaMocks.MockRepository)
-		expectThumbURL  string
-		expectSrcset    string
-		expectSizes     string
+		name           string
+		imageURL       string
+		setupMock      func(*mediaMocks.MockRepository)
+		expectThumbURL string
+		expectSrcset   string
+		expectSizes    string
 	}{
 		{
 			name:           "empty URL returns empty",
@@ -3108,6 +3108,7 @@ func TestResolvePostImage(t *testing.T) {
 				nil,
 				config.SiteConfig{},
 				0,
+				true,
 			)
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)

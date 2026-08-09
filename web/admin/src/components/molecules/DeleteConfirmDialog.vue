@@ -35,7 +35,7 @@ function cancel() {
           Are you sure you want to delete "{{ itemName }}"? This action cannot be undone.
         </p>
         <div class="delete-confirm__actions">
-          <Button variant="secondary" @click="cancel" :disabled="isLoading">Cancel</Button>
+          <Button variant="neutral" @click="cancel" :disabled="isLoading">Cancel</Button>
           <Button variant="danger" @click="confirm" :is-loading="isLoading">Delete</Button>
         </div>
       </div>

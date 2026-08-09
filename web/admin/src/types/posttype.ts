@@ -7,6 +7,7 @@ export interface PostType {
   supports: string[]
   fields?: FieldSchema[]
   systemFields?: FieldSchema[]
+  hidden?: boolean
 }
 
 export interface PostTypesResponse {

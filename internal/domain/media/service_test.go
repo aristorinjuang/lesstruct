@@ -17,8 +17,9 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/media"
-	"github.com/aristorinjuang/lesstruct/internal/domain/media/mocks"
+	mediamocks "github.com/aristorinjuang/lesstruct/internal/domain/media/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/domain/thumbnail"
+	storagemocks "github.com/aristorinjuang/lesstruct/internal/storage/mocks"
 	"github.com/deepteams/webp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -70,13 +71,13 @@ func TestService_Upload(t *testing.T) {
 		wantErr        bool
 		expectErr      error
 		expectDupMedia *media.Media
-		setupMock      func(*mocks.MockRepository, *mocks.MockStorage)
+		setupMock      func(*mediamocks.MockRepository, *storagemocks.MockStorage)
 	}{
 		{
 			name:    "successful upload",
 			altText: "A test image",
 			wantErr: false,
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {
 				repo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 				repo.On("Create", mock.Anything, mock.Anything).Return(nil)
 				storage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
@@ -88,21 +89,21 @@ func TestService_Upload(t *testing.T) {
 			altText:   "",
 			wantErr:   true,
 			expectErr: media.ErrInvalidAltText,
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {},
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {},
 		},
 		{
 			name:      "whitespace only alt text",
 			altText:   "   ",
 			wantErr:   true,
 			expectErr: media.ErrInvalidAltText,
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {},
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {},
 		},
 		{
 			name:           "duplicate upload",
 			altText:        "Duplicate image",
 			wantErr:        true,
 			expectDupMedia: &media.Media{ID: 99, UserID: 1, OriginalFilename: "existing.png", Hash: "duplicate-hash"},
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {
 				existing := &media.Media{ID: 99, UserID: 1, OriginalFilename: "existing.png", Hash: "duplicate-hash"}
 				repo.On("FindByHash", mock.Anything, mock.Anything).Return(existing, nil)
 			},
@@ -111,8 +112,8 @@ func TestService_Upload(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewMockRepository(t)
-			mockStorage := mocks.NewMockStorage(t)
+			mockRepo := mediamocks.NewMockRepository(t)
+			mockStorage := storagemocks.NewMockStorage(t)
 			tt.setupMock(mockRepo, mockStorage)
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
@@ -161,13 +162,13 @@ func TestService_Upload(t *testing.T) {
 func TestService_GetByID(t *testing.T) {
 	tests := []struct {
 		name      string
-		setupMock func(*mocks.MockRepository)
+		setupMock func(*mediamocks.MockRepository)
 		wantErr   bool
 		expectErr error
 	}{
 		{
 			name: "found",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				mockMedia := &media.Media{
 					ID:     1,
 					UserID: 1,
@@ -179,7 +180,7 @@ func TestService_GetByID(t *testing.T) {
 		},
 		{
 			name: "not found",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindByID", mock.Anything, 1).Return((*media.Media)(nil), media.ErrMediaNotFound)
 			},
 			wantErr:   true,
@@ -189,8 +190,8 @@ func TestService_GetByID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewMockRepository(t)
-			mockStorage := mocks.NewMockStorage(t)
+			mockRepo := mediamocks.NewMockRepository(t)
+			mockStorage := storagemocks.NewMockStorage(t)
 			tt.setupMock(mockRepo)
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
@@ -221,7 +222,7 @@ func TestService_ListByCursor(t *testing.T) {
 		userID      int
 		limit       int
 		beforeID    int
-		setupMock   func(*mocks.MockRepository)
+		setupMock   func(*mediamocks.MockRepository)
 		expectedErr error
 		expectedLen int
 	}{
@@ -230,7 +231,7 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("ListByCursor", mock.Anything, 1, 50, 0).Return([]*media.Media{
 					{ID: 3, UserID: 1},
 					{ID: 2, UserID: 1},
@@ -245,7 +246,7 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 2,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("ListByCursor", mock.Anything, 1, 50, 2).Return([]*media.Media{
 					{ID: 1, UserID: 1},
 				}, nil)
@@ -258,7 +259,7 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("ListByCursor", mock.Anything, 1, 50, 0).Return([]*media.Media{}, nil)
 			},
 			expectedErr: nil,
@@ -269,7 +270,7 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("ListByCursor", mock.Anything, 1, 50, 0).Return([]*media.Media(nil), errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to list media"),
@@ -277,8 +278,8 @@ func TestService_ListByCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewMockRepository(t)
-			mockStorage := mocks.NewMockStorage(t)
+			mockRepo := mediamocks.NewMockRepository(t)
+			mockStorage := storagemocks.NewMockStorage(t)
 			tt.setupMock(mockRepo)
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
@@ -303,7 +304,7 @@ func TestService_Delete(t *testing.T) {
 		name      string
 		userID    int
 		userRole  string
-		setupMock func(*mocks.MockRepository, *mocks.MockStorage)
+		setupMock func(*mediamocks.MockRepository, *storagemocks.MockStorage)
 		wantErr   bool
 		expectErr error
 	}{
@@ -311,7 +312,7 @@ func TestService_Delete(t *testing.T) {
 			name:     "successful delete by owner",
 			userID:   1,
 			userRole: "Contributor",
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {
 				mockMedia := &media.Media{
 					ID:       1,
 					UserID:   1,
@@ -327,7 +328,7 @@ func TestService_Delete(t *testing.T) {
 			name:     "successful delete by admin",
 			userID:   2,
 			userRole: "Admin",
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {
 				mockMedia := &media.Media{
 					ID:       1,
 					UserID:   1,
@@ -343,7 +344,7 @@ func TestService_Delete(t *testing.T) {
 			name:     "media not found",
 			userID:   1,
 			userRole: "Contributor",
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {
 				repo.On("FindByID", mock.Anything, 1).Return((*media.Media)(nil), media.ErrMediaNotFound)
 			},
 			wantErr:   true,
@@ -353,7 +354,7 @@ func TestService_Delete(t *testing.T) {
 			name:     "unauthorized delete - different user non-admin",
 			userID:   2,
 			userRole: "Contributor",
-			setupMock: func(repo *mocks.MockRepository, storage *mocks.MockStorage) {
+			setupMock: func(repo *mediamocks.MockRepository, storage *storagemocks.MockStorage) {
 				mockMedia := &media.Media{ID: 1, UserID: 1, FilePath: "/uploads/media/test.webp"}
 				repo.On("FindByID", mock.Anything, 1).Return(mockMedia, nil)
 			},
@@ -364,8 +365,8 @@ func TestService_Delete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewMockRepository(t)
-			mockStorage := mocks.NewMockStorage(t)
+			mockRepo := mediamocks.NewMockRepository(t)
+			mockStorage := storagemocks.NewMockStorage(t)
 			tt.setupMock(mockRepo, mockStorage)
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
@@ -388,8 +389,8 @@ func TestService_Delete(t *testing.T) {
 }
 
 func TestService_Upload_StorageFailure(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("", errors.New("storage error"))
@@ -416,8 +417,8 @@ func TestService_Upload_StorageFailure(t *testing.T) {
 }
 
 func TestService_Upload_InvalidFileType(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -445,8 +446,8 @@ func TestService_Upload_InvalidFileType(t *testing.T) {
 }
 
 func TestService_Upload_FileTooLarge(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -474,8 +475,8 @@ func TestService_Upload_FileTooLarge(t *testing.T) {
 }
 
 func TestService_Delete_StorageFailure(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockMedia := &media.Media{
 		ID:       1,
@@ -497,8 +498,8 @@ func TestService_Delete_StorageFailure(t *testing.T) {
 }
 
 func TestService_Upload_InvalidExtension(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -526,8 +527,8 @@ func TestService_Upload_InvalidExtension(t *testing.T) {
 }
 
 func TestService_Upload_ZeroSizeFile(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -555,8 +556,8 @@ func TestService_Upload_ZeroSizeFile(t *testing.T) {
 }
 
 func TestService_Upload_RepositoryCreateError(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(errors.New("database error"))
@@ -587,8 +588,8 @@ func TestService_Upload_RepositoryCreateError(t *testing.T) {
 }
 
 func TestService_Delete_RepositoryDeleteError(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockMedia := &media.Media{
 		ID:       1,
@@ -612,8 +613,8 @@ func TestService_Delete_RepositoryDeleteError(t *testing.T) {
 }
 
 func TestService_Upload_ConvertToWebPError(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 
@@ -667,8 +668,8 @@ func (m *mockFileThatFailsAfterValidation) Read(p []byte) (n int, err error) {
 }
 
 func TestService_Upload_GenerateHashError(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -710,8 +711,8 @@ func (m *mockFileWithSeekError) Seek(offset int64, whence int) (int64, error) {
 }
 
 func TestService_Upload_SeekErrorAfterValidation(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -754,8 +755,8 @@ func (m *mockFileWithReadError) Read(p []byte) (n int, err error) {
 }
 
 func TestService_Upload_FileReadError(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -785,8 +786,8 @@ func TestService_Upload_FileReadError(t *testing.T) {
 }
 
 func TestService_validateMagicNumbers_ShortData(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -843,8 +844,8 @@ func TestService_Upload_AllSignatureTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewMockRepository(t)
-			mockStorage := mocks.NewMockStorage(t)
+			mockRepo := mediamocks.NewMockRepository(t)
+			mockStorage := storagemocks.NewMockStorage(t)
 
 			mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 			mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -1021,8 +1022,8 @@ func TestDuplicateMediaError(t *testing.T) {
 
 func TestService_ForceUpload(t *testing.T) {
 	t.Run("successful force upload with no existing hash", func(t *testing.T) {
-		mockRepo := mocks.NewMockRepository(t)
-		mockStorage := mocks.NewMockStorage(t)
+		mockRepo := mediamocks.NewMockRepository(t)
+		mockStorage := storagemocks.NewMockStorage(t)
 
 		mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 		mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -1054,8 +1055,8 @@ func TestService_ForceUpload(t *testing.T) {
 	})
 
 	t.Run("force upload with existing hash generates unique variant", func(t *testing.T) {
-		mockRepo := mocks.NewMockRepository(t)
-		mockStorage := mocks.NewMockStorage(t)
+		mockRepo := mediamocks.NewMockRepository(t)
+		mockStorage := storagemocks.NewMockStorage(t)
 
 		existing := &media.Media{ID: 1, Hash: "existing-hash", OriginalFilename: "existing.png"}
 
@@ -1090,8 +1091,8 @@ func TestService_ForceUpload(t *testing.T) {
 	})
 
 	t.Run("missing alt text returns error", func(t *testing.T) {
-		mockRepo := mocks.NewMockRepository(t)
-		mockStorage := mocks.NewMockStorage(t)
+		mockRepo := mediamocks.NewMockRepository(t)
+		mockStorage := storagemocks.NewMockStorage(t)
 
 		svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -1113,8 +1114,8 @@ func TestService_ForceUpload(t *testing.T) {
 	})
 
 	t.Run("invalid file extension returns error", func(t *testing.T) {
-		mockRepo := mocks.NewMockRepository(t)
-		mockStorage := mocks.NewMockStorage(t)
+		mockRepo := mediamocks.NewMockRepository(t)
+		mockStorage := storagemocks.NewMockStorage(t)
 
 		svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -1169,7 +1170,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 		dateFilter  string
 		limit       int
 		beforeID    int
-		setupMock   func(*mocks.MockRepository)
+		setupMock   func(*mediamocks.MockRepository)
 		expectedLen int
 		expectedErr error
 	}{
@@ -1179,7 +1180,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
@@ -1189,7 +1190,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindAllByFilenameByCursor", mock.Anything, "sunset", 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
@@ -1199,7 +1200,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 			dateFilter: "today",
 			limit:      50,
 			beforeID:   0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindAllByDateRangeByCursor", mock.Anything, mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
@@ -1209,7 +1210,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 			dateFilter: "this_week",
 			limit:      50,
 			beforeID:   0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindAllByFilenameAndDateRangeByCursor", mock.Anything, "sunset", mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
@@ -1219,7 +1220,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 			dateFilter: "",
 			limit:      50,
 			beforeID:   100,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindAllByCursor", mock.Anything, 50, 100).Return([]*media.Media{
 					{ID: 99, UserID: 1},
 					{ID: 98, UserID: 1},
@@ -1233,7 +1234,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
@@ -1243,7 +1244,7 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media(nil), errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to search media"),
@@ -1252,8 +1253,8 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewMockRepository(t)
-			mockStorage := mocks.NewMockStorage(t)
+			mockRepo := mediamocks.NewMockRepository(t)
+			mockStorage := storagemocks.NewMockStorage(t)
 			tt.setupMock(mockRepo)
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
@@ -1282,7 +1283,7 @@ func TestService_Count(t *testing.T) {
 		name        string
 		search      string
 		dateFilter  string
-		setupMock   func(*mocks.MockRepository)
+		setupMock   func(*mediamocks.MockRepository)
 		expected    int
 		expectedErr error
 	}{
@@ -1290,7 +1291,7 @@ func TestService_Count(t *testing.T) {
 			name:       "no filters passes zero time to Count",
 			search:     "",
 			dateFilter: "",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("Count", mock.Anything, "", time.Time{}).Return(12, nil)
 			},
 			expected: 12,
@@ -1299,7 +1300,7 @@ func TestService_Count(t *testing.T) {
 			name:       "search only is forwarded",
 			search:     "sunset",
 			dateFilter: "",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("Count", mock.Anything, "sunset", time.Time{}).Return(3, nil)
 			},
 			expected: 3,
@@ -1308,7 +1309,7 @@ func TestService_Count(t *testing.T) {
 			name:       "date filter only passes a non-zero since",
 			search:     "",
 			dateFilter: "today",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("Count", mock.Anything, "", mock.AnythingOfType("time.Time")).Return(5, nil)
 			},
 			expected: 5,
@@ -1317,7 +1318,7 @@ func TestService_Count(t *testing.T) {
 			name:       "both filters are forwarded",
 			search:     "sunset",
 			dateFilter: "this_week",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("Count", mock.Anything, "sunset", mock.AnythingOfType("time.Time")).Return(2, nil)
 			},
 			expected: 2,
@@ -1326,7 +1327,7 @@ func TestService_Count(t *testing.T) {
 			name:       "whitespace search is treated as no search",
 			search:     "   ",
 			dateFilter: "",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("Count", mock.Anything, "", time.Time{}).Return(0, nil)
 			},
 			expected: 0,
@@ -1335,7 +1336,7 @@ func TestService_Count(t *testing.T) {
 			name:       "repository error - wrapped as failed to count media",
 			search:     "",
 			dateFilter: "",
-			setupMock: func(repo *mocks.MockRepository) {
+			setupMock: func(repo *mediamocks.MockRepository) {
 				repo.On("Count", mock.Anything, "", time.Time{}).Return(0, errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to count media"),
@@ -1344,8 +1345,8 @@ func TestService_Count(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := mocks.NewMockRepository(t)
-			mockStorage := mocks.NewMockStorage(t)
+			mockRepo := mediamocks.NewMockRepository(t)
+			mockStorage := storagemocks.NewMockStorage(t)
 			tt.setupMock(mockRepo)
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
@@ -1373,8 +1374,8 @@ func TestService_Upload_WithThumbnailService(t *testing.T) {
 	file, header := createTestFile(t, imgData)
 	defer func() { _ = file.Close() }()
 
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -1414,8 +1415,8 @@ func TestService_Upload_VariantFilenamePattern(t *testing.T) {
 	file, header := createTestFile(t, imgData)
 	defer func() { _ = file.Close() }()
 
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -1443,8 +1444,8 @@ func TestService_Upload_VariantFilenamePattern(t *testing.T) {
 }
 
 func TestService_Upload_VariantsNilWhenThumbnailServiceNil(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -1478,8 +1479,8 @@ func TestService_ForceUpload_WithThumbnailService(t *testing.T) {
 	file, header := createTestFile(t, imgData)
 	defer func() { _ = file.Close() }()
 
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -1516,8 +1517,8 @@ func TestService_Upload_VariantCleanupOnSaveFailure(t *testing.T) {
 	file, header := createTestFile(t, imgData)
 	defer func() { _ = file.Close() }()
 
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/orig.webp", nil).Once()
@@ -1558,8 +1559,8 @@ func TestService_Upload_VariantDimensionsCorrect(t *testing.T) {
 	file, header := createTestFile(t, imgData)
 	defer func() { _ = file.Close() }()
 
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -1586,8 +1587,8 @@ func TestService_Upload_VariantDimensionsCorrect(t *testing.T) {
 	assert.Equal(t, 277, got.Variants["_thumb"].Height)
 }
 func TestService_ForceUpload_VariantsNilWhenThumbnailServiceNil(t *testing.T) {
-	mockRepo := mocks.NewMockRepository(t)
-	mockStorage := mocks.NewMockStorage(t)
+	mockRepo := mediamocks.NewMockRepository(t)
+	mockStorage := storagemocks.NewMockStorage(t)
 
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)

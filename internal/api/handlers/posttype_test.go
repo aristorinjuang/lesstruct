@@ -24,13 +24,13 @@ func TestPostTypeHandler_GetPostTypes(t *testing.T) {
 	service.EXPECT().
 		GetAll().
 		Return([]posttype.PostType{
-		{Slug: "post", Name: "Post", Description: "Blog posts", Supports: []string{"title", "content", "tags"}},
-		{Slug: "page", Name: "Page", Description: "Static pages", Supports: []string{"title", "content"}},
-		{Slug: "recipe", Name: "Recipe", Description: "Recipes", Supports: []string{"title", "content", "tags"}},
-		{Slug: "portfolio", Name: "Portfolio", Description: "Portfolio items", Supports: []string{"title", "content", "tags"}},
-	})
+			{Slug: "post", Name: "Post", Description: "Blog posts", Supports: []string{"title", "content", "tags"}},
+			{Slug: "page", Name: "Page", Description: "Static pages", Supports: []string{"title", "content"}},
+			{Slug: "recipe", Name: "Recipe", Description: "Recipes", Supports: []string{"title", "content", "tags"}},
+			{Slug: "portfolio", Name: "Portfolio", Description: "Portfolio items", Supports: []string{"title", "content", "tags"}},
+		})
 	logger := util.NewLogger(&discardWriter{})
-	handler := handlers.NewPostTypeHandler(service, logger)
+	handler := handlers.NewPostTypeHandler(service, true, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/post_types", nil)
 	w := httptest.NewRecorder()
@@ -98,15 +98,15 @@ func TestPostTypeHandler_GetPostTypes_WithCustomPostTypes(t *testing.T) {
 	service.EXPECT().
 		GetAll().
 		Return([]posttype.PostType{
-		{
-			Name:        "Portfolio",
-			Slug:        "portfolio",
-			Description: "Portfolio items",
-			Supports:    []string{"title", "content", "tags"},
-		},
-	})
+			{
+				Name:        "Portfolio",
+				Slug:        "portfolio",
+				Description: "Portfolio items",
+				Supports:    []string{"title", "content", "tags"},
+			},
+		})
 	logger := util.NewLogger(&discardWriter{})
-	handler := handlers.NewPostTypeHandler(service, logger)
+	handler := handlers.NewPostTypeHandler(service, true, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/post_types", nil)
 	w := httptest.NewRecorder()
@@ -143,7 +143,7 @@ func TestPostTypeHandler_GetPublicPostTypes(t *testing.T) {
 			}},
 		})
 	logger := util.NewLogger(&discardWriter{})
-	handler := handlers.NewPostTypeHandler(service, logger)
+	handler := handlers.NewPostTypeHandler(service, true, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/public/post_types", nil)
 	w := httptest.NewRecorder()
@@ -196,7 +196,7 @@ func TestPostTypeHandler_GetPublicPostTypes_Empty(t *testing.T) {
 	service := mocks.NewMockPostTypeServiceInterface(t)
 	service.EXPECT().GetAll().Return([]posttype.PostType{})
 	logger := util.NewLogger(&discardWriter{})
-	handler := handlers.NewPostTypeHandler(service, logger)
+	handler := handlers.NewPostTypeHandler(service, true, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/public/post_types", nil)
 	w := httptest.NewRecorder()
@@ -229,10 +229,10 @@ func TestPostTypeHandler_ResponseHeaders(t *testing.T) {
 	service.EXPECT().
 		GetAll().
 		Return([]posttype.PostType{
-		{Slug: "post", Name: "Post", Description: "Blog posts", Supports: []string{"title", "content"}},
-	})
+			{Slug: "post", Name: "Post", Description: "Blog posts", Supports: []string{"title", "content"}},
+		})
 	logger := util.NewLogger(&discardWriter{})
-	handler := handlers.NewPostTypeHandler(service, logger)
+	handler := handlers.NewPostTypeHandler(service, true, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/post_types", nil)
 	w := httptest.NewRecorder()
@@ -248,6 +248,102 @@ func TestPostTypeHandler_ResponseHeaders(t *testing.T) {
 	}
 }
 
+// TestPostTypeHandler_GetPostTypes_IncludesHidden verifies the authenticated
+// admin endpoint returns hidden post types together with their hidden flag, so
+// the admin panel can decide which surfaces to show.
+func TestPostTypeHandler_GetPostTypes_IncludesHidden(t *testing.T) {
+	service := mocks.NewMockPostTypeServiceInterface(t)
+	service.EXPECT().
+		GetAll().
+		Return([]posttype.PostType{
+			{Slug: "post", Name: "Post", Description: "Blog posts", Supports: []string{"title", "content", "tags"}, Hidden: true},
+			{Slug: "page", Name: "Page", Description: "Static pages", Supports: []string{"title", "content"}},
+		})
+	logger := util.NewLogger(&discardWriter{})
+	handler := handlers.NewPostTypeHandler(service, true, logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/post_types", nil)
+	w := httptest.NewRecorder()
+
+	handler.GetPostTypes(w, req)
+
+	resp := w.Result()
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GetPostTypes() status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	data, ok := response["data"].([]any)
+	if !ok {
+		t.Fatal("data is not an array")
+	}
+	if len(data) != 2 {
+		t.Fatalf("admin endpoint must include hidden types: got %d, want 2", len(data))
+	}
+
+	post, ok := data[0].(map[string]any)
+	if !ok {
+		t.Fatal("post type is not a map")
+	}
+	hidden, ok := post["hidden"].(bool)
+	if !ok || !hidden {
+		t.Error("hidden post type must carry hidden=true in the admin response")
+	}
+}
+
+// TestPostTypeHandler_GetPublicPostTypes_ExcludesHidden verifies the public
+// endpoint drops hidden post types entirely.
+func TestPostTypeHandler_GetPublicPostTypes_ExcludesHidden(t *testing.T) {
+	service := mocks.NewMockPostTypeServiceInterface(t)
+	service.EXPECT().
+		GetAll().
+		Return([]posttype.PostType{
+			{Slug: "post", Name: "Post", Description: "Blog posts", Supports: []string{"title", "content", "tags"}, Hidden: true},
+			{Slug: "page", Name: "Page", Description: "Static pages", Supports: []string{"title", "content"}},
+		})
+	logger := util.NewLogger(&discardWriter{})
+	handler := handlers.NewPostTypeHandler(service, true, logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/public/post_types", nil)
+	w := httptest.NewRecorder()
+
+	handler.GetPublicPostTypes(w, req)
+
+	resp := w.Result()
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GetPublicPostTypes() status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+
+	var response map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	data, ok := response["data"].([]any)
+	if !ok {
+		t.Fatal("data is not an array")
+	}
+	if len(data) != 1 {
+		t.Fatalf("public endpoint must exclude hidden types: got %d, want 1", len(data))
+	}
+
+	page, ok := data[0].(map[string]any)
+	if !ok {
+		t.Fatal("post type is not a map")
+	}
+	if page["slug"] != "page" {
+		t.Errorf("public endpoint returned %v, want page (post is hidden)", page["slug"])
+	}
+}
+
 func TestPostTypeHandler_GetUserFieldsEndpoint(t *testing.T) {
 	service := mocks.NewMockPostTypeServiceInterface(t)
 	service.EXPECT().GetUserFields().Return([]customfield.FieldSchema{
@@ -258,7 +354,7 @@ func TestPostTypeHandler_GetUserFieldsEndpoint(t *testing.T) {
 		{Name: "Internal Rating", Slug: "internal_rating", Type: customfield.FieldTypeSelect, Options: []string{"bronze", "silver", "gold", "platinum"}},
 	})
 	logger := util.NewLogger(&discardWriter{})
-	handler := handlers.NewPostTypeHandler(service, logger)
+	handler := handlers.NewPostTypeHandler(service, true, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/user_fields", nil)
 	w := httptest.NewRecorder()
@@ -321,7 +417,7 @@ func TestPostTypeHandler_GetUserFieldsEndpoint_Empty(t *testing.T) {
 	service.EXPECT().GetUserFields().Return([]customfield.FieldSchema{})
 	service.EXPECT().GetUserSystemFields().Return([]customfield.FieldSchema{})
 	logger := util.NewLogger(&discardWriter{})
-	handler := handlers.NewPostTypeHandler(service, logger)
+	handler := handlers.NewPostTypeHandler(service, true, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/user_fields", nil)
 	w := httptest.NewRecorder()

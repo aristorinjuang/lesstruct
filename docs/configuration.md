@@ -59,6 +59,28 @@ All env vars are loaded by `internal/config/config.go:Load()` and override the c
 - **Postgres** — `DB_DSN` is required. Format: `postgres://user:password@host:port/db?sslmode=disable`. `DB_POOL_MAX_CONNS` must be ≥ 1 if set.
 - **MySQL** — `DB_DSN` is required. The DSN **must** contain `parseTime=true` and `multiStatements=true`. Without them, DATE columns scan as `[]byte` and migrations with multiple statements fail. `clientFoundRows=true` is automatically injected if missing — it ensures `RowsAffected()` returns the number of rows matched by the `WHERE` clause rather than rows whose values changed, which prevents spurious `content_not_found` errors on no-op updates. Format: `user:password@tcp(host:port)/db?parseTime=true&multiStatements=true&charset=utf8mb4&collation=utf8mb4_general_ci`.
 
+### Storage
+
+Media files and profile pictures are stored through a single `Storage` interface (`internal/storage/`) with two backends: **local** (default) and **s3**. The `s3` backend works against **both AWS S3 and MinIO** — they speak the same S3 API, so one driver serves either; the difference is configuration (endpoint + path style), not code.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STORAGE_DRIVER` | `local` | One of `local`, `s3`. |
+| `STORAGE_S3_ENDPOINT` | empty | S3-compatible endpoint URL. **Empty = AWS S3** (uses default AWS endpoints). Set for MinIO, e.g. `http://localhost:9000`. |
+| `STORAGE_S3_REGION` | `us-east-1` | AWS region; MinIO deployments usually keep `us-east-1` (MinIO's default). |
+| `STORAGE_S3_BUCKET` | empty (required for `s3`) | Bucket holding media and profile pictures. |
+| `STORAGE_S3_ACCESS_KEY_ID` | empty (required for `s3`) | Static access key. |
+| `STORAGE_S3_SECRET_ACCESS_KEY` | empty (required for `s3`) | Static secret key. |
+| `STORAGE_S3_USE_PATH_STYLE` | `false` | `true` for MinIO (path-style addressing), `false` for AWS (virtual-host style). |
+| `STORAGE_S3_PUBLIC_BASE_URL` | empty (required for `s3`) | Public base URL served to clients — the bucket's public URL or a CDN/CloudFront distribution, e.g. `https://cdn.example.com`. `GetURL` returns this prefix + object key, so **the bucket must be publicly readable** (or fronted by a CDN with bucket access). |
+
+**Per-driver requirements** (enforced at startup):
+
+- **Local** — files live under `data/uploads/media/` and `data/uploads/profile_pictures/`, served by the server's built-in fileserver at `/uploads/media/*` and `/uploads/profile_pictures/*`. No configuration needed.
+- **S3** — `STORAGE_S3_REGION`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, and `STORAGE_S3_PUBLIC_BASE_URL` are required. Files are stored under the `media/` and `profile_pictures/` key prefixes; the local fileserver is **not** mounted — clients fetch bytes directly from the public base URL.
+
+**Switching drivers after data exists**: `media_files.file_path`/`url` and the profile picture column store whatever the active backend produced (absolute disk paths for `local`, object keys + public URLs for `s3`). Rows created under one driver are not readable under the other — switching requires a one-time migration that re-uploads the existing files and rewrites the stored paths/URLs (there is no built-in migration tool yet).
+
 ### Authentication
 
 | Variable | Default | Description |
@@ -187,6 +209,8 @@ The first line is silently overridden by the empty second line — Lesstruct end
 | `[[public_field]]` | array of tables | empty | Allowlist of custom/system fields that may be filtered or sorted on the public query endpoints. See below. |
 | `[csp]` | table | empty (default CSP applied) | Content-Security-Policy configuration — per-directive source appends, extra directives, report-only mode, and a full-override escape hatch. See below. |
 | `[[thumbnail]]` | array of tables | `[{max_width=370, suffix="_thumb"}]` | Image processing variants. See below. |
+| `[headless]` | table | disabled | Headless-mode toggle. When enabled, the server-rendered content site is not served. See below. |
+| `[comments]` | table | enabled | Comment-system toggle. When disabled, the comment system is hard-disabled end to end. See below. |
 
 ### `[user_fields]`
 
@@ -226,6 +250,7 @@ Each entry defines one custom post type, or extends a built-in one. Four post ty
 | `supports` | `[]string` | new types (non-empty) | Features the post type supports. Each entry must be one of: `title`, `content`, `tags`, `featured_image`, `excerpt`. At least one is required for new types. Ignored when extending a built-in type (the built-in's supports are kept). |
 | `fields` | `[]FieldSchema` | no | User-editable custom fields. Merged by slug when extending a built-in type. |
 | `system_fields` | `[]FieldSchema` | no | Read-only system fields. Often set by plugins via `before_save` hooks. Merged by slug when extending a built-in type. |
+| `hidden` | `bool` | no | When `true`, the post type is hidden from the admin panel and the public post-type list. Allowed only on the `post` built-in and custom post types — `page`, `media`, and `comment` reject `hidden = true` (disable the comment system via the `[comments]` block instead). Hidden types remain valid for content and the registry keeps serving them (e.g. to the API); only the presentation surfaces drop them. |
 
 #### Field schema (`FieldSchema`)
 
@@ -375,6 +400,43 @@ Each entry defines one image processing variant. When media is uploaded, Lesstru
 | `suffix` | `string` | no | Filename suffix. Must be unique. The default thumbnail has suffix `_thumb`. |
 
 If no `[[thumbnail]]` entries are defined, the runtime uses a single default variant: `max_width = 370`, `suffix = "_thumb"`.
+
+### `[headless]`
+
+Optional. When `enabled = true`, the instance serves **only** the admin panel and the REST API — the server-rendered content site is not served at all. This is the configuration for using Lesstruct purely as a headless CMS with a separate frontend.
+
+```toml
+[headless]
+enabled = true
+```
+
+Effects of headless mode:
+
+- The content-site catch-all (`/*`) and `/static/*` (theme assets) are **not mounted**; any non-API path returns 404.
+- `/admin/*`, `/api/*`, and `/uploads/*` keep working.
+- `sitemap.xml` returns 404 and `robots.txt` returns `Disallow: /` (no sitemap reference). The JSON sitemap (`GET /api/v1/sitemap`) is unaffected — a headless consumer typically reads it from the API.
+- The admin SPA, SSG export, WordPress/Hugo import, and the agent API all keep working unchanged.
+
+Absent block → headless disabled (the default; fully backward compatible).
+
+### `[comments]`
+
+Optional. When `enabled = false`, the comment system is **hard-disabled** end to end. This is intended for instances that do not want comments at all — most importantly it stops self-registration, which otherwise lets anyone create a `Commentator` account (a role that only exists for commenting).
+
+```toml
+[comments]
+enabled = false
+```
+
+Effects of disabling comments:
+
+- All comment routes are unmounted in all three realms: agent/Bearer (`/api/v1/content/{id}/comments`), public (`/api/v1/public/content_items/{slug}/comments`), and browser admin (moderation, `/api/v1/my-comments`). Requests to them 404.
+- `POST /api/auth/register` returns `403 REGISTRATION_DISABLED` — self-registration only ever creates `Commentator` users, which are meaningless without comments. The `/register` page returns 404 and the login page hides the "create account" link.
+- Admins can no longer assign the `Commentator` role when creating users (`ErrInvalidRole`).
+- New content always stores `allowComments = false`, even if a request explicitly sends `allowComments: true`; the admin editor hides the "Allow comments" checkbox.
+- The admin UI hides the Comments nav item and redirects comment routes.
+
+Absent block (or `enabled` omitted) → comments enabled (the default; fully backward compatible). The `comment` post type itself cannot be hidden via `hidden = true` — use this block instead.
 
 ## Validation Rules
 

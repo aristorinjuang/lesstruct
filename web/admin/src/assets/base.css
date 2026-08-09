@@ -88,13 +88,11 @@
   --color-info: #3b82f6;
   --color-info-dark: #1e40af;
   --color-info-bg: #dbeafe;
+  --color-info-border: #bfdbfe;
 
   /* Spam */
   --color-spam: #6b21a8;
   --color-spam-bg: #f3e8ff;
-
-  /* Interactive */
-  --color-interactive-hover: #4338CA;
 
   /* Muted grays */
   --color-bg-muted: #f3f4f6;
@@ -105,6 +103,59 @@
 
   /* Misc */
   --color-white: #ffffff;
+}
+
+/* Admin UI Button Tokens
+   Foreground colors are FIXED (not theme-swapped) wherever the
+   background is a saturated color that stays the same in both themes. */
+:root {
+  /* Primary — solid cyan. Text stays dark in BOTH themes (cyan is always bright). */
+  --btn-primary-bg: var(--brand-primary);
+  --btn-primary-fg: #0f172a;
+  --btn-primary-hover-bg: var(--brand-primary-hover);
+
+  /* Neutral — surface background (theme-adaptive), for cancel/secondary actions */
+  --btn-neutral-bg: var(--brand-light-1);
+  --btn-neutral-fg: var(--brand-dark-2);
+  --btn-neutral-border: var(--brand-light-2);
+  --btn-neutral-hover-bg: var(--brand-light-2);
+
+  /* Danger — solid red */
+  --btn-danger-bg: var(--color-error);
+  --btn-danger-fg: #ffffff;
+  --btn-danger-hover-bg: #dc2626;
+
+  /* Ghost — transparent with border */
+  --btn-ghost-fg: var(--brand-dark-1);
+  --btn-ghost-border: var(--brand-light-2);
+  --btn-ghost-hover-bg: var(--brand-primary-light);
+
+  /* Link — text only */
+  --btn-link-fg: var(--brand-primary);
+  --btn-link-hover-fg: var(--brand-primary-hover);
+
+  /* Subtle — tinted background with matching colored text (status actions) */
+  --btn-subtle-success-bg: var(--color-success-bg);
+  --btn-subtle-success-fg: var(--color-success-dark);
+  --btn-subtle-success-hover-bg: var(--color-success-border);
+  --btn-subtle-danger-bg: var(--color-error-bg);
+  --btn-subtle-danger-fg: var(--color-error-dark);
+  --btn-subtle-danger-hover-bg: var(--color-error-border);
+  --btn-subtle-warning-bg: var(--color-warning-bg);
+  --btn-subtle-warning-fg: var(--color-warning-dark);
+  --btn-subtle-warning-hover-bg: var(--color-warning-border);
+  --btn-subtle-info-bg: var(--color-info-bg);
+  --btn-subtle-info-fg: var(--color-info-dark);
+  --btn-subtle-info-hover-bg: var(--color-info-border);
+  --btn-subtle-neutral-bg: var(--brand-light-1);
+  --btn-subtle-neutral-fg: var(--brand-dark-2);
+  --btn-subtle-neutral-hover-bg: var(--brand-light-2);
+
+  /* Navigation (sidebar) — the nav surface is theme-adaptive, so these
+     swap with the theme for contrast in both modes. */
+  --nav-hover-bg: var(--brand-primary-light);
+  --nav-active-bg: rgba(34, 211, 238, 0.18);
+  --nav-active-fg: #0891b2;
 }
 
 /* Dark mode theme (user-controlled via data-theme attribute) */
@@ -136,6 +187,7 @@
   /* Semantic color overrides for dark mode */
   --color-warning-bg: #451a03;
   --color-warning-border: #78350f;
+  --color-warning-dark: #fcd34d;
 
   /* Success — dark background, readable light text */
   --color-success-bg: #052e1a;
@@ -151,6 +203,11 @@
   --color-info-bg: #0c1e3a;
   --color-info-border: #1e3a5f;
   --color-info-dark: #93c5fd;
+
+  /* Navigation — brighter active tint and cyan text for dark surfaces */
+  --nav-hover-bg: var(--brand-primary-light);
+  --nav-active-bg: rgba(34, 211, 238, 0.22);
+  --nav-active-fg: #22d3ee;
 
   color-scheme: dark;
 }

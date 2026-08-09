@@ -2154,7 +2154,9 @@ describe('ContentEditor', () => {
   describe('Format Selection', () => {
     const formatStubs = {
       InputText: true,
-      Button: true,
+      Button: {
+        template: '<button type="button" class="button-stub"><slot /></button>',
+      },
       Select: true,
       FormField: { template: '<div><slot /></div>' },
       TipTapEditor: true,

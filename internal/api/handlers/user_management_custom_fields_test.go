@@ -35,7 +35,7 @@ func setupCustomFieldsTestRouter(
 	jwtManager := auth.NewJWTManager("test-secret-key-for-testing")
 	logger := util.NewLogger(os.Stdout)
 
-	service := user.NewUserManagementService(userRepo, blockedEmailRepo)
+	service := user.NewUserManagementService(userRepo, blockedEmailRepo, true)
 	handler := handlers.NewUserManagementHandler(
 		service,
 		nil,
@@ -152,7 +152,7 @@ func TestUpdateUser_WithoutCustomFields(t *testing.T) {
 
 func TestUpdateUserProfileService_WithCustomFields(t *testing.T) {
 	mockUserRepo := usermocks.NewMockUserRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -182,7 +182,7 @@ func TestUpdateUserProfileService_WithCustomFields(t *testing.T) {
 
 func TestUpdateUserProfileService_NilCustomFields(t *testing.T) {
 	mockUserRepo := usermocks.NewMockUserRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).

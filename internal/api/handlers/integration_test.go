@@ -35,7 +35,7 @@ func TestCompleteLoginFlow(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -152,7 +152,7 @@ func TestLoginWithEmptyCredentials(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -220,7 +220,7 @@ func TestLoginWithInvalidJSON(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -268,7 +268,7 @@ func TestLoginResponseStructure(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
 	userRepo := repomocks.NewMockUserRepo(t)
@@ -427,7 +427,7 @@ func TestCompleteRegistrationFlow(t *testing.T) {
 		CreateToken(mock.Anything, mock.Anything).
 		Return(nil)
 
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	notificationRepo.EXPECT().
@@ -581,7 +581,7 @@ func TestCompleteVerificationFlow(t *testing.T) {
 		DeleteUserTokens(mock.Anything, testUser.ID).
 		Return(nil)
 
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	notificationRepo.EXPECT().
@@ -676,7 +676,7 @@ func TestExpiredTokenFlow(t *testing.T) {
 			CreatedAt: time.Now().Add(-25 * time.Hour),
 		}, nil)
 
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -766,7 +766,7 @@ func TestResendVerificationFlow(t *testing.T) {
 		}).
 		Return(nil)
 
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -852,7 +852,7 @@ func TestForgotPasswordAndResetFlow(t *testing.T) {
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
@@ -1023,7 +1023,7 @@ func TestForgotPasswordNonexistentEmail(t *testing.T) {
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)

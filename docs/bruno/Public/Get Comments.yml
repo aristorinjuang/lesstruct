@@ -3,6 +3,8 @@ info:
   type: http
   seq: 5
 
+# 404 when comments are disabled ([comments] enabled = false) — route unmounted.
+
 http:
   method: GET
   url: "{{BASE_URL}}/api/v1/public/content_items/{{SLUG}}/comments"

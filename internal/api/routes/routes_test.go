@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
@@ -13,10 +14,11 @@ import (
 	agentmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/agent/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
-	"github.com/aristorinjuang/lesstruct/internal/config"
 	mwmocks "github.com/aristorinjuang/lesstruct/internal/api/middleware/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/routes"
+	"github.com/aristorinjuang/lesstruct/internal/api/static"
 	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
+	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 	authdomain "github.com/aristorinjuang/lesstruct/internal/domain/auth"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -52,6 +54,8 @@ type bearerDeps struct {
 	user       *mwmocks.MockUserLookup
 	content    *agentmocks.MockContentService
 	media      *agentmocks.MockMediaService
+	comment    *agentmocks.MockCommentService
+	browser    *contentmocks.MockServiceInterface
 	jwtManager *appauth.JWTManager
 }
 
@@ -62,6 +66,15 @@ type bearerDeps struct {
 // the no-expectation mocks are never invoked).
 func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	t.Helper()
+	return setupTestRouterWithFlags(t, false, true, nil, nil)
+}
+
+// setupTestRouterWithFlags is setupTestRouterWithBearerDeps with the headless and
+// comments feature flags configurable, plus optional static server/handler stubs so
+// tests can prove what headless mode mounts (or unmounts). A nil staticServer keeps
+// the behavior of the default helper (no content-site catch-all registered at all).
+func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, staticSrv *static.StaticServer, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
+	t.Helper()
 
 	// Create test auth handler
 	hash, err := appauth.HashPassword("admin")
@@ -71,7 +84,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, commentsEnabled)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	mockUserRepo := repomocks.NewMockUserRepo(t)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
@@ -99,7 +112,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	firstLoginHandler := handlers.NewFirstLoginHandler(firstLoginService, mockUserRepo, logger)
 	notificationHandler := handlers.NewNotificationHandler(logger, notificationRepo)
 
-	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo, true)
 	softDeleteRepo := repomocks.NewMockSoftDeleteRepo(t)
 	userManagementHandler := handlers.NewUserManagementHandler(userManagementService, nil, mockUserRepo, softDeleteRepo, jwtManager, emailService, logger, nil)
 
@@ -123,9 +136,9 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	mediaHandler := handlers.NewMediaHandler(mocks.NewMockMediaServiceInterface(t), nil, logger)
 
 	// Initialize post type handler (Story 2.6)
-	postTypeHandler := handlers.NewPostTypeHandler(posttype.NewService(), logger)
+	postTypeHandler := handlers.NewPostTypeHandler(posttype.NewService(), commentsEnabled, logger)
 	// Initialize dashboard handler (Story 2.8)
-	dashboardHandler := handlers.NewDashboardHandler(mocks.NewMockDashboardServiceInterface(t), logger)
+	dashboardHandler := handlers.NewDashboardHandler(mocks.NewMockDashboardServiceInterface(t), nil, logger)
 
 	corsMiddleware := middleware.NewCORSMiddleware([]string{"http://localhost:8080"}, logger)
 	csrfMiddleware := middleware.NewCSRFMiddleware(logger, nil, nil)
@@ -134,10 +147,11 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	secHeaderMW := defaultSecurityHeadersMiddleware(t)
 
 	// Initialize SEO handler (Story 4.2)
-	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", logger)
+	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", headlessEnabled, logger)
 
 	// Initialize comment handler (Story 4.7)
-	commentHandler := handlers.NewCommentHandler(contentmocks.NewMockServiceInterface(t))
+	browserContentMock := contentmocks.NewMockServiceInterface(t)
+	commentHandler := handlers.NewCommentHandler(browserContentMock)
 
 	// Initialize Bearer-group dependencies (Story 2.1): real middleware + handler
 	// wired to mock interfaces so Bearer route tests can configure them per-case.
@@ -156,6 +170,8 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 		user:       userLookup,
 		content:    contentSvc,
 		media:      mediaSvc,
+		comment:    commentSvc,
+		browser:    browserContentMock,
 		jwtManager: jwtManager,
 	}
 
@@ -188,13 +204,16 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 		rateLimitMiddleware,
 		secHeaderMW,
 		jwtManager,
-		nil,
-		nil,
+		staticSrv,
+		staticHnd,
 		false,
 		false,
 		nil,
 		[]string{"en"},
 		nil,
+		headlessEnabled,
+		commentsEnabled,
+		"local",
 	)
 	return r, deps
 }
@@ -207,7 +226,7 @@ func TestSetup(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil)
+	registrationService := authdomain.NewRegistrationService(nil, true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	mockUserRepo := repomocks.NewMockUserRepo(t)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
@@ -221,7 +240,7 @@ func TestSetup(t *testing.T) {
 	firstLoginHandler := handlers.NewFirstLoginHandler(firstLoginService, mockUserRepo, logger)
 	notificationHandler := handlers.NewNotificationHandler(logger, notificationRepo)
 
-	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo, true)
 	softDeleteRepo := repomocks.NewMockSoftDeleteRepo(t)
 	userManagementHandler := handlers.NewUserManagementHandler(userManagementService, nil, mockUserRepo, softDeleteRepo, jwtManager, emailService, logger, nil)
 
@@ -247,15 +266,15 @@ func TestSetup(t *testing.T) {
 	mediaHandler := handlers.NewMediaHandler(mocks.NewMockMediaServiceInterface(t), nil, logger)
 
 	// Initialize post type handler (Story 2.6)
-	postTypeHandler := handlers.NewPostTypeHandler(posttype.NewService(), logger)
+	postTypeHandler := handlers.NewPostTypeHandler(posttype.NewService(), true, logger)
 	// Initialize dashboard handler (Story 2.8)
-	dashboardHandler := handlers.NewDashboardHandler(mocks.NewMockDashboardServiceInterface(t), logger)
+	dashboardHandler := handlers.NewDashboardHandler(mocks.NewMockDashboardServiceInterface(t), nil, logger)
 
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(false, 5, 100, 60)
 	secHeaderMW := defaultSecurityHeadersMiddleware(t)
 
 	// Initialize SEO handler (Story 4.2)
-	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", logger)
+	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", false, logger)
 
 	// Initialize comment handler (Story 4.7)
 	commentHandler := handlers.NewCommentHandler(contentmocks.NewMockServiceInterface(t))
@@ -306,6 +325,9 @@ func TestSetup(t *testing.T) {
 		nil,
 		[]string{"en"},
 		nil,
+		false,
+		true,
+		"local",
 	)
 
 	assert.NotNil(t, r, "Setup() returned nil router")
@@ -536,6 +558,7 @@ func TestBrowserContentRoutes_StillRequireJWT(t *testing.T) {
 //   - POST /api/v1/content        → Bearer middleware  (UNAUTHORIZED)
 //   - POST /api/v1/content_items  → browser RequireAuth (MISSING_TOKEN)
 //   - POST /api/v1/content/slug   → browser RequireAuth (MISSING_TOKEN)
+//
 // Each returns 401 (route matched) with its own middleware's code (not 404/405).
 func TestBearerAPIRoutes_NoRouteCollision(t *testing.T) {
 	r, _ := setupTestRouterWithBearerDeps(t)
@@ -802,3 +825,159 @@ func TestBearerAPIRoutes_InvalidKeysAreThrottled(t *testing.T) {
 	assert.Equal(t, "RATE_LIMITED", e3)
 }
 
+// headlessRouter builds a router in headless mode with a real (embedded admin FS)
+// static server and a stub content-site static handler, so tests can prove what
+// headless mode mounts and unmounts.
+func headlessRouter(t *testing.T) *chi.Mux {
+	t.Helper()
+	staticSrv := static.NewStaticServer(false, "", http.NotFoundHandler())
+	staticHnd := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	r, _ := setupTestRouterWithFlags(t, true, true, staticSrv, staticHnd)
+	return r
+}
+
+func TestHeadlessMode_UnmountsContentSite(t *testing.T) {
+	r := headlessRouter(t)
+
+	// The catch-all content-site route must NOT be mounted: any non-API path 404s.
+	req := httptest.NewRequest(http.MethodGet, "/hello-world", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code, "content catch-all must be unmounted in headless mode")
+
+	// /static/* (theme assets) must also be unmounted.
+	req = httptest.NewRequest(http.MethodGet, "/static/app.css", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code, "/static/* must be unmounted in headless mode")
+
+	// Admin SPA and API stay reachable.
+	req = httptest.NewRequest(http.MethodGet, "/admin", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "/admin must stay mounted in headless mode")
+
+	req = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "/api/health must stay mounted in headless mode")
+}
+
+func TestHeadlessMode_MountsContentSite(t *testing.T) {
+	// Non-headless mode must keep serving /static/* — the control case for
+	// TestHeadlessMode_UnmountsContentSite.
+	staticSrv := static.NewStaticServer(false, "", http.NotFoundHandler())
+	staticHnd := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	r, _ := setupTestRouterWithFlags(t, false, true, staticSrv, staticHnd)
+
+	req := httptest.NewRequest(http.MethodGet, "/static/app.css", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "/static/* must stay mounted when headless is off")
+}
+
+func TestCommentsDisabled_UnmountsCommentRoutes(t *testing.T) {
+	r, _ := setupTestRouterWithFlags(t, false, false, nil, nil)
+
+	// The /api/v1 subtree middleware (RequireAuth) runs before chi's NotFound,
+	// so an unauthenticated request to a disabled leaf returns 401. With a
+	// valid JWT the unmounted leaves fall through to chi's 404 while mounted
+	// ones reach their handlers.
+	jwtManager := appauth.NewJWTManager("test-secret")
+	token, err := jwtManager.GenerateToken("1", "admin", "Admin")
+	require.NoError(t, err, "Failed to generate test token")
+
+	// Agent realm comment routes unmounted: an authenticated request 404s
+	// (the path falls through the /api/v1 subtree to NotFound).
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/content/123/comments", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code, "agent comment create must be unmounted when comments are disabled")
+
+	// Public comments unmounted.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items/my-post/comments", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code, "public comment list must be unmounted when comments are disabled")
+
+	// Browser moderation + my-comments unmounted: with a valid JWT they 404
+	// instead of reaching a handler.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/my-comments", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code, "my-comments must be unmounted when comments are disabled")
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/comments/pending", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code, "comment moderation must be unmounted when comments are disabled")
+
+	// Non-comment routes must be unaffected.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/content_items", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "content_items must stay mounted when comments are disabled")
+}
+
+func TestCommentsEnabled_MountsCommentRoutes(t *testing.T) {
+	// Control case: with comments enabled the same leaves stay mounted — an
+	// authenticated request reaches the comment handlers instead of 404ing.
+	r, deps := setupTestRouterWithFlags(t, false, true, nil, nil)
+
+	// Authenticate the Bearer group with a valid key so the agent comment
+	// route is reachable.
+	verifiedKey := &apikey.APIKey{ID: 7, UserID: 1, KeyID: "aaaaaaaaaaaa"}
+	deps.verifier.EXPECT().Verify(mock.Anything, "lesstruct_aaaaaaaaaaaa_bb").Return(verifiedKey, nil)
+	deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+	deps.user.EXPECT().GetUserByID(mock.Anything, 1).Return(&repository.User{ID: 1, Username: "alice", Role: "Admin"}, nil)
+	deps.comment.EXPECT().GetByID(mock.Anything, 123).
+		Return(&contentdomain.Content{ID: 123, AllowComments: true, PostType: "post", Status: contentdomain.StatusPublished}, nil)
+	deps.comment.EXPECT().SubmitComment(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Comment{ID: 1, ContentID: 123, Comment: "hello"}, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/content/123/comments", strings.NewReader(`{"comment":"hello"}`))
+	req.Header.Set("Authorization", "Bearer lesstruct_aaaaaaaaaaaa_bb")
+	code, _ := envelopeCode(t, r, req)
+	assert.Equal(t, http.StatusOK, code, "agent comment create must be mounted when comments are enabled")
+
+	// Public comment list route stays mounted and reachable without auth —
+	// the handler's service lookups resolve via the router's content mock.
+	deps.browser.EXPECT().GetPublishedBySlug(mock.Anything, "my-post", "en").
+		Return(&contentdomain.Content{ID: 5, Slug: "my-post", AllowComments: true, PostType: "post", Status: contentdomain.StatusPublished}, nil)
+	deps.browser.EXPECT().GetCommentsForContent(mock.Anything, 5).
+		Return([]*contentdomain.Comment{}, nil)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items/my-post/comments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "public comment list must be mounted when comments are enabled")
+}
+
+func TestConfigEndpoint_ExposesFeatureFlags(t *testing.T) {
+	r, _ := setupTestRouterWithFlags(t, true, false, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `"commentsEnabled":false`, "config must report commentsEnabled=false")
+	assert.Contains(t, body, `"headless":true`, "config must report headless=true")
+
+	// And the enabled side.
+	r2, _ := setupTestRouterWithFlags(t, false, true, nil, nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	w2 := httptest.NewRecorder()
+	r2.ServeHTTP(w2, req2)
+	body2 := w2.Body.String()
+	assert.Contains(t, body2, `"commentsEnabled":true`, "config must report commentsEnabled=true")
+	assert.Contains(t, body2, `"headless":false`, "config must report headless=false")
+}

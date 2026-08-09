@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import Modal from './Modal.vue'
+import Button from '@/components/atoms/Button.vue'
 import type { Media } from '@/stores/domain/media'
 
 interface Props {
@@ -21,7 +22,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>()
 
-const useExistingButton = ref<HTMLButtonElement>()
+const useExistingButton = ref<{ focus: () => void } | undefined>()
 
 watch(() => props.visible, async (visible) => {
   if (visible && props.showUseExisting) {
@@ -89,32 +90,35 @@ function handleClose() {
       </div>
 
       <div class="duplicate-dialog__actions">
-        <button
+        <Button
           type="button"
+          variant="ghost"
           class="duplicate-dialog__button duplicate-dialog__button--cancel"
           @click="handleClose"
           aria-label="Cancel"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           v-if="showUseExisting"
           ref="useExistingButton"
           type="button"
+          variant="primary"
           class="duplicate-dialog__button duplicate-dialog__button--primary"
           @click="handleUseExisting"
           aria-label="Use existing image"
         >
           Use Existing
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="neutral"
           class="duplicate-dialog__button duplicate-dialog__button--secondary"
           @click="handleUploadAnyway"
           aria-label="Upload anyway"
         >
           Upload Anyway
-        </button>
+        </Button>
       </div>
     </div>
   </Modal>
@@ -198,49 +202,11 @@ function handleClose() {
 }
 
 .duplicate-dialog__button {
-  padding: 0.625rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
-  border: 1px solid transparent;
-  min-height: 44px;
   min-width: 80px;
 }
 
 .duplicate-dialog__button--primary {
-  background-color: var(--brand-primary);
-  color: var(--brand-dark-1);
   order: -1;
-}
-
-.duplicate-dialog__button--primary:hover {
-  background-color: var(--brand-primary-hover);
-}
-
-.duplicate-dialog__button--secondary {
-  background-color: var(--brand-light-1);
-  color: var(--brand-dark-2);
-  border-color: var(--brand-light-2);
-}
-
-.duplicate-dialog__button--secondary:hover {
-  background-color: var(--brand-light-2);
-}
-
-.duplicate-dialog__button--cancel {
-  background-color: transparent;
-  color: var(--brand-dark-2);
-}
-
-.duplicate-dialog__button--cancel:hover {
-  background-color: var(--brand-light-1);
-}
-
-.duplicate-dialog__button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
 }
 
 [data-theme='dark'] .duplicate-dialog__warning {

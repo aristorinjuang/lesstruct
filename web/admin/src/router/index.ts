@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { getAuthStatus } from '@/composables/useAuth'
+import { useConfig } from '@/composables/useConfig'
 import request from '@/utils/request'
 import FullLayout from '@/layouts/FullLayout.vue'
 import NarrowLayout from '@/layouts/NarrowLayout.vue'
@@ -83,6 +84,12 @@ const router = createRouter({
           component: () => import('../views/HugoImportView.vue'),
           meta: { title: 'Import from Hugo' },
         },
+        {
+          path: 'export',
+          name: 'export',
+          component: () => import('../views/ExportView.vue'),
+          meta: { title: 'Export' },
+        },
       ],
     },
     {
@@ -159,6 +166,17 @@ async function checkFirstLoginStatus(): Promise<boolean | null> {
 
 router.beforeEach(async (to, from, next) => {
   const isAuthenticated = getAuthStatus()
+
+  // Comment surfaces (my comments, per-content comments) require the comment
+  // system; when disabled, bounce to the content list.
+  if (to.name === 'comment' || to.name === 'content-comments') {
+    const { commentsEnabled, fetchConfig } = useConfig()
+    await fetchConfig()
+    if (!commentsEnabled.value) {
+      next('/content?type=post')
+      return
+    }
+  }
 
   // Redirect to login if authentication is required but user is not authenticated
   if (to.meta.requiresAuth && !isAuthenticated) {

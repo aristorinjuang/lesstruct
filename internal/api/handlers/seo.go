@@ -15,6 +15,7 @@ import (
 type SEOHandler struct {
 	contentService ContentServiceInterface
 	baseURL        string
+	headless       bool
 	logger         *util.Logger
 }
 
@@ -153,8 +154,15 @@ func (h *SEOHandler) GetSitemapData(w http.ResponseWriter, r *http.Request) {
 
 // GetSitemapXML serves the sitemaps.org XML document crawlers expect at
 // /sitemap.xml (the path robots.txt advertises). The JSON shape served at
-// /api/v1/sitemap is for programmatic callers; crawlers need XML.
+// /api/v1/sitemap is for programmatic callers; crawlers need XML. In headless
+// mode there is no server-rendered content site, so every /<slug> URL would
+// 404 — the XML sitemap is disabled (404) rather than advertising dead URLs.
 func (h *SEOHandler) GetSitemapXML(w http.ResponseWriter, r *http.Request) {
+	if h.headless {
+		http.NotFound(w, r)
+		return
+	}
+
 	entries, err := h.buildSitemapEntries(r.Context())
 	if err != nil {
 		h.logger.Error("Failed to get published content: %v", err)
@@ -172,11 +180,17 @@ func (h *SEOHandler) GetRobotsTxt(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 
+	// In headless mode the content site is not served and sitemap.xml is
+	// disabled — block crawling of the CMS itself entirely.
 	robotsTxt := "User-agent: *\n"
-	robotsTxt += "Allow: /\n"
-	robotsTxt += "Disallow: /admin\n"
-	robotsTxt += "\n"
-	robotsTxt += "Sitemap: " + h.baseURL + "/sitemap.xml\n"
+	if h.headless {
+		robotsTxt += "Disallow: /\n"
+	} else {
+		robotsTxt += "Allow: /\n"
+		robotsTxt += "Disallow: /admin\n"
+		robotsTxt += "\n"
+		robotsTxt += "Sitemap: " + h.baseURL + "/sitemap.xml\n"
+	}
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(robotsTxt))
@@ -185,12 +199,14 @@ func (h *SEOHandler) GetRobotsTxt(w http.ResponseWriter, r *http.Request) {
 func NewSEOHandler(
 	contentService ContentServiceInterface,
 	baseURL string,
+	headless bool,
 	logger *util.Logger,
 ) *SEOHandler {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &SEOHandler{
 		contentService: contentService,
 		baseURL:        baseURL,
+		headless:       headless,
 		logger:         logger,
 	}
 }

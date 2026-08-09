@@ -43,6 +43,16 @@ type Service struct {
 	userFields   UserFields
 }
 
+// protectedSlugs are built-in post types that can never be hidden via the
+// hidden flag: "page" is the core content type, "media" is the media library,
+// and "comment" is the comment-system sentinel (disable the comment system via
+// the [comments] config block instead).
+var protectedSlugs = map[string]bool{
+	"page":    true,
+	"media":   true,
+	"comment": true,
+}
+
 // Register registers a new post type. A non-default slug is validated in full
 // and stored; a slug matching a built-in type (post/page/media/comment) instead
 // EXTENDS that built-in — its Fields and SystemFields are merged in (by slug),
@@ -52,6 +62,10 @@ type Service struct {
 func (s *Service) Register(pt PostType) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if pt.Hidden && protectedSlugs[pt.Slug] {
+		return fmt.Errorf("post type %q cannot be hidden: only the 'post' built-in and custom post types support hidden=true", pt.Slug)
+	}
 
 	if s.defaultSlugs[pt.Slug] {
 		if err := customfield.ValidateFields(pt.Fields); err != nil {
@@ -77,6 +91,7 @@ func (s *Service) mergeIntoDefaultLocked(pt PostType) error {
 	base := s.registry[pt.Slug]
 	base.Fields = mergeFields(base.Fields, pt.Fields)
 	base.SystemFields = mergeFields(base.SystemFields, pt.SystemFields)
+	base.Hidden = pt.Hidden
 	s.registry[pt.Slug] = base
 	return nil
 }

@@ -272,7 +272,7 @@ function resetForm() {
         <Button
           v-if="job && !isImporting"
           type="button"
-          variant="secondary"
+          variant="neutral"
           @click="resetForm"
         >
           Import Another
@@ -321,9 +321,9 @@ function resetForm() {
     </div>
 
     <div class="wordpress-import-form__back">
-      <button type="button" class="wordpress-import-form__back-link" @click="goBack">
-        ← Back to Import
-      </button>
+      <Button type="button" variant="link" class="wordpress-import-form__back-link" @click="goBack">
+        ← Back to Import Options
+      </Button>
     </div>
 
     <Toast
@@ -351,7 +351,7 @@ function resetForm() {
   gap: 0.5rem;
   margin-top: 1rem;
   font-size: 0.875rem;
-  color: var(--color-gray-700);
+  color: var(--brand-dark-2);
   cursor: pointer;
 }
 
@@ -403,21 +403,12 @@ function resetForm() {
 }
 
 .wordpress-import-form__back-link {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--brand-dark-2);
-  font-size: 0.9rem;
   padding: 0;
-}
-
-.wordpress-import-form__back-link:hover {
-  color: var(--brand-primary);
 }
 
 .progress-bar {
   height: 6px;
-  background: var(--color-gray-200);
+  background: var(--brand-light-2);
   border-radius: 3px;
   margin-bottom: 1rem;
   overflow: hidden;

@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import DeleteConfirmDialog from '@/components/molecules/DeleteConfirmDialog.vue'
 import Toast from '@/components/molecules/Toast.vue'
+import Button from '@/components/atoms/Button.vue'
+import IconButton from '@/components/atoms/IconButton.vue'
 import { useContentStore } from '@/stores/domain/content'
 import { useAuth } from '@/composables/useAuth'
 import { useConfig } from '@/composables/useConfig'
@@ -179,11 +181,13 @@ const postTypeTabs = computed(() => {
     'page': 2,
   }
 
-  // Exclude types with dedicated panels
+  // Exclude types with dedicated panels, plus any type hidden by config
+  // (headless/custom-type hiding) — the backend filters them too.
   const excludedTypes = ['media', 'comment']
 
   const sortedPostTypes = [...postTypes.value]
     .filter(pt => !excludedTypes.includes(pt.slug))
+    .filter(pt => !pt.hidden)
     .sort((a, b) => {
       const orderA = postTypeOrder[a.slug] ?? 3
       const orderB = postTypeOrder[b.slug] ?? 3
@@ -210,9 +214,9 @@ const postTypeTabs = computed(() => {
           {{ contentStore.total.toLocaleString() }}
         </span>
       </h1>
-      <button @click="createNew" class="content-list__create-btn">
+      <Button class="content-list__create-btn" variant="primary" @click="createNew">
         Create New Post
-      </button>
+      </Button>
     </div>
 
     <div class="content-list__tabs">
@@ -272,14 +276,14 @@ const postTypeTabs = computed(() => {
           <span v-if="item.updatedByUsername" class="content-list__meta">Updated by {{ item.updatedByUsername }}</span>
           <span class="content-list__date">{{ formatRelativeTime(item.updatedAt) }}</span>
         </div>
-        <button
+        <IconButton
           class="content-list__delete-btn"
+          tone="danger"
+          label="Delete content"
           @click="requestDelete(item, $event)"
-          title="Delete"
-          aria-label="Delete content"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-        </button>
+        </IconButton>
       </div>
     </div>
 
@@ -348,12 +352,7 @@ const postTypeTabs = computed(() => {
 }
 
 .content-list__create-btn {
-  padding: 0.5rem 1rem;
-  background-color: var(--color-info);
-  color: var(--color-white);
-  border: none;
-  border-radius: 0.375rem;
-  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .content-list__items {
@@ -386,23 +385,7 @@ const postTypeTabs = computed(() => {
 
 .content-list__delete-btn {
   flex-shrink: 0;
-  background: none;
-  border: none;
-  font-size: 1.25rem;
-  cursor: pointer;
-  color: var(--color-error);
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  transition: color 0.2s, background-color 0.2s;
   line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.content-list__delete-btn:hover {
-  color: var(--color-error);
-  background-color: var(--color-error-bg);
 }
 
 .content-list__item h3 {

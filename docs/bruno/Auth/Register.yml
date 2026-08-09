@@ -3,6 +3,9 @@ info:
   type: http
   seq: 5
 
+# Returns 403 REGISTRATION_DISABLED when [comments] enabled = false in
+# config.toml — self-registration only creates Commentator accounts.
+
 http:
   method: POST
   url: "{{BASE_URL}}/api/auth/register"

@@ -19,7 +19,7 @@ func TestUserManagementService_GetPendingUsers_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetPendingUsers(mock.Anything, 100, 0).
@@ -42,7 +42,7 @@ func TestUserManagementService_GetPendingUsers_Empty(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetPendingUsers(mock.Anything, 100, 0).
@@ -61,7 +61,7 @@ func TestUserManagementService_GetPendingUsers_RepositoryError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetPendingUsers(mock.Anything, 100, 0).
@@ -79,7 +79,7 @@ func TestUserManagementService_ApproveUser_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		UpdateUserStatusIfCurrentStatus(mock.Anything, 1, "pending", "verified").
@@ -97,7 +97,7 @@ func TestUserManagementService_ApproveUser_UserNotFound(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		UpdateUserStatusIfCurrentStatus(mock.Anything, 999, "pending", "verified").
@@ -115,7 +115,7 @@ func TestUserManagementService_ApproveUser_UpdateError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		UpdateUserStatusIfCurrentStatus(mock.Anything, 1, "pending", "verified").
@@ -133,7 +133,7 @@ func TestUserManagementService_ApproveUser_NonPendingStatus(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		UpdateUserStatusIfCurrentStatus(mock.Anything, 1, "pending", "verified").
@@ -151,7 +151,7 @@ func TestUserManagementService_RejectUser_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -173,7 +173,7 @@ func TestUserManagementService_RejectUser_UserNotFound(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 999).
@@ -192,7 +192,7 @@ func TestUserManagementService_RejectUser_GetUserError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -210,7 +210,7 @@ func TestUserManagementService_RejectUser_DeleteError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -232,7 +232,7 @@ func TestUserManagementService_MarkUserAsSpam_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -262,7 +262,7 @@ func TestUserManagementService_MarkUserAsSpam_UserNotFound(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 999).
@@ -281,7 +281,7 @@ func TestUserManagementService_MarkUserAsSpam_GetUserError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -299,7 +299,7 @@ func TestUserManagementService_MarkUserAsSpam_IsEmailBlockedError(t *testing.T) 
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -321,7 +321,7 @@ func TestUserManagementService_MarkUserAsSpam_EmailAlreadyBlocked(t *testing.T) 
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -344,7 +344,7 @@ func TestUserManagementService_MarkUserAsSpam_DeleteError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -378,7 +378,7 @@ func TestUserManagementService_MarkUserAsSpam_DeleteError_UnblockCompensation(t 
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -412,7 +412,7 @@ func TestUserManagementService_MarkUserAsSpam_DeleteAndUnblockBothFail(t *testin
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -447,7 +447,7 @@ func TestUserManagementService_MarkUserAsSpam_BlockEmailError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -473,7 +473,7 @@ func TestUserManagementService_IsEmailBlocked_Blocked(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockBlockedEmailRepo.EXPECT().
 		IsEmailBlocked(mock.Anything, "blocked@example.com").
@@ -492,7 +492,7 @@ func TestUserManagementService_IsEmailBlocked_NotBlocked(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockBlockedEmailRepo.EXPECT().
 		IsEmailBlocked(mock.Anything, "normal@example.com").
@@ -511,7 +511,7 @@ func TestUserManagementService_IsEmailBlocked_RepositoryError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo)
+	service := user.NewUserManagementService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	mockBlockedEmailRepo.EXPECT().
 		IsEmailBlocked(mock.Anything, "test@example.com").
@@ -529,7 +529,7 @@ func TestUserManagementService_SuspendUser_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -551,7 +551,7 @@ func TestUserManagementService_SuspendUser_Failure(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -573,7 +573,7 @@ func TestUserManagementService_SuspendUser_AlreadySuspended(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -592,7 +592,7 @@ func TestUserManagementService_SuspendUser_SoftDeleted(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -611,7 +611,7 @@ func TestUserManagementService_SuspendUser_GetStatusError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -629,7 +629,7 @@ func TestUserManagementService_UnsuspendUser_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -651,7 +651,7 @@ func TestUserManagementService_UnsuspendUser_Failure(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -673,7 +673,7 @@ func TestUserManagementService_UnsuspendUser_NotSuspended(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -692,7 +692,7 @@ func TestUserManagementService_UnsuspendUser_GetStatusError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -710,7 +710,7 @@ func TestUserManagementService_SoftDeleteUser_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -732,7 +732,7 @@ func TestUserManagementService_SoftDeleteUser_Failure(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -754,7 +754,7 @@ func TestUserManagementService_SoftDeleteUser_AlreadySoftDeleted(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -773,7 +773,7 @@ func TestUserManagementService_SoftDeleteUser_GetStatusError(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -791,7 +791,7 @@ func TestUserManagementService_GetAllUsers_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetAllUsers(mock.Anything, "", 100, 0).
@@ -813,7 +813,7 @@ func TestUserManagementService_GetAllUsers_WithFilter(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetAllUsers(mock.Anything, "verified", 100, 0).
@@ -834,7 +834,7 @@ func TestUserManagementService_GetAllUsers_Failure(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetAllUsers(mock.Anything, "", 100, 0).
@@ -852,7 +852,7 @@ func TestUserManagementService_CountUsers_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		CountUsers(mock.Anything, "verified").
@@ -871,7 +871,7 @@ func TestUserManagementService_CountUsers_Failure(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		CountUsers(mock.Anything, "").
@@ -889,7 +889,7 @@ func TestUserManagementService_GetUserStatus_Success(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -908,7 +908,7 @@ func TestUserManagementService_GetUserStatus_Failure(t *testing.T) {
 	// Arrange
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserStatus(mock.Anything, 123).
@@ -925,7 +925,7 @@ func TestUserManagementService_GetUserStatus_Failure(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_Success(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -961,7 +961,7 @@ func TestUserManagementService_UpdateUserProfile_Success(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_PartialNameOnly(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -992,7 +992,7 @@ func TestUserManagementService_UpdateUserProfile_PartialNameOnly(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_EmptyUpdate(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1021,7 +1021,7 @@ func TestUserManagementService_UpdateUserProfile_EmptyUpdate(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_UserNotFound(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 999).
@@ -1037,7 +1037,7 @@ func TestUserManagementService_UpdateUserProfile_UserNotFound(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_InvalidEmail(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1056,7 +1056,7 @@ func TestUserManagementService_UpdateUserProfile_InvalidEmail(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_InvalidRole(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1071,11 +1071,66 @@ func TestUserManagementService_UpdateUserProfile_InvalidRole(t *testing.T) {
 	assert.True(t, errors.Is(err, user.ErrInvalidRole))
 }
 
+// TestUserManagementService_UpdateUserProfile_CommentatorRejectedWhenCommentsDisabled
+// verifies the update path enforces the same Commentator gate as the create path:
+// with comments disabled, an admin cannot assign the Commentator role via the
+// edit-user flow.
+func TestUserManagementService_UpdateUserProfile_CommentatorRejectedWhenCommentsDisabled(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, false)
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "test@example.com",
+			Name: "Test", Role: "Admin",
+		}, nil)
+
+	_, err := service.UpdateUserProfile(context.Background(), 1, "", "", "Commentator", nil)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, user.ErrInvalidRole))
+
+	// No update must have been attempted after the role gate.
+	mockUserRepo.AssertNotCalled(t, "UpdateProfile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestUserManagementService_UpdateUserProfile_CommentatorAllowedWhenCommentsEnabled
+// is the control case: with comments enabled, the Commentator role is assignable.
+func TestUserManagementService_UpdateUserProfile_CommentatorAllowedWhenCommentsEnabled(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
+
+	updated := &repository.User{
+		ID: 1, Username: "testuser", Email: "test@example.com",
+		Name: "Test", Role: "Commentator",
+	}
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "test@example.com",
+			Name: "Test", Role: "Admin",
+		}, nil).Once()
+	mockUserRepo.EXPECT().
+		UpdateProfile(mock.Anything, 1, mock.Anything, mock.Anything, "Commentator", mock.Anything).
+		Return(nil)
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(updated, nil).Once()
+
+	result, err := service.UpdateUserProfile(context.Background(), 1, "", "", "Commentator", nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Commentator", result.Role)
+}
+
 // TestUserManagementService_UpdateUserProfile_EmailExists tests email already in use by another user
 func TestUserManagementService_UpdateUserProfile_EmailExists(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1098,7 +1153,7 @@ func TestUserManagementService_UpdateUserProfile_EmailExists(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_SameEmail(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1127,7 +1182,7 @@ func TestUserManagementService_UpdateUserProfile_SameEmail(t *testing.T) {
 func TestUserManagementService_UpdateUserProfile_RepoErrorGetUser(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1143,7 +1198,7 @@ func TestUserManagementService_UpdateUserProfile_RepoErrorGetUser(t *testing.T) 
 func TestUserManagementService_UpdateUserProfile_RepoErrorCheckEmail(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1166,7 +1221,7 @@ func TestUserManagementService_UpdateUserProfile_RepoErrorCheckEmail(t *testing.
 func TestUserManagementService_UpdateUserProfile_RepoErrorUpdateProfile(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
@@ -1193,7 +1248,7 @@ func TestUserManagementService_UpdateUserProfile_RepoErrorUpdateProfile(t *testi
 func TestUserManagementService_UpdateUserProfile_RepoErrorFetchUpdatedUser(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
 	_ = mocks.NewMockBlockedEmailRepo(t)
-	service := user.NewUserManagementService(mockUserRepo, nil)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
 
 	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).

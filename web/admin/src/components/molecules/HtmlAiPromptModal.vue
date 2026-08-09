@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import Button from '@/components/atoms/Button.vue'
+import IconButton from '@/components/atoms/IconButton.vue'
 import { HTML_AI_PRESETS } from '@/components/molecules/htmlAiPresets'
 
 interface Props {
@@ -50,11 +51,11 @@ function handleKeydown(e: KeyboardEvent) {
           <h3 class="html-ai-modal__title">
             {{ hasExistingContent ? 'Refine HTML with AI' : 'Generate HTML with AI' }}
           </h3>
-          <button class="html-ai-modal__close" @click="close" aria-label="Close">
+          <IconButton class="html-ai-modal__close" label="Close" @click="close">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M5 5l10 10M15 5l-10 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
-          </button>
+          </IconButton>
         </div>
 
         <div v-if="showPresets" class="html-ai-modal__presets">
@@ -96,7 +97,7 @@ function handleKeydown(e: KeyboardEvent) {
         </div>
 
         <div class="html-ai-modal__footer">
-          <Button variant="secondary" @click="close" :disabled="isLoading">
+          <Button variant="neutral" @click="close" :disabled="isLoading">
             Cancel
           </Button>
           <Button
@@ -161,21 +162,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 .html-ai-modal__close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--brand-dark-2);
-  border-radius: 0.375rem;
-  transition: background-color 150ms;
-}
-
-.html-ai-modal__close:hover {
-  background-color: var(--color-background-mute);
+  flex-shrink: 0;
 }
 
 .html-ai-modal__presets {

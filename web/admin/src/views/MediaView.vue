@@ -7,6 +7,7 @@ import MediaDetailModal from '@/components/organisms/MediaDetailModal.vue'
 import DuplicateMediaDialog from '@/components/organisms/DuplicateMediaDialog.vue'
 import GenerateImageModal from '@/components/organisms/GenerateImageModal.vue'
 import Button from '@/components/atoms/Button.vue'
+import IconButton from '@/components/atoms/IconButton.vue'
 import Toast from '@/components/molecules/Toast.vue'
 import api from '@/utils/request'
 
@@ -281,7 +282,7 @@ onUnmounted(() => {
         <Button
           v-if="aiGenerationAvailable"
           type="button"
-          variant="secondary"
+          variant="neutral"
           @click="showGenerateModal = true"
         >
           Generate with AI
@@ -294,10 +295,10 @@ onUnmounted(() => {
     <div v-if="showUploadForm" class="media-view__upload-form">
       <div class="media-view__upload-form-header">
         <h3 class="media-view__upload-form-title">Upload New Media</h3>
-        <button
+        <IconButton
           type="button"
           class="media-view__upload-form-close"
-          aria-label="Close upload form"
+          label="Close upload form"
           @click="closeUploadForm"
         >
           <svg
@@ -313,7 +314,7 @@ onUnmounted(() => {
               clip-rule="evenodd"
             />
           </svg>
-        </button>
+        </IconButton>
       </div>
 
       <div class="media-view__upload-form-body">
@@ -326,14 +327,15 @@ onUnmounted(() => {
             :disabled="isUploading"
             @change="handleFileSelect"
           />
-          <button
+          <Button
             type="button"
+            variant="ghost"
             class="media-view__choose-file-btn"
             :disabled="isUploading"
             @click="fileInput?.click()"
           >
             {{ uploadFile ? uploadFile.name : 'Choose File' }}
-          </button>
+          </Button>
           <input
             v-model="uploadAltText"
             type="text"
@@ -354,14 +356,14 @@ onUnmounted(() => {
 
         <div v-if="uploadError" class="media-view__upload-error">
           {{ uploadError }}
-          <button
+          <IconButton
             type="button"
             class="media-view__upload-error-close"
+            label="Close error"
             @click="uploadError = ''"
-            aria-label="Close error"
           >
             &times;
-          </button>
+          </IconButton>
         </div>
       </div>
     </div>
@@ -423,14 +425,14 @@ onUnmounted(() => {
         </select>
       </div>
 
-      <button
+      <Button
         v-if="hasActiveFilters"
-        type="button"
-        class="media-view__clear-filters"
+        variant="neutral"
+        size="small"
         @click="clearFilters"
       >
         Clear filters
-      </button>
+      </Button>
     </div>
 
     <!-- Content -->
@@ -463,9 +465,7 @@ onUnmounted(() => {
         </svg>
         <h2 class="state-empty__title">No results found</h2>
         <p class="state-empty__description">Try adjusting your search or filter criteria.</p>
-        <button type="button" class="media-view__empty-action" @click="clearFilters">
-          Clear all filters
-        </button>
+        <Button variant="neutral" @click="clearFilters"> Clear all filters </Button>
       </div>
 
       <!-- Empty State -->
@@ -628,18 +628,7 @@ onUnmounted(() => {
 }
 
 .media-view__upload-form-close {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--brand-dark-2, #6b7280);
-  padding: 0.25rem;
-  display: flex;
-  align-items: center;
-  border-radius: 0.25rem;
-}
-
-.media-view__upload-form-close:hover {
-  background-color: var(--color-bg-muted);
+  flex-shrink: 0;
 }
 
 .media-view__upload-form-body {
@@ -657,26 +646,10 @@ onUnmounted(() => {
 }
 
 .media-view__choose-file-btn {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--brand-light-2, #d1d5db);
-  border-radius: 0.375rem;
-  background-color: var(--color-background, #fff);
-  font-size: 0.875rem;
-  color: var(--brand-dark-1);
-  cursor: pointer;
   white-space: nowrap;
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.media-view__choose-file-btn:hover {
-  background-color: var(--brand-light-1);
-}
-
-.media-view__choose-file-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
 }
 
 .media-view__alt-input {
@@ -715,12 +688,8 @@ onUnmounted(() => {
 }
 
 .media-view__upload-error-close {
-  background: none;
-  border: none;
+  flex-shrink: 0;
   font-size: 1.125rem;
-  color: var(--color-error-dark);
-  cursor: pointer;
-  padding: 0;
   line-height: 1;
 }
 
@@ -755,22 +724,6 @@ onUnmounted(() => {
   background-repeat: no-repeat;
   background-position: right 0.5rem center;
   background-size: 1.25rem;
-}
-
-.media-view__clear-filters {
-  padding: 0.375rem 0.75rem;
-  border: 1px solid var(--brand-light-2, #d1d5db);
-  border-radius: 0.375rem;
-  background-color: var(--color-background, #fff);
-  font-size: 0.8125rem;
-  color: var(--brand-dark-2, #6b7280);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.media-view__clear-filters:hover {
-  background-color: var(--brand-light-1);
-  color: var(--brand-dark-1);
 }
 
 /* Content Area */
@@ -831,16 +784,6 @@ onUnmounted(() => {
 }
 
 /* Empty States */
-.media-view__empty-action {
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--brand-light-2, #d1d5db);
-  border-radius: 0.375rem;
-  background-color: var(--color-background, #fff);
-  font-size: 0.875rem;
-  color: var(--brand-dark-1);
-  cursor: pointer;
-}
-
 /* Load More */
 .media-view__load-more {
   display: flex;

@@ -59,6 +59,7 @@ describe('Sidebar', () => {
           IconUser: { template: '<span class="icon-stub">User</span>' },
           IconUsers: { template: '<span class="icon-stub">Users</span>' },
           IconXMark: { template: '<span class="x-mark">X</span>' },
+          IconArrowUpTray: { template: '<span class="icon-stub">ArrowUpTray</span>' },
         },
       },
     })
@@ -72,18 +73,18 @@ describe('Sidebar', () => {
       expect(wrapper.find('.sidebar__nav').exists()).toBe(true)
     })
 
-    it('should render all 7 navigation items', () => {
+    it('should render all 8 navigation items', () => {
       const wrapper = createWrapper()
 
       const links = wrapper.findAll('.sidebar__link')
-      expect(links).toHaveLength(7)
+      expect(links).toHaveLength(8)
     })
 
     it('should render navigation item labels when sidebar is not collapsed', () => {
       const wrapper = createWrapper()
 
       const labels = wrapper.findAll('.sidebar__label')
-      expect(labels).toHaveLength(7)
+      expect(labels).toHaveLength(8)
       expect(labels[0]?.text()).toBe('Dashboard')
       expect(labels[1]?.text()).toBe('Comments')
       expect(labels[2]?.text()).toBe('Posts')
@@ -91,6 +92,7 @@ describe('Sidebar', () => {
       expect(labels[4]?.text()).toBe('Media')
       expect(labels[5]?.text()).toBe('Users')
       expect(labels[6]?.text()).toBe('Import')
+      expect(labels[7]?.text()).toBe('Export')
     })
 
     it('should hide labels when sidebar is collapsed', async () => {
@@ -287,7 +289,7 @@ describe('Sidebar', () => {
       const wrapper = createWrapper()
 
       const icons = wrapper.findAll('.sidebar__icon')
-      expect(icons).toHaveLength(7)
+      expect(icons).toHaveLength(8)
     })
   })
 

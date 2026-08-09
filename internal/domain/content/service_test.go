@@ -419,10 +419,10 @@ func TestService_Create_PublishedAt(t *testing.T) {
 
 func TestService_Create_DefaultLanguage(t *testing.T) {
 	tests := []struct {
-		name           string
-		defaultLang    string
-		reqLanguage    string
-		wantLanguage   string
+		name         string
+		defaultLang  string
+		reqLanguage  string
+		wantLanguage string
 	}{
 		{
 			name:         "success - WithDefaultLanguage sets empty request language",
@@ -459,10 +459,10 @@ func TestService_Create_DefaultLanguage(t *testing.T) {
 			}
 			service := content.NewService(mockRepo, nil, nil, opts...)
 			result, err := service.Create(context.Background(), 1, content.CreateContentRequest{
-				Title:   "Test Title",
-				Content: testTipTapJSON("test"),
-				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Title:    "Test Title",
+				Content:  testTipTapJSON("test"),
+				Tags:     []string{},
+				Status:   content.StatusDraft,
 				Language: tt.reqLanguage,
 			})
 
@@ -1162,6 +1162,63 @@ func TestService_Update(t *testing.T) {
 			mockRepo.AssertExpectations(t)
 		})
 	}
+}
+
+func TestService_Create_CommentsDisabledForcesAllowCommentsFalse(t *testing.T) {
+	// With the comment system disabled, even an explicit allowComments=true
+	// request must be stored as false.
+	mockRepo := &mocks.MockRepository{}
+	mockRepo.On("CheckSlugUnique", mock.Anything, "my-test-title", "en").Return(true, nil)
+	mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+		content := args.Get(1).(*content.Content)
+		content.ID = 1
+	})
+
+	allowComments := true
+	service := content.NewService(mockRepo, nil, nil, content.WithCommentsEnabled(false))
+	result, err := service.Create(context.Background(), 1, content.CreateContentRequest{
+		Title:         "My Test Title",
+		Content:       testTipTapJSON("This is test content"),
+		Tags:          []string{},
+		Status:        content.StatusDraft,
+		AllowComments: &allowComments,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.AllowComments, "AllowComments should be forced to false when comments are disabled")
+	mockRepo.AssertExpectations(t)
+}
+
+func TestService_Update_CommentsDisabledForcesAllowCommentsFalse(t *testing.T) {
+	mockRepo := &mocks.MockRepository{}
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		ID:            1,
+		UserID:        1,
+		Title:         "Original Title",
+		Slug:          "original-title",
+		Content:       "Original content",
+		Tags:          []string{},
+		Status:        content.StatusDraft,
+		AllowComments: true,
+		UpdatedAt:     time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
+	}, nil)
+	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
+
+	allowComments := true
+	service := content.NewService(mockRepo, nil, nil, content.WithCommentsEnabled(false))
+	result, err := service.Update(context.Background(), 1, 1, "", content.UpdateContentRequest{
+		Title:         "Updated Title",
+		Content:       testTipTapJSON("Updated content"),
+		Tags:          []string{},
+		Status:        content.StatusDraft,
+		AllowComments: &allowComments,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.AllowComments, "AllowComments should be forced to false when comments are disabled")
+	mockRepo.AssertExpectations(t)
 }
 
 func TestService_Update_SlugIsImmutable(t *testing.T) {
@@ -4860,14 +4917,14 @@ func TestService_SearchPublished(t *testing.T) {
 
 func TestService_Publish(t *testing.T) {
 	tests := []struct {
-		name        string
-		id          int
-		userID      int
-		role        string
-		setupMock   func(*mocks.MockRepository)
-		wantErr     error
-		wantStatus  content.Status
-		noUpdate    bool
+		name       string
+		id         int
+		userID     int
+		role       string
+		setupMock  func(*mocks.MockRepository)
+		wantErr    error
+		wantStatus content.Status
+		noUpdate   bool
 	}{
 		{
 			name:   "success - owner publishes draft transitions to published",
@@ -5154,14 +5211,14 @@ func TestService_Publish_CustomURLPrefixForNonPostType(t *testing.T) {
 
 func TestService_Unpublish(t *testing.T) {
 	tests := []struct {
-		name        string
-		id          int
-		userID      int
-		role        string
-		setupMock   func(*mocks.MockRepository)
-		wantErr     error
-		wantStatus  content.Status
-		noUpdate    bool
+		name       string
+		id         int
+		userID     int
+		role       string
+		setupMock  func(*mocks.MockRepository)
+		wantErr    error
+		wantStatus content.Status
+		noUpdate   bool
 	}{
 		{
 			name:   "success - owner unpublishes published transitions to draft",

@@ -260,7 +260,7 @@ function formatDate(dateStr: string): string {
             </Button>
             <Button
               type="button"
-              variant="secondary"
+              variant="neutral"
               size="small"
               @click="reject(comment)"
             >
@@ -268,7 +268,7 @@ function formatDate(dateStr: string): string {
             </Button>
             <Button
               type="button"
-              variant="secondary"
+              variant="neutral"
               size="small"
               @click="markAsSpam(comment)"
             >
@@ -318,13 +318,16 @@ function formatDate(dateStr: string): string {
               <span :class="getStatusBadgeClass(comment.status)">
                 {{ getStatusLabel(comment.status) }}
               </span>
-              <button
+              <Button
+                variant="subtle"
+                tone="danger"
+                size="small"
                 class="comment-item__delete-btn"
                 :disabled="deletingId === comment.id"
                 @click="confirmDelete(comment)"
               >
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
           <p class="comment-item__text">{{ comment.comment }}</p>
@@ -524,24 +527,7 @@ function formatDate(dateStr: string): string {
 }
 
 .comment-item__delete-btn {
-  padding: 0.25rem 0.625rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-error-dark);
-  background-color: var(--color-error-bg);
-  border: 1px solid var(--color-error-border);
-  border-radius: 0.375rem;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-
-.comment-item__delete-btn:hover:not(:disabled) {
-  background-color: var(--color-error-border);
-}
-
-.comment-item__delete-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  flex-shrink: 0;
 }
 
 @media (max-width: 640px) {

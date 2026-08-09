@@ -8,6 +8,10 @@ http:
   url: "{{BASE_URL}}/api/v1/config"
   auth: inherit
 
+# Response envelope: { "data": { "languages": [...], "commentsEnabled": bool, "headless": bool }, "error": null }
+#   commentsEnabled — false when [comments] enabled = false in config.toml (comment routes unmounted, registration blocked)
+#   headless        — true when [headless] enabled = true in config.toml (content site not served; sitemap.xml 404)
+
 settings:
   encodeUrl: true
   timeout: 0

@@ -5,10 +5,19 @@ import { createPinia } from 'pinia'
 
 import App from './App.vue'
 import router from './router'
+import { useConfig } from '@/composables/useConfig'
 
-const app = createApp(App)
+async function bootstrap() {
+  const app = createApp(App)
 
-app.use(createPinia())
-app.use(router)
+  app.use(createPinia())
+  app.use(router)
 
-app.mount('#app')
+  // Load feature flags (languages, commentsEnabled, headless) before the first
+  // render so the sidebar and comment surfaces start in the correct state.
+  await useConfig().fetchConfig()
+
+  app.mount('#app')
+}
+
+bootstrap()

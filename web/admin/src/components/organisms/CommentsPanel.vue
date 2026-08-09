@@ -151,14 +151,14 @@ function viewPublicContent() {
       <div class="comments-panel__actions">
         <Button
           type="button"
-          variant="secondary"
+          variant="neutral"
           @click="viewPublicContent"
         >
           View Public Page
         </Button>
         <Button
           type="button"
-          variant="secondary"
+          variant="neutral"
           @click="router.push('/content')"
         >
           Back to Content
@@ -186,7 +186,7 @@ function viewPublicContent() {
       <p>No comments yet for this content.</p>
       <Button
         type="button"
-        variant="secondary"
+        variant="neutral"
         @click="router.push('/content')"
       >
         Back to Content
@@ -227,7 +227,7 @@ function viewPublicContent() {
           <Button
             v-if="comment.status !== 'rejected'"
             type="button"
-            variant="secondary"
+            variant="neutral"
             size="small"
             @click="reject(comment)"
           >
@@ -236,7 +236,7 @@ function viewPublicContent() {
           <Button
             v-if="comment.status !== 'spam'"
             type="button"
-            variant="secondary"
+            variant="neutral"
             size="small"
             @click="markAsSpam(comment)"
           >

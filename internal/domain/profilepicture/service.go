@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/media"
+	appstorage "github.com/aristorinjuang/lesstruct/internal/storage"
 )
 
 const (
@@ -45,7 +46,7 @@ type UserRepo interface {
 // Service handles profile picture operations
 type Service struct {
 	userRepo  UserRepo
-	storage   *LocalStorage
+	storage   appstorage.Storage
 	processor *Processor
 }
 
@@ -155,7 +156,7 @@ func (s *Service) Delete(ctx context.Context, userID int) error {
 // NewService creates a new profile picture service
 func NewService(
 	userRepo UserRepo,
-	storage *LocalStorage,
+	storage appstorage.Storage,
 	processor *Processor,
 ) *Service {
 	return &Service{

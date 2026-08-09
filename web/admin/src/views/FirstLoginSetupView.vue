@@ -3,6 +3,7 @@ import { ref, watch, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import request, { ApiError } from '@/utils/request'
 import { clearAuth } from '@/composables/useAuth'
+import Button from '@/components/atoms/Button.vue'
 import ThemeToggle from '@/components/atoms/ThemeToggle.vue'
 
 const router = useRouter()
@@ -207,13 +208,16 @@ async function handleSetup() {
             {{ successMessage }}
           </div>
 
-          <button
+          <Button
             type="submit"
             class="first-login-setup__button"
-            :disabled="isLoading || !!successMessage"
+            size="large"
+            :is-loading="isLoading"
+            :disabled="!!successMessage"
+            full-width
           >
             {{ isLoading ? 'Setting up...' : 'Complete Setup' }}
-          </button>
+          </Button>
         </form>
       </div>
     </div>
@@ -332,24 +336,6 @@ async function handleSetup() {
 }
 
 .first-login-setup__button {
-  padding: 0.75rem 1rem;
-  background-color: var(--brand-primary);
-  color: var(--brand-dark-1);
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 1rem;
-  font-weight: 500;
-  min-height: 44px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.first-login-setup__button:hover:not(:disabled) {
-  background-color: var(--brand-primary-hover);
-}
-
-.first-login-setup__button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  margin-top: 0.25rem;
 }
 </style>

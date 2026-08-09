@@ -28,7 +28,7 @@ func TestAdminCreateUserService_CreateUser_Success(t *testing.T) {
 		return nil
 	})
 
-	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo)
+	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, true)
 	result, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
 		Email:    "test@example.com",
@@ -47,7 +47,7 @@ func TestAdminCreateUserService_CreateUser_Success(t *testing.T) {
 }
 
 func TestAdminCreateUserService_CreateUser_InvalidUsername(t *testing.T) {
-	svc := user.NewAdminCreateUserService(nil, nil)
+	svc := user.NewAdminCreateUserService(nil, nil, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "invalid user!",
@@ -59,7 +59,7 @@ func TestAdminCreateUserService_CreateUser_InvalidUsername(t *testing.T) {
 }
 
 func TestAdminCreateUserService_CreateUser_InvalidEmail(t *testing.T) {
-	svc := user.NewAdminCreateUserService(nil, nil)
+	svc := user.NewAdminCreateUserService(nil, nil, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
@@ -71,7 +71,7 @@ func TestAdminCreateUserService_CreateUser_InvalidEmail(t *testing.T) {
 }
 
 func TestAdminCreateUserService_CreateUser_InvalidRole(t *testing.T) {
-	svc := user.NewAdminCreateUserService(nil, nil)
+	svc := user.NewAdminCreateUserService(nil, nil, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
@@ -83,7 +83,7 @@ func TestAdminCreateUserService_CreateUser_InvalidRole(t *testing.T) {
 }
 
 func TestAdminCreateUserService_CreateUser_EmptyUsername(t *testing.T) {
-	svc := user.NewAdminCreateUserService(nil, nil)
+	svc := user.NewAdminCreateUserService(nil, nil, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "",
@@ -95,7 +95,7 @@ func TestAdminCreateUserService_CreateUser_EmptyUsername(t *testing.T) {
 }
 
 func TestAdminCreateUserService_CreateUser_EmptyEmail(t *testing.T) {
-	svc := user.NewAdminCreateUserService(nil, nil)
+	svc := user.NewAdminCreateUserService(nil, nil, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
@@ -107,7 +107,7 @@ func TestAdminCreateUserService_CreateUser_EmptyEmail(t *testing.T) {
 }
 
 func TestAdminCreateUserService_CreateUser_EmptyRole(t *testing.T) {
-	svc := user.NewAdminCreateUserService(nil, nil)
+	svc := user.NewAdminCreateUserService(nil, nil, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
@@ -125,7 +125,7 @@ func TestAdminCreateUserService_CreateUser_DuplicateUsername(t *testing.T) {
 	mockBlockedEmailRepo.EXPECT().IsEmailBlocked(context.Background(), "test@example.com").Return(false, nil)
 	mockUserRepo.EXPECT().CheckUsernameExists(context.Background(), "existinguser").Return(true, nil)
 
-	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo)
+	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "existinguser",
@@ -144,7 +144,7 @@ func TestAdminCreateUserService_CreateUser_DuplicateEmail(t *testing.T) {
 	mockUserRepo.EXPECT().CheckUsernameExists(context.Background(), "testuser").Return(false, nil)
 	mockUserRepo.EXPECT().CheckEmailExists(context.Background(), "existing@example.com").Return(true, nil)
 
-	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo)
+	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
@@ -161,7 +161,7 @@ func TestAdminCreateUserService_CreateUser_BlockedEmail(t *testing.T) {
 
 	mockBlockedEmailRepo.EXPECT().IsEmailBlocked(context.Background(), "blocked@example.com").Return(true, nil)
 
-	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo)
+	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
@@ -191,7 +191,7 @@ func TestAdminCreateUserService_CreateUser_AllValidRoles(t *testing.T) {
 				return nil
 			})
 
-			svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo)
+			svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, true)
 			result, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 				Username: "testuser",
 				Email:    "test@example.com",
@@ -211,7 +211,7 @@ func TestAdminCreateUserService_CreateUser_RepoError(t *testing.T) {
 	mockBlockedEmailRepo.EXPECT().IsEmailBlocked(context.Background(), "test@example.com").Return(false, nil)
 	mockUserRepo.EXPECT().CheckUsernameExists(context.Background(), "testuser").Return(false, errors.New("db error"))
 
-	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo)
+	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, true)
 
 	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
 		Username: "testuser",
@@ -220,4 +220,21 @@ func TestAdminCreateUserService_CreateUser_RepoError(t *testing.T) {
 	})
 
 	assert.ErrorIs(t, err, user.ErrAdminCreateFailed)
+}
+
+func TestAdminCreateUserService_CreateUser_CommentatorRejectedWhenCommentsDisabled(t *testing.T) {
+	mockUserRepo := mocks.NewMockAdminCreateUserRepo(t)
+	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
+
+	svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, false)
+
+	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
+		Username: "testuser",
+		Email:    "test@example.com",
+		Role:     "Commentator",
+	})
+
+	// The role gate rejects before any repo call happens.
+	mockUserRepo.AssertNotCalled(t, "CheckUsernameExists", context.Background(), "testuser")
+	assert.ErrorIs(t, err, user.ErrInvalidRole)
 }

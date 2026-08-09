@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/aristorinjuang/lesstruct/internal/auth"
+	"github.com/aristorinjuang/lesstruct/internal/constants"
 	authdomain "github.com/aristorinjuang/lesstruct/internal/domain/auth"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 )
@@ -40,6 +41,20 @@ var allowedAdminRoles = map[string]bool{
 	"Commentator": true,
 }
 
+// isAllowedRole reports whether an admin may assign the role. The Commentator
+// role exists only for the comment system; when comments are disabled it
+// cannot be assigned. Shared by the admin create-user and update-user paths so
+// both stay consistent with the [comments] config toggle.
+func isAllowedRole(role string, commentsEnabled bool) bool {
+	if !allowedAdminRoles[role] {
+		return false
+	}
+	if role == constants.RoleCommentator && !commentsEnabled {
+		return false
+	}
+	return true
+}
+
 // AdminCreateUserRequest represents the input for admin user creation
 type AdminCreateUserRequest struct {
 	Username     string
@@ -64,8 +79,16 @@ type AdminCreateUserRepo interface {
 
 // AdminCreateUserService handles admin-initiated user creation
 type AdminCreateUserService struct {
-	userRepo        AdminCreateUserRepo
+	userRepo         AdminCreateUserRepo
 	blockedEmailRepo BlockedEmailRepo
+	commentsEnabled  bool
+}
+
+// isAllowedRole reports whether an admin may assign the role. The Commentator
+// role exists only for the comment system; when comments are disabled it
+// cannot be assigned.
+func (s *AdminCreateUserService) isAllowedRole(role string) bool {
+	return isAllowedRole(role, s.commentsEnabled)
 }
 
 // CreateUser creates a new user with verified status and an auto-generated password
@@ -81,7 +104,7 @@ func (s *AdminCreateUserService) CreateUser(ctx context.Context, req AdminCreate
 	}
 
 	// Validate role
-	if !allowedAdminRoles[req.Role] {
+	if !s.isAllowedRole(req.Role) {
 		return nil, ErrInvalidRole
 	}
 
@@ -150,10 +173,13 @@ func (s *AdminCreateUserService) CreateUser(ctx context.Context, req AdminCreate
 	}, nil
 }
 
-// NewAdminCreateUserService creates a new admin create user service
-func NewAdminCreateUserService(userRepo AdminCreateUserRepo, blockedEmailRepo BlockedEmailRepo) *AdminCreateUserService {
+// NewAdminCreateUserService creates a new admin create user service.
+// commentsEnabled gates the Commentator role: when false, admins cannot assign
+// it (the role exists only for the comment system).
+func NewAdminCreateUserService(userRepo AdminCreateUserRepo, blockedEmailRepo BlockedEmailRepo, commentsEnabled bool) *AdminCreateUserService {
 	return &AdminCreateUserService{
-		userRepo:        userRepo,
+		userRepo:         userRepo,
 		blockedEmailRepo: blockedEmailRepo,
+		commentsEnabled:  commentsEnabled,
 	}
 }

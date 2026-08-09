@@ -62,12 +62,48 @@ func isValidOrigin(origin string) bool {
 
 // Config holds all application configuration
 type Config struct {
-	Host               string
-	Port               int
-	DBPath             string
-	DBDriver           string
-	DBDSN              string
-	DBPoolMaxConns     int
+	Host           string
+	Port           int
+	DBPath         string
+	DBDriver       string
+	DBDSN          string
+	DBPoolMaxConns int
+
+	// StorageDriver selects the file storage backend: "local" (default) or "s3".
+	// The "s3" driver works against AWS S3 AND MinIO (both speak the S3 API).
+	// Read via STORAGE_DRIVER.
+	StorageDriver string
+
+	// StorageS3Endpoint is the S3-compatible endpoint URL (e.g. "http://minio:9000").
+	// Leave empty to use the default AWS endpoints. Read via STORAGE_S3_ENDPOINT.
+	StorageS3Endpoint string
+
+	// StorageS3Region is the AWS region or MinIO region (MinIO uses "us-east-1" by
+	// default). Read via STORAGE_S3_REGION.
+	StorageS3Region string
+
+	// StorageS3Bucket is the bucket media and profile pictures are stored in.
+	// Read via STORAGE_S3_BUCKET.
+	StorageS3Bucket string
+
+	// StorageS3AccessKeyID is the access key for the S3-compatible backend.
+	// Read via STORAGE_S3_ACCESS_KEY_ID.
+	StorageS3AccessKeyID string
+
+	// StorageS3SecretAccessKey is the secret key for the S3-compatible backend.
+	// Read via STORAGE_S3_SECRET_ACCESS_KEY.
+	StorageS3SecretAccessKey string
+
+	// StorageS3UsePathStyle forces path-style addressing ("bucket.example.com/key"
+	// vs "example.com/bucket/key"). Required for most MinIO deployments.
+	// Read via STORAGE_S3_USE_PATH_STYLE.
+	StorageS3UsePathStyle bool
+
+	// StorageS3PublicBaseURL is the base URL served to clients (the bucket's public
+	// URL or a CDN/CloudFront distribution, e.g. "https://cdn.example.com").
+	// GetURL returns this prefix + object key. Read via STORAGE_S3_PUBLIC_BASE_URL.
+	StorageS3PublicBaseURL string
+
 	JWTSecret          string
 	LogLevel           string
 	SMTPHost           string
@@ -138,27 +174,35 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Host:               getEnv("HOST", "0.0.0.0"),
-		Port:               getEnvInt("PORT", 8080),
-		DBPath:             getEnv("DB_PATH", "data/lesstruct.db"),
-		DBDriver:           getEnv("DB_DRIVER", "sqlite"),
-		DBDSN:              getEnv("DB_DSN", ""),
-		DBPoolMaxConns:     getEnvInt("DB_POOL_MAX_CONNS", 20),
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		LogLevel:           getEnv("LOG_LEVEL", "info"),
-		SMTPHost:           getEnv("SMTP_HOST", ""),
-		SMTPPort:           getEnvInt("SMTP_PORT", 587),
-		SMTPUser:           getEnv("SMTP_USER", ""),
-		SMTPPassword:       getEnv("SMTP_PASSWORD", ""),
-		SMTPFrom:           getEnv("SMTP_FROM", ""),
-		ConfigDir:          getEnv("CONFIG_DIR", "."),
-		ConfigFile:         getEnv("CONFIG_FILE", "config.toml"),
-		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173"),
-		SiteURL:            getEnv("SITE_URL", "http://localhost:8080"),
-		DevMode:            getEnvBool("DEV_MODE", false),
-		AdminDevURL:        getEnv("ADMIN_DEV_URL", "http://localhost:5173"),
-		ThemeDir:           getEnv("THEME_DIR", ""),
-		PostPerPage:        getEnvInt("POSTS_PER_PAGE", 50),
+		Host:                     getEnv("HOST", "0.0.0.0"),
+		Port:                     getEnvInt("PORT", 8080),
+		DBPath:                   getEnv("DB_PATH", "data/lesstruct.db"),
+		DBDriver:                 getEnv("DB_DRIVER", "sqlite"),
+		DBDSN:                    getEnv("DB_DSN", ""),
+		DBPoolMaxConns:           getEnvInt("DB_POOL_MAX_CONNS", 20),
+		StorageDriver:            getEnv("STORAGE_DRIVER", "local"),
+		StorageS3Endpoint:        getEnv("STORAGE_S3_ENDPOINT", ""),
+		StorageS3Region:          getEnv("STORAGE_S3_REGION", "us-east-1"),
+		StorageS3Bucket:          getEnv("STORAGE_S3_BUCKET", ""),
+		StorageS3AccessKeyID:     getEnv("STORAGE_S3_ACCESS_KEY_ID", ""),
+		StorageS3SecretAccessKey: getEnv("STORAGE_S3_SECRET_ACCESS_KEY", ""),
+		StorageS3UsePathStyle:    getEnvBool("STORAGE_S3_USE_PATH_STYLE", false),
+		StorageS3PublicBaseURL:   getEnv("STORAGE_S3_PUBLIC_BASE_URL", ""),
+		JWTSecret:                getEnv("JWT_SECRET", ""),
+		LogLevel:                 getEnv("LOG_LEVEL", "info"),
+		SMTPHost:                 getEnv("SMTP_HOST", ""),
+		SMTPPort:                 getEnvInt("SMTP_PORT", 587),
+		SMTPUser:                 getEnv("SMTP_USER", ""),
+		SMTPPassword:             getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:                 getEnv("SMTP_FROM", ""),
+		ConfigDir:                getEnv("CONFIG_DIR", "."),
+		ConfigFile:               getEnv("CONFIG_FILE", "config.toml"),
+		CORSAllowedOrigins:       getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173"),
+		SiteURL:                  getEnv("SITE_URL", "http://localhost:8080"),
+		DevMode:                  getEnvBool("DEV_MODE", false),
+		AdminDevURL:              getEnv("ADMIN_DEV_URL", "http://localhost:5173"),
+		ThemeDir:                 getEnv("THEME_DIR", ""),
+		PostPerPage:              getEnvInt("POSTS_PER_PAGE", 50),
 
 		// ServerReadHeaderTimeout defaults to 15s for Slowloris protection.
 		ServerReadHeaderTimeout: getEnvDuration("SERVER_READ_HEADER_TIMEOUT", 15*time.Second),
@@ -225,6 +269,30 @@ func Load() (*Config, error) {
 		}
 	default:
 		return nil, fmt.Errorf("unsupported DB_DRIVER %q: must be 'sqlite', 'postgres', or 'mysql'", cfg.DBDriver)
+	}
+
+	// Validate storage driver
+	switch cfg.StorageDriver {
+	case "local":
+		// local is the default — no additional validation needed
+	case "s3":
+		if cfg.StorageS3Region == "" {
+			return nil, fmt.Errorf("STORAGE_S3_REGION is required when STORAGE_DRIVER=s3")
+		}
+		if cfg.StorageS3Bucket == "" {
+			return nil, fmt.Errorf("STORAGE_S3_BUCKET is required when STORAGE_DRIVER=s3")
+		}
+		if cfg.StorageS3AccessKeyID == "" {
+			return nil, fmt.Errorf("STORAGE_S3_ACCESS_KEY_ID is required when STORAGE_DRIVER=s3")
+		}
+		if cfg.StorageS3SecretAccessKey == "" {
+			return nil, fmt.Errorf("STORAGE_S3_SECRET_ACCESS_KEY is required when STORAGE_DRIVER=s3")
+		}
+		if cfg.StorageS3PublicBaseURL == "" {
+			return nil, fmt.Errorf("STORAGE_S3_PUBLIC_BASE_URL is required when STORAGE_DRIVER=s3")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported STORAGE_DRIVER %q: must be 'local' or 's3'", cfg.StorageDriver)
 	}
 
 	// Validate port range

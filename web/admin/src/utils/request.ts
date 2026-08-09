@@ -19,6 +19,82 @@ interface RequestOptions {
   timeout?: number
 }
 
+function extractFilename(disposition: string | null, fallback: string): string {
+  if (!disposition) {
+    return fallback
+  }
+  const match = /filename="([^"]+)"/.exec(disposition) || /filename=([^;]+)/.exec(disposition)
+  const filename = match?.[1]
+  if (!filename) {
+    return fallback
+  }
+  return filename.trim().replace(/^["']|["']$/g, '')
+}
+
+/**
+ * Download a binary response (e.g. a tar.gz archive) as a file attachment.
+ * No timeout by default — large exports can take minutes, mirroring the CLI
+ * and Bruno collections (timeout: 0). Returns the server-provided filename.
+ */
+async function download(
+  path: string,
+  fallbackFilename: string,
+  options?: { timeout?: number }
+): Promise<string> {
+  const token = localStorage.getItem('auth_token')
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const url = `${BASE_URL}${path}`
+  const controller = new AbortController()
+  const timeoutMs = options?.timeout ?? 0
+  const timeoutId = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      let code: string | undefined
+      let message = response.statusText
+      try {
+        const body = await response.json()
+        if (body?.error?.code) {
+          code = body.error.code
+        }
+        if (body?.error?.message) {
+          message = body.error.message
+        }
+      } catch {
+        // Response body not parseable as JSON, use status text
+      }
+      throw new ApiError(message, response.status, code)
+    }
+
+    const blob = await response.blob()
+    const filename = extractFilename(response.headers.get('Content-Disposition'), fallbackFilename)
+    const objectUrl = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = objectUrl
+    anchor.download = filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+    return filename
+  } catch (err) {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId)
+    }
+    throw err
+  }
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -124,5 +200,9 @@ export default {
 
   delete<T>(path: string) {
     return request<T>('DELETE', path)
+  },
+
+  download(path: string, fallbackFilename: string, options?: { timeout?: number }) {
+    return download(path, fallbackFilename, options)
   }
 }

@@ -55,6 +55,7 @@ type BlockedEmailRepo interface {
 type UserManagementService struct {
 	userRepo         UserRepo
 	blockedEmailRepo BlockedEmailRepo
+	commentsEnabled  bool
 }
 
 // GetPendingUsers retrieves users with pending status with pagination
@@ -269,7 +270,7 @@ func (s *UserManagementService) UpdateUserProfile(
 
 	// Validate role if provided
 	if role != "" {
-		if !allowedAdminRoles[role] {
+		if !isAllowedRole(role, s.commentsEnabled) {
 			return nil, ErrInvalidRole
 		}
 	}
@@ -300,9 +301,13 @@ func (s *UserManagementService) UpdateUserProfile(
 }
 
 // NewUserManagementService creates a new user management service
-func NewUserManagementService(userRepo UserRepo, blockedEmailRepo BlockedEmailRepo) *UserManagementService {
+// NewUserManagementService creates a new user management service. commentsEnabled
+// gates the Commentator role on the update-user path: when false, admins cannot
+// assign it (the role exists only for the comment system).
+func NewUserManagementService(userRepo UserRepo, blockedEmailRepo BlockedEmailRepo, commentsEnabled bool) *UserManagementService {
 	return &UserManagementService{
 		userRepo:         userRepo,
 		blockedEmailRepo: blockedEmailRepo,
+		commentsEnabled:  commentsEnabled,
 	}
 }

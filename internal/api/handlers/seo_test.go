@@ -327,9 +327,57 @@ func TestNewSEOHandler_TrimsTrailingSlash(t *testing.T) {
 	handler := NewSEOHandler(
 		&MockContentServiceInterface{},
 		"http://localhost:3000/",
+		false,
 		util.NewLogger(os.Stdout),
 	)
 	if handler.baseURL != "http://localhost:3000" {
 		t.Errorf("expected trailing slash trimmed, got %q", handler.baseURL)
 	}
+}
+
+func TestSEOHandler_HeadlessMode(t *testing.T) {
+	t.Run("robots.txt disallows everything in headless mode", func(t *testing.T) {
+		handler := &SEOHandler{
+			baseURL:  "http://localhost:3000",
+			headless: true,
+			logger:   util.NewLogger(os.Stdout),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/robots.txt", nil)
+		w := httptest.NewRecorder()
+
+		handler.GetRobotsTxt(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, "Disallow: /") {
+			t.Errorf("expected 'Disallow: /' in headless robots.txt, got: %q", body)
+		}
+		if strings.Contains(body, "Sitemap:") {
+			t.Errorf("expected no sitemap reference in headless robots.txt, got: %q", body)
+		}
+	})
+
+	t.Run("sitemap.xml 404s in headless mode", func(t *testing.T) {
+		mockService := &MockContentServiceInterface{}
+
+		handler := &SEOHandler{
+			contentService: mockService,
+			baseURL:        "http://localhost:3000",
+			headless:       true,
+			logger:         util.NewLogger(os.Stdout),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/sitemap.xml", nil)
+		w := httptest.NewRecorder()
+		handler.GetSitemapXML(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected status 404, got %d", w.Code)
+		}
+		// The content service must not be queried in headless mode.
+		mockService.AssertNotCalled(t, "GetPublished", mock.Anything, mock.Anything, mock.Anything)
+	})
 }

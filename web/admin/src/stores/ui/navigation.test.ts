@@ -9,12 +9,32 @@ vi.mock('@/composables/useAuth', () => ({
   })),
 }))
 
+// Mock useConfig so tests can control the comments flag without network calls
+vi.mock('@/composables/useConfig', () => ({
+  useConfig: vi.fn(() => ({
+    commentsEnabled: ref(true),
+  })),
+}))
+
+// Mock the content store so tests can inject postTypes (incl. hidden ones).
+// The getter unwraps the ref like a real Pinia store proxy would.
+const postTypesRef = ref<PostType[]>([])
+vi.mock('@/stores/domain/content', () => ({
+  useContentStore: vi.fn(() => ({
+    get postTypes() {
+      return postTypesRef.value
+    },
+  })),
+}))
+
 import { useNavigationStore } from './navigation'
+import type { PostType } from '@/types/posttype'
 
 describe('NavigationStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    postTypesRef.value = []
     // Clear localStorage
     localStorage.clear()
   })
@@ -89,7 +109,7 @@ describe('NavigationStore', () => {
     it('should have all required navigation items', () => {
       const store = useNavigationStore()
 
-      expect(store.navigationItems).toHaveLength(7)
+      expect(store.navigationItems).toHaveLength(8)
       expect(store.navigationItems).toEqual([
         { path: '/dashboard', label: 'Dashboard', icon: 'chart-bars', permission: 'admin' },
         { path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' },
@@ -98,7 +118,44 @@ describe('NavigationStore', () => {
         { path: '/media', label: 'Media', icon: 'photo', permission: 'content_creator' },
         { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
         { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
+        { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
       ])
+    })
+
+    it('should omit a hidden built-in post type from the sidebar', () => {
+      // The backend admin post-type list includes hidden types with their
+      // hidden flag; the sidebar must skip the dedicated entry for them.
+      postTypesRef.value = [
+        { name: 'Post', slug: 'post', supports: ['title', 'content'], hidden: true },
+        { name: 'Page', slug: 'page', supports: ['title', 'content'] },
+      ]
+      const store = useNavigationStore()
+
+      expect(store.navigationItems).toEqual([
+        { path: '/dashboard', label: 'Dashboard', icon: 'chart-bars', permission: 'admin' },
+        { path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' },
+        { path: '/content?type=page', label: 'Pages', icon: 'document', permission: 'content_creator' },
+        { path: '/media', label: 'Media', icon: 'photo', permission: 'content_creator' },
+        { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
+        { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
+        { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
+      ])
+    })
+
+    it('should omit hidden custom post types from the sidebar', () => {
+      postTypesRef.value = [
+        { name: 'Post', slug: 'post', supports: ['title', 'content'] },
+        { name: 'Page', slug: 'page', supports: ['title', 'content'] },
+        { name: 'Secret', slug: 'secret', supports: ['title', 'content'], hidden: true },
+        { name: 'Visible', slug: 'visible', supports: ['title', 'content'] },
+      ]
+      const store = useNavigationStore()
+
+      const paths = store.navigationItems.map(item => item.path)
+      expect(paths).toContain('/content?type=visible')
+      expect(paths).not.toContain('/content?type=secret')
+      expect(paths).toContain('/content?type=post')
+      expect(paths).toContain('/content?type=page')
     })
   })
 

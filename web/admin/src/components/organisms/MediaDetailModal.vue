@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { Media, MediaVariant } from '@/stores/domain/media'
+import IconButton from '@/components/atoms/IconButton.vue'
+import Button from '@/components/atoms/Button.vue'
 import { useAuth } from '@/composables/useAuth'
 
 interface Props {
@@ -118,16 +120,15 @@ onUnmounted(() => {
       @click="handleBackdropClick"
     >
       <div class="media-detail-modal" role="dialog" aria-label="Media details">
-        <button
-          type="button"
+        <IconButton
           class="media-detail-modal__close"
-          aria-label="Close"
+          label="Close"
           @click="$emit('close')"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="20" height="20">
             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
           </svg>
-        </button>
+        </IconButton>
 
         <div class="media-detail-modal__image-wrapper">
           <img
@@ -170,19 +171,22 @@ onUnmounted(() => {
             >
               <span class="media-detail-modal__variant-suffix">{{ suffix }}</span>
               <span class="media-detail-modal__variant-dims">{{ variant.width }} &times; {{ variant.height }}</span>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="small"
                 class="media-detail-modal__btn media-detail-modal__btn--copy"
                 @click="copyVariantUrl(variant.url, suffix)"
               >
                 {{ copiedSuffix === suffix ? 'Copied!' : 'Copy URL' }}
-              </button>
+              </Button>
             </div>
           </div>
 
           <div class="media-detail-modal__actions">
-            <button
+            <Button
               type="button"
+              variant="neutral"
               class="media-detail-modal__btn media-detail-modal__btn--download"
               @click="handleDownload"
             >
@@ -191,10 +195,12 @@ onUnmounted(() => {
                 <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
               </svg>
               Download
-            </button>
-            <button
+            </Button>
+            <Button
               v-if="canDelete"
               type="button"
+              variant="subtle"
+              tone="danger"
               class="media-detail-modal__btn media-detail-modal__btn--delete"
               @click="handleDelete"
             >
@@ -202,7 +208,7 @@ onUnmounted(() => {
                 <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022 1.005 10.74A3.75 3.75 0 009.038 19.5h1.924a3.75 3.75 0 003.719-3.559l1.005-10.74.149.022a.75.75 0 10.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" />
               </svg>
               Delete
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -239,20 +245,9 @@ onUnmounted(() => {
   right: 0.75rem;
   z-index: 10;
   background-color: rgba(255, 255, 255, 0.9);
-  border: none;
-  border-radius: 50%;
-  width: 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
   color: var(--brand-dark-2, #374151);
-  transition: background-color 0.15s;
+  border-radius: 50%;
 }
-
-.media-detail-modal__close:hover {
-  background-color: var(--color-bg-muted);}
 
 .media-detail-modal__image-wrapper {
   border-radius: 0.75rem 0.75rem 0 0;
@@ -347,52 +342,13 @@ onUnmounted(() => {
 }
 
 .media-detail-modal__btn--copy {
-  background-color: var(--brand-primary, #22d3ee);
-  color: var(--brand-dark-1, #111827);
   min-width: 44px;
-  min-height: 44px;
   font-size: 0.75rem;
-}
-
-.media-detail-modal__btn--copy:hover {
-  background-color: var(--brand-primary-hover);
 }
 
 .media-detail-modal__actions {
   display: flex;
   gap: 0.75rem;
-}
-
-.media-detail-modal__btn {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-
-.media-detail-modal__btn--download {
-  background-color: var(--brand-dark-1, #111827);
-  color: var(--color-white);
-}
-
-.media-detail-modal__btn--download:hover {
-  background-color: var(--brand-dark-2, #374151);
-}
-
-.media-detail-modal__btn--delete {
-  background-color: var(--color-error-bg);
-  color: var(--color-error);
-  border: 1px solid var(--color-error-border);
-}
-
-.media-detail-modal__btn--delete:hover {
-  background-color: var(--color-error-bg);
 }
 
 [data-theme='dark'] .media-detail-modal {
@@ -404,10 +360,6 @@ onUnmounted(() => {
   color: var(--brand-dark-2, #e5e7eb);
 }
 
-[data-theme='dark'] .media-detail-modal__close:hover {
-  background-color: rgba(55, 65, 81, 0.9);
-}
-
 [data-theme='dark'] .media-detail-modal__image-wrapper {
   background-color: var(--brand-dark-2);
 }
@@ -417,31 +369,8 @@ onUnmounted(() => {
   border-color: rgba(55, 65, 81, 0.5);
 }
 
-[data-theme='dark'] .media-detail-modal__variant-suffix {
-  color: var(--brand-light-2);
-}
-
 [data-theme='dark'] .media-detail-modal__variant-dims {
   color: var(--color-text-muted);
-}
-
-[data-theme='dark'] .media-detail-modal__btn--download {
-  background-color: var(--color-info);
-  color: var(--color-white);
-}
-
-[data-theme='dark'] .media-detail-modal__btn--download:hover {
-  background-color: var(--color-info);
-}
-
-[data-theme='dark'] .media-detail-modal__btn--delete {
-  background-color: rgba(220, 38, 38, 0.15);
-  color: #fca5a5;
-  border-color: rgba(220, 38, 38, 0.3);
-}
-
-[data-theme='dark'] .media-detail-modal__btn--delete:hover {
-  background-color: rgba(220, 38, 38, 0.25);
 }
 
 @media (max-width: 640px) {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import Toast from '@/components/molecules/Toast.vue'
+import Button from '@/components/atoms/Button.vue'
 import ApiKeyList from '@/components/organisms/ApiKeyList.vue'
 import ApiKeyCreateDialog from '@/components/organisms/ApiKeyCreateDialog.vue'
 import ConfirmationDialog from '@/components/organisms/ConfirmationDialog.vue'
@@ -85,13 +86,14 @@ onUnmounted(() => {
             API keys allow programmatic access to your Lesstruct content via the REST API and CLI.
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="primary"
           class="api-keys-view__create-button"
           @click="showCreateDialog = true"
         >
           Create Key
-        </button>
+        </Button>
       </div>
     </header>
 
@@ -107,9 +109,9 @@ onUnmounted(() => {
     <!-- Error state (list + dialogs stay mounted regardless, so Create/Revoke remain reachable) -->
     <div v-if="error && keys.length === 0" class="api-keys-view__error">
       <p>Failed to load API keys. Please try again.</p>
-      <button type="button" class="api-keys-view__retry-button" :disabled="isLoading" @click="loadApiKeys">
+      <Button type="button" variant="danger" class="api-keys-view__retry-button" :disabled="isLoading" @click="loadApiKeys">
         Retry
-      </button>
+      </Button>
     </div>
 
     <!-- Main content (list handles its own loading + empty states) -->
@@ -148,25 +150,6 @@ onUnmounted(() => {
 
 .api-keys-view__create-button {
   flex-shrink: 0;
-  padding: 0.5rem 1rem;
-  background-color: var(--brand-primary);
-  color: white;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  min-height: 44px;
-  transition: background-color 0.2s;
-}
-
-.api-keys-view__create-button:hover {
-  background-color: var(--color-interactive-hover);
-}
-
-.api-keys-view__create-button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
 }
 
 .api-keys-view__error {
@@ -177,24 +160,6 @@ onUnmounted(() => {
 
 .api-keys-view__retry-button {
   margin-top: 1rem;
-  padding: 0.625rem 1rem;
-  background-color: var(--brand-primary);
-  color: white;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  min-height: 44px;
-}
-
-.api-keys-view__retry-button:hover:not(:disabled) {
-  background-color: var(--color-interactive-hover);
-}
-
-.api-keys-view__retry-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 @media (max-width: 639px) {

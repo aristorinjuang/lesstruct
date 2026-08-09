@@ -17,6 +17,7 @@ import IconPhoto from './IconPhoto.vue'
 import IconUsers from './IconUsers.vue'
 import IconChatBubble from './IconChatBubble.vue'
 import IconArrowDownTray from './IconArrowDownTray.vue'
+import IconArrowUpTray from './IconArrowUpTray.vue'
 
 export const icons = {
   dashboard: IconDashboard,
@@ -33,6 +34,7 @@ export const icons = {
   users: IconUsers,
   'chat-bubble': IconChatBubble,
   'arrow-down-tray': IconArrowDownTray,
+  'arrow-up-tray': IconArrowUpTray,
 }
 
 export type IconName = keyof typeof icons
@@ -52,6 +54,7 @@ export {
   IconUsers,
   IconChatBubble,
   IconArrowDownTray,
+  IconArrowUpTray,
 }
 
 /**

@@ -199,6 +199,16 @@ func WithDefaultLanguage(lang string) Option {
 	}
 }
 
+// WithCommentsEnabled sets whether the comment system is active. When false,
+// new content always defaults to allowComments=false regardless of the request
+// (the comment routes are unmounted at the HTTP layer; this covers the data
+// layer so no item accepts comments).
+func WithCommentsEnabled(enabled bool) Option {
+	return func(s *Service) {
+		s.commentsEnabled = enabled
+	}
+}
+
 // Service handles content business logic
 type Service struct {
 	repo            Repository
@@ -207,6 +217,7 @@ type Service struct {
 	postTypeService PostTypeServiceInterface
 	hookExecutor    HookExecutor
 	defaultLanguage string
+	commentsEnabled bool
 }
 
 func (s *Service) validateCustomFields(
@@ -610,11 +621,13 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		return nil, fmt.Errorf("%w: %w", ErrCustomFieldValidation, err)
 	}
 
-	allowComments := true
-	if req.AllowComments != nil {
-		allowComments = *req.AllowComments
-	} else if postType == "page" {
-		allowComments = false
+	allowComments := s.commentsEnabled
+	if s.commentsEnabled {
+		if req.AllowComments != nil {
+			allowComments = *req.AllowComments
+		} else if postType == "page" {
+			allowComments = false
+		}
 	}
 
 	content := &Content{
@@ -1180,8 +1193,11 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 		}
 	}
 
-	if req.AllowComments != nil {
+	if req.AllowComments != nil && s.commentsEnabled {
 		existing.AllowComments = *req.AllowComments
+	} else if !s.commentsEnabled {
+		// Comments globally disabled — no item may accept comments.
+		existing.AllowComments = false
 	}
 
 	// Auto-generate SEO metadata when transitioning to published status

@@ -17,6 +17,7 @@ export type NavigationItemIcon =
   | 'users'
   | 'chat-bubble'
   | 'arrow-down-tray'
+  | 'arrow-up-tray'
 
 export interface NavigationItem {
   path: string

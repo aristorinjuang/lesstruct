@@ -10,7 +10,9 @@
 		<button type="submit" class="btn">{{t .Lang "ui.login"}}</button>
 	</form>
 	<div class="auth-links">
+		{{- if .ShowRegister}}
 		<p><a href="/register">{{t .Lang "ui.create_account"}}</a></p>
+		{{- end}}
 		<p><a href="/forgot-password">{{t .Lang "ui.forgot_password_link"}}</a></p>
 	</div>
 </div>

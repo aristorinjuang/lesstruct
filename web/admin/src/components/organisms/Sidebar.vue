@@ -6,6 +6,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useDashboardStore } from '@/stores/domain/dashboard'
 import { useNotificationStore } from '@/stores/ui/notifications'
 import { getIcon } from '@/components/icons'
+import IconButton from '@/components/atoms/IconButton.vue'
 import IconXMark from '@/components/icons/IconXMark.vue'
 import NotificationBadgeWithTooltip from '@/components/molecules/NotificationBadgeWithTooltip.vue'
 
@@ -209,14 +210,14 @@ onUnmounted(() => {
     </ul>
 
     <!-- Mobile close button -->
-    <button
+    <IconButton
       class="sidebar__mobile-close"
+      size="large"
+      label="Close menu"
       @click="handleMobileMenuClose"
-      aria-label="Close menu"
-      type="button"
     >
       <IconXMark class="sidebar__mobile-close-icon" />
-    </button>
+    </IconButton>
   </nav>
 
   <!-- Mobile backdrop -->
@@ -302,20 +303,20 @@ onUnmounted(() => {
 }
 
 .sidebar__link:hover {
-  background-color: var(--brand-primary-light);
-  color: var(--brand-primary);
+  background-color: var(--nav-hover-bg);
+  color: var(--nav-active-fg);
 }
 
 .sidebar__link--active {
-  background-color: var(--brand-primary-light);
-  color: var(--brand-primary);
+  background-color: var(--nav-active-bg);
+  color: var(--nav-active-fg);
   font-weight: 500;
 }
 
 .sidebar__link:focus-visible {
   outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
-  background-color: var(--brand-primary-light);
+  background-color: var(--nav-active-bg);
 }
 
 .sidebar__toggle:focus-visible,
@@ -350,8 +351,10 @@ onUnmounted(() => {
 
 .sidebar__mobile-close {
   display: none;
-  min-width: 44px;
-  min-height: 44px;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  color: var(--brand-dark-1);
 }
 
 .sidebar__mobile-close-icon {
@@ -439,18 +442,7 @@ onUnmounted(() => {
   }
 
   .sidebar__mobile-close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    min-width: 44px;
-    min-height: 44px;
-    background: none;
-    border: none;
-    color: var(--brand-dark-1);
-    cursor: pointer;
     display: flex;
-    align-items: center;
-    justify-content: center;
   }
 
   .sidebar__backdrop {

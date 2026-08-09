@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/profilepicture"
+	appstorage "github.com/aristorinjuang/lesstruct/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -82,7 +83,7 @@ func createMultipartFile(t *testing.T, imageData []byte) (multipart.File, *multi
 
 func TestService_Upload_Success(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := profilepicture.NewLocalStorage(baseDir, "localhost", 8080)
+	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepo)
@@ -112,7 +113,7 @@ func TestService_Upload_Success(t *testing.T) {
 
 func TestService_Upload_ReUploadDeletesOldFile(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := profilepicture.NewLocalStorage(baseDir, "localhost", 8080)
+	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	imageData := createTestImage(t, 200, 200)
@@ -169,7 +170,7 @@ func TestService_Upload_ReUploadDeletesOldFile(t *testing.T) {
 
 func TestService_Upload_FileTooLarge(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := profilepicture.NewLocalStorage(baseDir, "localhost", 8080)
+	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepo)
@@ -189,7 +190,7 @@ func TestService_Upload_FileTooLarge(t *testing.T) {
 
 func TestService_Delete_Success(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := profilepicture.NewLocalStorage(baseDir, "localhost", 8080)
+	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepo)
@@ -209,7 +210,7 @@ func TestService_Delete_Success(t *testing.T) {
 
 func TestService_Delete_NoExistingPicture(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := profilepicture.NewLocalStorage(baseDir, "localhost", 8080)
+	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepo)
@@ -224,7 +225,7 @@ func TestService_Delete_NoExistingPicture(t *testing.T) {
 
 func TestService_Delete_UserRepoError(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := profilepicture.NewLocalStorage(baseDir, "localhost", 8080)
+	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepo)
@@ -239,7 +240,7 @@ func TestService_Delete_UserRepoError(t *testing.T) {
 
 func TestService_Delete_ClearDBError(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := profilepicture.NewLocalStorage(baseDir, "localhost", 8080)
+	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepo)

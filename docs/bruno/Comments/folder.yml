@@ -3,5 +3,8 @@ info:
   type: folder
   seq: 12
 
+# All requests in this folder return 404 when comments are disabled
+# ([comments] enabled = false in config.toml) — the routes are unmounted.
+
 request:
   auth: inherit

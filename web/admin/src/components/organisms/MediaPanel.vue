@@ -6,6 +6,7 @@ import MediaThumbnail from '@/components/molecules/MediaThumbnail.vue'
 import DuplicateMediaDialog from '@/components/organisms/DuplicateMediaDialog.vue'
 import GenerateImageModal from '@/components/organisms/GenerateImageModal.vue'
 import Button from '@/components/atoms/Button.vue'
+import IconButton from '@/components/atoms/IconButton.vue'
 import api from '@/utils/request'
 
 interface Props {
@@ -216,7 +217,7 @@ onMounted(async () => {
         <Button
           v-if="aiGenerationAvailable"
           type="button"
-          variant="secondary"
+          variant="neutral"
           @click="showGenerateModal = true"
         >
           Generate with AI
@@ -226,14 +227,14 @@ onMounted(async () => {
       <!-- Error Message -->
       <div v-if="errorMessage" class="media-panel__error">
         {{ errorMessage }}
-        <button
-          type="button"
+        <IconButton
           class="media-panel__error-close"
+          label="Close error"
+          tone="danger"
           @click="errorMessage = ''"
-          aria-label="Close error"
         >
           ×
-        </button>
+        </IconButton>
       </div>
     </div>
 
@@ -359,22 +360,9 @@ onMounted(async () => {
 }
 
 .media-panel__error-close {
-  background: none;
-  border: none;
   font-size: 1.25rem;
-  color: var(--color-error-dark);
-  cursor: pointer;
-  padding: 0;
-  width: 1.5rem;
-  height: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.25rem;
-}
-
-.media-panel__error-close:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .media-panel__grid {

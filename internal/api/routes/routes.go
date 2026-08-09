@@ -104,6 +104,9 @@ func Setup(
 	textGenHandler *handlers.TextGenHandler,
 	languages []string,
 	aliasRedirectHandler *handlers.AliasRedirectHandler,
+	headlessEnabled bool,
+	commentsEnabled bool,
+	storageDriver string,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -144,7 +147,8 @@ func Setup(
 		}
 	})
 
-	// Config endpoint (public) — exposes languages to the frontend
+	// Config endpoint (public) — exposes languages and feature flags to the
+	// frontend (admin SPA and public content site).
 	r.Get("/api/v1/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		langJSON := []byte{'['}
@@ -157,7 +161,7 @@ func Setup(
 			langJSON = append(langJSON, '"')
 		}
 		langJSON = append(langJSON, ']')
-		if _, err := fmt.Fprintf(w, `{"data":{"languages":%s},"error":null}`, langJSON); err != nil {
+		if _, err := fmt.Fprintf(w, `{"data":{"languages":%s,"commentsEnabled":%v,"headless":%v},"error":null}`, langJSON, commentsEnabled, headlessEnabled); err != nil {
 			log.Printf("Failed to write config response: %v", err)
 		}
 	})
@@ -204,11 +208,13 @@ func Setup(
 			// /api/v1/comments routes (Chi routes by path, not auth realm). Create/List are
 			// any authenticated caller (scoped to visible content); Delete is own-or-admin;
 			// UpdateStatus is admin-only moderation. Reuses the existing content domain
-			// comment methods via agent.CommentHandler.
-			r.Post("/api/v1/content/{id}/comments", agentCommentHandler.Create)
-			r.Get("/api/v1/content/{id}/comments", agentCommentHandler.List)
-			r.Delete("/api/v1/content/{id}/comments/{commentId}", agentCommentHandler.Delete)
-			r.Put("/api/v1/content/{id}/comments/{commentId}/status", agentCommentHandler.UpdateStatus)
+			// comment methods via agent.CommentHandler. Unmounted when comments are disabled.
+			if commentsEnabled {
+				r.Post("/api/v1/content/{id}/comments", agentCommentHandler.Create)
+				r.Get("/api/v1/content/{id}/comments", agentCommentHandler.List)
+				r.Delete("/api/v1/content/{id}/comments/{commentId}", agentCommentHandler.Delete)
+				r.Put("/api/v1/content/{id}/comments/{commentId}/status", agentCommentHandler.UpdateStatus)
+			}
 		})
 
 		// Media upload — 10MB (sibling of the 1MB group so the higher limit is not
@@ -371,7 +377,9 @@ func Setup(
 			r.Get("/authors", contentHandler.ListPublishedAuthors)
 			r.Get("/authors/{username}", contentHandler.GetPublishedAuthor)
 			r.Get("/authors/{username}/content_items", contentHandler.GetPublishedContentByAuthor)
-			r.Get("/content_items/{slug}/comments", commentHandler.GetComments)
+			if commentsEnabled {
+				r.Get("/content_items/{slug}/comments", commentHandler.GetComments)
+			}
 			r.Get("/post_types", postTypeHandler.GetPublicPostTypes)
 			r.Get("/search", contentHandler.SearchPublished)
 			r.Get("/archive", contentHandler.ListPublishedArchive)
@@ -396,7 +404,9 @@ func Setup(
 				r.Delete("/content_items/{id}", contentHandler.DeleteContent)
 				r.Post("/content/slug", contentHandler.GenerateSlug)
 				r.Get("/content_items/{id}/seo", contentHandler.GetSEO)
-				r.Post("/content_items/{slug}/comments", commentHandler.CreateComment)
+				if commentsEnabled {
+					r.Post("/content_items/{slug}/comments", commentHandler.CreateComment)
+				}
 
 				// Post types routes (require authentication) - Story 2.6
 				r.Get("/post_types", postTypeHandler.GetPostTypes)
@@ -413,14 +423,18 @@ func Setup(
 				r.With(adminMiddleware.AdminOnly).Get("/dashboard/stats", dashboardHandler.GetStats)
 
 				// Admin comment moderation routes (require authentication + admin role) - Story 4.7
-				r.With(adminMiddleware.ModerationOnly).Get("/content_items/{id}/comments", commentHandler.GetCommentsForModeration)
-				r.With(adminMiddleware.ModerationOnly).Get("/comments/pending", commentHandler.GetPendingComments)
-				r.With(adminMiddleware.ModerationOnly).Put("/comments/{id}/status", commentHandler.UpdateCommentStatus)
-				r.With(adminMiddleware.ModerationOnly).Delete("/comments/{id}", commentHandler.DeleteComment)
+				// and the Commentator's own-comment routes are unmounted when comments are
+				// disabled, mirroring the agent/public comment gates above.
+				if commentsEnabled {
+					r.With(adminMiddleware.ModerationOnly).Get("/content_items/{id}/comments", commentHandler.GetCommentsForModeration)
+					r.With(adminMiddleware.ModerationOnly).Get("/comments/pending", commentHandler.GetPendingComments)
+					r.With(adminMiddleware.ModerationOnly).Put("/comments/{id}/status", commentHandler.UpdateCommentStatus)
+					r.With(adminMiddleware.ModerationOnly).Delete("/comments/{id}", commentHandler.DeleteComment)
 
-				// Commentator user's own comments (require authentication)
-				r.Get("/my-comments", commentHandler.GetMyComments)
-				r.Delete("/my-comments/{id}", commentHandler.DeleteOwnComment)
+					// Commentator user's own comments (require authentication)
+					r.Get("/my-comments", commentHandler.GetMyComments)
+					r.Delete("/my-comments/{id}", commentHandler.DeleteOwnComment)
+				}
 
 				// AI text generation routes (require authentication + feature enabled)
 				if textGenEnabled && textGenHandler != nil {
@@ -434,30 +448,43 @@ func Setup(
 		})
 	})
 
-	// Serve uploaded media files (public, no authentication required)
-	uploadsDir := filepath.Join("data", "uploads", "media")
-	if info, err := os.Stat(uploadsDir); err == nil && info.IsDir() {
-		mediaFS := http.StripPrefix("/uploads/media/", http.FileServer(http.Dir(uploadsDir)))
-		r.Handle("/uploads/media/*", mediaFS)
+	// Serve uploaded media and profile pictures (public, no authentication
+	// required) — ONLY for the local driver. With STORAGE_DRIVER=s3 the bytes
+	// live in the bucket and are served to clients via the public base URL /
+	// CDN produced by Storage.GetURL, so no local fileserver is mounted.
+	if storageDriver == "local" {
+		uploadsDir := filepath.Join("data", "uploads", "media")
+		if info, err := os.Stat(uploadsDir); err == nil && info.IsDir() {
+			mediaFS := http.StripPrefix("/uploads/media/", http.FileServer(http.Dir(uploadsDir)))
+			r.Handle("/uploads/media/*", mediaFS)
+		}
+
+		profilePicturesDir := filepath.Join("data", "uploads", "profile_pictures")
+		if info, err := os.Stat(profilePicturesDir); err == nil && info.IsDir() {
+			profilePicturesFS := http.StripPrefix("/uploads/profile_pictures/", http.FileServer(http.Dir(profilePicturesDir)))
+			r.Handle("/uploads/profile_pictures/*", profilePicturesFS)
+		}
 	}
 
-	// Serve uploaded profile pictures (public, no authentication required)
-	profilePicturesDir := filepath.Join("data", "uploads", "profile_pictures")
-	if info, err := os.Stat(profilePicturesDir); err == nil && info.IsDir() {
-		profilePicturesFS := http.StripPrefix("/uploads/profile_pictures/", http.FileServer(http.Dir(profilePicturesDir)))
-		r.Handle("/uploads/profile_pictures/*", profilePicturesFS)
+	// Serve content site static assets (CSS, etc.) — only when the content site
+	// itself is enabled (i.e. not in headless mode).
+	if !headlessEnabled {
+		r.Handle("/static/*", http.StripPrefix("/static/", staticHandler))
 	}
-
-	// Serve content site static assets (CSS, etc.)
-	r.Handle("/static/*", http.StripPrefix("/static/", staticHandler))
 
 	// Admin SPA (serves embedded Vue 3 app or proxies to dev server)
 	if staticServer != nil {
 		r.Handle("/admin/*", http.StripPrefix("/admin", http.HandlerFunc(staticServer.ServeAdmin)))
 		r.HandleFunc("/admin", staticServer.ServeAdmin)
 
-		// Content site (Go template renderer or dev proxy) with alias redirect wrapping
-		r.Handle("/*", aliasRedirectHandler)
+		// Content site (Go template renderer or dev proxy) with alias redirect
+		// wrapping. In headless mode the catch-all is NOT mounted — the instance
+		// serves only the admin panel and the REST API. (The content page handler
+		// and alias handler are still constructed for the SSG generator; they are
+		// simply unreachable over HTTP.)
+		if !headlessEnabled {
+			r.Handle("/*", aliasRedirectHandler)
+		}
 	}
 
 	return r

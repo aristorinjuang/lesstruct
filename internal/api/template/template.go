@@ -217,6 +217,10 @@ type TagData struct {
 
 type AuthPageData struct {
 	LayoutData
+	// ShowRegister toggles the "create account" link on the login page. It is
+	// false when self-registration is disabled (comments off), so visitors are
+	// not pointed at a registration form that always fails.
+	ShowRegister bool
 }
 
 type NotFoundData struct {

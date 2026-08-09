@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { UserActionsProps } from '@/types/user'
+import Button from '@/components/atoms/Button.vue'
 
 defineProps<UserActionsProps>()
 
@@ -17,77 +18,91 @@ const emit = defineEmits<{
   <div class="user-actions">
     <!-- Pending user actions -->
     <template v-if="userStatus === 'Pending' || userStatus === 'pending'">
-      <button
+      <Button
         type="button"
-        class="user-actions__button user-actions__button--approve"
+        variant="subtle"
+        tone="success"
+        class="user-actions__button"
         :disabled="disabled"
         @click="emit('approve')"
         aria-label="Approve user"
       >
         Approve
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        class="user-actions__button user-actions__button--reject"
+        variant="subtle"
+        tone="danger"
+        class="user-actions__button"
         :disabled="disabled"
         @click="emit('reject')"
         aria-label="Reject user"
       >
         Reject
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        class="user-actions__button user-actions__button--spam"
+        variant="subtle"
+        tone="warning"
+        class="user-actions__button"
         :disabled="disabled"
         @click="emit('markAsSpam')"
         aria-label="Mark as spam"
       >
         Mark as Spam
-      </button>
+      </Button>
     </template>
 
     <!-- Active user actions -->
     <template v-else-if="userStatus === 'Active' || userStatus === 'verified'">
-      <button
+      <Button
         type="button"
-        class="user-actions__button user-actions__button--suspend"
+        variant="subtle"
+        tone="warning"
+        class="user-actions__button"
         :disabled="disabled"
         @click="emit('suspend')"
         aria-label="Suspend user"
       >
         Suspend
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        class="user-actions__button user-actions__button--delete"
+        variant="subtle"
+        tone="neutral"
+        class="user-actions__button"
         :disabled="disabled"
         @click="emit('softDelete')"
         aria-label="Soft delete user"
       >
         Soft Delete
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        class="user-actions__button user-actions__button--edit"
+        variant="subtle"
+        tone="info"
+        class="user-actions__button"
         :disabled="disabled"
         @click="emit('editProfile')"
         aria-label="Edit user profile"
       >
         Edit Profile
-      </button>
+      </Button>
     </template>
 
     <!-- Suspended user actions -->
     <template v-else-if="userStatus === 'Suspended' || userStatus === 'suspended'">
-      <button
+      <Button
         type="button"
-        class="user-actions__button user-actions__button--delete"
+        variant="subtle"
+        tone="neutral"
+        class="user-actions__button"
         :disabled="disabled"
         @click="emit('softDelete')"
         aria-label="Soft delete user"
       >
         Soft Delete
-      </button>
+      </Button>
     </template>
 
     <!-- Soft Deleted users - no actions -->
@@ -99,80 +114,6 @@ const emit = defineEmits<{
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
-}
-
-.user-actions__button {
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.375rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
-  border: 1px solid transparent;
-}
-
-.user-actions__button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.user-actions__button--approve {
-  background-color: var(--color-success-bg);
-  color: var(--color-success-dark);
-}
-
-.user-actions__button--approve:hover:not(:disabled) {
-  background-color: var(--color-success-border);
-}
-
-.user-actions__button--reject {
-  background-color: var(--color-error-bg);
-  color: var(--color-error-dark);
-}
-
-.user-actions__button--reject:hover:not(:disabled) {
-  background-color: var(--color-error-border);
-}
-
-.user-actions__button--spam {
-  background-color: var(--color-warning-bg);
-  color: var(--color-warning-dark);
-}
-
-.user-actions__button--spam:hover:not(:disabled) {
-  background-color: var(--color-warning-bg);
-}
-
-.user-actions__button--suspend {
-  background-color: #fed7aa;
-  color: #9a3412;
-}
-
-.user-actions__button--suspend:hover:not(:disabled) {
-  background-color: #fdba74;
-}
-
-.user-actions__button--delete {
-  background-color: var(--brand-light-2);
-  color: var(--color-text-secondary);
-}
-
-.user-actions__button--delete:hover:not(:disabled) {
-  background-color: var(--color-border-strong);
-}
-
-.user-actions__button--edit {
-  background-color: var(--color-info-bg);
-  color: var(--color-info-dark);
-}
-
-.user-actions__button--edit:hover:not(:disabled) {
-  background-color: var(--color-info-bg);
-}
-
-.user-actions__button:focus-visible {
-  outline: 2px solid var(--color-destructive);
-  outline-offset: 2px;
 }
 
 /* Responsive adjustments */

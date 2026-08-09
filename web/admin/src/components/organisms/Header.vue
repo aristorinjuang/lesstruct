@@ -9,6 +9,8 @@ import IconUser from '@/components/icons/IconUser.vue'
 import IconLogout from '@/components/icons/IconLogout.vue'
 import IconKey from '@/components/icons/IconKey.vue'
 import ThemeToggle from '@/components/atoms/ThemeToggle.vue'
+import IconButton from '@/components/atoms/IconButton.vue'
+import Button from '@/components/atoms/Button.vue'
 import api from '@/utils/request'
 
 const router = useRouter()
@@ -91,14 +93,14 @@ function handleMobileMenuToggle() {
 
       <!-- Right side: Hamburger menu, Theme toggle, and User profile -->
       <div class="header__right">
-        <button
+        <IconButton
           class="header__menu-toggle"
-          @click="handleMobileMenuToggle"
-          :aria-label="sidebarCollapsed ? 'Open menu' : 'Close menu'"
+          :label="sidebarCollapsed ? 'Open menu' : 'Close menu'"
           :aria-expanded="!sidebarCollapsed"
+          @click="handleMobileMenuToggle"
         >
           <IconMenu class="header__menu-icon" />
-        </button>
+        </IconButton>
         <ThemeToggle class="header__theme-toggle" />
         <div v-if="isAuthenticated" class="header__user" ref="profileDropdownRef">
           <button
@@ -140,9 +142,13 @@ function handleMobileMenuToggle() {
             </button>
           </div>
         </div>
-        <button v-else class="header__login-btn" @click="() => router.push('/login')">
+        <Button
+          v-else
+          class="header__login-btn"
+          @click="() => router.push('/login')"
+        >
           Login
-        </button>
+        </Button>
       </div>
     </div>
   </header>
@@ -206,19 +212,6 @@ function handleMobileMenuToggle() {
 
 .header__menu-toggle {
   display: none;
-  background: none;
-  border: none;
-  padding: 0.5rem;
-  cursor: pointer;
-  color: var(--brand-dark-1);
-  border-radius: 0.375rem;
-  transition: background-color 0.2s;
-  min-width: 44px;
-  min-height: 44px;
-}
-
-.header__menu-toggle:hover {
-  background-color: var(--brand-primary-light);
 }
 
 .header__menu-icon {
@@ -243,12 +236,11 @@ function handleMobileMenuToggle() {
   border-radius: 0.375rem;
   cursor: pointer;
   transition: background-color 0.2s;
-  min-height: 44px;
   color: var(--brand-dark-1);
 }
 
 .header__user-button:hover {
-  background-color: var(--brand-primary-light);
+  background-color: var(--nav-hover-bg);
 }
 
 .header__user-icon {
@@ -292,7 +284,7 @@ function handleMobileMenuToggle() {
 }
 
 .header__dropdown-item:hover {
-  background-color: var(--brand-primary-light);
+  background-color: var(--nav-hover-bg);
 }
 
 .header__dropdown-item--danger {
@@ -316,19 +308,7 @@ function handleMobileMenuToggle() {
 }
 
 .header__login-btn {
-  padding: 0.5rem 1rem;
-  background-color: var(--brand-primary);
-  color: var(--brand-dark-1);
-  border: none;
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
-  min-height: 44px;
-}
-
-.header__login-btn:hover {
-  background-color: var(--brand-primary-hover);
+  margin-left: 0.25rem;
 }
 
 /* Tablet styles (768px - 1023px) */

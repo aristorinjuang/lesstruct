@@ -93,7 +93,7 @@ describe('ApiKeyCreateDialog', () => {
     expect(wrapper.find('.api-key-create-dialog__success').exists()).toBe(true)
 
     // Click Done → handleClose resets state (wipes the transient key) and emits close.
-    await wrapper.find('.api-key-create-dialog__button--done').trigger('click')
+    await wrapper.find('.api-key-create-dialog__button').trigger('click')
 
     expect(wrapper.emitted('close')).toBeTruthy()
     // The success branch is gone (transient key wiped from the DOM).

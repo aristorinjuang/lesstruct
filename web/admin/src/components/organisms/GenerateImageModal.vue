@@ -99,7 +99,7 @@ function handleCancel() {
       <div class="generate-modal__footer">
         <Button
           type="button"
-          variant="secondary"
+          variant="neutral"
           :disabled="isLoading"
           @click="handleCancel"
         >

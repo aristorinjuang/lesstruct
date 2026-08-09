@@ -12,6 +12,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/constants"
 	"github.com/aristorinjuang/lesstruct/internal/domain/thumbnail"
+	appstorage "github.com/aristorinjuang/lesstruct/internal/storage"
 )
 
 // ParseDateFilter converts a predefined date filter string to a time threshold
@@ -44,7 +45,7 @@ type UploadRequest struct {
 // Service handles media business logic
 type Service struct {
 	repo             Repository
-	storage          Storage
+	storage          appstorage.Storage
 	processor        *Processor
 	thumbnailService *thumbnail.Service
 }
@@ -528,7 +529,7 @@ func (s *Service) Delete(ctx context.Context, id int, userID int, userRole strin
 // NewService creates a new media service
 func NewService(
 	repo Repository,
-	storage Storage,
+	storage appstorage.Storage,
 	thumbnailService *thumbnail.Service,
 ) *Service {
 	return &Service{

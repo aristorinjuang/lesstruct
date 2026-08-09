@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatDate } from '@/utils/date'
+import Button from '@/components/atoms/Button.vue'
 import type { ApiKey } from '@/types/apiKey'
 
 defineProps<{
@@ -35,13 +36,14 @@ function lastUsedLabel(key: ApiKey): string {
         You don't have any API keys yet. Create one to enable programmatic access to your Lesstruct
         content.
       </p>
-      <button
+      <Button
         type="button"
+        variant="primary"
         class="api-key-list__empty-button"
         @click="emit('create')"
       >
         Create your first API key
-      </button>
+      </Button>
     </div>
 
     <!-- Populated list -->
@@ -81,15 +83,18 @@ function lastUsedLabel(key: ApiKey): string {
         </div>
 
         <div class="api-key-list__cell api-key-list__cell--action">
-          <button
+          <Button
             v-if="!key.revokedAt"
             type="button"
+            variant="ghost"
+            tone="danger"
+            size="small"
             class="api-key-list__revoke-button"
             :aria-label="`Revoke ${key.name}`"
             @click="emit('revoke', key.id)"
           >
             Revoke
-          </button>
+          </Button>
         </div>
       </li>
     </ul>
@@ -132,25 +137,7 @@ function lastUsedLabel(key: ApiKey): string {
 }
 
 .api-key-list__empty-button {
-  padding: 0.5rem 1rem;
-  background-color: var(--brand-primary);
-  color: white;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  min-height: 44px;
-  transition: background-color 0.2s;
-}
-
-.api-key-list__empty-button:hover {
-  background-color: var(--color-interactive-hover);
-}
-
-.api-key-list__empty-button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
+  margin-top: 0.25rem;
 }
 
 .api-key-list__items {
@@ -244,29 +231,6 @@ function lastUsedLabel(key: ApiKey): string {
 
 .api-key-list__cell--action {
   justify-self: end;
-}
-
-.api-key-list__revoke-button {
-  padding: 0.5rem 0.875rem;
-  background-color: var(--brand-light-1);
-  color: var(--color-error);
-  border: 1px solid var(--brand-light-2);
-  border-radius: 0.375rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  min-height: 44px;
-  transition: background-color 0.2s, color 0.2s;
-}
-
-.api-key-list__revoke-button:hover {
-  background-color: rgba(239, 68, 68, 0.1);
-  border-color: var(--color-error);
-}
-
-.api-key-list__revoke-button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
 }
 
 /* Cell labels are only needed on mobile where cells stack. */

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import Modal from './Modal.vue'
+import Button from '@/components/atoms/Button.vue'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
 import { useUserStore } from '@/stores/domain/user'
 import { useAuth } from '@/composables/useAuth'
+import { useConfig } from '@/composables/useConfig'
 import { validateCustomField, validateCustomFields } from '@/utils/validation'
 import { ApiError } from '@/utils/request'
 import type { UserRole } from '@/types/user'
@@ -22,6 +24,7 @@ const emit = defineEmits<{
 
 const userStore = useUserStore()
 const { role: currentUserRole } = useAuth()
+const { commentsEnabled } = useConfig()
 
 const isAdmin = computed(() => currentUserRole.value === 'Admin')
 
@@ -32,7 +35,7 @@ const state = ref<FormState>('form')
 const username = ref('')
 const displayName = ref('')
 const email = ref('')
-const role = ref<UserRole>('Commentator')
+const role = ref<UserRole>('Contributor')
 const errors = ref<FormErrors>({})
 const generatedPassword = ref('')
 const passwordCopied = ref(false)
@@ -40,11 +43,18 @@ const passwordCopied = ref(false)
 const customFields = ref<Record<string, any>>({})
 const customFieldErrors = ref<Record<string, string>>({})
 
-const roles: { value: UserRole; label: string }[] = [
-  { value: 'Admin', label: 'Admin' },
-  { value: 'Contributor', label: 'Contributor' },
-  { value: 'Commentator', label: 'Commentator' },
-]
+// The Commentator role exists only for the comment system; it is not
+// assignable when comments are disabled.
+const roles = computed<{ value: UserRole; label: string }[]>(() => {
+  const all: { value: UserRole; label: string }[] = [
+    { value: 'Admin', label: 'Admin' },
+    { value: 'Contributor', label: 'Contributor' },
+  ]
+  if (commentsEnabled.value) {
+    all.push({ value: 'Commentator', label: 'Commentator' })
+  }
+  return all
+})
 
 const usernamePattern = /^[a-zA-Z0-9_-]{1,50}$/
 const emailPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$/
@@ -62,7 +72,7 @@ function resetForm() {
   username.value = ''
   displayName.value = ''
   email.value = ''
-  role.value = 'Commentator'
+  role.value = commentsEnabled.value ? 'Commentator' : 'Contributor'
   errors.value = {}
   generatedPassword.value = ''
   passwordCopied.value = false
@@ -286,21 +296,23 @@ function handleClose() {
       </div>
 
       <div class="create-user-modal__actions">
-        <button
+        <Button
           type="button"
-          class="create-user-modal__button create-user-modal__button--cancel"
+          variant="neutral"
+          class="create-user-modal__button"
           :disabled="state === 'loading'"
           @click="handleClose"
         >
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
-          class="create-user-modal__button create-user-modal__button--create"
-          :disabled="state === 'loading'"
+          variant="primary"
+          class="create-user-modal__button"
+          :is-loading="state === 'loading'"
         >
           {{ state === 'loading' ? 'Creating...' : 'Create' }}
-        </button>
+        </Button>
       </div>
     </form>
 
@@ -310,27 +322,29 @@ function handleClose() {
         <label class="create-user-modal__label">Password</label>
         <div class="create-user-modal__password-row">
           <code class="create-user-modal__password">{{ generatedPassword }}</code>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             class="create-user-modal__copy-button"
             :aria-label="passwordCopied ? 'Copied' : 'Copy password'"
             @click="copyPassword"
           >
             {{ passwordCopied ? 'Copied!' : 'Copy' }}
-          </button>
+          </Button>
         </div>
         <p class="create-user-modal__warning">
           Please share this password securely. It will not be shown again.
         </p>
       </div>
       <div class="create-user-modal__actions">
-        <button
+        <Button
           type="button"
-          class="create-user-modal__button create-user-modal__button--done"
+          variant="primary"
+          class="create-user-modal__button"
           @click="handleClose"
         >
           Done
-        </button>
+        </Button>
       </div>
     </div>
   </Modal>
@@ -406,53 +420,12 @@ function handleClose() {
 }
 
 .create-user-modal__button {
-  padding: 0.625rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
-  border: 1px solid transparent;
-  min-height: 44px;
   min-width: 80px;
 }
 
-.create-user-modal__button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.create-user-modal__button--cancel {
-  background-color: var(--brand-light-1);
-  color: var(--brand-dark-2);
-  border-color: var(--brand-light-2);
-}
-
-.create-user-modal__button--cancel:hover:not(:disabled) {
-  background-color: var(--brand-light-2);
-}
-
-.create-user-modal__button--create {
-  background-color: var(--brand-primary);
-  color: white;
-}
-
-.create-user-modal__button--create:hover:not(:disabled) {
-  background-color: var(--color-interactive-hover);
-}
-
-.create-user-modal__button--done {
-  background-color: var(--brand-primary);
-  color: white;
-}
-
-.create-user-modal__button--done:hover {
-  background-color: var(--color-interactive-hover);
-}
-
-.create-user-modal__button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
+.create-user-modal__copy-button {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .create-user-modal__success {
@@ -493,20 +466,8 @@ function handleClose() {
 }
 
 .create-user-modal__copy-button {
-  padding: 0.5rem 0.75rem;
-  background-color: var(--brand-light-1);
-  border: 1px solid var(--brand-light-2);
-  border-radius: 0.375rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
+  flex-shrink: 0;
   white-space: nowrap;
-  min-height: 36px;
-  transition: background-color 0.2s;
-}
-
-.create-user-modal__copy-button:hover {
-  background-color: var(--brand-light-2);
 }
 
 .create-user-modal__warning {

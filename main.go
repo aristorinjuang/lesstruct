@@ -26,10 +26,10 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/constants"
-	"github.com/aristorinjuang/lesstruct/internal/content/tiptap"
 	"github.com/aristorinjuang/lesstruct/internal/content/export"
 	"github.com/aristorinjuang/lesstruct/internal/content/hugo"
 	"github.com/aristorinjuang/lesstruct/internal/content/ssg"
+	"github.com/aristorinjuang/lesstruct/internal/content/tiptap"
 	"github.com/aristorinjuang/lesstruct/internal/content/wordpress"
 	appdatabase "github.com/aristorinjuang/lesstruct/internal/database"
 	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
@@ -52,6 +52,7 @@ import (
 	mysqlrepository "github.com/aristorinjuang/lesstruct/internal/repository/mysql"
 	postgresqlrepository "github.com/aristorinjuang/lesstruct/internal/repository/postgresql"
 	sqliterepository "github.com/aristorinjuang/lesstruct/internal/repository/sqlite"
+	appstorage "github.com/aristorinjuang/lesstruct/internal/storage"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -202,6 +203,25 @@ func newMediaRepo(driver string, db *sql.DB) mediadomain.Repository {
 	return sqliterepository.NewMediaRepository(db)
 }
 
+// newStorage builds the file storage backend selected by STORAGE_DRIVER.
+// keyPrefix is the object key prefix / folder for the resource ("media/" or
+// "profile_pictures/"); localDir and localURLPrefix apply to the local driver.
+func newStorage(driver string, cfg *config.Config, keyPrefix string, localDir string, localURLPrefix string) (appstorage.Storage, error) {
+	if driver == "s3" {
+		return appstorage.NewS3Storage(appstorage.S3Options{
+			Endpoint:        cfg.StorageS3Endpoint,
+			Region:          cfg.StorageS3Region,
+			Bucket:          cfg.StorageS3Bucket,
+			AccessKeyID:     cfg.StorageS3AccessKeyID,
+			SecretAccessKey: cfg.StorageS3SecretAccessKey,
+			UsePathStyle:    cfg.StorageS3UsePathStyle,
+			PublicBaseURL:   cfg.StorageS3PublicBaseURL,
+			KeyPrefix:       keyPrefix,
+		})
+	}
+	return appstorage.NewLocalStorage(localDir, cfg.Host, cfg.Port, localURLPrefix), nil
+}
+
 func newDashboardRepo(driver string, db *sql.DB) dashboarddomain.Repository {
 	if isPostgres(driver) {
 		return postgresqlrepository.NewDashboardRepository(db)
@@ -291,6 +311,9 @@ func startServer(
 	textGenHandler *handlers.TextGenHandler,
 	languages []string,
 	aliasRedirectHandler *handlers.AliasRedirectHandler,
+	headlessEnabled bool,
+	commentsEnabled bool,
+	storageDriver string,
 ) *http.Server {
 	// Setup HTTP router
 	router := routes.Setup(
@@ -329,6 +352,9 @@ func startServer(
 		textGenHandler,
 		languages,
 		aliasRedirectHandler,
+		headlessEnabled,
+		commentsEnabled,
+		storageDriver,
 	)
 
 	// Create HTTP server with timeouts. ReadHeaderTimeout guards against
@@ -367,6 +393,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
+
+	// Load headless and comments feature flags. Absent blocks keep the
+	// current behavior: headless off, comments on.
+	headlessConfig, err := config.LoadHeadless(cfg)
+	if err != nil {
+		log.Fatalf("Failed to load headless config: %v", err)
+	}
+	headlessEnabled := headlessConfig.Enabled
+
+	commentsConfig, err := config.LoadComments(cfg)
+	if err != nil {
+		log.Fatalf("Failed to load comments config: %v", err)
+	}
+	commentsEnabled := commentsConfig.IsEnabled()
 
 	// Ensure required directories exist
 	if err := ensureDirectories(cfg, utilLogger); err != nil {
@@ -467,7 +507,7 @@ func main() {
 
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(userRepo)
+	registrationService := authdomain.NewRegistrationService(userRepo, commentsEnabled)
 	verificationService := authdomain.NewVerificationService(userRepo, tokenRepo, 24)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, utilLogger)
 
@@ -519,12 +559,15 @@ func main() {
 	if err := os.MkdirAll(profilePicturesDir, 0755); err != nil {
 		log.Fatalf("Failed to create profile pictures directory: %v", err)
 	}
-	profilePictureStorage := profilepicture.NewLocalStorage(profilePicturesDir, cfg.Host, cfg.Port)
+	profilePictureStorage, err := newStorage(cfg.StorageDriver, cfg, "profile_pictures/", profilePicturesDir, "/uploads/profile_pictures/")
+	if err != nil {
+		log.Fatalf("Failed to initialize profile picture storage: %v", err)
+	}
 
 	// Initialize profile handler
 	profileHandler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, utilLogger, postTypeService, profilePictureStorage.GetURL)
 
-	postTypeHandler := handlers.NewPostTypeHandler(postTypeService, utilLogger)
+	postTypeHandler := handlers.NewPostTypeHandler(postTypeService, commentsEnabled, utilLogger)
 
 	// Initialize languages configuration (i18n) — loaded early so content
 	// service and WordPress importer can use the site's primary language.
@@ -547,6 +590,7 @@ func main() {
 		postTypeAdapter,
 		pluginadapter.NewHookExecutorAdapter(pluginSys.Registry()),
 		contentdomain.WithDefaultLanguage(primaryLanguage),
+		contentdomain.WithCommentsEnabled(commentsEnabled),
 	)
 
 	// Initialize agent (Bearer) content handler — the streamlined API surface for
@@ -560,7 +604,10 @@ func main() {
 		log.Fatalf("Failed to create uploads directory: %v", err)
 	}
 	mediaRepo := newMediaRepo(cfg.DBDriver, db.DB())
-	mediaStorage := mediadomain.NewLocalStorage(uploadsDir, cfg.Host, cfg.Port)
+	mediaStorage, err := newStorage(cfg.StorageDriver, cfg, "media/", uploadsDir, "/uploads/media/")
+	if err != nil {
+		log.Fatalf("Failed to initialize media storage: %v", err)
+	}
 	mediaService := mediadomain.NewService(mediaRepo, mediaStorage, thumbnailService)
 
 	// Public content handler — resolves featured images (thumbnail variants) for the
@@ -665,7 +712,7 @@ func main() {
 	// Initialize dashboard service and handler (Story 2.8)
 	dashboardRepo := newDashboardRepo(cfg.DBDriver, db.DB())
 	dashboardService := dashboarddomain.NewService(dashboardRepo)
-	dashboardHandler := handlers.NewDashboardHandler(dashboardService, utilLogger)
+	dashboardHandler := handlers.NewDashboardHandler(dashboardService, postTypeService, utilLogger)
 
 	authHandler := handlers.NewAuthHandler(
 		authService,
@@ -686,14 +733,14 @@ func main() {
 	notificationHandler := handlers.NewNotificationHandler(utilLogger, notificationRepo)
 
 	// Initialize user management service and handler
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo)
-	adminCreateUserService := user.NewAdminCreateUserService(userRepo, blockedEmailRepo)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, commentsEnabled)
+	adminCreateUserService := user.NewAdminCreateUserService(userRepo, blockedEmailRepo, commentsEnabled)
 	userManagementHandler := handlers.NewUserManagementHandler(userManagementService, adminCreateUserService, userRepo, softDeleteRepo, jwtManager, emailService, utilLogger, profilePictureStorage.GetURL)
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
 	adminMiddleware := middleware.NewAdminMiddleware(authMiddleware)
 
 	// Initialize SEO handler (Story 4.2)
-	seoHandler := handlers.NewSEOHandler(contentService, baseURL, utilLogger)
+	seoHandler := handlers.NewSEOHandler(contentService, baseURL, headlessEnabled, utilLogger)
 
 	// Initialize comment handler (Story 4.7)
 	commentHandler := handlers.NewCommentHandler(contentService)
@@ -874,6 +921,7 @@ func main() {
 		homepageSections,
 		siteConfig,
 		cfg.PostPerPage,
+		commentsEnabled,
 	)
 	contentPageHandler = contentPageHandler.WithPublicFieldRegistry(publicFieldRegistry)
 
@@ -958,6 +1006,9 @@ func main() {
 		textGenHandler,
 		languages,
 		aliasRedirectHandler,
+		headlessEnabled,
+		commentsEnabled,
+		cfg.StorageDriver,
 	)
 
 	// Wait for interrupt signal for graceful shutdown

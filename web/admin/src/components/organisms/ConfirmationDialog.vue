@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Modal from './Modal.vue'
+import Button from '@/components/atoms/Button.vue'
 import type { ConfirmationDialogProps } from '@/types/user'
 
 withDefaults(defineProps<ConfirmationDialogProps>(), {
@@ -27,22 +28,24 @@ function handleCancel() {
       <p class="confirmation-dialog__message">{{ message }}</p>
 
       <div class="confirmation-dialog__actions">
-        <button
+        <Button
           type="button"
-          class="confirmation-dialog__button confirmation-dialog__button--cancel"
+          variant="neutral"
+          class="confirmation-dialog__button"
           @click="handleCancel"
           aria-label="Cancel action"
         >
           {{ cancelButtonText }}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          class="confirmation-dialog__button confirmation-dialog__button--confirm"
+          variant="danger"
+          class="confirmation-dialog__button"
           @click="handleConfirm"
           :aria-label="confirmButtonText"
         >
           {{ confirmButtonText }}
-        </button>
+        </Button>
       </div>
     </div>
   </Modal>
@@ -69,39 +72,7 @@ function handleCancel() {
 }
 
 .confirmation-dialog__button {
-  padding: 0.625rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
-  border: 1px solid transparent;
-  min-height: 44px;
   min-width: 80px;
-}
-
-.confirmation-dialog__button--cancel {
-  background-color: var(--brand-light-1);
-  color: var(--brand-dark-2);
-  border-color: var(--brand-light-2);
-}
-
-.confirmation-dialog__button--cancel:hover {
-  background-color: var(--brand-light-2);
-}
-
-.confirmation-dialog__button--confirm {
-  background-color: var(--color-destructive);
-  color: var(--color-white);
-}
-
-.confirmation-dialog__button--confirm:hover {
-  background-color: var(--color-destructive);
-}
-
-.confirmation-dialog__button:focus-visible {
-  outline: 2px solid var(--brand-primary);
-  outline-offset: 2px;
 }
 
 /* Responsive adjustments */

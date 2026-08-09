@@ -3,6 +3,7 @@ import { onMounted, computed } from 'vue'
 import { useDashboardStore } from '@/stores/domain/dashboard'
 import { useNotificationStore } from '@/stores/ui/notifications'
 import StatCard from '@/components/organisms/StatCard.vue'
+import Button from '@/components/atoms/Button.vue'
 import PendingRegistrationsAlert from '@/components/organisms/PendingRegistrationsAlert.vue'
 
 // Stores
@@ -102,13 +103,14 @@ const contentByTypeCards = computed(() => {
       <p class="dashboard-view__error-text">
         Failed to load dashboard data. Please try again.
       </p>
-      <button
+      <Button
         type="button"
+        variant="danger"
         class="dashboard-view__retry-button"
         @click="dashboardStore.fetchAll().catch(() => {})"
       >
         Retry
-      </button>
+      </Button>
     </div>
 
     <!-- Dashboard content -->
@@ -193,24 +195,7 @@ const contentByTypeCards = computed(() => {
 }
 
 .dashboard-view__retry-button {
-  padding: 0.625rem 1.25rem;
-  background-color: var(--color-destructive);
-  color: var(--brand-dark-1);
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.dashboard-view__retry-button:hover {
-  background-color: var(--color-destructive);
-}
-
-.dashboard-view__retry-button:focus-visible {
-  outline: 2px solid var(--color-destructive);
-  outline-offset: 2px;
+  margin-top: 0.25rem;
 }
 
 .dashboard-view__alert {

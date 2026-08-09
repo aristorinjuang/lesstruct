@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { getIcon } from '@/components/icons'
 import { useBreakpoint } from '@/composables/useBreakpoint'
+import IconButton from '@/components/atoms/IconButton.vue'
 
 export interface ToastProps {
   id?: string
@@ -86,14 +87,14 @@ defineExpose({
       aria-live="polite"
     >
       <span class="toast__message">{{ message }}</span>
-      <button
+      <IconButton
         class="toast__close"
+        size="large"
+        :label="`Dismiss ${type} notification`"
         @click="dismiss"
-        :aria-label="`Dismiss ${type} notification`"
-        type="button"
       >
         <component :is="getIcon('x-mark')" class="toast__close-icon" />
-      </button>
+      </IconButton>
     </div>
   </transition>
 </template>
@@ -153,27 +154,7 @@ defineExpose({
 }
 
 .toast__close {
-  min-width: 44px;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  transition: background-color 0.2s;
   flex-shrink: 0;
-}
-
-.toast__close:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-}
-
-.toast__close:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
 }
 
 .toast__close-icon {

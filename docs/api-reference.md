@@ -413,6 +413,8 @@ Returns the caller's own media, newest-first, using [cursor pagination](#paginat
 
 Create, list, delete, and moderate comments on a content item. The agent comment surface is **nested under the content namespace** (`/api/v1/content/{id}/comments`) so it is collision-free with the browser admin's `/api/v1/content_items/.../comments` and `/api/v1/comments` routes, and consistent with the rest of the agent surface (which keys everything by content id). New comments always start in the `pending` moderation status.
 
+> **Comments can be disabled entirely.** With `[comments] enabled = false` in `config.toml`, **every** comment route in all three realms is unmounted — agent, public, and browser admin — and requests return `404`. `allowComments` is also forced to `false` on every content item, the admin UI hides all comment surfaces, and `POST /api/auth/register` returns `403 REGISTRATION_DISABLED`. See [configuration.md](configuration.md).
+
 > **Browser-admin moderation queue.** The admin panel additionally exposes `GET /api/v1/comments/pending` (JWT + CSRF, **Admin only** — not part of the Bearer `/api/v1` agent surface). It returns every comment currently in the `pending` status across all content, each enriched with `contentId`, `contentTitle`, and `contentSlug` so the global moderation queue can link back to the originating post. The same response shape applies to the per-content admin route `GET /api/v1/content_items/{id}/comments`.
 
 > **Rendering comment text.** Comment text is validated on input (1–2000 chars, no HTML) and the built-in Go `html/template` theme auto-escapes it on output. It is, however, returned **verbatim** in the JSON API's `comment` field. Any consumer that renders it — a custom theme, or an agent frontend (React/Vue/Angular) — must HTML-escape it on output: never bind it with `v-html`, `[innerHTML]`, or `dangerouslySetInnerHTML`. The server's input validation is a first layer, not a guarantee that a downstream renderer is safe.
@@ -765,13 +767,15 @@ GET /sitemap.xml
 
 Returns the [sitemaps.org](https://www.sitemaps.org/protocol.html) XML `<urlset>` of every published content item with a public page — `post`, `page`, and any custom post type (e.g. `tutorial`, `showcase`). Each `<loc>` is the item's root URL (`/<slug>`, where the public site serves it). The homepage is the first entry. `Content-Type: application/xml`. (A JSON shape is also available at `GET /api/v1/sitemap` for programmatic callers.)
 
+In **headless mode** (`[headless] enabled = true`) this endpoint returns `404` — there is no server-rendered site to crawl. The JSON sitemap (`GET /api/v1/sitemap`) is unaffected.
+
 Translated pages declare their language variants: each `<url>` in a translation group carries `<xhtml:link rel="alternate" hreflang="…" href="…"/>` entries for every published translation (including itself), so search engines can serve the right locale. Pages with no published translations emit no `hreflang`.
 
 ```http
 GET /robots.txt
 ```
 
-Returns a permissive `robots.txt` that allows all crawlers, disallows `/admin`, and points at the sitemap: `Sitemap: <site URL>/sitemap.xml`.
+Returns a permissive `robots.txt` that allows all crawlers, disallows `/admin`, and points at the sitemap: `Sitemap: <site URL>/sitemap.xml`. In **headless mode** it returns `Disallow: /` with no sitemap reference — there is no public content to crawl.
 
 ## Public content endpoints (no auth)
 
@@ -1165,5 +1169,71 @@ The importer also reads the site's `hugo.toml` / `config.toml` for `baseURL` and
 ```
 
 `state` is one of `"running"`, `"done"`, or `"failed"`. When `state` is `"done"` or `"failed"`, `finishedAt` is also populated and `errors` (if any) lists per-item issues (capped at 1000).
+
+## Content export (`/api/v1/export`)
+
+Download all content as a Hugo-compatible source archive. Available in both realms: the browser **admin** realm at `GET /api/admin/export` (JWT + CSRF, used by the admin UI under *Export*) and the agent (Bearer API key) realm at `GET /api/v1/export` (used by `lesstruct-cli export`).
+
+`GET /api/v1/export` — streams a `tar.gz` archive of every content item as Hugo source files with bundled media.
+
+**Auth:** API key belonging to an **Admin** role (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+
+**Request**
+
+```
+GET /api/v1/export
+Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>
+```
+
+**Response** (`200 OK`) — binary stream:
+
+- `Content-Type: application/gzip`
+- `Content-Disposition: attachment; filename="lesstruct-export-<timestamp>.tar.gz"`
+
+Archive layout:
+
+```
+content/                     Hugo-compatible source files
+  <postType>/<slug>.<language>.html
+static/uploads/media/        Bundled media files
+```
+
+Each content item becomes a `<postType>/<slug>.<language>.html` file with YAML frontmatter (`title`, `date`, `description`, `tags`, `url`, `language`, `aliases`, `draft`, `lastmod`, custom fields). TipTap body content is rendered to HTML before export. Referenced media files are bundled under `static/uploads/media/` with the HTML `src` attributes unchanged — Hugo serves `static/` at site root, matching Lesstruct's own `/uploads/media/` path.
+
+## Static site generation (`/api/v1/ssg`)
+
+Generate a fully static HTML site from all published content. Available in both realms: the browser **admin** realm at `GET /api/admin/ssg` (JWT + CSRF, used by the admin UI under *Export*) and the agent (Bearer API key) realm at `GET /api/v1/ssg` (used by `lesstruct-cli ssg`).
+
+`GET /api/v1/ssg` — renders the full site (homepage and pagination, content pages with AMP variants, post type listings, author and tag pages, theme CSS, media, sitemap, robots.txt) from the same data layer as the live site, and streams the result as a `tar.gz`.
+
+**Auth:** API key belonging to an **Admin** role (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+
+**Request**
+
+```
+GET /api/v1/ssg
+Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>
+```
+
+**Response** (`200 OK`) — binary stream:
+
+- `Content-Type: application/gzip`
+- `Content-Disposition: attachment; filename="lesstruct-site-<timestamp>.tar.gz"`
+
+Archive layout:
+
+```
+index.html                    Homepage
+page/2/index.html, …          Pagination
+<slug>/index.html             Content pages
+<slug>/amp/index.html         AMP variants
+<post-type>/index.html        Post type listings
+authors/<username>/index.html Author pages
+tags/<tag>/index.html         Tag pages
+static/base.css, style.css    Theme CSS
+uploads/media/                Media files
+sitemap.xml, robots.txt       SEO files
+```
+
 
 

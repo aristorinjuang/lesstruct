@@ -7,6 +7,7 @@ import (
 	"regexp"
 
 	"github.com/aristorinjuang/lesstruct/internal/auth"
+	"github.com/aristorinjuang/lesstruct/internal/constants"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 )
 
@@ -22,6 +23,11 @@ var (
 
 	// ErrRegistrationFailed is returned when registration fails
 	ErrRegistrationFailed = errors.New("registration failed")
+
+	// ErrRegistrationDisabled is returned when self-registration is disabled
+	// (the comment system is off, so the only self-registerable role —
+	// Commentator — is meaningless).
+	ErrRegistrationDisabled = errors.New("self-registration is disabled")
 )
 
 // usernameRegex validates username format (alphanumeric, underscores, hyphens, 1-50 chars)
@@ -51,11 +57,26 @@ type RegisterResult struct {
 
 // RegistrationService handles user registration business logic
 type RegistrationService struct {
-	userRepo repository.UserRepo
+	userRepo        repository.UserRepo
+	commentsEnabled bool
+}
+
+// RegistrationEnabled reports whether self-registration is currently allowed.
+// Handlers call this BEFORE any repository lookup (e.g. the blocked-email
+// check) so a disabled instance short-circuits without a DB query and without
+// leaking whether a submitted email is blocked.
+func (s *RegistrationService) RegistrationEnabled() bool {
+	return s.commentsEnabled
 }
 
 // RegisterUser registers a new user with validation
 func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequest) (*RegisterResult, error) {
+	// Self-registration only ever creates Commentator users; with the comment
+	// system disabled that role is meaningless, so registration is blocked.
+	if !s.commentsEnabled {
+		return nil, ErrRegistrationDisabled
+	}
+
 	// Validate username format
 	if err := ValidateUsername(req.Username); err != nil {
 		return nil, err
@@ -98,7 +119,7 @@ func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequ
 		PasswordHash: passwordHash,
 		Email:        req.Email,
 		Name:         req.Name,
-		Role:         "Commentator",
+		Role:         constants.RoleCommentator,
 		Status:       "pending",
 	}
 
@@ -112,9 +133,13 @@ func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequ
 	}, nil
 }
 
-// NewRegistrationService creates a new registration service
-func NewRegistrationService(userRepo repository.UserRepo) *RegistrationService {
+// NewRegistrationService creates a new registration service. commentsEnabled
+// gates self-registration: when false, the only self-registerable role
+// (Commentator) is meaningless, so RegisterUser rejects with
+// ErrRegistrationDisabled.
+func NewRegistrationService(userRepo repository.UserRepo, commentsEnabled bool) *RegistrationService {
 	return &RegistrationService{
-		userRepo: userRepo,
+		userRepo:        userRepo,
+		commentsEnabled: commentsEnabled,
 	}
 }

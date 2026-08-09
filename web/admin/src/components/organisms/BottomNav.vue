@@ -106,24 +106,27 @@ watch(
   min-width: 44px;
   min-height: 44px;
   padding: 0.5rem;
+  border-radius: 0.375rem;
   text-decoration: none;
   color: var(--brand-dark-1);
-  transition: color 0.2s;
+  transition: background-color 0.2s, color 0.2s;
   flex-shrink: 0;
 }
 
 .bottom-nav__item:hover {
-  color: var(--brand-primary);
+  background-color: var(--nav-hover-bg);
+  color: var(--nav-active-fg);
 }
 
 .bottom-nav__item--active {
-  color: var(--brand-primary);
+  background-color: var(--nav-active-bg);
+  color: var(--nav-active-fg);
 }
 
 .bottom-nav__item:focus-visible {
   outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
-  border-radius: 0.25rem;
+  border-radius: 0.375rem;
 }
 
 .bottom-nav__icon {
