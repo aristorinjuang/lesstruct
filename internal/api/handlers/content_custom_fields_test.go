@@ -25,6 +25,7 @@ func TestContentHandler_CustomFields_CreateContent(t *testing.T) {
 		mockService.EXPECT().Create(
 			mock.Anything,
 			1,
+			mock.Anything,
 			mock.MatchedBy(func(req contentdomain.CreateContentRequest) bool {
 				return req.CustomFields != nil && req.CustomFields["price"] == "$4.50"
 			}),

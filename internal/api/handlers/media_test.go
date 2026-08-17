@@ -19,6 +19,7 @@ import (
 	appresponse "github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/domain/media"
 	mediamocks "github.com/aristorinjuang/lesstruct/internal/domain/media/mocks"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/go-chi/chi/v5"
@@ -723,6 +724,157 @@ func TestMediaHandler_GenerateImage(t *testing.T) {
 				require.True(t, ok)
 				assert.Equal(t, tt.expectedCode, errObj["code"])
 			}
+		})
+	}
+}
+
+// TestMediaHandler_RoleGate verifies media endpoints are gated by the caller's
+// role capability when a role service is configured. A role without the media
+// capability gets 403 on Upload, DeleteMedia, and GenerateImage; without a role
+// service every authenticated user may (legacy behavior, covered by the
+// existing tests).
+func TestMediaHandler_RoleGate(t *testing.T) {
+	roleService := roledomain.NewService()
+	if err := roleService.Register(roledomain.Role{
+		Name:      "Editor",
+		PostTypes: []string{"article"},
+		Publish:   true,
+		Media:     false,
+		Comments:  true,
+	}); err != nil {
+		t.Fatalf("failed to register role: %v", err)
+	}
+
+	roleServiceWithMedia := roledomain.NewService()
+	if err := roleServiceWithMedia.Register(roledomain.Role{
+		Name:      "Editor",
+		PostTypes: []string{"article"},
+		Publish:   true,
+		Media:     true,
+		Comments:  true,
+	}); err != nil {
+		t.Fatalf("failed to register role: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		endpoint       func(*testing.T, *handlers.MediaHandler) int
+		withRoleSvc    bool
+		roleSvc        *roledomain.Service
+		role           string
+		expectedStatus int
+	}{
+		{
+			name: "upload - role cannot manage media",
+			endpoint: func(t *testing.T, h *handlers.MediaHandler) int {
+				imgData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+				body, contentType := createMultipartFormData(t, "image", "sunset.jpg", imgData)
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/media/upload", body)
+				req.Header.Set("Content-Type", contentType)
+				req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "1"))
+				req = req.WithContext(context.WithValue(req.Context(), middleware.RoleKey, "Editor"))
+				w := httptest.NewRecorder()
+				h.Upload(w, req)
+				return w.Code
+			},
+			withRoleSvc:    true,
+			roleSvc:        roleService,
+			role:           "Editor",
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name: "upload - role can manage media",
+			endpoint: func(t *testing.T, h *handlers.MediaHandler) int {
+				imgData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+				body, contentType := createMultipartFormData(t, "image", "sunset.jpg", imgData)
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/media/upload", body)
+				req.Header.Set("Content-Type", contentType)
+				req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "1"))
+				req = req.WithContext(context.WithValue(req.Context(), middleware.RoleKey, "Editor"))
+				w := httptest.NewRecorder()
+				h.Upload(w, req)
+				return w.Code
+			},
+			withRoleSvc:    true,
+			roleSvc:        roleServiceWithMedia,
+			role:           "Editor",
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name: "generate - role cannot manage media",
+			endpoint: func(t *testing.T, h *handlers.MediaHandler) int {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/media/generate", bytes.NewBufferString(`{"prompt":"a sunset"}`))
+				req.Header.Set("Content-Type", "application/json")
+				req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "1"))
+				req = req.WithContext(context.WithValue(req.Context(), middleware.RoleKey, "Editor"))
+				w := httptest.NewRecorder()
+				h.GenerateImage(w, req)
+				return w.Code
+			},
+			withRoleSvc:    true,
+			roleSvc:        roleService,
+			role:           "Editor",
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name: "delete - role cannot manage media",
+			endpoint: func(t *testing.T, h *handlers.MediaHandler) int {
+				req := httptest.NewRequest(http.MethodDelete, "/api/v1/media/1", nil)
+				req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "1"))
+				req = req.WithContext(context.WithValue(req.Context(), middleware.RoleKey, "Editor"))
+				w := httptest.NewRecorder()
+				h.DeleteMedia(w, req)
+				return w.Code
+			},
+			withRoleSvc:    true,
+			roleSvc:        roleService,
+			role:           "Editor",
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name: "upload - no role service allows legacy",
+			endpoint: func(t *testing.T, h *handlers.MediaHandler) int {
+				imgData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+				body, contentType := createMultipartFormData(t, "image", "sunset.jpg", imgData)
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/media/upload", body)
+				req.Header.Set("Content-Type", contentType)
+				req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "1"))
+				w := httptest.NewRecorder()
+				h.Upload(w, req)
+				return w.Code
+			},
+			withRoleSvc:    false,
+			expectedStatus: http.StatusCreated,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := handlersmocks.NewMockMediaServiceInterface(t)
+			if tt.expectedStatus == http.StatusCreated {
+				if tt.name == "upload - role can manage media" || tt.name == "upload - no role service allows legacy" {
+					mockService.EXPECT().Upload(
+						mock.Anything,
+						mock.AnythingOfType("media.UploadRequest"),
+					).Return(&media.Media{
+						ID:               1,
+						UserID:           1,
+						Filename:         "abc.webp",
+						OriginalFilename: "sunset.jpg",
+						URL:              "http://localhost:8080/uploads/media/abc.webp",
+						Hash:             "sha256hash",
+					}, nil)
+				}
+			}
+
+			var opts []handlers.MediaHandlerOption
+			if tt.withRoleSvc {
+				opts = append(opts, handlers.WithMediaRoleService(tt.roleSvc))
+			}
+			handler := handlers.NewMediaHandler(mockService, nil, util.NewLogger(os.Stdout), opts...)
+
+			status := tt.endpoint(t, handler)
+			require.Equal(t, tt.expectedStatus, status)
 		})
 	}
 }

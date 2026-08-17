@@ -152,10 +152,7 @@ func buildMediaContext(
 	}
 
 	// Take top 20
-	limit := 20
-	if len(scored) < limit {
-		limit = len(scored)
-	}
+	limit := min(len(scored), 20)
 	selected := scored[:limit]
 
 	// Format the context string

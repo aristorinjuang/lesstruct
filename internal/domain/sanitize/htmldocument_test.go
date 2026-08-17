@@ -55,6 +55,21 @@ func TestSanitizeHTMLDocument(t *testing.T) {
 			want:  `Click`,
 		},
 		{
+			name:  "root-relative image src preserved",
+			input: `<img src="/uploads/media/dd3bbc8a44d5fe89.webp" alt="PlantUML Editor">`,
+			want:  `<img src="/uploads/media/dd3bbc8a44d5fe89.webp" alt="PlantUML Editor">`,
+		},
+		{
+			name:  "root-relative link href preserved",
+			input: `<a href="/plantuml-editor.html">PlantUML Editor</a>`,
+			want:  `<a href="/plantuml-editor.html">PlantUML Editor</a>`,
+		},
+		{
+			name:  "page-relative link href preserved",
+			input: `<a href="../about.html">About</a>`,
+			want:  `<a href="../about.html">About</a>`,
+		},
+		{
 			name:  "data attributes preserved",
 			input: `<div data-widget-id="123" data-type="hero">Content</div>`,
 			want:  `<div data-widget-id="123" data-type="hero">Content</div>`,
@@ -84,10 +99,122 @@ func TestSanitizeHTMLDocument(t *testing.T) {
 }
 
 func TestSanitizeHTMLDocument_WithIframeAllowlist(t *testing.T) {
-	input := `<iframe src="https://www.youtube.com/embed/123" width="560" height="315"></iframe>`
-	got := sanitize.SanitizeHTMLDocument(input, "www.youtube.com")
-	// iframes require sandbox values in bluemonday; without them they're stripped
-	assert.Empty(t, got)
+	tests := []struct {
+		name      string
+		input     string
+		allowlist []string
+		want      string
+	}{
+		{
+			name:      "allowed host iframe preserved",
+			input:     `<iframe src="https://www.youtube.com/embed/123" width="560" height="315" allowfullscreen></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      `<iframe src="https://www.youtube.com/embed/123" width="560" height="315" allowfullscreen=""></iframe>`,
+		},
+		{
+			name:      "wildcard host subdomain iframe preserved",
+			input:     `<iframe src="https://aristorinjuang.disqus.com/embed/comments/"></iframe>`,
+			allowlist: []string{"*.disqus.com"},
+			want:      `<iframe src="https://aristorinjuang.disqus.com/embed/comments/"></iframe>`,
+		},
+		{
+			name:      "multiple allowlisted hosts preserved",
+			input:     `<iframe src="https://www.youtube.com/embed/123"></iframe><iframe src="https://aristorinjuang.disqus.com/embed/comments/"></iframe>`,
+			allowlist: []string{"www.youtube.com", "*.disqus.com"},
+			want:      `<iframe src="https://www.youtube.com/embed/123"></iframe><iframe src="https://aristorinjuang.disqus.com/embed/comments/"></iframe>`,
+		},
+		{
+			name:      "protocol-relative iframe preserved",
+			input:     `<iframe src="//www.youtube.com/embed/123"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      `<iframe src="//www.youtube.com/embed/123"></iframe>`,
+		},
+		{
+			name:      "relative iframe src preserved",
+			input:     `<iframe src="/demo/embed"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      `<iframe src="/demo/embed"></iframe>`,
+		},
+		{
+			name:      "unknown host iframe stripped",
+			input:     `<iframe src="https://evil.example.com/embed/123"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      ``,
+		},
+		{
+			name:      "host substring spoofing stripped",
+			input:     `<iframe src="https://www.youtube.com.evil.example/embed/123"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      ``,
+		},
+		{
+			name:      "protocol-relative unknown host stripped",
+			input:     `<iframe src="//evil.com/embed/1"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      ``,
+		},
+		{
+			name:      "userinfo in allowed host stripped",
+			input:     `<iframe src="https://www.youtube.com:80@evil.com/x"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      ``,
+		},
+		{
+			name:      "scheme-relative userinfo stripped",
+			input:     `<iframe src="//www.youtube.com@evil.com/x"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      ``,
+		},
+		{
+			name:      "wildcard host does not allow apex",
+			input:     `<iframe src="https://disqus.com/embed/"></iframe>`,
+			allowlist: []string{"*.disqus.com"},
+			want:      ``,
+		},
+		{
+			name:      "uppercase src preserved",
+			input:     `<iframe src="HTTPS://WWW.YOUTUBE.COM/EMBED/1"></iframe>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      `<iframe src="https://WWW.YOUTUBE.COM/EMBED/1"></iframe>`,
+		},
+		{
+			name:      "port entry preserves matching port",
+			input:     `<iframe src="https://localhost:8080/embed"></iframe>`,
+			allowlist: []string{"localhost:8080"},
+			want:      `<iframe src="https://localhost:8080/embed"></iframe>`,
+		},
+		{
+			name:      "port entry rejects other ports",
+			input:     `<iframe src="https://localhost:9999/embed"></iframe>`,
+			allowlist: []string{"localhost:8080"},
+			want:      ``,
+		},
+		{
+			name:      "path entry preserves matching path",
+			input:     `<iframe src="https://media.example.com/path/embed/1"></iframe>`,
+			allowlist: []string{"media.example.com/path/embed"},
+			want:      `<iframe src="https://media.example.com/path/embed/1"></iframe>`,
+		},
+		{
+			name:      "path entry rejects other paths",
+			input:     `<iframe src="https://media.example.com/other"></iframe>`,
+			allowlist: []string{"media.example.com/path/embed"},
+			want:      ``,
+		},
+		{
+			name:      "no allowlist strips iframe",
+			input:     `<iframe src="https://www.youtube.com/embed/123"></iframe>`,
+			allowlist: []string{},
+			want:      ``,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitize.SanitizeHTMLDocument(tt.input, tt.allowlist...)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 func TestValidateHTMLDocument(t *testing.T) {

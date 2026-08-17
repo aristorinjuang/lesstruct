@@ -38,7 +38,7 @@ import (
 func defaultSecurityHeadersMiddleware(t *testing.T) *middleware.SecurityHeadersMiddleware {
 	t.Helper()
 	cspName, cspValue := config.CSPConfig{}.Build()
-	return middleware.NewSecurityHeadersMiddleware(cspName, cspValue)
+	return middleware.NewSecurityHeadersMiddleware(cspName, cspValue, config.CSPConfig{}.XFrameOptions())
 }
 
 func setupTestRouter(t *testing.T) *chi.Mux {

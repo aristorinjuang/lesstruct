@@ -236,6 +236,8 @@ func TestConvertBlocks_FeaturedImage(t *testing.T) {
 		featuredImageURL string
 		wantFirstType    string
 		wantFirstSrc     string
+		wantImageCount   int
+		wantErr          bool
 	}{
 		{
 			name:             "success - featured image prepended as first node",
@@ -243,23 +245,49 @@ func TestConvertBlocks_FeaturedImage(t *testing.T) {
 			featuredImageURL: "http://localhost:8080/uploads/media/abc.webp",
 			wantFirstType:    "image",
 			wantFirstSrc:     "http://localhost:8080/uploads/media/abc.webp",
+			wantImageCount:   1,
+			wantErr:          false,
 		},
 		{
-			name:          "no-op - empty featured image URL",
-			input:         `<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->`,
-			wantFirstType: "paragraph",
+			name:           "no-op - empty featured image URL",
+			input:          `<!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->`,
+			wantFirstType:  "paragraph",
+			wantImageCount: 0,
+			wantErr:        false,
+		},
+		{
+			name:             "success - featured skipped when body opens with same image",
+			input:            `<!-- wp:image --><figure><img src="http://localhost:8080/uploads/media/abc.webp" alt="ABC"/></figure><!-- /wp:image --><!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->`,
+			featuredImageURL: "http://localhost:8080/uploads/media/abc.webp",
+			wantFirstType:    "image",
+			wantFirstSrc:     "http://localhost:8080/uploads/media/abc.webp",
+			wantImageCount:   1,
+			wantErr:          false,
+		},
+		{
+			name:             "success - featured prepended when body opens with different image",
+			input:            `<!-- wp:image --><figure><img src="http://localhost:8080/uploads/media/other.webp" alt="Other"/></figure><!-- /wp:image -->`,
+			featuredImageURL: "http://localhost:8080/uploads/media/abc.webp",
+			wantFirstType:    "image",
+			wantFirstSrc:     "http://localhost:8080/uploads/media/abc.webp",
+			wantImageCount:   2,
+			wantErr:          false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			doc, err := wordpress.ConvertBlocks(tt.input, nil, tt.featuredImageURL)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			mustValidate(t, doc)
 
 			var parsed struct {
 				Content []struct {
-					Type string         `json:"type"`
+					Type  string         `json:"type"`
 					Attrs map[string]any `json:"attrs"`
 				} `json:"content"`
 			}
@@ -269,6 +297,13 @@ func TestConvertBlocks_FeaturedImage(t *testing.T) {
 			if tt.wantFirstSrc != "" {
 				assert.Equal(t, tt.wantFirstSrc, parsed.Content[0].Attrs["src"])
 			}
+			imageCount := 0
+			for _, node := range parsed.Content {
+				if node.Type == "image" {
+					imageCount++
+				}
+			}
+			assert.Equal(t, tt.wantImageCount, imageCount)
 		})
 	}
 }

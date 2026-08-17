@@ -24,9 +24,9 @@ var (
 	// ErrRegistrationFailed is returned when registration fails
 	ErrRegistrationFailed = errors.New("registration failed")
 
-	// ErrRegistrationDisabled is returned when self-registration is disabled
-	// (the comment system is off, so the only self-registerable role —
-	// Commentator — is meaningless).
+	// ErrRegistrationDisabled is returned when self-registration is disabled via
+	// the [registration] config block (or, by legacy default, when the comment
+	// system is off).
 	ErrRegistrationDisabled = errors.New("self-registration is disabled")
 )
 
@@ -55,10 +55,38 @@ type RegisterResult struct {
 	Message string
 }
 
+// RegistrationOption configures a RegistrationService. The zero options
+// reproduce the legacy behavior exactly: registration enabled iff the comment
+// system is enabled, default role Commentator, pending status.
+type RegistrationOption func(*registrationOptions)
+
+type registrationOptions struct {
+	enabled     *bool
+	defaultRole string
+}
+
+// WithEnabled overrides the registration gate. When unset, registration is
+// enabled iff comments are enabled (the legacy coupling).
+func WithEnabled(enabled bool) RegistrationOption {
+	return func(o *registrationOptions) {
+		o.enabled = &enabled
+	}
+}
+
+// WithDefaultRole sets the role assigned to new registrants. When unset, it
+// defaults to the Commentator role.
+func WithDefaultRole(roleName string) RegistrationOption {
+	return func(o *registrationOptions) {
+		o.defaultRole = roleName
+	}
+}
+
 // RegistrationService handles user registration business logic
 type RegistrationService struct {
 	userRepo        repository.UserRepo
 	commentsEnabled bool
+	enabled         bool
+	defaultRole     string
 }
 
 // RegistrationEnabled reports whether self-registration is currently allowed.
@@ -66,14 +94,16 @@ type RegistrationService struct {
 // check) so a disabled instance short-circuits without a DB query and without
 // leaking whether a submitted email is blocked.
 func (s *RegistrationService) RegistrationEnabled() bool {
-	return s.commentsEnabled
+	return s.enabled
 }
 
-// RegisterUser registers a new user with validation
+// RegisterUser registers a new user with validation. The registered user gets
+// the configured default role (Commentator unless overridden) and is always
+// created in "pending" status: email verification is mandatory, so the account
+// only becomes usable after the registrant proves their email address (and, in
+// admin-approval mode, after an administrator approves the account).
 func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequest) (*RegisterResult, error) {
-	// Self-registration only ever creates Commentator users; with the comment
-	// system disabled that role is meaningless, so registration is blocked.
-	if !s.commentsEnabled {
+	if !s.enabled {
 		return nil, ErrRegistrationDisabled
 	}
 
@@ -113,13 +143,12 @@ func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequ
 	// Hash password
 	passwordHash, _ := auth.HashPassword(req.Password)
 
-	// Create user with pending status
 	user := &repository.User{
 		Username:     req.Username,
 		PasswordHash: passwordHash,
 		Email:        req.Email,
 		Name:         req.Name,
-		Role:         constants.RoleCommentator,
+		Role:         s.defaultRole,
 		Status:       "pending",
 	}
 
@@ -133,13 +162,28 @@ func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequ
 	}, nil
 }
 
-// NewRegistrationService creates a new registration service. commentsEnabled
-// gates self-registration: when false, the only self-registerable role
-// (Commentator) is meaningless, so RegisterUser rejects with
-// ErrRegistrationDisabled.
-func NewRegistrationService(userRepo repository.UserRepo, commentsEnabled bool) *RegistrationService {
+// NewRegistrationService creates a new registration service. Legacy behavior —
+// registration enabled iff comments enabled, default role Commentator, pending
+// status — is preserved unless overridden via RegistrationOptions.
+func NewRegistrationService(userRepo repository.UserRepo, commentsEnabled bool, opts ...RegistrationOption) *RegistrationService {
+	o := registrationOptions{}
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	enabled := commentsEnabled
+	if o.enabled != nil {
+		enabled = *o.enabled
+	}
+	defaultRole := o.defaultRole
+	if defaultRole == "" {
+		defaultRole = constants.RoleCommentator
+	}
+
 	return &RegistrationService{
 		userRepo:        userRepo,
 		commentsEnabled: commentsEnabled,
+		enabled:         enabled,
+		defaultRole:     defaultRole,
 	}
 }

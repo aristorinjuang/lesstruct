@@ -39,8 +39,8 @@ func (_m *MockContentService) EXPECT() *MockContentService_Expecter {
 }
 
 // Create provides a mock function for the type MockContentService
-func (_mock *MockContentService) Create(ctx context.Context, userID int, req content.CreateContentRequest) (*content.Content, error) {
-	ret := _mock.Called(ctx, userID, req)
+func (_mock *MockContentService) Create(ctx context.Context, userID int, role string, req content.CreateContentRequest) (*content.Content, error) {
+	ret := _mock.Called(ctx, userID, role, req)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Create")
@@ -48,18 +48,18 @@ func (_mock *MockContentService) Create(ctx context.Context, userID int, req con
 
 	var r0 *content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, content.CreateContentRequest) (*content.Content, error)); ok {
-		return returnFunc(ctx, userID, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, content.CreateContentRequest) (*content.Content, error)); ok {
+		return returnFunc(ctx, userID, role, req)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, content.CreateContentRequest) *content.Content); ok {
-		r0 = returnFunc(ctx, userID, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, content.CreateContentRequest) *content.Content); ok {
+		r0 = returnFunc(ctx, userID, role, req)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, content.CreateContentRequest) error); ok {
-		r1 = returnFunc(ctx, userID, req)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, string, content.CreateContentRequest) error); ok {
+		r1 = returnFunc(ctx, userID, role, req)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -74,12 +74,13 @@ type MockContentService_Create_Call struct {
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
 //   - userID int
+//   - role string
 //   - req content.CreateContentRequest
-func (_e *MockContentService_Expecter) Create(ctx any, userID any, req any) *MockContentService_Create_Call {
-	return &MockContentService_Create_Call{Call: _e.mock.On("Create", ctx, userID, req)}
+func (_e *MockContentService_Expecter) Create(ctx any, userID any, role any, req any) *MockContentService_Create_Call {
+	return &MockContentService_Create_Call{Call: _e.mock.On("Create", ctx, userID, role, req)}
 }
 
-func (_c *MockContentService_Create_Call) Run(run func(ctx context.Context, userID int, req content.CreateContentRequest)) *MockContentService_Create_Call {
+func (_c *MockContentService_Create_Call) Run(run func(ctx context.Context, userID int, role string, req content.CreateContentRequest)) *MockContentService_Create_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -89,14 +90,19 @@ func (_c *MockContentService_Create_Call) Run(run func(ctx context.Context, user
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 content.CreateContentRequest
+		var arg2 string
 		if args[2] != nil {
-			arg2 = args[2].(content.CreateContentRequest)
+			arg2 = args[2].(string)
+		}
+		var arg3 content.CreateContentRequest
+		if args[3] != nil {
+			arg3 = args[3].(content.CreateContentRequest)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -107,7 +113,7 @@ func (_c *MockContentService_Create_Call) Return(content1 *content.Content, err 
 	return _c
 }
 
-func (_c *MockContentService_Create_Call) RunAndReturn(run func(ctx context.Context, userID int, req content.CreateContentRequest) (*content.Content, error)) *MockContentService_Create_Call {
+func (_c *MockContentService_Create_Call) RunAndReturn(run func(ctx context.Context, userID int, role string, req content.CreateContentRequest) (*content.Content, error)) *MockContentService_Create_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -416,8 +422,8 @@ func (_c *MockContentService_Publish_Call) RunAndReturn(run func(ctx context.Con
 }
 
 // SetSystemFields provides a mock function for the type MockContentService
-func (_mock *MockContentService) SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*content.Content, error) {
-	ret := _mock.Called(ctx, contentID, systemFields)
+func (_mock *MockContentService) SetSystemFields(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*content.Content, error) {
+	ret := _mock.Called(ctx, contentID, userID, systemFields)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SetSystemFields")
@@ -425,18 +431,18 @@ func (_mock *MockContentService) SetSystemFields(ctx context.Context, contentID 
 
 	var r0 *content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, map[string]any) (*content.Content, error)); ok {
-		return returnFunc(ctx, contentID, systemFields)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, map[string]any) (*content.Content, error)); ok {
+		return returnFunc(ctx, contentID, userID, systemFields)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, map[string]any) *content.Content); ok {
-		r0 = returnFunc(ctx, contentID, systemFields)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, map[string]any) *content.Content); ok {
+		r0 = returnFunc(ctx, contentID, userID, systemFields)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, map[string]any) error); ok {
-		r1 = returnFunc(ctx, contentID, systemFields)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int, map[string]any) error); ok {
+		r1 = returnFunc(ctx, contentID, userID, systemFields)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -451,12 +457,13 @@ type MockContentService_SetSystemFields_Call struct {
 // SetSystemFields is a helper method to define mock.On call
 //   - ctx context.Context
 //   - contentID int
+//   - userID int
 //   - systemFields map[string]any
-func (_e *MockContentService_Expecter) SetSystemFields(ctx any, contentID any, systemFields any) *MockContentService_SetSystemFields_Call {
-	return &MockContentService_SetSystemFields_Call{Call: _e.mock.On("SetSystemFields", ctx, contentID, systemFields)}
+func (_e *MockContentService_Expecter) SetSystemFields(ctx any, contentID any, userID any, systemFields any) *MockContentService_SetSystemFields_Call {
+	return &MockContentService_SetSystemFields_Call{Call: _e.mock.On("SetSystemFields", ctx, contentID, userID, systemFields)}
 }
 
-func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Context, contentID int, systemFields map[string]any)) *MockContentService_SetSystemFields_Call {
+func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Context, contentID int, userID int, systemFields map[string]any)) *MockContentService_SetSystemFields_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -466,14 +473,19 @@ func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Cont
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 map[string]any
+		var arg2 int
 		if args[2] != nil {
-			arg2 = args[2].(map[string]any)
+			arg2 = args[2].(int)
+		}
+		var arg3 map[string]any
+		if args[3] != nil {
+			arg3 = args[3].(map[string]any)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -484,7 +496,7 @@ func (_c *MockContentService_SetSystemFields_Call) Return(content1 *content.Cont
 	return _c
 }
 
-func (_c *MockContentService_SetSystemFields_Call) RunAndReturn(run func(ctx context.Context, contentID int, systemFields map[string]any) (*content.Content, error)) *MockContentService_SetSystemFields_Call {
+func (_c *MockContentService_SetSystemFields_Call) RunAndReturn(run func(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*content.Content, error)) *MockContentService_SetSystemFields_Call {
 	_c.Call.Return(run)
 	return _c
 }

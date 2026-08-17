@@ -20,6 +20,7 @@ import (
 //   - ErrContentNotFound         → 404 NOT_FOUND
 //   - ErrCommentNotFound         → 404 NOT_FOUND
 //   - ErrUnauthorized (ownership / comments-disabled) → 403 FORBIDDEN
+//   - ErrForbiddenPostType / ErrForbiddenPublish (role gates) → 403 FORBIDDEN
 //   - the validation sentinels   → 400 VALIDATION_ERROR
 //   - anything else              → 500 INTERNAL_ERROR
 //
@@ -35,6 +36,9 @@ func handleError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Comment not found", nil)
 	case errors.Is(err, contentdomain.ErrUnauthorized):
 		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have permission to access this content", nil)
+	case errors.Is(err, contentdomain.ErrForbiddenPostType),
+		errors.Is(err, contentdomain.ErrForbiddenPublish):
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", err.Error(), nil)
 	case errors.Is(err, contentdomain.ErrInvalidTitle),
 		errors.Is(err, contentdomain.ErrEmptyContent),
 		errors.Is(err, contentdomain.ErrContentTooLong),

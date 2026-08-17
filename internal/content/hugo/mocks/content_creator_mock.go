@@ -39,8 +39,8 @@ func (_m *MockContentCreator) EXPECT() *MockContentCreator_Expecter {
 }
 
 // Create provides a mock function for the type MockContentCreator
-func (_mock *MockContentCreator) Create(ctx context.Context, userID int, req content.CreateContentRequest) (*content.Content, error) {
-	ret := _mock.Called(ctx, userID, req)
+func (_mock *MockContentCreator) Create(ctx context.Context, userID int, role string, req content.CreateContentRequest) (*content.Content, error) {
+	ret := _mock.Called(ctx, userID, role, req)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Create")
@@ -48,18 +48,18 @@ func (_mock *MockContentCreator) Create(ctx context.Context, userID int, req con
 
 	var r0 *content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, content.CreateContentRequest) (*content.Content, error)); ok {
-		return returnFunc(ctx, userID, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, content.CreateContentRequest) (*content.Content, error)); ok {
+		return returnFunc(ctx, userID, role, req)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, content.CreateContentRequest) *content.Content); ok {
-		r0 = returnFunc(ctx, userID, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, content.CreateContentRequest) *content.Content); ok {
+		r0 = returnFunc(ctx, userID, role, req)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, content.CreateContentRequest) error); ok {
-		r1 = returnFunc(ctx, userID, req)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, string, content.CreateContentRequest) error); ok {
+		r1 = returnFunc(ctx, userID, role, req)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -74,12 +74,13 @@ type MockContentCreator_Create_Call struct {
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
 //   - userID int
+//   - role string
 //   - req content.CreateContentRequest
-func (_e *MockContentCreator_Expecter) Create(ctx any, userID any, req any) *MockContentCreator_Create_Call {
-	return &MockContentCreator_Create_Call{Call: _e.mock.On("Create", ctx, userID, req)}
+func (_e *MockContentCreator_Expecter) Create(ctx any, userID any, role any, req any) *MockContentCreator_Create_Call {
+	return &MockContentCreator_Create_Call{Call: _e.mock.On("Create", ctx, userID, role, req)}
 }
 
-func (_c *MockContentCreator_Create_Call) Run(run func(ctx context.Context, userID int, req content.CreateContentRequest)) *MockContentCreator_Create_Call {
+func (_c *MockContentCreator_Create_Call) Run(run func(ctx context.Context, userID int, role string, req content.CreateContentRequest)) *MockContentCreator_Create_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -89,14 +90,19 @@ func (_c *MockContentCreator_Create_Call) Run(run func(ctx context.Context, user
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 content.CreateContentRequest
+		var arg2 string
 		if args[2] != nil {
-			arg2 = args[2].(content.CreateContentRequest)
+			arg2 = args[2].(string)
+		}
+		var arg3 content.CreateContentRequest
+		if args[3] != nil {
+			arg3 = args[3].(content.CreateContentRequest)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -107,7 +113,75 @@ func (_c *MockContentCreator_Create_Call) Return(content1 *content.Content, err 
 	return _c
 }
 
-func (_c *MockContentCreator_Create_Call) RunAndReturn(run func(ctx context.Context, userID int, req content.CreateContentRequest) (*content.Content, error)) *MockContentCreator_Create_Call {
+func (_c *MockContentCreator_Create_Call) RunAndReturn(run func(ctx context.Context, userID int, role string, req content.CreateContentRequest) (*content.Content, error)) *MockContentCreator_Create_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetByID provides a mock function for the type MockContentCreator
+func (_mock *MockContentCreator) GetByID(ctx context.Context, id int) (*content.Content, error) {
+	ret := _mock.Called(ctx, id)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetByID")
+	}
+
+	var r0 *content.Content
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*content.Content, error)); ok {
+		return returnFunc(ctx, id)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *content.Content); ok {
+		r0 = returnFunc(ctx, id)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*content.Content)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
+		r1 = returnFunc(ctx, id)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockContentCreator_GetByID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetByID'
+type MockContentCreator_GetByID_Call struct {
+	*mock.Call
+}
+
+// GetByID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id int
+func (_e *MockContentCreator_Expecter) GetByID(ctx any, id any) *MockContentCreator_GetByID_Call {
+	return &MockContentCreator_GetByID_Call{Call: _e.mock.On("GetByID", ctx, id)}
+}
+
+func (_c *MockContentCreator_GetByID_Call) Run(run func(ctx context.Context, id int)) *MockContentCreator_GetByID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockContentCreator_GetByID_Call) Return(content1 *content.Content, err error) *MockContentCreator_GetByID_Call {
+	_c.Call.Return(content1, err)
+	return _c
+}
+
+func (_c *MockContentCreator_GetByID_Call) RunAndReturn(run func(ctx context.Context, id int) (*content.Content, error)) *MockContentCreator_GetByID_Call {
 	_c.Call.Return(run)
 	return _c
 }

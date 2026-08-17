@@ -53,8 +53,11 @@ type RegisterUserResponse struct {
 
 // VerifyEmailResponse represents the successful email verification response
 type VerifyEmailResponse struct {
-	Message  string `json:"message"`
-	Redirect string `json:"redirect"`
+	Message string `json:"message"`
+	// AwaitingApproval reports that the email address was proven but the account
+	// stays pending because the site requires admin approval for activation.
+	AwaitingApproval bool   `json:"awaitingApproval"`
+	Redirect         string `json:"redirect"`
 }
 
 // ResendVerificationRequest represents the resend verification request body
@@ -79,20 +82,35 @@ type ResetPasswordRequest struct {
 }
 
 // AuthHandler handles authentication HTTP requests
+// AuthHandlerOption customizes an AuthHandler at construction time
+type AuthHandlerOption func(*AuthHandler)
+
+// WithAdminApprovalRequired configures the handler for sites where registrants
+// must be approved by an administrator after verifying their email. A pending
+// registrant whose email is already verified is not issued another verification
+// link (the reply stays generic for anti-enumeration); without this option the
+// resend endpoint always re-issues a link for pending registrants (legacy).
+func WithAdminApprovalRequired() AuthHandlerOption {
+	return func(h *AuthHandler) {
+		h.adminApprovalRequired = true
+	}
+}
+
 type AuthHandler struct {
-	authService          *authdomain.AuthService
-	jwtManager           *auth.JWTManager
-	logger               *util.Logger
-	firstLoginService    *authdomain.FirstLoginService
-	registrationService  *authdomain.RegistrationService
-	verificationService  *authdomain.VerificationService
-	loginService         *authdomain.LoginService
-	passwordResetService *authdomain.PasswordResetService
-	userRepo             repository.UserRepo
-	failedLoginRepo      repository.FailedLoginAttemptRepo
-	notificationRepo     repository.NotificationRepo
-	emailService         email.EmailService
-	blockedEmailRepo     repository.BlockedEmailRepo
+	authService           *authdomain.AuthService
+	jwtManager            *auth.JWTManager
+	logger                *util.Logger
+	firstLoginService     *authdomain.FirstLoginService
+	registrationService   *authdomain.RegistrationService
+	verificationService   *authdomain.VerificationService
+	loginService          *authdomain.LoginService
+	passwordResetService  *authdomain.PasswordResetService
+	userRepo              repository.UserRepo
+	failedLoginRepo       repository.FailedLoginAttemptRepo
+	notificationRepo      repository.NotificationRepo
+	emailService          email.EmailService
+	blockedEmailRepo      repository.BlockedEmailRepo
+	adminApprovalRequired bool
 }
 
 // sendAccountLockoutEmail sends an email notification about account lockout
@@ -473,8 +491,9 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Success(w, VerifyEmailResponse{
-		Message:  result.Message,
-		Redirect: "/admin/login",
+		Message:          result.Message,
+		AwaitingApproval: result.AwaitingApproval,
+		Redirect:         "/admin/login",
 	})
 }
 
@@ -530,6 +549,23 @@ func (h *AuthHandler) ResendVerificationEmail(w http.ResponseWriter, r *http.Req
 		}
 
 		// Return generic message to prevent enumeration
+		response.Success(w, ResendVerificationResponse{
+			Message: "If your email is registered and pending verification, you will receive a verification link.",
+		})
+		return
+	}
+
+	// In admin-approval mode, don't re-issue a token for a pending user whose
+	// email is already verified: the proof step is done and the account is only
+	// waiting on admin approval, so another link would be pointless. Same
+	// generic reply (anti-enumeration).
+	//
+	// Without admin-approval mode this gate must NOT apply: a pending user with
+	// a verified email can only exist there through a partial failure or a
+	// config flip, and refusing a new link would leave the account permanently
+	// stuck — resend must keep working (legacy behavior).
+	if h.adminApprovalRequired && user.EmailVerified {
+		h.logger.Info("Resend verification requested for pending user with verified email: %s", req.Email)
 		response.Success(w, ResendVerificationResponse{
 			Message: "If your email is registered and pending verification, you will receive a verification link.",
 		})
@@ -692,8 +728,9 @@ func NewAuthHandler(
 	notificationRepo repository.NotificationRepo,
 	emailService email.EmailService,
 	blockedEmailRepo repository.BlockedEmailRepo,
+	opts ...AuthHandlerOption,
 ) *AuthHandler {
-	return &AuthHandler{
+	h := &AuthHandler{
 		authService:          authService,
 		jwtManager:           jwtManager,
 		logger:               logger,
@@ -708,4 +745,8 @@ func NewAuthHandler(
 		emailService:         emailService,
 		blockedEmailRepo:     blockedEmailRepo,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }

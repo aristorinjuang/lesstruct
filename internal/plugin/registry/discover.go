@@ -3,7 +3,7 @@ package registry
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
@@ -109,7 +109,7 @@ func DiscoverHooks(
 	}
 
 	if len(discovered) > 0 {
-		sort.Strings(discovered)
+		slices.Sort(discovered)
 		logger(fmt.Sprintf(
 			"Registered hooks: %s",
 			strings.Join(discovered, ", "),

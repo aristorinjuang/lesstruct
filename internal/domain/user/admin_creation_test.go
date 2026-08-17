@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/domain/user"
 	"github.com/aristorinjuang/lesstruct/internal/domain/user/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
@@ -236,5 +237,74 @@ func TestAdminCreateUserService_CreateUser_CommentatorRejectedWhenCommentsDisabl
 
 	// The role gate rejects before any repo call happens.
 	mockUserRepo.AssertNotCalled(t, "CheckUsernameExists", context.Background(), "testuser")
+	assert.ErrorIs(t, err, user.ErrInvalidRole)
+}
+
+func TestAdminCreateUserService_CreateUser_RoleServiceAllowsCustomRole(t *testing.T) {
+	mockUserRepo := mocks.NewMockAdminCreateUserRepo(t)
+	mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
+
+	mockBlockedEmailRepo.EXPECT().IsEmailBlocked(context.Background(), "test@example.com").Return(false, nil)
+	mockUserRepo.EXPECT().CheckUsernameExists(context.Background(), "testuser").Return(false, nil)
+	mockUserRepo.EXPECT().CheckEmailExists(context.Background(), "test@example.com").Return(false, nil)
+	mockUserRepo.EXPECT().CreateUser(
+		context.Background(),
+		mock.AnythingOfType("*repository.User"),
+	).RunAndReturn(func(ctx context.Context, u *repository.User) error {
+		u.ID = 7
+		return nil
+	})
+
+	roleService := role.NewService()
+	require.NoError(t, roleService.Register(role.Role{Name: "Journalist", PostTypes: []string{"article"}}))
+
+	svc := user.NewAdminCreateUserService(
+		mockUserRepo,
+		mockBlockedEmailRepo,
+		true,
+		user.WithRoleService(roleService),
+	)
+
+	result, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
+		Username: "testuser",
+		Email:    "test@example.com",
+		Role:     "Journalist",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Journalist", result.User.Role)
+}
+
+func TestAdminCreateUserService_CreateUser_RoleServiceRejectsUnknown(t *testing.T) {
+	roleService := role.NewService()
+
+	svc := user.NewAdminCreateUserService(
+		nil,
+		nil,
+		true,
+		user.WithRoleService(roleService),
+	)
+
+	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
+		Username: "testuser",
+		Email:    "test@example.com",
+		Role:     "Ghost",
+	})
+
+	assert.ErrorIs(t, err, user.ErrInvalidRole)
+}
+
+func TestAdminCreateUserService_CreateUser_RoleServiceGatesCommentatorByComments(t *testing.T) {
+	roleService := role.NewService()
+
+	// Comments disabled: even with a role service, Commentator is not assignable.
+	svc := user.NewAdminCreateUserService(nil, nil, false, user.WithRoleService(roleService))
+
+	_, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
+		Username: "testuser",
+		Email:    "test@example.com",
+		Role:     "Commentator",
+	})
+
 	assert.ErrorIs(t, err, user.ErrInvalidRole)
 }

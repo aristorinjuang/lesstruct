@@ -342,7 +342,7 @@ onUnmounted(() => {
 }
 
 .media-detail-modal__btn--copy {
-  min-width: 44px;
+  min-width: 4.75rem;
   font-size: 0.75rem;
 }
 

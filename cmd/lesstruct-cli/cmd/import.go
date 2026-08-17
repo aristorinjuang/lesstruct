@@ -314,10 +314,7 @@ func runImportHugo(cmd *cobra.Command, opts importOptions) error {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Import complete: %d imported, %d skipped\n",
 					job.Imported, job.Skipped)
 				if len(job.Errors) > 0 {
-					limit := len(job.Errors)
-					if limit > 10 {
-						limit = 10
-					}
+					limit := min(len(job.Errors), 10)
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %d issue(s) encountered:\n", len(job.Errors))
 					for _, e := range job.Errors[:limit] {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "    - %s\n", e)
@@ -334,10 +331,7 @@ func runImportHugo(cmd *cobra.Command, opts importOptions) error {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Import failed after importing %d items, %d skipped\n",
 					job.Imported, job.Skipped)
 				if len(job.Errors) > 0 {
-					limit := len(job.Errors)
-					if limit > 10 {
-						limit = 10
-					}
+					limit := min(len(job.Errors), 10)
 					for _, e := range job.Errors[:limit] {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", e)
 					}
@@ -359,8 +353,8 @@ func newImportWordpressCmd(apiKey, baseURL, output *string) *cobra.Command {
 	var skipMedia bool
 
 	wc := &cobra.Command{
-		Use:           "wordpress --file <path>",
-		Short:         "Import a WordPress WXR export file",
+		Use:   "wordpress --file <path>",
+		Short: "Import a WordPress WXR export file",
 		Long: "Import a WordPress eXtended RSS (WXR) export file via " +
 			"/api/v1/wordpress/import. Uploads the file, then polls the " +
 			"import status until the job completes, printing live progress. " +
@@ -535,10 +529,7 @@ func runImportWordpress(cmd *cobra.Command, opts importWordpressOptions) error {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Import complete: %d imported, %d skipped, %d users created\n",
 					job.Imported, job.Skipped, job.UsersImported)
 				if len(job.Errors) > 0 {
-					limit := len(job.Errors)
-					if limit > 10 {
-						limit = 10
-					}
+					limit := min(len(job.Errors), 10)
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %d issue(s) encountered:\n", len(job.Errors))
 					for _, e := range job.Errors[:limit] {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "    - %s\n", e)
@@ -555,10 +546,7 @@ func runImportWordpress(cmd *cobra.Command, opts importWordpressOptions) error {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Import failed after importing %d items, %d skipped\n",
 					job.Imported, job.Skipped)
 				if len(job.Errors) > 0 {
-					limit := len(job.Errors)
-					if limit > 10 {
-						limit = 10
-					}
+					limit := min(len(job.Errors), 10)
 					for _, e := range job.Errors[:limit] {
 						_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  - %s\n", e)
 					}

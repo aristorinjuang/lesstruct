@@ -3,7 +3,10 @@ package media
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -12,8 +15,125 @@ import (
 
 	"github.com/deepteams/webp"
 	"golang.org/x/image/draw"
-	_ "golang.org/x/image/webp"
+	ximagewebp "golang.org/x/image/webp"
 )
+
+// readHeader reads up to n bytes from the reader, returning what was read. An
+// io.EOF may be returned alongside a shorter buffer; callers treat the result
+// as a prefix of the stream.
+func readHeader(r io.Reader, n int) ([]byte, error) {
+	buf := make([]byte, n)
+	read, err := io.ReadFull(r, buf)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		err = nil
+	}
+	return buf[:read], err
+}
+
+// isWebP reports whether the header starts with the RIFF/WEBP magic.
+func isWebP(head []byte) bool {
+	return len(head) >= 12 &&
+		string(head[0:4]) == "RIFF" &&
+		string(head[8:12]) == "WEBP"
+}
+
+// decodeImage decodes any registered image format. WebP is decoded through
+// golang.org/x/image/webp explicitly instead of image.Decode: deepteams/webp
+// (used for encoding) also registers a "webp" decoder whose VP8X/ALPH path
+// fails on real-world files, and image.Decode picks the winner by init order
+// — never leave that to chance.
+func decodeImage(r io.Reader) (image.Image, error) {
+	head, err := readHeader(r, 12)
+	if err != nil {
+		return nil, err
+	}
+	stream := io.MultiReader(bytes.NewReader(head), r)
+	if isWebP(head) {
+		return ximagewebp.Decode(stream)
+	}
+	img, _, err := image.Decode(stream)
+	return img, err
+}
+
+// decodeImageConfig decodes the dimensions/color model of an image without
+// full decoding, using the same explicit WebP dispatch as decodeImage.
+func decodeImageConfig(r io.Reader) (image.Config, error) {
+	head, err := readHeader(r, 12)
+	if err != nil {
+		return image.Config{}, err
+	}
+	stream := io.MultiReader(bytes.NewReader(head), r)
+	if isWebP(head) {
+		return ximagewebp.DecodeConfig(stream)
+	}
+	config, _, err := image.DecodeConfig(stream)
+	return config, err
+}
+
+// sanitizeWebP validates an already-sniffed WebP file and strips the metadata
+// chunks (EXIF/XMP/ICC) that the previous decode-re-encode pipeline would
+// have discarded — including GPS-bearing EXIF that would otherwise be served
+// to every visitor. Files without metadata pass through byte-identical.
+// Animated containers and frame-less (truncated) containers are rejected with
+// clear errors instead of failing later at the thumbnail stage.
+func sanitizeWebP(data []byte) ([]byte, error) {
+	riffSize := int(binary.LittleEndian.Uint32(data[4:8]))
+	dataEnd := 8 + riffSize
+	if dataEnd > len(data) {
+		return nil, errors.New("webp: RIFF size overruns the file")
+	}
+
+	var (
+		out      []byte
+		dropped  bool
+		hasFrame bool
+		hasAnim  bool
+	)
+	out = append(out, data[:12]...)
+	offset := 12
+	for offset < dataEnd {
+		if offset+8 > dataEnd {
+			return nil, errors.New("webp: truncated chunk header")
+		}
+		fcc := data[offset : offset+4]
+		size := int(binary.LittleEndian.Uint32(data[offset+4 : offset+8]))
+		payloadStart := offset + 8
+		payloadEnd := payloadStart + size
+		if payloadEnd > dataEnd {
+			return nil, fmt.Errorf("webp: chunk %q size %d overruns the container", fcc, size)
+		}
+		paddedEnd := payloadEnd + (size % 2)
+		if paddedEnd > dataEnd {
+			return nil, fmt.Errorf("webp: chunk %q is missing its padding byte", fcc)
+		}
+
+		switch string(fcc) {
+		case "VP8 ", "VP8L":
+			hasFrame = true
+		case "ANIM":
+			hasAnim = true
+		case "EXIF", "XMP ", "ICCP":
+			dropped = true
+			offset = paddedEnd
+			continue
+		}
+
+		out = append(out, data[offset:paddedEnd]...)
+		offset = paddedEnd
+	}
+
+	if hasAnim {
+		return nil, errors.New("animated WebP is not supported")
+	}
+	if !hasFrame {
+		return nil, errors.New("webp: no image frame (truncated or unsupported container)")
+	}
+	if !dropped {
+		return data, nil
+	}
+	binary.LittleEndian.PutUint32(out[4:8], uint32(len(out)-8))
+	return out, nil
+}
 
 // ProcessResult contains the result of image processing
 type ProcessResult struct {
@@ -25,9 +145,37 @@ type ProcessResult struct {
 // Processor handles image processing operations
 type Processor struct{}
 
-// ConvertToWebP converts an image to WebP format
+// ConvertToWebP ensures the input is a WebP image: already-WebP input is
+// passed through (metadata chunks stripped, still frames validated — no
+// re-encode, no generation loss); every other registered format is decoded
+// and re-encoded as WebP.
 func (p *Processor) ConvertToWebP(reader io.Reader) ([]byte, *ImageMetadata, error) {
-	img, _, err := image.Decode(reader)
+	head, err := readHeader(reader, 12)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if isWebP(head) {
+		rest, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, nil, err
+		}
+		data := append(head, rest...)
+		clean, err := sanitizeWebP(data)
+		if err != nil {
+			return nil, nil, err
+		}
+		config, err := ximagewebp.DecodeConfig(bytes.NewReader(clean))
+		if err != nil {
+			return nil, nil, err
+		}
+		return clean, &ImageMetadata{
+			Width:  config.Width,
+			Height: config.Height,
+		}, nil
+	}
+
+	img, _, err := image.Decode(io.MultiReader(bytes.NewReader(head), reader))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -73,7 +221,7 @@ func (p *Processor) GenerateHash(reader io.Reader) (string, error) {
 
 // ExtractMetadata extracts image metadata without full decoding
 func (p *Processor) ExtractMetadata(reader io.Reader) (*ImageMetadata, error) {
-	config, _, err := image.DecodeConfig(reader)
+	config, err := decodeImageConfig(reader)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +234,7 @@ func (p *Processor) ExtractMetadata(reader io.Reader) (*ImageMetadata, error) {
 
 // Resize resizes an image to maxWidth (downscale only) and returns WebP bytes.
 func (p *Processor) Resize(reader io.Reader, maxWidth int) ([]byte, *ImageMetadata, error) {
-	img, _, err := image.Decode(reader)
+	img, err := decodeImage(reader)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -1,6 +1,9 @@
 version: "2"
 
 linters:
+  enable:
+    - intrange
+    - usestdlibvars
   exclusions:
     paths:
       - pkg/sdk/examples

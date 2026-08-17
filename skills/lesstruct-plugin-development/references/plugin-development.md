@@ -77,28 +77,30 @@ func logInfo(msgPtr, msgLen uint32)
 
 ### Available Hooks
 
-The host invokes three hooks today:
+The host invokes five hooks today:
 
 | Hook | WASM Export Name | Description |
 |------|------------------|-------------|
-| BeforeSaveContent | `hook_before_save` | Called before content is saved (create or update) |
+| BeforeSaveContent | `hook_before_save` | Called before content is saved (create, update, or admin system-fields update) |
 | AfterCreateContent | `hook_after_create` | Called after content is created |
 | AfterPublishContent | `hook_after_publish` | Called after content is published |
+| BeforeDeleteContent | `hook_before_delete` | Called before content is deleted (admin or owner path) |
+| AfterUnpublishContent | `hook_after_unpublish` | Called after content leaves the published state (published → draft/archived/other, via unpublish or update) |
 
-> **Reserved hooks — do not rely on them.** Two additional hooks
-> (`on_plugin_loaded`, `before_delete`) are defined in the host but are
-> not currently invoked by any production code path. If your plugin
-> exports only one of these, the plugin will load successfully but
-> the hook will never fire. Use one of the three invoked hooks
-> instead.
+> **Reserved hook — do not rely on it.** One additional hook
+> (`on_plugin_loaded`) is defined in the host but is not currently
+> invoked by any production code path. If your plugin exports only
+> this one, the plugin will load successfully but the hook will never
+> fire. Use one of the five invoked hooks instead.
 
 ### Failure Mode
 
 When a hook returns an error, the request fails. The content service
 maps the error to a 500 response and the content is not saved (for
-`before_save`) or the error is logged (for `after_create` /
-`after_publish`, whose results are not stored). There is no automatic
-rollback of prior hooks in a chain.
+`before_save` and `before_delete`) or the error is logged (for
+`after_create` / `after_publish` / `after_unpublish`, whose results
+are not stored). There is no automatic rollback of prior hooks in a
+chain.
 
 ## System Fields
 
@@ -109,7 +111,7 @@ map.
 
 ### Hook Data Format
 
-When `before_save` or `after_create` hooks execute, the host sends a
+When `before_save`, `before_delete`, or `after_create` hooks execute, the host sends a
 JSON object with eight fields:
 
 ```json
@@ -131,11 +133,29 @@ JSON object with eight fields:
 
 Field notes:
 
-- `contentId` is `0` on create, the existing content's ID on update.
-- `userId` is the authenticated user performing the action.
+- `contentId` is `0` on create, the existing content's ID on update, delete, or system-fields update.
+- `userId` is the authenticated user performing the action on create/update; on delete and system-fields updates it is the content **author**, not the acting admin.
 - `status` is one of `draft`, `published`, `archived`, or a custom value.
 - `postType` is `post`, `page`, or a custom type.
 - `customFields` contains both regular custom fields and system fields.
+
+**Deleting content.** `before_delete` fires after authorization but before
+the row is removed, with the full payload — including plugin-managed system
+field values, which are unrecoverable once the row is gone. The hook's
+result is discarded (a deletion has nothing to write back); returning an
+error aborts the delete, exactly like `before_save`.
+
+**Unpublishing content.** `after_unpublish` fires after the row is persisted
+whenever content leaves the published state — via the unpublish endpoint or
+a status change through the Update endpoint. It is notification-style: the
+result is discarded and an error only logs. Unpublishing an already-draft
+item is a no-op and fires nothing.
+
+**Admin system-fields updates** (`PUT /api/admin/content/{id}/system-fields`
+and `PUT /api/v1/content/{id}/system-fields`) also fire `before_save` with
+the merged content payload. The hook may adjust **system fields only** on
+this path — changes to regular custom fields in the result are ignored — and
+a hook error aborts the update.
 
 A complete example is bundled with this skill at
 `references/hook-data-example.json`.
@@ -452,7 +472,6 @@ clang --target=wasm32-wasi -o plugin.wasm plugin.c
 For a manual smoke test per hook, see
 [`references/plugin-checklist.md`](plugin-checklist.md).
 
-If you observe your hooks firing on create but not on delete, or
-`on_plugin_loaded` not firing at all, you have hit a hook that is
-defined but not currently invoked. See the
+If you observe `on_plugin_loaded` not firing at all, you have hit a hook
+that is defined but not currently invoked. See the
 [Available Hooks](#available-hooks) section above.

@@ -69,7 +69,7 @@ func TestCompleteSetup_Integration(t *testing.T) {
 	}
 
 	bodyBytes, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest("POST", "/api/auth/first-login", bytes.NewReader(bodyBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/first-login", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -128,7 +128,7 @@ func TestCompleteSetup_InvalidPassword(t *testing.T) {
 	}
 
 	bodyBytes, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest("POST", "/api/auth/first-login", bytes.NewReader(bodyBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/first-login", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -164,7 +164,7 @@ func TestCompleteSetup_InvalidEmail(t *testing.T) {
 	}
 
 	bodyBytes, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest("POST", "/api/auth/first-login", bytes.NewReader(bodyBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/first-login", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -210,7 +210,7 @@ func TestCompleteSetup_AlreadyComplete(t *testing.T) {
 	}
 
 	bodyBytes, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest("POST", "/api/auth/first-login", bytes.NewReader(bodyBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/first-login", bytes.NewReader(bodyBytes))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -240,7 +240,7 @@ func TestGetStatus_AfterSetupComplete(t *testing.T) {
 	logger := util.NewLogger(os.Stdout)
 	handler := handlers.NewFirstLoginHandler(firstLoginService, mockRepo, logger)
 
-	req := httptest.NewRequest("GET", "/api/auth/first-login", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/first-login", nil)
 	w := httptest.NewRecorder()
 
 	handler.GetStatus(w, req)

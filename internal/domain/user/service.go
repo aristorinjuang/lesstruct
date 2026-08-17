@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/aristorinjuang/lesstruct/internal/auth"
+	"github.com/aristorinjuang/lesstruct/internal/constants"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 )
 
@@ -25,6 +27,7 @@ var (
 	ErrUserNotFound        = errors.New("user not found")
 	ErrEmailAlreadyBlocked = errors.New("email is already blocked")
 	ErrInvalidStatus       = errors.New("user is not in the expected status")
+	ErrEmailNotVerified    = errors.New("user email is not verified")
 )
 
 // UserRepo defines the interface for user repository operations
@@ -41,6 +44,7 @@ type UserRepo interface {
 	CountUsers(ctx context.Context, status string) (int, error)
 	GetUserStatus(ctx context.Context, userID int) (string, error)
 	UpdateProfile(ctx context.Context, userID int, name string, email string, role string, customFields map[string]any) error
+	SetEmailVerified(ctx context.Context, userID int, emailVerified bool) error
 	CheckEmailExistsForOtherUser(ctx context.Context, userID int, email string) (bool, error)
 }
 
@@ -51,11 +55,52 @@ type BlockedEmailRepo interface {
 	UnblockEmail(ctx context.Context, email string) error
 }
 
+// UserManagementOption configures a UserManagementService. A role service makes
+// the assignable-role allowlist config-driven; without one the legacy
+// three-role allowlist applies.
+type UserManagementOption func(*UserManagementService)
+
+// WithManagementRoleService attaches the config-driven role registry so admins
+// can assign every registered role (built-ins plus any [[role]] entries).
+func WithManagementRoleService(rs *roledomain.Service) UserManagementOption {
+	return func(s *UserManagementService) {
+		s.roleService = rs
+	}
+}
+
+// WithApprovalEmailRequired makes admin approval conditional on the registrant
+// having already proven their email address: approving a user whose email is
+// not yet verified returns ErrEmailNotVerified. Without it, approval ignores
+// the email state (legacy behavior).
+func WithApprovalEmailRequired() UserManagementOption {
+	return func(s *UserManagementService) {
+		s.approvalEmailRequired = true
+	}
+}
+
 // UserManagementService handles user management operations
 type UserManagementService struct {
-	userRepo         UserRepo
-	blockedEmailRepo BlockedEmailRepo
-	commentsEnabled  bool
+	userRepo             UserRepo
+	blockedEmailRepo     BlockedEmailRepo
+	commentsEnabled      bool
+	roleService          *roledomain.Service
+	approvalEmailRequired bool
+}
+
+// isAssignableRole reports whether an admin may assign the role. With a role
+// service the allowlist is registry-driven; the Commentator role additionally
+// requires the comment system to be enabled.
+func (s *UserManagementService) isAssignableRole(role string) bool {
+	if s.roleService != nil {
+		if !s.roleService.IsAssignable(role) {
+			return false
+		}
+		if role == constants.RoleCommentator && !s.commentsEnabled {
+			return false
+		}
+		return true
+	}
+	return isAllowedRole(role, s.commentsEnabled)
 }
 
 // GetPendingUsers retrieves users with pending status with pagination
@@ -69,9 +114,29 @@ func (s *UserManagementService) GetPendingUsers(ctx context.Context, limit int, 
 	return users, nil
 }
 
-// ApproveUser approves a pending user by updating their status to verified
-// Uses atomic update to prevent TOCTOU race conditions
+// ApproveUser approves a pending user by updating their status to verified.
+// Uses an atomic status update to prevent TOCTOU race conditions. When the
+// service was created with WithApprovalEmailRequired, the registrant must be
+// pending AND have already proven their email address (email_verified) or the
+// respective error is returned — status is checked before the email proof so
+// that a non-pending user is never misreported as EMAIL_NOT_VERIFIED.
 func (s *UserManagementService) ApproveUser(ctx context.Context, userID int) error {
+	if s.approvalEmailRequired {
+		user, err := s.userRepo.GetUserByID(ctx, userID)
+		if err != nil {
+			// The repository returns fmt.Errorf("user not found with ID %d", userID)
+			// for not-found, which doesn't wrap our sentinel, so we wrap it here
+			// for the handler to detect.
+			return fmt.Errorf("user not found with ID %d: %w", userID, ErrUserNotFound)
+		}
+		if user.Status != "pending" {
+			return ErrInvalidStatus
+		}
+		if !user.EmailVerified {
+			return ErrEmailNotVerified
+		}
+	}
+
 	// Atomically update user status from pending to verified
 	// This prevents race conditions where concurrent requests could bypass the status check
 	err := s.userRepo.UpdateUserStatusIfCurrentStatus(ctx, userID, "pending", "verified")
@@ -270,7 +335,7 @@ func (s *UserManagementService) UpdateUserProfile(
 
 	// Validate role if provided
 	if role != "" {
-		if !isAllowedRole(role, s.commentsEnabled) {
+		if !s.isAssignableRole(role) {
 			return nil, ErrInvalidRole
 		}
 	}
@@ -292,6 +357,16 @@ func (s *UserManagementService) UpdateUserProfile(
 		return nil, fmt.Errorf("failed to update profile: %w", err)
 	}
 
+	// A changed email address invalidates the previous verification: the flag
+	// certifies ownership of the CURRENT address, which the new one has not
+	// proven yet. Reset it so the admin-approval gate cannot trust a stale
+	// proof of the old address.
+	if !strings.EqualFold(finalEmail, existing.Email) {
+		if err := s.userRepo.SetEmailVerified(ctx, userID, false); err != nil {
+			return nil, fmt.Errorf("failed to reset email verification: %w", err)
+		}
+	}
+
 	updated, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch updated user: %w", err)
@@ -300,14 +375,22 @@ func (s *UserManagementService) UpdateUserProfile(
 	return updated, nil
 }
 
-// NewUserManagementService creates a new user management service
 // NewUserManagementService creates a new user management service. commentsEnabled
 // gates the Commentator role on the update-user path: when false, admins cannot
 // assign it (the role exists only for the comment system).
-func NewUserManagementService(userRepo UserRepo, blockedEmailRepo BlockedEmailRepo, commentsEnabled bool) *UserManagementService {
-	return &UserManagementService{
+func NewUserManagementService(
+	userRepo UserRepo,
+	blockedEmailRepo BlockedEmailRepo,
+	commentsEnabled bool,
+	opts ...UserManagementOption,
+) *UserManagementService {
+	s := &UserManagementService{
 		userRepo:         userRepo,
 		blockedEmailRepo: blockedEmailRepo,
 		commentsEnabled:  commentsEnabled,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }

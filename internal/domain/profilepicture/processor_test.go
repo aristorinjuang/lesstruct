@@ -2,23 +2,25 @@ package profilepicture_test
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/profilepicture"
+	"github.com/deepteams/webp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestProcessor_CropAndConvertToWebP(t *testing.T) {
 	tests := []struct {
-		name        string
-		width       int
-		height      int
-		targetSize  int
-		wantErr     bool
+		name       string
+		width      int
+		height     int
+		targetSize int
+		wantErr    bool
 	}{
 		{
 			name:       "square image cropped to 96x96",
@@ -69,8 +71,8 @@ func TestProcessor_CropAndConvertToWebP(t *testing.T) {
 			processor := profilepicture.NewProcessor()
 
 			img := image.NewRGBA(image.Rect(0, 0, tt.width, tt.height))
-			for y := 0; y < tt.height; y++ {
-				for x := 0; x < tt.width; x++ {
+			for y := range tt.height {
+				for x := range tt.width {
 					img.Set(x, y, color.RGBA{uint8(x % 256), uint8(y % 256), 128, 255})
 				}
 			}
@@ -108,4 +110,43 @@ func TestProcessor_CropAndConvertToWebP_UnsupportedFormat(t *testing.T) {
 	buf := bytes.NewReader([]byte("not an image"))
 	_, err := processor.CropAndConvertToWebP(buf, 96)
 	require.Error(t, err)
+}
+
+func TestProcessor_CropAndConvertToWebP_VP8XAlphaInput(t *testing.T) {
+	processor := profilepicture.NewProcessor()
+
+	// VP8X (extended container with alpha) WebP input — the deepteams
+	// self-registered decoder fails on these; the processor must route WebP
+	// through the explicit x/image driver.
+	img := image.NewRGBA(image.Rect(0, 0, 200, 200))
+	for y := range 200 {
+		for x := range 200 {
+			a := uint8(255)
+			if (x+y)%3 == 0 {
+				a = 128
+			}
+			img.Set(x, y, color.RGBA{100, 150, 200, a})
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, webp.Encode(&buf, img, &webp.EncoderOptions{Quality: 80, Method: 4}))
+
+	result, err := processor.CropAndConvertToWebP(bytes.NewReader(buf.Bytes()), 96)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result)
+	assert.Equal(t, byte('R'), result[0])
+}
+
+func TestProcessor_CropAndConvertToWebP_ReadErrorPropagated(t *testing.T) {
+	processor := profilepicture.NewProcessor()
+
+	_, err := processor.CropAndConvertToWebP(errorReader{}, 96)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "forced read error")
+}
+
+type errorReader struct{}
+
+func (errorReader) Read(p []byte) (int, error) {
+	return 0, errors.New("forced read error")
 }

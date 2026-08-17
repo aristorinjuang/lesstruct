@@ -14,7 +14,7 @@ func TestConfig_ImportMaxSizeMB_DefaultValue(t *testing.T) {
 	// Arrange - unset any existing IMPORT_MAX_SIZE_MB
 	_ = os.Unsetenv("IMPORT_MAX_SIZE_MB")
 	_ = os.Unsetenv("JWT_SECRET")
-	_ = os.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
+	t.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
 
 	// Act
 	cfg, err := config.Load()
@@ -28,8 +28,8 @@ func TestConfig_ImportMaxSizeMB_DefaultValue(t *testing.T) {
 func TestConfig_ImportMaxSizeMB_CustomValue(t *testing.T) {
 	// Arrange
 	_ = os.Unsetenv("JWT_SECRET")
-	_ = os.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
-	_ = os.Setenv("IMPORT_MAX_SIZE_MB", "250")
+	t.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
+	t.Setenv("IMPORT_MAX_SIZE_MB", "250")
 
 	// Act
 	cfg, err := config.Load()
@@ -59,8 +59,8 @@ func TestConfig_ImportMaxSizeMB_InvalidValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Arrange
 			_ = os.Unsetenv("JWT_SECRET")
-			_ = os.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
-			_ = os.Setenv("IMPORT_MAX_SIZE_MB", tt.value)
+			t.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
+			t.Setenv("IMPORT_MAX_SIZE_MB", tt.value)
 
 			// Act
 			_, err := config.Load()

@@ -189,22 +189,22 @@ func TestContentHandler_Create(t *testing.T) {
 	tiptapJSON := `{"type":"doc","content":[{"type":"paragraph"}]}`
 
 	tests := []struct {
-		name             string
-		body             string
-		withUser         bool
-		setup            func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest)
-		wantStatus       int
-		wantCode         string
-		wantMessageHas   string // substring expected in error message ("" = skip)
-		wantBodyContent  string // asserts captured.Content when checkRequest is true
-		wantDomainStatus contentdomain.Status
-		wantDomainFormat contentdomain.Format
-		checkRequest     bool
-		wantContentID    int    // asserts data.content.id in the envelope (0 = skip)
-		wantConvertBody  string // markdown body to convert for the expected stored content (overrides wantBodyContent)
-		wantTags         []string
-		wantLanguage     string
-		wantPostType     string
+		name                   string
+		body                   string
+		withUser               bool
+		setup                  func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest)
+		wantStatus             int
+		wantCode               string
+		wantMessageHas         string // substring expected in error message ("" = skip)
+		wantBodyContent        string // asserts captured.Content when checkRequest is true
+		wantDomainStatus       contentdomain.Status
+		wantDomainFormat       contentdomain.Format
+		checkRequest           bool
+		wantContentID          int    // asserts data.content.id in the envelope (0 = skip)
+		wantConvertBody        string // markdown body to convert for the expected stored content (overrides wantBodyContent)
+		wantTags               []string
+		wantLanguage           string
+		wantPostType           string
 		wantTranslationGroupID int // non-zero asserts the forwarded translation group id (a content id, always > 0)
 	}{
 		{
@@ -212,8 +212,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 7, Title: "Hello"}, nil)
@@ -229,8 +229,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Published", "body": tiptapJSON, "isPublished": true}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 8, Title: "Published"}, nil)
@@ -246,8 +246,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Explicit", "body": tiptapJSON, "format": "tiptap"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 9, Title: "Explicit"}, nil)
@@ -263,8 +263,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Upper", "body": tiptapJSON, "format": "TIPTAP"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 10, Title: "Upper"}, nil)
@@ -280,8 +280,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": "# hi", "format": "  Markdown  "}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 11, Title: "Hello"}, nil)
@@ -297,7 +297,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrInvalidTitle)
 			},
 			wantStatus: http.StatusBadRequest,
@@ -308,8 +308,30 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrUnauthorized)
+			},
+			wantStatus: http.StatusForbidden,
+			wantCode:   "FORBIDDEN",
+		},
+		{
+			name:     "error - role cannot manage post type returns FORBIDDEN",
+			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
+			withUser: true,
+			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Return(nil, contentdomain.ErrForbiddenPostType)
+			},
+			wantStatus: http.StatusForbidden,
+			wantCode:   "FORBIDDEN",
+		},
+		{
+			name:     "error - role cannot publish returns FORBIDDEN",
+			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
+			withUser: true,
+			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Return(nil, contentdomain.ErrForbiddenPublish)
 			},
 			wantStatus: http.StatusForbidden,
 			wantCode:   "FORBIDDEN",
@@ -319,7 +341,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
 					Return(nil, fmt.Errorf("%w: Price: must be a number", contentdomain.ErrCustomFieldValidation))
 			},
 			wantStatus: http.StatusBadRequest,
@@ -330,7 +352,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrContentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -343,7 +365,7 @@ func TestContentHandler_Create(t *testing.T) {
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
 				// A non-sentinel error so handleError falls through to the default
 				// INTERNAL_ERROR branch (sentinel errors are covered by other rows).
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
 					Return(nil, errors.New("boom"))
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -354,8 +376,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": "# hi", "format": "markdown"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 12, Title: "Hello"}, nil)
@@ -371,8 +393,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Post", "body": "**bold** and `code`", "format": "markdown", "isPublished": true}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 13, Title: "Post"}, nil)
@@ -384,22 +406,22 @@ func TestContentHandler_Create(t *testing.T) {
 			wantContentID:    13,
 		},
 		{
-			name:       "success - html format accepted",
-			body:       marshalJSON(map[string]any{"title": "Hello", "body": "<div><p>Hello</p></div>", "format": "html"}),
-			withUser:   true,
+			name:     "success - html format accepted",
+			body:     marshalJSON(map[string]any{"title": "Hello", "body": "<div><p>Hello</p></div>", "format": "html"}),
+			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 17, Title: "Hello"}, nil)
 			},
-			wantStatus:        http.StatusOK,
-			wantBodyContent:   "<div><p>Hello</p></div>",
-			wantDomainStatus:  contentdomain.StatusDraft,
-			wantDomainFormat:  contentdomain.FormatHTML,
-			checkRequest:      true,
-			wantContentID:     17,
+			wantStatus:       http.StatusOK,
+			wantBodyContent:  "<div><p>Hello</p></div>",
+			wantDomainStatus: contentdomain.StatusDraft,
+			wantDomainFormat: contentdomain.FormatHTML,
+			checkRequest:     true,
+			wantContentID:    17,
 		},
 		{
 			name:       "error - malformed JSON body returns VALIDATION_ERROR",
@@ -410,12 +432,12 @@ func TestContentHandler_Create(t *testing.T) {
 			wantCode:   "VALIDATION_ERROR",
 		},
 		{
-			name:   "success - postType, tags, and language round-trip into domain request",
-			body:   marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "postType": "post", "tags": []string{"a", "b"}, "language": "en"}),
+			name:     "success - postType, tags, and language round-trip into domain request",
+			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "postType": "post", "tags": []string{"a", "b"}, "language": "en"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 14, Title: "Hello"}, nil)
@@ -430,12 +452,12 @@ func TestContentHandler_Create(t *testing.T) {
 			wantLanguage:     "en",
 		},
 		{
-			name:   "success - empty tags and language in body map to zero values",
-			body:   marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "postType": "page"}),
+			name:     "success - empty tags and language in body map to zero values",
+			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "postType": "page"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 15, Title: "Hello"}, nil)
@@ -460,18 +482,18 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Tentang", "body": tiptapJSON, "translationGroupId": 4}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-					Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 16, Title: "Tentang"}, nil)
 			},
-			wantStatus:              http.StatusOK,
-			wantBodyContent:         tiptapJSON,
-			wantDomainStatus:        contentdomain.StatusDraft,
-			checkRequest:            true,
-			wantContentID:           16,
-			wantTranslationGroupID:  4,
+			wantStatus:             http.StatusOK,
+			wantBodyContent:        tiptapJSON,
+			wantDomainStatus:       contentdomain.StatusDraft,
+			checkRequest:           true,
+			wantContentID:          16,
+			wantTranslationGroupID: 4,
 		},
 	}
 
@@ -566,8 +588,8 @@ func TestContentHandler_Create_SlugForwarding(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := agentmocks.NewMockContentService(t)
 			var captured contentdomain.CreateContentRequest
-			svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
-				Run(func(_ context.Context, _ int, req contentdomain.CreateContentRequest) {
+			svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
 					captured = req
 				}).
 				Return(&contentdomain.Content{ID: 1, Title: "Hello"}, nil)
@@ -927,7 +949,7 @@ func TestContentHandler_List(t *testing.T) {
 			wantCode:   "FORBIDDEN",
 		},
 		{
-			name:     "success - all filters combined in one request",
+			name: "success - all filters combined in one request",
 			target: "/api/v1/content" +
 				"?tag=go&tag=tutorial" +
 				"&language=en" +
@@ -1065,8 +1087,8 @@ func TestContentHandler_Update(t *testing.T) {
 			// item's values are NOT preserved — that's the contract change).
 		},
 		{
-			name:   "success - owner update with v1 metadata uses supplied postType/tags/language and preserves server-managed fields",
-			id:     "5",
+			name: "success - owner update with v1 metadata uses supplied postType/tags/language and preserves server-managed fields",
+			id:   "5",
 			body: marshalJSON(map[string]any{
 				"title":    "New Title",
 				"body":     tiptapJSON,
@@ -1106,13 +1128,13 @@ func TestContentHandler_Update(t *testing.T) {
 			},
 		},
 		{
-			name:   "success - admin can update another user's content with v1 metadata",
-			id:     "5",
+			name: "success - admin can update another user's content with v1 metadata",
+			id:   "5",
 			body: marshalJSON(map[string]any{
-				"title":    "T",
-				"body":     tiptapJSON,
+				"title":       "T",
+				"body":        tiptapJSON,
 				"isPublished": true,
-				"postType": "post",
+				"postType":    "post",
 			}),
 			userID: testUserID,
 			role:   contentdomain.RoleAdmin,
@@ -1133,8 +1155,8 @@ func TestContentHandler_Update(t *testing.T) {
 			wantDomainStatus: contentdomain.StatusPublished,
 		},
 		{
-			name:   "success - owner markdown update converts to tiptap and forwards v1 metadata",
-			id:     "5",
+			name: "success - owner markdown update converts to tiptap and forwards v1 metadata",
+			id:   "5",
 			body: marshalJSON(map[string]any{
 				"title":    "T",
 				"body":     "# hi",
@@ -1478,11 +1500,11 @@ func TestContentHandler_Publish(t *testing.T) {
 			wantCode:   "NOT_FOUND",
 		},
 		{
-			name:   "error - invalid id returns VALIDATION_ERROR",
-			id:     "0",
-			userID: testUserID,
-			role:   "Editor",
-			setup:  nil,
+			name:       "error - invalid id returns VALIDATION_ERROR",
+			id:         "0",
+			userID:     testUserID,
+			role:       "Editor",
+			setup:      nil,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "VALIDATION_ERROR",
 		},
@@ -1603,11 +1625,11 @@ func TestContentHandler_Unpublish(t *testing.T) {
 			wantCode:   "NOT_FOUND",
 		},
 		{
-			name:   "error - invalid id returns VALIDATION_ERROR",
-			id:     "0",
-			userID: testUserID,
-			role:   "Editor",
-			setup:  nil,
+			name:       "error - invalid id returns VALIDATION_ERROR",
+			id:         "0",
+			userID:     testUserID,
+			role:       "Editor",
+			setup:      nil,
 			wantStatus: http.StatusBadRequest,
 			wantCode:   "VALIDATION_ERROR",
 		},
@@ -1654,7 +1676,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "published"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, map[string]any{"editorial_status": "published"}).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, map[string]any{"editorial_status": "published"}).
 					Return(&contentdomain.Content{ID: 5, Title: "Post"}, nil)
 			},
 			wantStatus: http.StatusOK,
@@ -1684,7 +1706,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"bogus": "x"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, mock.Anything).
 					Return(nil, fmt.Errorf("%w: bogus", contentdomain.ErrUnknownSystemFieldKey))
 			},
 			wantStatus: http.StatusBadRequest,
@@ -1696,7 +1718,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "nope"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, mock.Anything).
 					Return(nil, fmt.Errorf("%w: Editorial Status: must be one of: draft, published", contentdomain.ErrSystemFieldValidation))
 			},
 			wantStatus: http.StatusBadRequest,
@@ -1708,7 +1730,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "published"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, mock.Anything).
 					Return(nil, contentdomain.ErrContentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -1792,7 +1814,7 @@ func TestContentHandler_SystemFieldRejection(t *testing.T) {
 		svc := agentmocks.NewMockContentService(t)
 		resolver := agentmocks.NewMockSystemFieldResolver(t)
 		resolver.EXPECT().GetSystemFieldsByPostType("tutorial").Return(tutorialSystemFields, nil)
-		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
 			Return(&contentdomain.Content{ID: 9, Title: "T"}, nil)
 
 		handler := agent.NewContentHandler(svc, resolver, util.NewLogger(io.Discard))
@@ -1811,7 +1833,7 @@ func TestContentHandler_SystemFieldRejection(t *testing.T) {
 
 	t.Run("create - nil resolver skips the check (Create proceeds)", func(t *testing.T) {
 		svc := agentmocks.NewMockContentService(t)
-		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything).
+		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
 			Return(&contentdomain.Content{ID: 9, Title: "T"}, nil)
 
 		handler := newContentHandler(svc) // nil resolver
@@ -1832,10 +1854,10 @@ func TestContentHandler_SystemFieldRejection(t *testing.T) {
 		svc := agentmocks.NewMockContentService(t)
 		// Ownership pre-fetch (owner is the caller); Update must NOT be called.
 		svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
-			ID:      5,
-			UserID:  testUserID,
+			ID:       5,
+			UserID:   testUserID,
 			PostType: "tutorial",
-			Status:  contentdomain.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 		resolver := agentmocks.NewMockSystemFieldResolver(t)
 		// req.PostType is empty → effective post type falls back to "tutorial".

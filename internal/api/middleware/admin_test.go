@@ -28,7 +28,7 @@ func TestAdminMiddleware_AdminOnly_ValidAdminToken(t *testing.T) {
 	})
 
 	// Create request with admin token
-	req := httptest.NewRequest("GET", "/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act
@@ -58,7 +58,7 @@ func TestAdminMiddleware_AdminOnly_NonAdminToken(t *testing.T) {
 	})
 
 	// Create request with contributor token trying to access admin endpoint
-	req := httptest.NewRequest("GET", "/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act
@@ -88,7 +88,7 @@ func TestAdminMiddleware_AdminOnly_MissingToken(t *testing.T) {
 	})
 
 	// Create request without token
-	req := httptest.NewRequest("GET", "/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 
 	// Act
 	rr := httptest.NewRecorder()
@@ -112,7 +112,7 @@ func TestAdminMiddleware_AdminOnly_InvalidToken(t *testing.T) {
 	})
 
 	// Create request with invalid token
-	req := httptest.NewRequest("GET", "/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer invalid-token-123")
 
 	// Act
@@ -141,7 +141,7 @@ func TestAdminMiddleware_AdminOnly_EditorRole(t *testing.T) {
 	})
 
 	// Create request with editor token trying to access admin endpoint
-	req := httptest.NewRequest("GET", "/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act
@@ -170,7 +170,7 @@ func TestAdminMiddleware_AdminOnly_UserRole(t *testing.T) {
 	})
 
 	// Create request with user token trying to access admin endpoint
-	req := httptest.NewRequest("GET", "/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act

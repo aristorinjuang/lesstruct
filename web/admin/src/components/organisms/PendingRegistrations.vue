@@ -59,7 +59,19 @@ function handleMarkAsSpam(userId: string) {
       >
         <div class="pending-registrations__user-info">
           <h3 class="pending-registrations__username">{{ user.username }}</h3>
-          <p class="pending-registrations__email">{{ user.email }}</p>
+          <p class="pending-registrations__email">
+            {{ user.email }}
+            <span
+              v-if="user.emailVerified"
+              class="email-verified-badge email-verified-badge--verified"
+              >Email verified</span
+            >
+            <span
+              v-else
+              class="email-verified-badge email-verified-badge--unverified"
+              >Email unverified</span
+            >
+          </p>
           <p class="pending-registrations__date">
             Registered: {{ formatDateTime(user.createdAt) }}
           </p>
@@ -139,6 +151,25 @@ function handleMarkAsSpam(userId: string) {
   font-size: 0.875rem;
   color: var(--brand-dark-2);
   margin: 0 0 0.25rem 0;
+}
+
+.email-verified-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.email-verified-badge--verified {
+  background-color: rgba(34, 197, 94, 0.1);
+  color: var(--color-success);
+}
+
+.email-verified-badge--unverified {
+  background-color: rgba(234, 179, 8, 0.1);
+  color: #ca8a04;
 }
 
 .pending-registrations__date {

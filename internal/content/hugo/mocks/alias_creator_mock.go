@@ -7,6 +7,7 @@ package mocks
 import (
 	"context"
 
+	"github.com/aristorinjuang/lesstruct/internal/domain/alias"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -96,6 +97,143 @@ func (_c *MockAliasCreator_Create_Call) Return(err error) *MockAliasCreator_Crea
 }
 
 func (_c *MockAliasCreator_Create_Call) RunAndReturn(run func(ctx context.Context, contentID int, aliasStr string) error) *MockAliasCreator_Create_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// FindByAlias provides a mock function for the type MockAliasCreator
+func (_mock *MockAliasCreator) FindByAlias(ctx context.Context, aliasStr string) (*alias.Alias, error) {
+	ret := _mock.Called(ctx, aliasStr)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindByAlias")
+	}
+
+	var r0 *alias.Alias
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*alias.Alias, error)); ok {
+		return returnFunc(ctx, aliasStr)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *alias.Alias); ok {
+		r0 = returnFunc(ctx, aliasStr)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*alias.Alias)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, aliasStr)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockAliasCreator_FindByAlias_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindByAlias'
+type MockAliasCreator_FindByAlias_Call struct {
+	*mock.Call
+}
+
+// FindByAlias is a helper method to define mock.On call
+//   - ctx context.Context
+//   - aliasStr string
+func (_e *MockAliasCreator_Expecter) FindByAlias(ctx any, aliasStr any) *MockAliasCreator_FindByAlias_Call {
+	return &MockAliasCreator_FindByAlias_Call{Call: _e.mock.On("FindByAlias", ctx, aliasStr)}
+}
+
+func (_c *MockAliasCreator_FindByAlias_Call) Run(run func(ctx context.Context, aliasStr string)) *MockAliasCreator_FindByAlias_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAliasCreator_FindByAlias_Call) Return(alias1 *alias.Alias, err error) *MockAliasCreator_FindByAlias_Call {
+	_c.Call.Return(alias1, err)
+	return _c
+}
+
+func (_c *MockAliasCreator_FindByAlias_Call) RunAndReturn(run func(ctx context.Context, aliasStr string) (*alias.Alias, error)) *MockAliasCreator_FindByAlias_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// Repoint provides a mock function for the type MockAliasCreator
+func (_mock *MockAliasCreator) Repoint(ctx context.Context, aliasStr string, fromContentID int, toContentID int) error {
+	ret := _mock.Called(ctx, aliasStr, fromContentID, toContentID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Repoint")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) error); ok {
+		r0 = returnFunc(ctx, aliasStr, fromContentID, toContentID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockAliasCreator_Repoint_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Repoint'
+type MockAliasCreator_Repoint_Call struct {
+	*mock.Call
+}
+
+// Repoint is a helper method to define mock.On call
+//   - ctx context.Context
+//   - aliasStr string
+//   - fromContentID int
+//   - toContentID int
+func (_e *MockAliasCreator_Expecter) Repoint(ctx any, aliasStr any, fromContentID any, toContentID any) *MockAliasCreator_Repoint_Call {
+	return &MockAliasCreator_Repoint_Call{Call: _e.mock.On("Repoint", ctx, aliasStr, fromContentID, toContentID)}
+}
+
+func (_c *MockAliasCreator_Repoint_Call) Run(run func(ctx context.Context, aliasStr string, fromContentID int, toContentID int)) *MockAliasCreator_Repoint_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAliasCreator_Repoint_Call) Return(err error) *MockAliasCreator_Repoint_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockAliasCreator_Repoint_Call) RunAndReturn(run func(ctx context.Context, aliasStr string, fromContentID int, toContentID int) error) *MockAliasCreator_Repoint_Call {
 	_c.Call.Return(run)
 	return _c
 }

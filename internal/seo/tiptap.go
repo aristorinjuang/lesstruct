@@ -158,11 +158,11 @@ func ExtractImageURLFromHTML(htmlContent string) string {
 	if len(tag) > 0 && (tag[0] == '"' || tag[0] == '\'') {
 		quote := tag[0]
 		tag = tag[1:]
-		end := strings.IndexByte(tag, quote)
-		if end == -1 {
+		before, _, ok := strings.Cut(tag, string(quote))
+		if !ok {
 			return ""
 		}
-		src := tag[:end]
+		src := before
 		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
 			return src
 		}

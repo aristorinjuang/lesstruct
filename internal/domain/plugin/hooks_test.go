@@ -35,6 +35,11 @@ func TestHookNameConstants(t *testing.T) {
 			expected: "AfterCreateContent",
 		},
 		{
+			name:     "HookAfterUnpublish",
+			hook:     plugin.HookAfterUnpublish,
+			expected: "AfterUnpublishContent",
+		},
+		{
 			name:     "HookOnPluginLoaded",
 			hook:     plugin.HookOnPluginLoaded,
 			expected: "OnPluginLoaded",
@@ -80,9 +85,9 @@ func TestHookRegistration(t *testing.T) {
 
 func TestHookSentinelErrors(t *testing.T) {
 	tests := []struct {
-		name  string
-		err   error
-		want  string
+		name string
+		err  error
+		want string
 	}{
 		{
 			name: "ErrHookNotFound",
@@ -123,6 +128,7 @@ func TestResolveWasmHookName(t *testing.T) {
 		{name: "after_publish maps to HookAfterPublish", export: "after_publish", expected: plugin.HookAfterPublish},
 		{name: "before_delete maps to HookBeforeDelete", export: "before_delete", expected: plugin.HookBeforeDelete},
 		{name: "after_create maps to HookAfterCreate", export: "after_create", expected: plugin.HookAfterCreate},
+		{name: "after_unpublish maps to HookAfterUnpublish", export: "after_unpublish", expected: plugin.HookAfterUnpublish},
 		{name: "on_plugin_loaded maps to HookOnPluginLoaded", export: "on_plugin_loaded", expected: plugin.HookOnPluginLoaded},
 		{name: "unknown export passes through", export: "custom_hook", expected: plugin.HookName("custom_hook")},
 	}
@@ -196,11 +202,11 @@ func TestHookRegistrationWithFallbackHandler(t *testing.T) {
 	}
 
 	reg := plugin.HookRegistration{
-		PluginName:     "test-plugin",
-		HookName:       plugin.HookBeforeSave,
-		Priority:       10,
-		Handler:        func(_ context.Context, data []byte) ([]byte, error) { return data, nil },
-		FailureMode:    plugin.Fallback,
+		PluginName:      "test-plugin",
+		HookName:        plugin.HookBeforeSave,
+		Priority:        10,
+		Handler:         func(_ context.Context, data []byte) ([]byte, error) { return data, nil },
+		FailureMode:     plugin.Fallback,
 		FallbackHandler: fallback,
 	}
 

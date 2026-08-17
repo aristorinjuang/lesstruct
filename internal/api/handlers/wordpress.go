@@ -44,7 +44,7 @@ type importJob struct {
 	Total         int       `json:"total"`
 	Errors        []string  `json:"errors,omitempty"`
 	StartedAt     time.Time `json:"startedAt"`
-	FinishedAt    time.Time `json:"finishedAt,omitempty"`
+	FinishedAt    time.Time `json:"finishedAt"`
 }
 
 // importJobStore holds in-memory import jobs keyed by job ID.

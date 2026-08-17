@@ -72,7 +72,7 @@ func TestCompleteProfileViewFlow(t *testing.T) {
 	}
 
 	// View profile
-	req := httptest.NewRequest("GET", "/api/profile", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	w := httptest.NewRecorder()
 
@@ -138,7 +138,7 @@ func TestCompleteEmailUpdateFlow(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("PUT", "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -212,7 +212,7 @@ func TestCompletePasswordChangeFlow(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("PUT", "/api/profile/password", bytes.NewBuffer(bodyBytes))
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/password", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -295,7 +295,7 @@ func TestCompleteDataExportFlow(t *testing.T) {
 	}
 
 	// Export user data
-	req := httptest.NewRequest("GET", "/api/profile/export", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/export", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	w := httptest.NewRecorder()
 
@@ -420,7 +420,7 @@ func TestEmailUpdateAlreadyInUse(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("PUT", "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -465,7 +465,7 @@ func TestEmailUpdateInvalidEmail(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("PUT", "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -510,7 +510,7 @@ func TestPasswordChangeWrongCurrentPassword(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("PUT", "/api/profile/password", bytes.NewBuffer(bodyBytes))
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/password", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -631,7 +631,7 @@ func TestExportDataForUserWithNoContent(t *testing.T) {
 
 	userToken, _ := jwtManager.GenerateToken("123", "testuser", "Author")
 
-	req := httptest.NewRequest("GET", "/api/profile/export", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/export", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	w := httptest.NewRecorder()
 
@@ -677,7 +677,7 @@ func TestProfileResponseStructure(t *testing.T) {
 
 	userToken, _ := jwtManager.GenerateToken("123", "testuser", "Author")
 
-	req := httptest.NewRequest("GET", "/api/profile", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	w := httptest.NewRecorder()
 
@@ -748,7 +748,7 @@ func TestEmailUpdateVerificationTokenFormat(t *testing.T) {
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("PUT", "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -795,7 +795,7 @@ func TestProfileHandlerWithMiddlewareIntegration(t *testing.T) {
 
 	// Test with valid token
 	userToken, _ := jwtManager.GenerateToken("123", "testuser", "Author")
-	req := httptest.NewRequest("GET", "/api/profile", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	w := httptest.NewRecorder()
 
@@ -806,7 +806,7 @@ func TestProfileHandlerWithMiddlewareIntegration(t *testing.T) {
 	}
 
 	// Test with invalid token
-	req2 := httptest.NewRequest("GET", "/api/profile", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
 	req2.Header.Set("Authorization", "Bearer invalid-token")
 	w2 := httptest.NewRecorder()
 
@@ -871,7 +871,7 @@ func TestDataExportJSONStructure(t *testing.T) {
 
 	userToken, _ := jwtManager.GenerateToken("123", "testuser", "Author")
 
-	req := httptest.NewRequest("GET", "/api/profile/export", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/export", nil)
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	w := httptest.NewRecorder()
 
@@ -938,7 +938,7 @@ func TestProfileHandlerRequestSizeLimit(t *testing.T) {
 		largeBody[i] = 'a'
 	}
 
-	req := httptest.NewRequest("PUT", "/api/profile/email", bytes.NewBuffer(largeBody))
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(largeBody))
 	req.Header.Set("Authorization", "Bearer "+userToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

@@ -104,7 +104,7 @@ func (s *Service) Create(ctx context.Context, userID int, name string) (string, 
 	// DB-level UNIQUE(user_id, name) index is the race backstop: if a concurrent
 	// request inserted the same name first, the insert fails with
 	// ErrUniqueConstraint and the re-check below returns ErrDuplicateKeyName.
-	for attempt := 0; attempt < maxCreateAttempts; attempt++ {
+	for range maxCreateAttempts {
 		keyID, secret, gerr := s.generateKeyMaterial()
 		if gerr != nil {
 			return "", nil, gerr

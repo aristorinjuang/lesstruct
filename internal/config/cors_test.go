@@ -16,7 +16,7 @@ func TestConfig_CORSAllowedOrigins_DefaultValue(t *testing.T) {
 	_ = os.Unsetenv("JWT_SECRET")
 
 	// Set required JWT_SECRET
-	_ = os.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
+	t.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
 
 	// Act
 	cfg, err := config.Load()
@@ -30,8 +30,8 @@ func TestConfig_CORSAllowedOrigins_DefaultValue(t *testing.T) {
 func TestConfig_CORSAllowedOrigins_CustomValue(t *testing.T) {
 	// Arrange
 	_ = os.Unsetenv("JWT_SECRET")
-	_ = os.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
-	_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://test.com")
+	t.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://test.com")
 
 	// Act
 	cfg, err := config.Load()
@@ -46,7 +46,7 @@ func TestConfig_CORSAllowedOrigins_EmptyValue(t *testing.T) {
 	// Arrange
 	_ = os.Unsetenv("JWT_SECRET")
 	_ = os.Unsetenv("CORS_ALLOWED_ORIGINS")
-	_ = os.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
+	t.Setenv("JWT_SECRET", "test-secret-key-for-testing-purposes-min-32-chars")
 
 	// Act
 	cfg, err := config.Load()

@@ -2,6 +2,10 @@ info:
   name: Approve User
   type: http
   seq: 4
+  docs: >-
+    Activates a pending user. With `[registration] admin_approval = true`
+    the target must have verified their email first, otherwise this
+    returns 409 EMAIL_NOT_VERIFIED.
 
 http:
   method: POST

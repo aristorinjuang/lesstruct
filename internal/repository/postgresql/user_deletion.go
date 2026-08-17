@@ -22,6 +22,12 @@ func (r *UserDeletionRepository) DeleteAllUserData(ctx context.Context, userID i
 			_ = tx.Rollback()
 		}
 	}()
+	if _, err = tx.ExecContext(ctx, `
+		DELETE FROM content_aliases
+		WHERE content_id IN (SELECT id FROM content_items WHERE user_id = $1)
+	`, userID); err != nil {
+		return fmt.Errorf("failed to delete content aliases: %w", err)
+	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM content_items WHERE user_id = $1`, userID); err != nil {
 		_ = err
 	}

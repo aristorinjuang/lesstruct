@@ -85,6 +85,14 @@ func handleContentError(w http.ResponseWriter, err error) {
 		statusCode = http.StatusUnauthorized
 		code = "unauthorized"
 		message = "You do not have permission to modify this content"
+	case errors.Is(err, contentdomain.ErrForbiddenPostType):
+		statusCode = http.StatusForbidden
+		code = "forbidden_post_type"
+		message = err.Error()
+	case errors.Is(err, contentdomain.ErrForbiddenPublish):
+		statusCode = http.StatusForbidden
+		code = "forbidden_publish"
+		message = err.Error()
 	case errors.Is(err, contentdomain.ErrContentNotFound):
 		statusCode = http.StatusNotFound
 		code = "content_not_found"
@@ -143,7 +151,7 @@ func normalizeBrowserFormat(format string) (contentdomain.Format, string) {
 	}
 }
 
-func convertBrowserContentBody(body string, format contentdomain.Format) (string, string) {
+func convertBrowserContentBody(body string, format contentdomain.Format, iframeHosts []string) (string, string) {
 	switch format {
 	case contentdomain.FormatMarkdown:
 		converted, err := markdown.Convert(body)
@@ -152,7 +160,7 @@ func convertBrowserContentBody(body string, format contentdomain.Format) (string
 		}
 		return converted, ""
 	case contentdomain.FormatHTML:
-		return sanitize.SanitizeHTMLDocument(body), ""
+		return sanitize.SanitizeHTMLDocument(body, iframeHosts...), ""
 	default:
 		return body, ""
 	}
@@ -401,7 +409,7 @@ type GenerateSlugData struct {
 }
 
 type ContentServiceInterface interface {
-	Create(ctx context.Context, userID int, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
+	Create(ctx context.Context, userID int, role string, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
 	GetByUser(ctx context.Context, userID int, limit int, offset int) ([]*contentdomain.Content, error)
 	GetAll(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	GetByID(ctx context.Context, id int) (*contentdomain.Content, error)
@@ -415,7 +423,7 @@ type ContentServiceInterface interface {
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error)
-	SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*contentdomain.Content, error)
+	SetSystemFields(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*contentdomain.Content, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
 	GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error)
 	GetPublishedAuthor(ctx context.Context, username string) (*contentdomain.PublishedAuthor, error)
@@ -430,6 +438,7 @@ type ContentHandler struct {
 	profilePictureURLResolver func(string) string
 	featuredImageResolver     func(string) string
 	publicFieldRegistry       PublicFieldLookup
+	iframeHosts               []string
 }
 
 // PublicFieldLookup is the minimal subset of *config.PublicFieldRegistry that
@@ -451,6 +460,15 @@ func (h *ContentHandler) WithPublicFieldRegistry(registry PublicFieldLookup) *Co
 	return h
 }
 
+// WithIFrameHosts attaches the sanitizer's iframe host allowlist (derived from
+// the CSP frame-src directive) so HTML-format content keeps allowed embeds on
+// the write path. When not called, iframes are stripped on save. Returns the
+// receiver for chaining at construction time.
+func (h *ContentHandler) WithIFrameHosts(hosts ...string) *ContentHandler {
+	h.iframeHosts = append(h.iframeHosts, hosts...)
+	return h
+}
+
 type publicContentItem struct {
 	*contentdomain.Content
 	FeaturedImage string `json:"featuredImage,omitempty"`
@@ -469,6 +487,8 @@ func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	role, _ := middleware.GetRole(r)
+
 	var req CreateContentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error("Failed to decode request body: %v", err)
@@ -482,7 +502,7 @@ func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, errMsg := convertBrowserContentBody(req.Content, format)
+	body, errMsg := convertBrowserContentBody(req.Content, format, h.iframeHosts)
 	if errMsg != "" {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", errMsg, nil)
 		return
@@ -510,7 +530,7 @@ func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		TranslationGroupID: req.TranslationGroupID,
 	}
 
-	content, err := h.contentService.Create(r.Context(), userID, contentReq)
+	content, err := h.contentService.Create(r.Context(), userID, role, contentReq)
 	if err != nil {
 		h.logger.Error("Failed to create content: %v", err)
 		handleContentError(w, err)
@@ -702,7 +722,7 @@ func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, errMsg := convertBrowserContentBody(req.Content, format)
+	body, errMsg := convertBrowserContentBody(req.Content, format, h.iframeHosts)
 	if errMsg != "" {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", errMsg, nil)
 		return
@@ -1296,6 +1316,18 @@ func (h *ContentHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request) {
+	userIDStr, ok := middleware.GetUserID(r)
+	if !ok {
+		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
+		return
+	}
+
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID", nil)
+		return
+	}
+
 	pathValue := r.PathValue("id")
 	if pathValue == "" {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_content_id", "Content ID is required", nil)
@@ -1317,7 +1349,7 @@ func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	content, err := h.contentService.SetSystemFields(r.Context(), contentID, req.SystemFields)
+	content, err := h.contentService.SetSystemFields(r.Context(), contentID, userID, req.SystemFields)
 	if err != nil {
 		h.logger.Error("Failed to set system fields: %v", err)
 		handleContentError(w, err)

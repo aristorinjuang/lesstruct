@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/content/hugo"
 	hugomocks "github.com/aristorinjuang/lesstruct/internal/content/hugo/mocks"
+	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
 	"github.com/aristorinjuang/lesstruct/internal/util"
@@ -18,6 +20,19 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// testImgSrcRe extracts every img src attribute from a body so tests can
+// predict which media uploads the mapper will perform.
+var testImgSrcRe = regexp.MustCompile(`<img[^>]*\bsrc="([^"]*)"`)
+
+func imageSrcsInBody(body string) []string {
+	matches := testImgSrcRe.FindAllStringSubmatch(body, -1)
+	srcs := make([]string, 0, len(matches))
+	for _, m := range matches {
+		srcs = append(srcs, m[1])
+	}
+	return srcs
+}
 
 func TestImporter(t *testing.T) {
 	ctx := context.Background()
@@ -46,7 +61,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.Anything).
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 					Return(&contentdomain.Content{ID: 1}, nil).
 					Once()
 				ac.On("Create", mock.Anything, mock.Anything, "old-path").
@@ -73,7 +88,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "draft-post", "en").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.Status == contentdomain.StatusDraft
 					},
@@ -99,7 +114,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "custom-fields", "en").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.CustomFields["hasMath"] == true &&
 							req.CustomFields["hasChart"] == true &&
@@ -124,7 +139,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "post-title", "en").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.Slug == "post-title"
 					},
@@ -146,7 +161,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "my-post", "en").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.Slug == "my-post"
 					},
@@ -169,7 +184,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "tag-post", "en").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return len(req.Tags) == 2 &&
 							req.Tags[0] == "go" &&
@@ -201,12 +216,12 @@ func TestImporter(t *testing.T) {
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "post-title", "en").Return(false, nil).Once()
 				sc.On("SlugExists", mock.Anything, "post-title", "id").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.Language == "en"
 					},
 				)).Return(&contentdomain.Content{ID: 1}, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.Language == "id" &&
 							req.TranslationGroupID != nil &&
@@ -230,7 +245,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "post-title", "id").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.Language == "id" && req.TranslationGroupID == nil
 					},
@@ -252,7 +267,7 @@ func TestImporter(t *testing.T) {
 			userID: 1,
 			setupMocks: func(cc *hugomocks.MockContentCreator, ac *hugomocks.MockAliasCreator, sc *hugomocks.MockSlugResolver, _ *hugomocks.MockMediaService) {
 				sc.On("SlugExists", mock.Anything, "my-post", "en").Return(false, nil).Once()
-				cc.On("Create", mock.Anything, mock.Anything, mock.Anything).
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, errors.New("creation failed")).
 					Once()
 			},
@@ -323,7 +338,7 @@ func TestImporter_PublishedAt(t *testing.T) {
 			ms := hugomocks.NewMockMediaService(t)
 			sc.On("SlugExists", mock.Anything, mock.Anything, "en").Return(false, nil).Once()
 			var captured contentdomain.CreateContentRequest
-			cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+			cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 				func(req contentdomain.CreateContentRequest) bool {
 					captured = req
 					return true
@@ -458,13 +473,13 @@ func TestImporter_TranslationLinksWhenEnglishAlreadyImported(t *testing.T) {
 			if tt.enExists {
 				cc.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 			} else {
-				cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+				cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 					func(req contentdomain.CreateContentRequest) bool {
 						return req.Language == "en" && req.TranslationGroupID == nil
 					},
 				)).Return(&contentdomain.Content{ID: 1}, nil).Once()
 			}
-			cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+			cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 				func(req contentdomain.CreateContentRequest) bool {
 					return req.Language == "id" && req.TranslationGroupID != nil && *req.TranslationGroupID == 1
 				},
@@ -497,14 +512,35 @@ func TestImporter_MediaRewriteAndFeatured(t *testing.T) {
 			body:        `<p>Hi</p><img src="/images/foo.jpg" alt="Foo">`,
 			images:      []string{"/images/cover.jpg"},
 			skipMedia:   false,
-			wantBodyHas: `<img src="http://media.local/foo" alt="First Post"><p>Hi</p><img src="http://media.local/foo" alt="Foo">`,
+			wantBodyHas: `<img src="http://media.local/cover" alt="First Post"><p>Hi</p><img src="http://media.local/foo" alt="Foo">`,
 		},
 		{
-			name:        "success - skip media leaves references untouched",
+			name:        "success - skip media rewrites static files to /static",
 			body:        `<p>Hi</p><img src="/images/foo.jpg" alt="Foo">`,
 			images:      []string{"/images/cover.jpg"},
 			skipMedia:   true,
-			wantBodyHas: `<img src="/images/cover.jpg" alt="First Post"><p>Hi</p><img src="/images/foo.jpg" alt="Foo">`,
+			wantBodyHas: `<img src="/static/images/cover.jpg" alt="First Post"><p>Hi</p><img src="/static/images/foo.jpg" alt="Foo">`,
+		},
+		{
+			name:        "success - featured skipped when body opens with same image in figure",
+			body:        `<figure><a href="https://example.com"><img src="/images/cover.jpg" alt="Cover"></a><figcaption>Cap</figcaption></figure>`,
+			images:      []string{"/images/cover.jpg"},
+			skipMedia:   false,
+			wantBodyHas: `<figure><a href="https://example.com"><img src="http://media.local/cover" alt="Cover"></a><figcaption>Cap</figcaption></figure>`,
+		},
+		{
+			name:        "success - featured skipped when body opens with same image and skip media",
+			body:        `<img src="/images/cover.jpg" alt="Cover"><p>Hi</p>`,
+			images:      []string{"/images/cover.jpg"},
+			skipMedia:   true,
+			wantBodyHas: `<img src="/static/images/cover.jpg" alt="Cover"><p>Hi</p>`,
+		},
+		{
+			name:        "success - featured prepended when it only appears later in body",
+			body:        `<p>Hi</p><img src="/images/foo.jpg" alt="Foo"><img src="/images/cover.jpg" alt="Cover">`,
+			images:      []string{"/images/cover.jpg"},
+			skipMedia:   false,
+			wantBodyHas: `<img src="http://media.local/cover" alt="First Post"><p>Hi</p><img src="http://media.local/foo" alt="Foo"><img src="http://media.local/cover" alt="Cover">`,
 		},
 	}
 
@@ -524,13 +560,30 @@ func TestImporter_MediaRewriteAndFeatured(t *testing.T) {
 			ms := hugomocks.NewMockMediaService(t)
 			sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
 			if !tt.skipMedia {
-				ms.On("GenerateFromBytes", mock.Anything, []byte("foo-bytes"), 1, "foo", "foo.jpg").
-					Return(&mediadomain.Media{URL: "http://media.local/foo"}, nil).Once()
-				ms.On("GenerateFromBytes", mock.Anything, []byte("cover-bytes"), 1, "cover", "cover.jpg").
-					Return(&mediadomain.Media{URL: "http://media.local/foo"}, nil).Once()
+				mediaFiles := map[string]struct {
+					bytes []byte
+					alt   string
+					name  string
+					url   string
+				}{
+					"/images/foo.jpg":   {[]byte("foo-bytes"), "foo", "foo.jpg", "http://media.local/foo"},
+					"/images/cover.jpg": {[]byte("cover-bytes"), "cover", "cover.jpg", "http://media.local/cover"},
+				}
+				uploaded := make(map[string]struct{})
+				for _, src := range imageSrcsInBody(tt.body) {
+					uploaded[src] = struct{}{}
+				}
+				if len(tt.images) > 0 {
+					uploaded[tt.images[0]] = struct{}{}
+				}
+				for ref := range uploaded {
+					file := mediaFiles[ref]
+					ms.On("GenerateFromBytes", mock.Anything, file.bytes, 1, file.alt, file.name).
+						Return(&mediadomain.Media{URL: file.url}, nil).Once()
+				}
 			}
 			var captured contentdomain.CreateContentRequest
-			cc.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(
+			cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
 				func(req contentdomain.CreateContentRequest) bool {
 					captured = req
 					return true
@@ -554,4 +607,338 @@ func TestImporter_MediaRewriteAndFeatured(t *testing.T) {
 			assert.Equal(t, tt.wantBodyHas, captured.Content)
 		})
 	}
+}
+
+func TestImporter_SurfacesMediaMigrationFailures(t *testing.T) {
+	ctx := context.Background()
+
+	staticDir := t.TempDir()
+	err := os.MkdirAll(filepath.Join(staticDir, "images"), 0755)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "images/bad.jpg"), []byte("bad-bytes"), 0644))
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	ms.On("GenerateFromBytes", mock.Anything, []byte("bad-bytes"), 1, "bad", "bad.jpg").
+		Return(nil, errors.New("transcode failed")).Once()
+
+	var captured contentdomain.CreateContentRequest
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
+		func(req contentdomain.CreateContentRequest) bool {
+			captured = req
+			return true
+		},
+	)).Return(&contentdomain.Content{ID: 1}, nil).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: `<p>Hi</p><img src="/images/bad.jpg" alt="Bad">`,
+			FilePath:     "content/en/first.md",
+		}},
+		StaticDir: staticDir,
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	// The failure falls back to the /static/ copy and is surfaced as a warning.
+	assert.Contains(t, captured.Content, `src="/static/images/bad.jpg"`)
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "warning:")
+	assert.Contains(t, result.Errors[0], "/images/bad.jpg")
+	assert.Contains(t, result.Errors[0], "transcode failed")
+}
+
+func TestImporter_WarnsUnresolvedRefsOnceAndSkipsPermalinks(t *testing.T) {
+	ctx := context.Background()
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+
+	// Two items; both reference the same dead static file, one references a
+	// known permalink (its own URL), one a bare extension-less path; resolved
+	// /static/ and /uploads/ references must stay silent too.
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	sc.On("SlugExists", mock.Anything, "second-post", "en").Return(false, nil).Once()
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Content{ID: 1}, nil).Twice()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{
+			{
+				Title:        "First Post",
+				Language:     "en",
+				URL:          "/first-post.html",
+				OriginalBody: `<a href="/bioven/missing.html">A</a><a href="/bioven/missing.html">B</a><a href="/first-post.html">Self</a><a href="/about">Page</a><a href="/static/site.css">Css</a><source src="/uploads/media/x.webp">`,
+				FilePath:     "content/en/first.md",
+			},
+			{
+				Title:        "Second Post",
+				Language:     "en",
+				URL:          "/second-post.html",
+				OriginalBody: `<a href="/bioven/missing.html">Dead again</a>`,
+				FilePath:     "content/en/second.md",
+			},
+		},
+		StaticDir: t.TempDir(),
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 2, result.Imported)
+	// Exactly one warning for the dead ref (deduped within the body AND across
+	// items); permalink, extension-less, /static/ and /uploads/ refs stay silent.
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "/bioven/missing.html")
+	assert.Contains(t, result.Errors[0], "left unresolved")
+}
+
+func TestImporter_FeaturedImageFailureSkipsPrepend(t *testing.T) {
+	ctx := context.Background()
+
+	staticDir := t.TempDir()
+	err := os.MkdirAll(filepath.Join(staticDir, "images"), 0755)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "images/bad.jpg"), []byte("bad-bytes"), 0644))
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	ms.On("GenerateFromBytes", mock.Anything, []byte("bad-bytes"), 1, "bad", "bad.jpg").
+		Return(nil, errors.New("transcode failed")).Once()
+
+	var captured contentdomain.CreateContentRequest
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
+		func(req contentdomain.CreateContentRequest) bool {
+			captured = req
+			return true
+		},
+	)).Return(&contentdomain.Content{ID: 1}, nil).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: `<p>Hi</p>`,
+			Images:       []string{"/images/bad.jpg"},
+			FilePath:     "content/en/first.md",
+		}},
+		StaticDir: staticDir,
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	// A failed featured image must not be prepended as a broken cover.
+	assert.Equal(t, `<p>Hi</p>`, captured.Content)
+	assert.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "/images/bad.jpg")
+}
+
+func TestImporter_RepointsDanglingAlias(t *testing.T) {
+	ctx := context.Background()
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Content{ID: 1}, nil).Once()
+	ac.On("Create", mock.Anything, 1, "old-path").Return(aliasdomain.ErrAliasAlreadyExists).Once()
+	ac.On("FindByAlias", mock.Anything, "old-path").Return(
+		&aliasdomain.Alias{ID: 5, ContentID: 99, Alias: "old-path"}, nil,
+	).Once()
+	cc.On("GetByID", mock.Anything, 99).Return(nil, contentdomain.ErrContentNotFound).Once()
+	ac.On("Repoint", mock.Anything, "old-path", 99, 1).Return(nil).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: "<p>Hello</p>",
+			Aliases:      []string{"/old-path"},
+			FilePath:     "content/en/first.md",
+		}},
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	assert.Empty(t, result.Errors)
+}
+
+func TestImporter_RepointConcurrentChange(t *testing.T) {
+	ctx := context.Background()
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Content{ID: 1}, nil).Once()
+	ac.On("Create", mock.Anything, 1, "old-path").Return(aliasdomain.ErrAliasAlreadyExists).Once()
+	ac.On("FindByAlias", mock.Anything, "old-path").Return(
+		&aliasdomain.Alias{ID: 5, ContentID: 99, Alias: "old-path"}, nil,
+	).Once()
+	cc.On("GetByID", mock.Anything, 99).Return(nil, contentdomain.ErrContentNotFound).Once()
+	ac.On("Repoint", mock.Anything, "old-path", 99, 1).Return(aliasdomain.ErrAliasNotFound).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: "<p>Hello</p>",
+			Aliases:      []string{"/old-path"},
+			FilePath:     "content/en/first.md",
+		}},
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	assert.Empty(t, result.Errors)
+}
+
+func TestImporter_RepointFailure(t *testing.T) {
+	ctx := context.Background()
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Content{ID: 1}, nil).Once()
+	ac.On("Create", mock.Anything, 1, "old-path").Return(aliasdomain.ErrAliasAlreadyExists).Once()
+	ac.On("FindByAlias", mock.Anything, "old-path").Return(
+		&aliasdomain.Alias{ID: 5, ContentID: 99, Alias: "old-path"}, nil,
+	).Once()
+	cc.On("GetByID", mock.Anything, 99).Return(nil, contentdomain.ErrContentNotFound).Once()
+	ac.On("Repoint", mock.Anything, "old-path", 99, 1).Return(errors.New("db down")).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: "<p>Hello</p>",
+			Aliases:      []string{"/old-path"},
+			FilePath:     "content/en/first.md",
+		}},
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	assert.Empty(t, result.Errors)
+}
+
+func TestImporter_AliasLookupFailure(t *testing.T) {
+	ctx := context.Background()
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Content{ID: 1}, nil).Once()
+	ac.On("Create", mock.Anything, 1, "old-path").Return(aliasdomain.ErrAliasAlreadyExists).Once()
+	ac.On("FindByAlias", mock.Anything, "old-path").Return(nil, errors.New("db down")).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: "<p>Hello</p>",
+			Aliases:      []string{"/old-path"},
+			FilePath:     "content/en/first.md",
+		}},
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	assert.Empty(t, result.Errors)
+	ac.AssertNotCalled(t, "Repoint", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestImporter_AliasTargetLookupError(t *testing.T) {
+	ctx := context.Background()
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Content{ID: 1}, nil).Once()
+	ac.On("Create", mock.Anything, 1, "old-path").Return(aliasdomain.ErrAliasAlreadyExists).Once()
+	ac.On("FindByAlias", mock.Anything, "old-path").Return(
+		&aliasdomain.Alias{ID: 5, ContentID: 99, Alias: "old-path"}, nil,
+	).Once()
+	cc.On("GetByID", mock.Anything, 99).Return(nil, errors.New("db down")).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: "<p>Hello</p>",
+			Aliases:      []string{"/old-path"},
+			FilePath:     "content/en/first.md",
+		}},
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	assert.Empty(t, result.Errors)
+	ac.AssertNotCalled(t, "Repoint", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestImporter_KeepsAliasOfLiveContent(t *testing.T) {
+	ctx := context.Background()
+
+	cc := hugomocks.NewMockContentCreator(t)
+	ac := hugomocks.NewMockAliasCreator(t)
+	sc := hugomocks.NewMockSlugResolver(t)
+	ms := hugomocks.NewMockMediaService(t)
+
+	sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+	cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(&contentdomain.Content{ID: 1}, nil).Once()
+	ac.On("Create", mock.Anything, 1, "old-path").Return(aliasdomain.ErrAliasAlreadyExists).Once()
+	ac.On("FindByAlias", mock.Anything, "old-path").Return(
+		&aliasdomain.Alias{ID: 5, ContentID: 99, Alias: "old-path"}, nil,
+	).Once()
+	cc.On("GetByID", mock.Anything, 99).Return(&contentdomain.Content{ID: 99}, nil).Once()
+
+	imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+	result := imp.Import(ctx, &hugo.HugoSite{
+		Items: []*hugo.HugoItem{{
+			Title:        "First Post",
+			Language:     "en",
+			URL:          "/first-post.html",
+			OriginalBody: "<p>Hello</p>",
+			Aliases:      []string{"/old-path"},
+			FilePath:     "content/en/first.md",
+		}},
+	}, 1, hugo.ImportOptions{}, nil)
+
+	assert.Equal(t, 1, result.Imported)
+	ac.AssertNotCalled(t, "Repoint", mock.Anything, mock.Anything, mock.Anything)
 }

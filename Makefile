@@ -6,9 +6,23 @@ MODULE := github.com/aristorinjuang/lesstruct
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 CLI_LDFLAGS := -X $(MODULE)/cmd/lesstruct-cli/cmd.version=$(VERSION)
 
+# MODERNIZE_VERSION pins the standalone gopls modernize runner. Keep it in
+# sync with the gopls version your editor runs so CI and editor suggestions
+# match. /web/ is excluded because it vendors third-party Go code.
+MODERNIZE_VERSION := v0.21.1
+MODERNIZE_PACKAGES := $(shell go list ./... | grep -v '/web/')
+
 lint:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
 	golangci-lint run
+
+# Fails (exit non-zero) when the modernize analyzer finds old Go syntax.
+modernize:
+	go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@$(MODERNIZE_VERSION) -test $(MODERNIZE_PACKAGES)
+
+# Applies the modernize rewrites in place.
+modernize-apply:
+	go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@$(MODERNIZE_VERSION) -fix -test $(MODERNIZE_PACKAGES)
 
 mock:
 	find . -type d -name "mocks" -prune -exec rm -rf {} +

@@ -11,8 +11,27 @@ import (
 
 	"github.com/deepteams/webp"
 	"golang.org/x/image/draw"
-	_ "golang.org/x/image/webp"
+	ximagewebp "golang.org/x/image/webp"
 )
+
+// decodeImage decodes any registered image format, routing WebP through
+// golang.org/x/image/webp explicitly (deepteams/webp also registers a webp
+// decoder whose VP8X/ALPH path fails on real-world files; image.Decode would
+// leave the winner to registration order).
+func decodeImage(r io.Reader) (image.Image, error) {
+	head := make([]byte, 12)
+	n, err := io.ReadFull(r, head)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, err
+	}
+	head = head[:n]
+	stream := io.MultiReader(bytes.NewReader(head), r)
+	if n >= 12 && string(head[0:4]) == "RIFF" && string(head[8:12]) == "WEBP" {
+		return ximagewebp.Decode(stream)
+	}
+	img, _, err := image.Decode(stream)
+	return img, err
+}
 
 // Processor handles profile picture image processing operations
 type Processor struct{}
@@ -20,7 +39,7 @@ type Processor struct{}
 // CropAndConvertToWebP decodes an image, center-crops to a square,
 // resizes to the target size, and encodes as WebP.
 func (p *Processor) CropAndConvertToWebP(reader io.Reader, size int) ([]byte, error) {
-	img, _, err := image.Decode(reader)
+	img, err := decodeImage(reader)
 	if err != nil {
 		return nil, err
 	}

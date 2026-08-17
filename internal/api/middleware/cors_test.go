@@ -28,7 +28,7 @@ func TestCORSMiddleware_AllowedOrigin(t *testing.T) {
 	})
 
 	// Create request with allowed origin
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 
 	// Act
@@ -54,7 +54,7 @@ func TestCORSMiddleware_UnallowedOrigin(t *testing.T) {
 	})
 
 	// Create request with unallowed origin
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Origin", "http://evil.com")
 
 	// Act
@@ -80,7 +80,7 @@ func TestCORSMiddleware_PreflightOPTIONS(t *testing.T) {
 	})
 
 	// Create preflight request
-	req := httptest.NewRequest("OPTIONS", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/api/test", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 	req.Header.Set("Access-Control-Request-Headers", "Content-Type, Authorization")
@@ -110,7 +110,7 @@ func TestCORSMiddleware_PreflightOPTIONS_UnauthorizedOrigin(t *testing.T) {
 	})
 
 	// Create preflight request with unauthorized origin
-	req := httptest.NewRequest("OPTIONS", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/api/test", nil)
 	req.Header.Set("Origin", "http://evil.com")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 
@@ -141,7 +141,7 @@ func TestCORSMiddleware_MultipleAllowedOrigins(t *testing.T) {
 
 	for _, origin := range testCases {
 		// Create request with origin
-		req := httptest.NewRequest("GET", "/api/test", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 		req.Header.Set("Origin", origin)
 
 		// Act
@@ -168,7 +168,7 @@ func TestCORSMiddleware_NoOriginHeader(t *testing.T) {
 	})
 
 	// Create request without Origin header
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 
 	// Act
 	rr := httptest.NewRecorder()
@@ -192,7 +192,7 @@ func TestCORSMiddleware_WithPorts(t *testing.T) {
 	})
 
 	// Create request with origin that has a port
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 
 	// Act
@@ -217,7 +217,7 @@ func TestCORSMiddleware_CaseSensitiveOrigin(t *testing.T) {
 	})
 
 	// Create request with different case origin
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Origin", "http://LOCALHOST:8080")
 
 	// Act
@@ -242,7 +242,7 @@ func TestCORSMiddleware_EmptyAllowedOrigins(t *testing.T) {
 	})
 
 	// Create request with origin
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 
 	// Act
@@ -266,7 +266,7 @@ func TestCORSMiddleware_VaryOriginHeader(t *testing.T) {
 	})
 
 	// Test regular request with allowed origin
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 
 	rr := httptest.NewRecorder()
@@ -276,7 +276,7 @@ func TestCORSMiddleware_VaryOriginHeader(t *testing.T) {
 	assert.Equal(t, "Origin", rr.Header().Get("Vary"), "Expected Vary: Origin header for allowed origin")
 
 	// Test preflight request with allowed origin
-	req = httptest.NewRequest("OPTIONS", "/api/test", nil)
+	req = httptest.NewRequest(http.MethodOptions, "/api/test", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 	req.Header.Set("Access-Control-Request-Method", "POST")
 
@@ -300,7 +300,7 @@ func TestCORSMiddleware_DefensiveCopy(t *testing.T) {
 	origins[0] = "http://evil.com"
 
 	// Act - request with original origin should still work
-	req := httptest.NewRequest("GET", "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 
 	rr := httptest.NewRecorder()

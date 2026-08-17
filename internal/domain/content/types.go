@@ -73,6 +73,12 @@ var (
 	ErrInvalidLanguage = errors.New("language is not in the configured languages list")
 	// ErrInvalidFormat is returned when the content format is not one of the supported values
 	ErrInvalidFormat = errors.New("format must be one of: tiptap, markdown, html")
+	// ErrForbiddenPostType is returned when the caller's role cannot manage the
+	// requested post type (config-defined role with a restricted manage list).
+	ErrForbiddenPostType = errors.New("role cannot manage this post type")
+	// ErrForbiddenPublish is returned when the caller's role has no publish
+	// capability but attempts the publish operation.
+	ErrForbiddenPublish = errors.New("role cannot publish content")
 )
 
 var defaultSanitizer *sanitize.Sanitizer

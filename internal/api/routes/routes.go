@@ -411,6 +411,9 @@ func Setup(
 				// Post types routes (require authentication) - Story 2.6
 				r.Get("/post_types", postTypeHandler.GetPostTypes)
 
+				// Roles capability + assignable-roles endpoint (require authentication)
+				r.Get("/roles", postTypeHandler.GetRoles)
+
 				// User field schemas route (require authentication + admin role)
 				r.With(adminMiddleware.AdminOnly).Get("/user_fields", postTypeHandler.GetUserFieldsEndpoint)
 

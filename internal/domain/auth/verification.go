@@ -20,11 +20,33 @@ var (
 	ErrVerificationFailed = errors.New("email verification failed")
 )
 
+// VerificationOption configures a VerificationService. The zero options
+// reproduce the legacy behavior exactly: a successful verification activates
+// the account immediately.
+type VerificationOption func(*verificationOptions)
+
+type verificationOptions struct {
+	adminApprovalRequired bool
+}
+
+// WithAdminApprovalRequired makes email verification a proof-of-ownership step
+// only: the email address is recorded as verified, but the account stays
+// "pending" until an administrator approves it. Without it, verification
+// activates the account (legacy behavior).
+func WithAdminApprovalRequired() VerificationOption {
+	return func(o *verificationOptions) {
+		o.adminApprovalRequired = true
+	}
+}
+
 // VerificationResult contains the result of a successful verification
 type VerificationResult struct {
 	Success bool
 	Message string
 	UserID  int
+	// AwaitingApproval reports that the email address was proven but the
+	// account stays pending until an administrator approves it.
+	AwaitingApproval bool
 }
 
 // CreateTokenResult contains the result of token creation
@@ -35,9 +57,10 @@ type CreateTokenResult struct {
 
 // VerificationService handles email verification business logic
 type VerificationService struct {
-	userRepo   repository.UserRepo
-	tokenRepo  repository.VerificationTokenRepo
-	expiration time.Duration
+	userRepo              repository.UserRepo
+	tokenRepo             repository.VerificationTokenRepo
+	expiration            time.Duration
+	adminApprovalRequired bool
 }
 
 // CreateVerificationToken creates a new verification token for a user
@@ -93,6 +116,28 @@ func (s *VerificationService) VerifyEmail(ctx context.Context, token string) (*V
 		return nil, ErrTokenExpired
 	}
 
+	// Record the email proof first: in both modes the address is now verified.
+	if err := s.userRepo.SetEmailVerified(ctx, verificationToken.UserID, true); err != nil {
+		return nil, fmt.Errorf("%w: failed to mark email verified", ErrVerificationFailed)
+	}
+
+	// In admin-approval mode the account stays "pending" until an administrator
+	// approves it; the email link only proves ownership of the address.
+	if s.adminApprovalRequired {
+		result := &VerificationResult{
+			Success:          true,
+			Message:          "Email verified. An administrator will activate your account.",
+			UserID:           verificationToken.UserID,
+			AwaitingApproval: true,
+		}
+
+		// Delete token after successful verification
+		_ = s.tokenRepo.DeleteUserTokens(ctx, verificationToken.UserID)
+		// Ignore deletion error - verification is already successful
+
+		return result, nil
+	}
+
 	// Update user status to "verified"
 	if err := s.userRepo.UpdateUserStatus(ctx, verificationToken.UserID, "verified"); err != nil {
 		return nil, fmt.Errorf("%w: failed to update user status", ErrVerificationFailed)
@@ -116,15 +161,24 @@ func (s *VerificationService) CleanupExpiredTokens(ctx context.Context) error {
 	return s.tokenRepo.DeleteExpiredTokens(ctx)
 }
 
-// NewVerificationService creates a new verification service
+// NewVerificationService creates a new verification service. Legacy behavior —
+// verification activates the account — is preserved unless overridden via
+// VerificationOptions.
 func NewVerificationService(
 	userRepo repository.UserRepo,
 	tokenRepo repository.VerificationTokenRepo,
 	expirationHours int,
+	opts ...VerificationOption,
 ) *VerificationService {
+	o := verificationOptions{}
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	return &VerificationService{
-		userRepo:   userRepo,
-		tokenRepo:  tokenRepo,
-		expiration: time.Duration(expirationHours) * time.Hour,
+		userRepo:              userRepo,
+		tokenRepo:             tokenRepo,
+		expiration:            time.Duration(expirationHours) * time.Hour,
+		adminApprovalRequired: o.adminApprovalRequired,
 	}
 }

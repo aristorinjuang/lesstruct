@@ -22,6 +22,15 @@
 - Put all private structs or functions before all public structs or functions!
 - Do not ever use `interface{}`, use `any`!
 - Always use constants instead of typed strings, especially to define HTTP methods! E.g., `http.MethodDelete` instead of `"DELETE"`.
+- **Write modern Go (the toolchain is Go 1.26).** The `modernize` analyzer (`make modernize`) enforces this in CI; write the modern form directly:
+  - `for i := 0; i < n; i++` → `for i := range n` (and `for y := 0; y < h; y++` → `for y := range h`).
+  - Manual `contains` loops → `slices.Contains`; `sort.Slice`/`sort.Strings` → `slices.SortFunc`/`slices.Sort`; loop-built maps/keys → `maps.Copy`, `maps.Keys`, `slices.Sorted`.
+  - Manual `min`/`max` `if`-blocks → the `min`/`max` builtins.
+  - `if strings.HasPrefix(s, p) { strings.TrimPrefix(...) }` → `strings.CutPrefix`; same for `CutSuffix`; `strings.Split` + loop → `strings.SplitSeq`; `strings.IndexByte` + slice → `strings.Cut`.
+  - `string += string` in a loop → `strings.Builder`.
+  - `wg.Add(1); go func() { defer wg.Done() }()` → `wg.Go(func() {...})` (Go 1.25+).
+  - `os.Setenv` in tests → `t.Setenv` (auto-restores; skip in `TestMain` and `t.Parallel` tests). `os.Unsetenv` stays as-is — there is no `t.Unsetenv`.
+  - `sort`-unrelated legacy: never leave `omitempty` on nested struct fields (it has no effect); `new(expr)` (Go 1.26) over `func ptr(v T) *T { return &v }` helpers.
 
 - If a function has many arguments, do not put those arguments into one line, but use multiple lines instead!
 ```go

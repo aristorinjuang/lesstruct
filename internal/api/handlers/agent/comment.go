@@ -11,6 +11,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -90,6 +91,19 @@ func NewCommentResponse(c *contentdomain.Comment) CommentResponse {
 	}
 }
 
+// CommentHandlerOption configures a CommentHandler. A role service makes the
+// comment capability config-driven; without one every authenticated user may
+// comment (the legacy behavior).
+type CommentHandlerOption func(*CommentHandler)
+
+// WithCommentRoleService attaches the config-driven role registry so posting comments
+// is gated by the caller's CanComment capability.
+func WithCommentRoleService(rs *roledomain.Service) CommentHandlerOption {
+	return func(h *CommentHandler) {
+		h.roleService = rs
+	}
+}
+
 // CommentHandler exposes the Bearer-authenticated agent comment endpoints. It
 // reuses the existing content domain service's comment methods (which already
 // validate comment text and enforce the AllowComments gate) — it never
@@ -100,6 +114,16 @@ func NewCommentResponse(c *contentdomain.Comment) CommentResponse {
 type CommentHandler struct {
 	commentService CommentService
 	logger         *util.Logger
+	roleService    *roledomain.Service
+}
+
+// commentAllowed reports whether the caller's role may post comments. Without a
+// role service every authenticated user may, matching the legacy behavior.
+func (h *CommentHandler) commentAllowed(r *http.Request) bool {
+	if h.roleService == nil {
+		return true
+	}
+	return h.roleService.CanComment(authenticatedRole(r))
 }
 
 // Create handles POST /api/v1/content/{id}/comments. It resolves the content by
@@ -118,6 +142,11 @@ func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := authenticatedRole(r)
+
+	if !h.commentAllowed(r) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "Your role cannot post comments", nil)
+		return
+	}
 
 	contentID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil || contentID <= 0 {
@@ -377,12 +406,16 @@ func (h *CommentHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 // NewCommentHandler constructs a CommentHandler backed by the given content
 // service. A nil logger degrades to a discard sink so the handler is safe to
 // construct in any context (mirrors NewContentHandler/NewMediaHandler).
-func NewCommentHandler(s CommentService, logger *util.Logger) *CommentHandler {
+func NewCommentHandler(s CommentService, logger *util.Logger, opts ...CommentHandlerOption) *CommentHandler {
 	if logger == nil {
 		logger = util.NewLogger(io.Discard)
 	}
-	return &CommentHandler{
+	h := &CommentHandler{
 		commentService: s,
 		logger:         logger,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }

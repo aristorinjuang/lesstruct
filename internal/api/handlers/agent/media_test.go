@@ -18,6 +18,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -428,6 +429,103 @@ func TestMediaHandler_List(t *testing.T) {
 				assert.Equal(t, tt.wantNextCursorID, decodeCursorForTest(t, env.Meta.Pagination.NextCursor), "nextCursor id")
 			} else {
 				assert.Empty(t, env.Meta.Pagination.NextCursor, "expected no nextCursor")
+			}
+		})
+	}
+}
+
+// TestMediaHandler_Upload_RoleGate verifies the agent media-upload endpoint is
+// gated by the caller's role capability when a role service is configured. A
+// role without the media capability gets FORBIDDEN before any service call;
+// without a role service every authenticated user may upload (legacy behavior,
+// covered by TestMediaHandler_Upload).
+func TestMediaHandler_Upload_RoleGate(t *testing.T) {
+	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+
+	roleService := roledomain.NewService()
+	if err := roleService.Register(roledomain.Role{
+		Name:      "Editor",
+		PostTypes: []string{"article"},
+		Publish:   true,
+		Media:     false,
+		Comments:  true,
+	}); err != nil {
+		t.Fatalf("failed to register role: %v", err)
+	}
+
+	roleServiceWithMedia := roledomain.NewService()
+	if err := roleServiceWithMedia.Register(roledomain.Role{
+		Name:      "Editor",
+		PostTypes: []string{"article"},
+		Publish:   true,
+		Media:     true,
+		Comments:  true,
+	}); err != nil {
+		t.Fatalf("failed to register role: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		withRoleSvc  bool
+		roleSvc      *roledomain.Service
+		role         string
+		expectUpload bool
+		wantStatus   int
+		wantCode     string
+		wantMediaID  int
+	}{
+		{
+			name:         "role cannot manage media is forbidden",
+			withRoleSvc:  true,
+			roleSvc:      roleService,
+			role:         "Editor",
+			expectUpload: false,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "FORBIDDEN",
+		},
+		{
+			name:         "role can manage media succeeds",
+			withRoleSvc:  true,
+			roleSvc:      roleServiceWithMedia,
+			role:         "Editor",
+			expectUpload: true,
+			wantStatus:   http.StatusOK,
+			wantMediaID:  7,
+		},
+		{
+			name:         "no role service preserves legacy behavior",
+			withRoleSvc:  false,
+			role:         "Editor",
+			expectUpload: true,
+			wantStatus:   http.StatusOK,
+			wantMediaID:  8,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := agentmocks.NewMockMediaService(t)
+			if tt.expectUpload {
+				svc.EXPECT().Upload(mock.Anything, mock.Anything).
+					Return(&mediadomain.Media{ID: tt.wantMediaID, AltText: "x", URL: "http://x/media/7.webp"}, nil)
+			}
+
+			var opts []agent.MediaHandlerOption
+			if tt.withRoleSvc {
+				opts = append(opts, agent.WithMediaRoleService(tt.roleSvc))
+			}
+			handler := agent.NewMediaHandler(svc, util.NewLogger(io.Discard), opts...)
+
+			r := newMediaUploadRequest(t, "photo.png", pngHeader, `{"altText":"x"}`, testUserID, tt.role)
+			w := httptest.NewRecorder()
+			handler.Upload(w, r)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantCode != "" {
+				assert.Equal(t, tt.wantCode, envelopeError(t, w))
+			}
+			if tt.wantMediaID != 0 {
+				assert.Equal(t, tt.wantMediaID, envelopeDataMediaID(t, w), "envelope data.media.id")
 			}
 		})
 	}

@@ -26,12 +26,14 @@ func scanUserRows(rows *sql.Rows) ([]*repository.User, error) {
 		var email sql.NullString
 		var name sql.NullString
 		var profilePicture sql.NullString
+		var createdAt sql.NullTime
 		var customFields *string
 
 		err := rows.Scan(
 			&user.ID, &user.Username,
 			&email, &name, &user.Role, &user.Status,
-			&profilePicture, &user.CreatedAt, &customFields,
+			&user.EmailVerified,
+			&profilePicture, &createdAt, &customFields,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan user: %w", err)
@@ -45,6 +47,9 @@ func scanUserRows(rows *sql.Rows) ([]*repository.User, error) {
 		}
 		if profilePicture.Valid {
 			user.ProfilePicture = profilePicture.String
+		}
+		if createdAt.Valid {
+			user.CreatedAt = createdAt.Time
 		}
 		user.CustomFields = unmarshalCustomFields(customFields)
 
@@ -66,7 +71,7 @@ func (r *UserRepository) UpdateAdminPasswordAndEmail(ctx context.Context, passwo
 
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE users
-		SET password_hash = ?, email = ?, status = 'verified', updated_at = NOW()
+		SET password_hash = ?, email = ?, status = 'verified', email_verified = TRUE, updated_at = NOW()
 		WHERE username = ? AND password_hash = ?
 	`, passwordHash, email, constants.DefaultUsername, currentPasswordHash)
 	if err != nil {
@@ -88,16 +93,19 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*repository.User, er
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
 	var customFields *string
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, email, name, role, status, profile_picture, last_login_at, custom_fields
+		SELECT id, username, password_hash, email, name, role, status, email_verified, profile_picture, last_login_at, created_at, updated_at, custom_fields
 		FROM users
 		WHERE username = ?
 	`, constants.DefaultUsername).Scan(
 		&user.ID, &user.Username, &user.PasswordHash,
 		&email, &name, &user.Role, &user.Status,
-		&profilePicture, &user.LastLoginAt, &customFields,
+		&user.EmailVerified,
+		&profilePicture, &user.LastLoginAt, &createdAt, &updatedAt, &customFields,
 	)
 	if err == sql.ErrNoRows {
 		return nil, repository.ErrAdminNotFound
@@ -113,6 +121,12 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*repository.User, er
 	}
 	if profilePicture.Valid {
 		user.ProfilePicture = profilePicture.String
+	}
+	if createdAt.Valid {
+		user.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		user.UpdatedAt = updatedAt.Time
 	}
 	user.CustomFields = unmarshalCustomFields(customFields)
 	return &user, nil
@@ -220,21 +234,49 @@ func (r *UserRepository) UpdateUserStatusIfCurrentStatus(ctx context.Context, us
 	return nil
 }
 
+// SetEmailVerified sets a user's email address verification state. It is
+// separate from the user's status: in admin-approval mode a "pending" user may
+// have an already-verified email while still awaiting admin activation, and
+// changing a user's email address clears the flag until the new address is
+// proven again.
+func (r *UserRepository) SetEmailVerified(ctx context.Context, userID int, emailVerified bool) error {
+	if err := r.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("database connection lost: %w", err)
+	}
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE users SET email_verified = ?, updated_at = NOW() WHERE id = ?
+	`, emailVerified, userID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("user not found with ID %d", userID)
+	}
+	return nil
+}
+
 // GetUserByID retrieves a user by their ID.
 func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*repository.User, error) {
 	var user repository.User
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
 	var customFields *string
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, email, name, role, status, profile_picture, last_login_at, custom_fields
+		SELECT id, username, password_hash, email, name, role, status, email_verified, profile_picture, last_login_at, created_at, updated_at, custom_fields
 		FROM users WHERE id = ?
 	`, userID).Scan(
 		&user.ID, &user.Username, &user.PasswordHash,
 		&email, &name, &user.Role, &user.Status,
-		&profilePicture, &user.LastLoginAt, &customFields,
+		&user.EmailVerified,
+		&profilePicture, &user.LastLoginAt, &createdAt, &updatedAt, &customFields,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found with ID %d", userID)
@@ -251,6 +293,12 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*reposito
 	if profilePicture.Valid {
 		user.ProfilePicture = profilePicture.String
 	}
+	if createdAt.Valid {
+		user.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		user.UpdatedAt = updatedAt.Time
+	}
 	user.CustomFields = unmarshalCustomFields(customFields)
 	return &user, nil
 }
@@ -263,15 +311,18 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*rep
 	var emailOut sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
 	var customFields *string
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, email, name, role, status, profile_picture, last_login_at, custom_fields
+		SELECT id, username, password_hash, email, name, role, status, email_verified, profile_picture, last_login_at, created_at, updated_at, custom_fields
 		FROM users WHERE LOWER(email) = LOWER(?)
 	`, email).Scan(
 		&user.ID, &user.Username, &user.PasswordHash,
 		&emailOut, &name, &user.Role, &user.Status,
-		&profilePicture, &user.LastLoginAt, &customFields,
+		&user.EmailVerified,
+		&profilePicture, &user.LastLoginAt, &createdAt, &updatedAt, &customFields,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -288,6 +339,12 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*rep
 	if profilePicture.Valid {
 		user.ProfilePicture = profilePicture.String
 	}
+	if createdAt.Valid {
+		user.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		user.UpdatedAt = updatedAt.Time
+	}
 	user.CustomFields = unmarshalCustomFields(customFields)
 	return &user, nil
 }
@@ -298,15 +355,18 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
 	var customFields *string
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, email, name, role, status, profile_picture, last_login_at, custom_fields
+		SELECT id, username, password_hash, email, name, role, status, email_verified, profile_picture, last_login_at, created_at, updated_at, custom_fields
 		FROM users WHERE username = ?
 	`, username).Scan(
 		&user.ID, &user.Username, &user.PasswordHash,
 		&email, &name, &user.Role, &user.Status,
-		&profilePicture, &user.LastLoginAt, &customFields,
+		&user.EmailVerified,
+		&profilePicture, &user.LastLoginAt, &createdAt, &updatedAt, &customFields,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -323,6 +383,12 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 	if profilePicture.Valid {
 		user.ProfilePicture = profilePicture.String
 	}
+	if createdAt.Valid {
+		user.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		user.UpdatedAt = updatedAt.Time
+	}
 	user.CustomFields = unmarshalCustomFields(customFields)
 	return &user, nil
 }
@@ -330,7 +396,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 // GetPendingUsers returns all users with 'pending' status.
 func (r *UserRepository) GetPendingUsers(ctx context.Context, limit int, offset int) ([]*repository.User, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, username, email, name, role, status, profile_picture, created_at, custom_fields
+		SELECT id, username, email, name, role, status, email_verified, profile_picture, created_at, custom_fields
 		FROM users WHERE status = 'pending'
 		ORDER BY created_at DESC LIMIT ? OFFSET ?
 	`, limit, offset)
@@ -391,12 +457,12 @@ func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit i
 	var err error
 	if status == "" {
 		rows, err = r.db.QueryContext(ctx, `
-			SELECT id, username, email, name, role, status, profile_picture, created_at, custom_fields
+			SELECT id, username, email, name, role, status, email_verified, profile_picture, created_at, custom_fields
 			FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?
 		`, limit, offset)
 	} else {
 		rows, err = r.db.QueryContext(ctx, `
-			SELECT id, username, email, name, role, status, profile_picture, created_at, custom_fields
+			SELECT id, username, email, name, role, status, email_verified, profile_picture, created_at, custom_fields
 			FROM users WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
 		`, status, limit, offset)
 	}

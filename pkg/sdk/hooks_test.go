@@ -13,6 +13,7 @@ func TestHookConstants(t *testing.T) {
 	assert.Equal(t, "after_publish", sdkpkg.HookAfterPublish)
 	assert.Equal(t, "before_delete", sdkpkg.HookBeforeDelete)
 	assert.Equal(t, "after_create", sdkpkg.HookAfterCreate)
+	assert.Equal(t, "after_unpublish", sdkpkg.HookAfterUnpublish)
 	assert.Equal(t, "on_plugin_loaded", sdkpkg.HookOnPluginLoaded)
 }
 

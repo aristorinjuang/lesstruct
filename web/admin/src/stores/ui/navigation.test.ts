@@ -27,6 +27,27 @@ vi.mock('@/stores/domain/content', () => ({
   })),
 }))
 
+// Mock the role store so tests can control the config-driven capabilities
+// (or leave them null for the legacy name-based mapping) without a network call.
+const roleStoreState = {
+  roles: [] as { name: string }[],
+  me: null as {
+    role: string
+    postTypes: string[]
+    publish: boolean
+    media: boolean
+    comments: boolean
+    isAdmin: boolean
+  } | null,
+  capabilitiesLoaded: false,
+  isLoading: false,
+  error: null,
+  load: vi.fn(),
+}
+vi.mock('@/stores/domain/role', () => ({
+  useRoleStore: vi.fn(() => roleStoreState),
+}))
+
 import { useNavigationStore } from './navigation'
 import type { PostType } from '@/types/posttype'
 
@@ -35,6 +56,9 @@ describe('NavigationStore', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     postTypesRef.value = []
+    roleStoreState.me = null
+    roleStoreState.roles = []
+    roleStoreState.capabilitiesLoaded = false
     // Clear localStorage
     localStorage.clear()
   })
@@ -115,7 +139,7 @@ describe('NavigationStore', () => {
         { path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' },
         { path: '/content?type=post', label: 'Posts', icon: 'document-text', permission: 'content_creator' },
         { path: '/content?type=page', label: 'Pages', icon: 'document', permission: 'content_creator' },
-        { path: '/media', label: 'Media', icon: 'photo', permission: 'content_creator' },
+        { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
         { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
         { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
         { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
@@ -135,7 +159,7 @@ describe('NavigationStore', () => {
         { path: '/dashboard', label: 'Dashboard', icon: 'chart-bars', permission: 'admin' },
         { path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' },
         { path: '/content?type=page', label: 'Pages', icon: 'document', permission: 'content_creator' },
-        { path: '/media', label: 'Media', icon: 'photo', permission: 'content_creator' },
+        { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
         { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
         { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
         { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
@@ -156,6 +180,56 @@ describe('NavigationStore', () => {
       expect(paths).not.toContain('/content?type=secret')
       expect(paths).toContain('/content?type=post')
       expect(paths).toContain('/content?type=page')
+    })
+
+    it('should gate navigation by config-driven capabilities', () => {
+      roleStoreState.me = {
+        role: 'Editor',
+        postTypes: ['article'],
+        publish: true,
+        media: false,
+        comments: false,
+        isAdmin: false,
+      }
+      roleStoreState.capabilitiesLoaded = true
+      postTypesRef.value = [
+        { name: 'Post', slug: 'post', supports: ['title', 'content'] },
+        { name: 'Page', slug: 'page', supports: ['title', 'content'] },
+        { name: 'Article', slug: 'article', supports: ['title', 'content'] },
+      ]
+      const store = useNavigationStore()
+
+      const paths = store.navigationItems.map(item => item.path)
+      expect(paths).toContain('/content?type=article')
+      expect(paths).not.toContain('/content?type=post')
+      expect(paths).not.toContain('/content?type=page')
+      expect(paths).not.toContain('/dashboard')
+      expect(paths).not.toContain('/users')
+      expect(paths).not.toContain('/import')
+      expect(paths).not.toContain('/export')
+      expect(paths).not.toContain('/media')
+      expect(paths).not.toContain('/comment')
+    })
+
+    it('should show media for a role with the media capability but no post types', () => {
+      roleStoreState.me = {
+        role: 'Photographer',
+        postTypes: [],
+        publish: false,
+        media: true,
+        comments: false,
+        isAdmin: false,
+      }
+      roleStoreState.capabilitiesLoaded = true
+      postTypesRef.value = [
+        { name: 'Post', slug: 'post', supports: ['title', 'content'] },
+      ]
+      const store = useNavigationStore()
+
+      const paths = store.navigationItems.map(item => item.path)
+      expect(paths).toContain('/media')
+      expect(paths).not.toContain('/content?type=post')
+      expect(paths).not.toContain('/dashboard')
     })
   })
 

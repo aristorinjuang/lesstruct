@@ -8,6 +8,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/aristorinjuang/lesstruct/internal/constants"
 	authdomain "github.com/aristorinjuang/lesstruct/internal/domain/auth"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 )
 
@@ -34,7 +35,9 @@ var (
 	ErrAdminCreateFailed = errors.New("admin user creation failed")
 )
 
-// allowedAdminRoles defines which roles an admin can assign
+// allowedAdminRoles defines the legacy fallback role allowlist, used only when
+// an AdminCreateUserService is constructed without a role service (e.g. in
+// tests). Production always injects the config-driven role registry.
 var allowedAdminRoles = map[string]bool{
 	"Admin":       true,
 	"Contributor": true,
@@ -82,12 +85,35 @@ type AdminCreateUserService struct {
 	userRepo         AdminCreateUserRepo
 	blockedEmailRepo BlockedEmailRepo
 	commentsEnabled  bool
+	roleService      *roledomain.Service
 }
 
-// isAllowedRole reports whether an admin may assign the role. The Commentator
-// role exists only for the comment system; when comments are disabled it
-// cannot be assigned.
+// AdminCreateUserOption configures an AdminCreateUserService. A role service
+// makes the assignable-role allowlist config-driven; without one the legacy
+// three-role allowlist applies.
+type AdminCreateUserOption func(*AdminCreateUserService)
+
+// WithRoleService attaches the config-driven role registry so admins can assign
+// every registered role (built-ins plus any [[role]] entries).
+func WithRoleService(rs *roledomain.Service) AdminCreateUserOption {
+	return func(s *AdminCreateUserService) {
+		s.roleService = rs
+	}
+}
+
+// isAllowedRole reports whether an admin may assign the role. With a role
+// service the allowlist is registry-driven; the Commentator role additionally
+// requires the comment system to be enabled.
 func (s *AdminCreateUserService) isAllowedRole(role string) bool {
+	if s.roleService != nil {
+		if !s.roleService.IsAssignable(role) {
+			return false
+		}
+		if role == constants.RoleCommentator && !s.commentsEnabled {
+			return false
+		}
+		return true
+	}
 	return isAllowedRole(role, s.commentsEnabled)
 }
 
@@ -176,10 +202,19 @@ func (s *AdminCreateUserService) CreateUser(ctx context.Context, req AdminCreate
 // NewAdminCreateUserService creates a new admin create user service.
 // commentsEnabled gates the Commentator role: when false, admins cannot assign
 // it (the role exists only for the comment system).
-func NewAdminCreateUserService(userRepo AdminCreateUserRepo, blockedEmailRepo BlockedEmailRepo, commentsEnabled bool) *AdminCreateUserService {
-	return &AdminCreateUserService{
+func NewAdminCreateUserService(
+	userRepo AdminCreateUserRepo,
+	blockedEmailRepo BlockedEmailRepo,
+	commentsEnabled bool,
+	opts ...AdminCreateUserOption,
+) *AdminCreateUserService {
+	s := &AdminCreateUserService{
 		userRepo:         userRepo,
 		blockedEmailRepo: blockedEmailRepo,
 		commentsEnabled:  commentsEnabled,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }

@@ -68,7 +68,7 @@ func TestSuspendAlreadySuspendedUser(t *testing.T) {
 	reqBody := map[string]string{"reason": "Already suspended"}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("POST", "/api/admin/users/123/suspend", bytes.NewReader(bodyBytes))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/123/suspend", bytes.NewReader(bodyBytes))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -106,7 +106,7 @@ func TestSuspendSoftDeletedUser(t *testing.T) {
 		t.Fatalf("Failed to generate admin token: %v", err)
 	}
 
-	req := httptest.NewRequest("POST", "/api/admin/users/123/suspend", bytes.NewReader([]byte(`{"reason":"test"}`)))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/123/suspend", bytes.NewReader([]byte(`{"reason":"test"}`)))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -144,7 +144,7 @@ func TestUnsuspendActiveUser(t *testing.T) {
 		t.Fatalf("Failed to generate admin token: %v", err)
 	}
 
-	req := httptest.NewRequest("POST", "/api/admin/users/123/unsuspend", bytes.NewReader([]byte(`{"reason":"test"}`)))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/123/unsuspend", bytes.NewReader([]byte(`{"reason":"test"}`)))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -182,7 +182,7 @@ func TestSoftDeleteAlreadySoftDeletedUser(t *testing.T) {
 		t.Fatalf("Failed to generate admin token: %v", err)
 	}
 
-	req := httptest.NewRequest("POST", "/api/admin/users/123/soft-delete", bytes.NewReader([]byte(`{"confirmed":true,"reason":"test"}`)))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/123/soft-delete", bytes.NewReader([]byte(`{"confirmed":true,"reason":"test"}`)))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -207,7 +207,7 @@ func TestSoftDeleteWithoutConfirmation(t *testing.T) {
 	}
 
 	// Test with confirmed: false
-	req := httptest.NewRequest("POST", "/api/admin/users/123/soft-delete", bytes.NewReader([]byte(`{"confirmed":false}`)))
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/123/soft-delete", bytes.NewReader([]byte(`{"confirmed":false}`)))
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -219,7 +219,7 @@ func TestSoftDeleteWithoutConfirmation(t *testing.T) {
 	}
 
 	// Test with missing confirmed field
-	req2 := httptest.NewRequest("POST", "/api/admin/users/123/soft-delete", bytes.NewReader([]byte(`{"reason":"test"}`)))
+	req2 := httptest.NewRequest(http.MethodPost, "/api/admin/users/123/soft-delete", bytes.NewReader([]byte(`{"reason":"test"}`)))
 	req2.Header.Set("Authorization", "Bearer "+adminToken)
 	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()
@@ -249,7 +249,7 @@ func TestRestoreNonExistentContent(t *testing.T) {
 		t.Fatalf("Failed to generate admin token: %v", err)
 	}
 
-	req := httptest.NewRequest("POST", "/api/admin/content/999/restore", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/content/999/restore", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -281,7 +281,7 @@ func TestEmptyUserList(t *testing.T) {
 		t.Fatalf("Failed to generate admin token: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/admin/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	w := httptest.NewRecorder()
 
@@ -394,7 +394,7 @@ func TestInvalidUserID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("POST", tt.url, bytes.NewReader([]byte(`{"reason":"test","confirmed":true}`)))
+			req := httptest.NewRequest(http.MethodPost, tt.url, bytes.NewReader([]byte(`{"reason":"test","confirmed":true}`)))
 			req.Header.Set("Authorization", "Bearer "+adminToken)
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
@@ -422,7 +422,7 @@ func TestInvalidStatusParameter(t *testing.T) {
 		t.Fatalf("Failed to generate admin token: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/admin/users?status=invalid_status", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/users?status=invalid_status", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	w := httptest.NewRecorder()
 
@@ -465,7 +465,7 @@ func TestRestoreAlreadyRestoredContent(t *testing.T) {
 		t.Fatalf("Failed to generate admin token: %v", err)
 	}
 
-	req := httptest.NewRequest("POST", "/api/admin/content/1/restore", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/content/1/restore", nil)
 	req.Header.Set("Authorization", "Bearer "+adminToken)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -474,5 +474,63 @@ func TestRestoreAlreadyRestoredContent(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("Expected status 404 for already-restored content, got %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestApproveUserEmailNotVerified verifies that approving a pending user whose
+// email address is not yet verified is refused with EMAIL_NOT_VERIFIED when the
+// service runs in admin-approval mode (email verification must come first).
+func TestApproveUserEmailNotVerified(t *testing.T) {
+	userRepo := repomocks.NewMockUserRepo(t)
+	userRepo.EXPECT().
+		GetUserByID(mock.Anything, 123).
+		Return(&repository.User{
+			ID:            123,
+			Username:      "pendinguser",
+			Email:         "pending@example.com",
+			Status:        "pending",
+			Role:          "Contributor",
+			EmailVerified: false,
+		}, nil)
+
+	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
+	softDeleteRepo := repomocks.NewMockSoftDeleteRepo(t)
+
+	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
+	logger := util.NewLogger(os.Stdout)
+	emailService := emailmocks.NewMockEmailService(t)
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, true, user.WithApprovalEmailRequired())
+	userManagementHandler := NewUserManagementHandler(userManagementService, nil, userRepo, softDeleteRepo, jwtManager, emailService, logger, nil)
+
+	r := chi.NewRouter()
+	r.Post("/api/admin/users/{id}/approve", userManagementHandler.ApproveUser)
+
+	adminToken, err := jwtManager.GenerateToken("1", "admin", "Admin")
+	if err != nil {
+		t.Fatalf("Failed to generate admin token: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/123/approve", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("Expected status 409 for approving unverified email, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var errResp struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if errResp.Error.Code != "EMAIL_NOT_VERIFIED" {
+		t.Errorf("Expected error code 'EMAIL_NOT_VERIFIED', got '%s'", errResp.Error.Code)
 	}
 }

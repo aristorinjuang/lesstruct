@@ -36,6 +36,17 @@ func (r *UserDeletionRepository) DeleteAllUserData(ctx context.Context, userID i
 		}
 	}()
 
+	// Delete the aliases of the user's content before the content rows: the
+	// content_aliases FK cascade does not fire on SQLite (foreign keys are not
+	// enforced there), so the explicit delete prevents dangling aliases. On
+	// MySQL/Postgres the cascade removes the same rows — idempotent.
+	if _, err = tx.ExecContext(ctx, `
+		DELETE FROM content_aliases
+		WHERE content_id IN (SELECT id FROM content_items WHERE user_id = ?)
+	`, userID); err != nil {
+		return fmt.Errorf("failed to delete content aliases: %w", err)
+	}
+
 	// Delete user content (placeholder for future functionality)
 	if _, err = tx.ExecContext(ctx, `DELETE FROM content_items WHERE user_id = ?`, userID); err != nil {
 		// Table may not exist yet; ignore error for placeholder

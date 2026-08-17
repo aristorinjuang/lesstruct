@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -41,21 +43,41 @@ func setupHandlerWithLanguages(t *testing.T, mockService *mocks.MockContentServi
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0, true)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0, true, true)
 }
 
 func setupHandlerWithResolver(t *testing.T, mockService *mocks.MockContentService, mockResolver *mocks.MockPostTypeResolver) *contentpage.ContentPageHandler {
 	t.Helper()
 	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true, true)
+}
+
+func setupHandlerWithRegistration(t *testing.T, mockService *mocks.MockContentService, registrationEnabled bool) *contentpage.ContentPageHandler {
+	t.Helper()
+	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
+	renderer := tiptap.NewRenderer(nil)
+	mockResolver := new(mocks.MockPostTypeResolver)
+	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true, registrationEnabled)
 }
 
 func setupHandlerWithLanguagesAndResolver(t *testing.T, mockService *mocks.MockContentService, languages []string, mockResolver *mocks.MockPostTypeResolver) *contentpage.ContentPageHandler {
 	t.Helper()
 	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
 	renderer := tiptap.NewRenderer(nil)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0, true)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, languages, nil, config.SiteConfig{}, 0, true, true)
+}
+
+func setupHandlerWithTheme(t *testing.T, mockService *mocks.MockContentService, themeDir string) *contentpage.ContentPageHandler {
+	t.Helper()
+	mockService.On("GetRelated", mock.Anything, mock.Anything, mock.Anything).Return([]*contentdomain.Content{}, nil).Maybe()
+	renderer := tiptap.NewRenderer(nil)
+	mockResolver := new(mocks.MockPostTypeResolver)
+	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
+	templates, err := template.NewTemplates(&template.Theme{Dir: themeDir}, nil)
+	require.NoError(t, err)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, templates, renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true, true)
 }
 
 func setupNavMocks(mockService *mocks.MockContentService) {
@@ -737,6 +759,48 @@ func TestServeIndex_PostTypeExposedOnCards(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
+func TestServeIndex_PostItemCustomFieldsAvailableToThemes(t *testing.T) {
+	themeDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(themeDir, "templates"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(themeDir, "templates", "homepage.html"),
+		[]byte(`{{- define "body"}}{{range .Posts}}{{if index .CustomFields "link"}}<a href="{{index .CustomFields "link"}}" class="custom-link-test">{{.Title}}</a>{{end}}{{end}}{{end}}`),
+		0o644,
+	))
+
+	mockService := new(mocks.MockContentService)
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+		{
+			Slug:         "hello-world",
+			Title:        "Hello World",
+			PostType:     "post",
+			Language:     "en",
+			CustomFields: map[string]any{"link": "https://publisher.example.com/read/123"},
+		},
+		{
+			Slug:     "no-fields-post",
+			Title:    "No Fields",
+			PostType: "post",
+			Language: "en",
+		},
+	}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandlerWithTheme(t, mockService, themeDir)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, `https://publisher.example.com/read/123`)
+	assert.Equal(t, 1, strings.Count(body, "custom-link-test"), "posts without the link field should render no card link")
+	assert.NotContains(t, body, "no-fields-post", "the no-custom-fields post must not render a link")
+	mockService.AssertExpectations(t)
+}
+
 func TestServeIndex_TagsPopulated(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
@@ -784,6 +848,7 @@ func TestServeIndex_HomeSections(t *testing.T) {
 		config.SiteConfig{},
 		0,
 		true,
+		true,
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -807,7 +872,7 @@ func TestServeIndex_PaginationNextAndPrev(t *testing.T) {
 		mockService := new(mocks.MockContentService)
 		// Return perPage+1 (51) items to trigger HasNext.
 		contents := make([]*contentdomain.Content, 0, 51)
-		for i := 0; i < 51; i++ {
+		for i := range 51 {
 			contents = append(contents, &contentdomain.Content{
 				Slug: fmt.Sprintf("post-%d", i), Title: fmt.Sprintf("Post %d", i), PostType: "post", Language: "en",
 			})
@@ -1560,6 +1625,55 @@ func TestServeRegister(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
+func TestServeRegister_RegistrationDisabled(t *testing.T) {
+	mockService := new(mocks.MockContentService)
+	setupNavMocks(mockService)
+
+	handler := setupHandlerWithRegistration(t, mockService, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/register", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestServeLogin_RegistrationDisabledHidesRegisterLink(t *testing.T) {
+	mockService := new(mocks.MockContentService)
+	setupNavMocks(mockService)
+
+	handler := setupHandlerWithRegistration(t, mockService, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.NotContains(t, body, `href="/register"`)
+	assert.Contains(t, body, `href="/forgot-password"`)
+	mockService.AssertExpectations(t)
+}
+
+func TestServeLogin_RegistrationEnabledShowsRegisterLink(t *testing.T) {
+	mockService := new(mocks.MockContentService)
+	setupNavMocks(mockService)
+
+	handler := setupHandlerWithRegistration(t, mockService, true)
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, `href="/register"`)
+	mockService.AssertExpectations(t)
+}
+
 func TestServeForgotPassword(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	setupNavMocks(mockService)
@@ -2022,7 +2136,7 @@ func setupHandlerWithSiteConfig(t *testing.T, mockService *mocks.MockContentServ
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, siteConfig, 0, true)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, nil, nil, newTemplates(t), renderer, nil, []string{"en"}, nil, siteConfig, 0, true, true)
 }
 
 func TestServeIndex_SiteConfigNameAppearsInTitleAndOG(t *testing.T) {
@@ -2560,7 +2674,7 @@ func setupAuthorHandler(t *testing.T, mockService *mocks.MockContentService, moc
 	renderer := tiptap.NewRenderer(nil)
 	mockResolver := new(mocks.MockPostTypeResolver)
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).Return(posttype.PostType{}, assert.AnError)
-	return contentpage.NewContentPageHandler(mockService, mockResolver, mockUserFieldResolver, mockUserProvider, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true)
+	return contentpage.NewContentPageHandler(mockService, mockResolver, mockUserFieldResolver, mockUserProvider, newTemplates(t), renderer, nil, []string{"en"}, nil, config.SiteConfig{}, 0, true, true)
 }
 
 func TestServeAuthor_CustomFieldsDisplayed(t *testing.T) {
@@ -3108,6 +3222,7 @@ func TestResolvePostImage(t *testing.T) {
 				nil,
 				config.SiteConfig{},
 				0,
+				true,
 				true,
 			)
 

@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -380,7 +380,7 @@ func printMediaGet(w io.Writer, mode string, data, meta json.RawMessage, verb st
 	for k := range m.Variants {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, k := range keys {
 		v := m.Variants[k]
 		if _, verr := fmt.Fprintf(w, "  variant %s: url=%s %dx%d\n", k, v.URL, v.Width, v.Height); verr != nil {

@@ -78,30 +78,32 @@ func logInfo(msgPtr, msgLen uint32)
 
 ### Available Hooks
 
-The host invokes three hooks today:
+The host invokes five hooks today:
 
 | Hook | WASM Export Name | Description |
 |------|------------------|-------------|
-| BeforeSaveContent | `hook_before_save` | Called before content is saved (create or update) |
+| BeforeSaveContent | `hook_before_save` | Called before content is saved (create, update, or admin system-fields update) |
 | AfterCreateContent | `hook_after_create` | Called after content is created |
 | AfterPublishContent | `hook_after_publish` | Called after content is published |
+| BeforeDeleteContent | `hook_before_delete` | Called before content is deleted (admin or owner path) |
+| AfterUnpublishContent | `hook_after_unpublish` | Called after content leaves the published state (published → draft/archived/other, via unpublish or update) |
 
-Two additional hooks are defined in the host registry but are **not currently invoked** by any production code path. If your plugin exports only one of these, the plugin will load successfully but the hook will never fire:
+One additional hook is defined in the host registry but is **not currently invoked** by any production code path. If your plugin exports only this one, the plugin will load successfully but the hook will never fire:
 
 | Hook | WASM Export Name | Status |
 |------|------------------|--------|
 | OnPluginLoaded | `hook_on_plugin_loaded` | Defined, not invoked |
-| BeforeDeleteContent | `hook_before_delete` | Defined, not invoked |
 
-Do not rely on `hook_on_plugin_loaded` or `hook_before_delete` for production
-behaviour. Use one of the three invoked hooks instead.
+Do not rely on `hook_on_plugin_loaded` for production
+behaviour. Use one of the five invoked hooks instead.
 
 ### Failure Mode
 
 When a hook returns an error, the request fails. The content service maps
-the error to a 500 response and the content is not saved (for `before_save`)
-or the error is logged (for `after_create` / `after_publish`, whose results
-are not stored). There is no automatic rollback of prior hooks in a chain.
+the error to a 500 response and the content is not saved (for `before_save`
+and `before_delete`) or the error is logged (for `after_create` /
+`after_publish` / `after_unpublish`, whose results are not stored). There is
+no automatic rollback of prior hooks in a chain.
 
 ## System Fields
 
@@ -109,7 +111,7 @@ System fields are special custom field values managed by plugins. They are defin
 
 ### Hook Data Format
 
-When `before_save` or `after_create` hooks execute, the host sends a JSON object with eight fields:
+When `before_save`, `before_delete`, or `after_create` hooks execute, the host sends a JSON object with eight fields:
 
 ```json
 {
@@ -130,11 +132,30 @@ When `before_save` or `after_create` hooks execute, the host sends a JSON object
 
 Field notes:
 
-- `contentId` is `0` on create, the existing content's ID on update.
-- `userId` is the authenticated user performing the action.
+- `contentId` is `0` on create, the existing content's ID on update, delete, or system-fields update.
+- `userId` is the authenticated user performing the action on create/update; on delete and system-fields updates it is the content **author** (`existing.UserID`), not the acting admin.
 - `status` is one of `draft`, `published`, `archived`, or a custom value.
 - `postType` is `post`, `page`, or a custom type.
 - `customFields` contains both regular custom fields and system fields.
+
+### Deleting Content
+
+`before_delete` fires after authorization but before the row is removed, with
+the full payload — including plugin-managed system field values, which are
+unrecoverable once the row is gone. The hook's **result is discarded** (a
+deletion has nothing to write back); only the error matters: returning an
+error aborts the delete, exactly like `before_save`. Use it to decrement
+counters, recompute aggregates, or clean up cross-references.
+
+### Unpublishing Content
+
+`after_unpublish` fires after the row is persisted whenever content **leaves
+the published state** — via the unpublish endpoint (`POST
+/api/v1/content/{id}/unpublish`) or a status change through the Update
+endpoint (published → draft, archived, or any other status). It is the mirror
+of `after_publish` (which fires when content enters the published state) and
+is notification-style: the result is discarded and an error only logs.
+Unpublishing an already-draft item is a no-op and fires nothing.
 
 ### Reading System Fields
 
@@ -203,6 +224,7 @@ the host ignores them. To mutate the content item, the plugin must write
 - System field values are only preserved when set through `before_save` hooks. User-submitted system field values are stripped for security.
 - `after_create` and `after_publish` hooks can read but should not write system fields — their results are not stored (notification-style hooks).
 - If no plugin handles a `before_save` hook, system fields are stripped as usual and content creation proceeds normally.
+- The admin system-fields endpoints (`PUT /api/admin/content/{id}/system-fields` and the agent mirror `PUT /api/v1/content/{id}/system-fields`) also fire `before_save`, with the merged content payload (`contentId` and the author's `userId`). The hook may adjust **system fields only** on this path — changes to regular custom fields in the result are ignored, keeping the endpoint's system-fields-only contract. A hook error aborts the update, and plugin-set system field values are validated exactly as on create/update.
 
 ## Memory Protocol
 
@@ -420,7 +442,6 @@ clang --target=wasm32-wasi -o plugin.wasm plugin.c
 For a manual smoke test per hook, see the `references/plugin-checklist.md`
 file bundled with the `lesstruct-plugin-development` skill.
 
-If you observe your hooks firing on create but not on delete, or
-`on_plugin_loaded` not firing at all, you have hit a hook that is
-defined but not currently invoked. See the [Available Hooks](#available-hooks)
+If you observe `on_plugin_loaded` not firing at all, you have hit a hook that
+is defined but not currently invoked. See the [Available Hooks](#available-hooks)
 section above.

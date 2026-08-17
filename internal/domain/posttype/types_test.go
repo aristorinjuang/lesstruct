@@ -207,9 +207,9 @@ func TestValidateSlug(t *testing.T) {
 
 func TestValidateSupports(t *testing.T) {
 	tests := []struct {
-		name    string
+		name     string
 		supports []string
-		wantErr error
+		wantErr  error
 	}{
 		{"valid single support", []string{"title"}, nil},
 		{"valid multiple supports", []string{"title", "content", "tags"}, nil},
@@ -555,6 +555,7 @@ func TestUserFieldsValidation(t *testing.T) {
 	}
 }
 
+//go:fix inline
 func floatPtr(v float64) *float64 {
-	return &v
+	return new(v)
 }

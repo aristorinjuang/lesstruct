@@ -5,9 +5,10 @@ import type { FieldSchema } from './customfield'
  */
 
 /**
- * User role types in the system
+ * User role types in the system. Roles are config-driven ([[role]] in
+ * config.toml), so a role is a free-form string rather than a fixed union.
  */
-export type UserRole = 'Admin' | 'Contributor' | 'Commentator'
+export type UserRole = string
 
 /**
  * User status types
@@ -39,6 +40,7 @@ export interface User {
   role: UserRole | string
   status: UserStatus | string
   profilePicture?: string
+  emailVerified?: boolean
   createdAt: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customFields?: Record<string, any>

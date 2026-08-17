@@ -1,12 +1,13 @@
 package contentpage
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -109,8 +110,8 @@ func buildImageSrcset(variants map[string]mediadomain.MediaVariant) string {
 	for _, v := range variants {
 		parts = append(parts, entry{url: v.URL, width: v.Width})
 	}
-	sort.Slice(parts, func(i, j int) bool {
-		return parts[i].width < parts[j].width
+	slices.SortFunc(parts, func(a, b entry) int {
+		return cmp.Compare(a.width, b.width)
 	})
 	var sb strings.Builder
 	for i, p := range parts {
@@ -321,9 +322,10 @@ func displayLanguage(code string) string {
 }
 
 type ContentPageHandler struct {
-	assembler       *DataAssembler
-	templates       *tpl.Templates
-	commentsEnabled bool
+	assembler           *DataAssembler
+	templates           *tpl.Templates
+	commentsEnabled     bool
+	registrationEnabled bool
 }
 
 func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
@@ -424,7 +426,7 @@ func (h *ContentPageHandler) serveLogin(w http.ResponseWriter, r *http.Request) 
 			Lang:            h.assembler.PrimaryLanguage(),
 			SiteConfig:      h.assembler.siteConfig,
 		},
-		ShowRegister: h.commentsEnabled,
+		ShowRegister: h.registrationEnabled,
 	}
 	if err := h.templates.RenderLogin(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -432,9 +434,10 @@ func (h *ContentPageHandler) serveLogin(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ContentPageHandler) serveRegister(w http.ResponseWriter, r *http.Request) {
-	if !h.commentsEnabled {
-		// Self-registration only ever creates Commentator users; with the
-		// comment system disabled the page has no purpose.
+	if !h.registrationEnabled {
+		// Self-registration is disabled (via [registration] enabled = false or,
+		// by legacy default, when the comment system is off); the page has no
+		// purpose.
 		http.NotFound(w, r)
 		return
 	}
@@ -554,6 +557,15 @@ func (h *ContentPageHandler) WithPublicFieldRegistry(registry PublicFieldLookup)
 	return h
 }
 
+// WithIFrameHosts attaches the sanitizer's iframe host allowlist (derived from
+// the CSP frame-src directive) so HTML-format content can render allowed
+// embeds on the read path. When not called, iframes stay stripped. Returns the
+// receiver for chaining at construction time.
+func (h *ContentPageHandler) WithIFrameHosts(hosts ...string) *ContentPageHandler {
+	h.assembler.WithIFrameHosts(hosts...)
+	return h
+}
+
 func NewContentPageHandler(
 	contentService ContentService,
 	postTypeResolver PostTypeResolver,
@@ -566,7 +578,8 @@ func NewContentPageHandler(
 	homepageSections []config.HomepageSection,
 	siteConfig config.SiteConfig,
 	postsPerPage int,
-	commentsEnabled bool,
+	commentsEnabled     bool,
+	registrationEnabled bool,
 ) *ContentPageHandler {
 	return &ContentPageHandler{
 		assembler: NewDataAssembler(
@@ -581,7 +594,8 @@ func NewContentPageHandler(
 			siteConfig,
 			postsPerPage,
 		),
-		templates:       templates,
-		commentsEnabled: commentsEnabled,
+		templates:           templates,
+		commentsEnabled:     commentsEnabled,
+		registrationEnabled: registrationEnabled,
 	}
 }

@@ -126,7 +126,7 @@ func cleanTags(tags []string) []string {
 // contentCreator is the subset of the content domain service needed to create
 // imported items.
 type contentCreator interface {
-	Create(ctx context.Context, userID int, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
+	Create(ctx context.Context, userID int, role string, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
 }
 
 // userResolver resolves a WordPress author login to a Lesstruct userID.
@@ -207,15 +207,10 @@ func (imp *Importer) downloadImages(ctx context.Context, items []ParsedItem, use
 	close(urlCh)
 
 	var wg sync.WaitGroup
-	workerCount := downloadWorkers
-	if len(allURLs) < workerCount {
-		workerCount = len(allURLs)
-	}
+	workerCount := min(len(allURLs), downloadWorkers)
 
 	for range workerCount {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for imageURL := range urlCh {
 				local, err := imp.downloader.DownloadAndUpload(ctx, imageURL, userID)
 				mu.Lock()
@@ -229,7 +224,7 @@ func (imp *Importer) downloadImages(ctx context.Context, items []ParsedItem, use
 				}
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -294,7 +289,7 @@ func (imp *Importer) importItem(
 		req.PublishedAt = &publishedAt
 	}
 
-	if _, err := imp.contentService.Create(ctx, userID, req); err != nil {
+	if _, err := imp.contentService.Create(ctx, userID, contentdomain.RoleAdmin, req); err != nil {
 		result.Skipped++
 		if errors.Is(err, contentdomain.ErrSlugAlreadyExists) {
 			result.Errors = append(result.Errors, fmt.Sprintf("skipped %q: a post with this slug already exists", item.Title))

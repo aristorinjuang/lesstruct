@@ -69,10 +69,11 @@ rm lesstruct-plugin-development/customize.toml
 After installing, restart your agent and ask it to perform a trivial
 task related to Lesstruct plugins. For example:
 
-> "List the three hooks the Lesstruct plugin host currently invokes."
+> "List the five hooks the Lesstruct plugin host currently invokes."
 
-If the agent responds with `before_save`, `after_create`, and
-`after_publish` (and notes that `on_plugin_loaded` and `before_delete`
-are reserved), the skill is loaded correctly. If the agent does not
-know what you are talking about, check the agent's skill directory
-path and that the `SKILL.md` is in the right place.
+If the agent responds with `before_save`, `after_create`,
+`after_publish`, `before_delete`, and `after_unpublish` (and notes
+that `on_plugin_loaded` is reserved), the skill is loaded correctly.
+If the agent does not know what you are talking about, check the
+agent's skill directory path and that the `SKILL.md` is in the right
+place.

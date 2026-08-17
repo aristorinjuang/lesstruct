@@ -1,0 +1,25 @@
+info:
+  name: Get Roles
+  type: http
+  seq: 10
+
+http:
+  method: GET
+  url: "{{BASE_URL}}/api/v1/roles"
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+# Response envelope: { "data": { "roles": [...], "me": {...} }, "error": null }
+#   roles[] — every registered role (built-ins + [[role]] entries): name, postTypes/allTypes, publish, media, comments, isAdmin
+#   me      — caller's capabilities: role, postTypes (manageable slugs), publish, media, comments, isAdmin
+# The admin UI populates the user-management role dropdown from roles[] and gates
+# navigation/forms from me — never hardcode role names in clients.
+# When the instance runs legacy config (no role registry) this returns
+# 404 roles_unavailable (fail closed).
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

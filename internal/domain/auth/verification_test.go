@@ -98,6 +98,10 @@ func TestVerificationService_VerifyEmail_Success(t *testing.T) {
 		}, nil)
 
 	userRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 456, true).
+		Return(nil)
+
+	userRepo.EXPECT().
 		UpdateUserStatus(
 			mock.Anything,
 			456,
@@ -117,7 +121,66 @@ func TestVerificationService_VerifyEmail_Success(t *testing.T) {
 	require.NotNil(t, result, "VerifyEmail() should return result")
 
 	assert.True(t, result.Success, "Expected Success to be true")
-	assert.NotEmpty(t, result.Message, "Message should not be empty")
+	assert.Equal(t, "Email verified successfully", result.Message)
+}
+
+func TestVerificationService_VerifyEmail_AdminApprovalRequired(t *testing.T) {
+	userRepo := repomocks.NewMockUserRepo(t)
+	tokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+
+	tokenRepo.EXPECT().
+		FindValidToken(mock.Anything, mock.Anything).
+		Return(&repository.VerificationToken{
+			ID:        123,
+			UserID:    456,
+			TokenHash: "test-hash",
+			ExpiresAt: time.Now().Add(1 * time.Hour),
+		}, nil)
+
+	userRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 456, true).
+		Return(nil)
+
+	tokenRepo.EXPECT().
+		DeleteUserTokens(mock.Anything, 456).
+		Return(nil)
+
+	service := auth.NewVerificationService(userRepo, tokenRepo, 24, auth.WithAdminApprovalRequired())
+
+	result, err := service.VerifyEmail(context.Background(), "test-token")
+
+	require.NoError(t, err, "VerifyEmail() should succeed")
+	require.NotNil(t, result, "VerifyEmail() should return result")
+
+	assert.True(t, result.Success, "Expected Success to be true")
+	assert.Equal(t, "Email verified. An administrator will activate your account.", result.Message)
+	// The account must stay pending: only admin approval may activate it.
+	userRepo.AssertNotCalled(t, "UpdateUserStatus", mock.Anything, mock.Anything, "verified")
+}
+
+func TestVerificationService_VerifyEmail_AdminApprovalRequired_SetEmailVerifiedError(t *testing.T) {
+	userRepo := repomocks.NewMockUserRepo(t)
+	tokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+
+	tokenRepo.EXPECT().
+		FindValidToken(mock.Anything, mock.Anything).
+		Return(&repository.VerificationToken{
+			ID:        123,
+			UserID:    456,
+			TokenHash: "test-hash",
+			ExpiresAt: time.Now().Add(1 * time.Hour),
+		}, nil)
+
+	userRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 456, true).
+		Return(errors.New("database connection lost"))
+
+	service := auth.NewVerificationService(userRepo, tokenRepo, 24, auth.WithAdminApprovalRequired())
+
+	_, err := service.VerifyEmail(context.Background(), "test-token")
+
+	require.Error(t, err, "Expected error when SetEmailVerified fails")
+	assert.ErrorIs(t, err, auth.ErrVerificationFailed, "Expected ErrVerificationFailed")
 }
 
 func TestVerificationService_VerifyEmail_InvalidToken(t *testing.T) {
@@ -198,6 +261,10 @@ func TestVerificationService_VerifyEmail_UpdateUserStatusError(t *testing.T) {
 			TokenHash: "test-hash",
 			ExpiresAt: time.Now().Add(1 * time.Hour),
 		}, nil)
+
+	userRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 456, true).
+		Return(nil)
 
 	userRepo.EXPECT().
 		UpdateUserStatus(

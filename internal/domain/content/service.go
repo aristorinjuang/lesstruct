@@ -186,6 +186,16 @@ type HookExecutor interface {
 	Execute(ctx context.Context, hookName plugin.HookName, data []byte) ([]byte, error)
 }
 
+// RoleChecker reports role capabilities for content authorization. It is
+// optional: a Service built without one keeps the legacy behavior (owners may
+// manage their own content, Admin bypasses ownership, and publish is
+// unrestricted for owners/admins). *role.Service implements this interface.
+type RoleChecker interface {
+	IsAdmin(role string) bool
+	CanManageType(role string, postType string) bool
+	CanPublish(role string) bool
+}
+
 // Option configures a content Service at construction time.
 type Option func(*Service)
 
@@ -209,6 +219,24 @@ func WithCommentsEnabled(enabled bool) Option {
 	}
 }
 
+// WithRoleChecker attaches the config-driven role registry so content
+// operations enforce per-post-type and publish capabilities. Without it the
+// Service behaves as before (owner-or-Admin ownership checks only).
+func WithRoleChecker(rc RoleChecker) Option {
+	return func(s *Service) {
+		s.roleChecker = rc
+	}
+}
+
+// WithAliasDeleter attaches the alias cleanup so DeleteContent removes the
+// item's alias rows. Without it deletion leaves aliases dangling (the schema's
+// CASCADE is not enforced on SQLite).
+func WithAliasDeleter(ad AliasDeleter) Option {
+	return func(s *Service) {
+		s.aliasDeleter = ad
+	}
+}
+
 // Service handles content business logic
 type Service struct {
 	repo            Repository
@@ -216,8 +244,18 @@ type Service struct {
 	seoService      *seo.Service
 	postTypeService PostTypeServiceInterface
 	hookExecutor    HookExecutor
+	aliasDeleter    AliasDeleter
 	defaultLanguage string
 	commentsEnabled bool
+	roleChecker     RoleChecker
+}
+
+// AliasDeleter removes the alias rows that point at a content item. It is
+// wired to the alias domain service so deleting content never leaves dangling
+// aliases behind (the SQLite schema's ON DELETE CASCADE does not fire because
+// foreign keys are not enforced there).
+type AliasDeleter interface {
+	DeleteByContentID(ctx context.Context, contentID int) error
 }
 
 func (s *Service) validateCustomFields(
@@ -449,9 +487,59 @@ func (s *Service) executeAfterPublishHook(
 	_, _ = s.hookExecutor.Execute(ctx, plugin.HookAfterPublish, b)
 }
 
+func (s *Service) executeAfterUnpublishHook(
+	ctx context.Context,
+	content *Content,
+) {
+	if s.hookExecutor == nil {
+		return
+	}
+	data := hookData{
+		ContentID:    content.ID,
+		UserID:       content.UserID,
+		Title:        content.Title,
+		Content:      content.Content,
+		Tags:         content.Tags,
+		Status:       string(content.Status),
+		PostType:     content.PostType,
+		CustomFields: content.CustomFields,
+	}
+	b, _ := json.Marshal(data)
+	_, _ = s.hookExecutor.Execute(ctx, plugin.HookAfterUnpublish, b)
+}
+
+// executeBeforeDeleteHook runs the blocking BeforeDeleteContent hook with the
+// full content payload (including plugin-managed system fields, which are
+// unrecoverable once the row is gone). The hook result is discarded — a
+// deletion has nothing to write back — but an error aborts the delete,
+// mirroring before_save semantics.
+func (s *Service) executeBeforeDeleteHook(
+	ctx context.Context,
+	existing *Content,
+	postType string,
+) error {
+	if s.hookExecutor == nil {
+		return nil
+	}
+	data := hookData{
+		ContentID:    existing.ID,
+		UserID:       existing.UserID,
+		Title:        existing.Title,
+		Content:      existing.Content,
+		Tags:         existing.Tags,
+		Status:       string(existing.Status),
+		PostType:     postType,
+		CustomFields: existing.CustomFields,
+	}
+	b, _ := json.Marshal(data)
+	_, err := s.hookExecutor.Execute(ctx, plugin.HookBeforeDelete, b)
+	return err
+}
+
 func (s *Service) SetSystemFields(
 	ctx context.Context,
 	contentID int,
+	userID int,
 	systemFields map[string]any,
 ) (*Content, error) {
 	if s.postTypeService == nil {
@@ -499,6 +587,48 @@ func (s *Service) SetSystemFields(
 	}
 	maps.Copy(existing.CustomFields, systemFields)
 
+	// Run the before_save hook with the merged view, honoring its full
+	// contract: the hook sees the post-merge custom fields (admin values plus
+	// whatever the plugin previously wrote), an error aborts the update, and
+	// system-field values the plugin returns are read back and persisted.
+	preHookSystemValues := s.getSystemFieldValues(existing.PostType, existing.CustomFields)
+
+	hookInput := hookData{
+		ContentID:    existing.ID,
+		UserID:       existing.UserID,
+		Title:        existing.Title,
+		Content:      existing.Content,
+		Tags:         existing.Tags,
+		Status:       string(existing.Status),
+		PostType:     existing.PostType,
+		CustomFields: existing.CustomFields,
+	}
+	hookBytes, _ := json.Marshal(hookInput)
+	hookResult, hookErr := s.executeBeforeSaveHook(ctx, hookBytes)
+	if hookErr != nil {
+		return nil, fmt.Errorf("before_save hook failed: %w", hookErr)
+	}
+	if hookResult != nil {
+		var parsed hookData
+		if err := json.Unmarshal(hookResult, &parsed); err == nil && parsed.CustomFields != nil {
+			postHookMerged := make(map[string]any)
+			maps.Copy(postHookMerged, existing.CustomFields)
+			maps.Copy(postHookMerged, parsed.CustomFields)
+			pluginSystemFields := s.diffSystemFieldValues(
+				preHookSystemValues,
+				s.getSystemFieldValues(existing.PostType, postHookMerged),
+			)
+			if err := s.validatePluginSystemFields(existing.PostType, pluginSystemFields); err != nil {
+				return nil, fmt.Errorf("plugin system field validation failed: %w", err)
+			}
+			if len(pluginSystemFields) > 0 {
+				maps.Copy(existing.CustomFields, pluginSystemFields)
+			}
+		}
+	}
+
+	existing.UpdatedBy = userID
+
 	if err := s.repo.Update(ctx, existing); err != nil {
 		return nil, fmt.Errorf("failed to update content: %w", err)
 	}
@@ -506,7 +636,32 @@ func (s *Service) SetSystemFields(
 	return existing, nil
 }
 
-func (s *Service) Create(ctx context.Context, userID int, req CreateContentRequest) (*Content, error) {
+// roleCanManage reports whether the role may manage the given post type. With a
+// role checker, admins always pass and other roles must have the type in their
+// manage list. Without a checker (legacy behavior) every role passes.
+func (s *Service) roleCanManage(role string, postType string) bool {
+	if s.roleChecker == nil {
+		return true
+	}
+	if s.roleChecker.IsAdmin(role) {
+		return true
+	}
+	return s.roleChecker.CanManageType(role, postType)
+}
+
+// roleCanPublish reports whether the role may publish content. Without a
+// checker (legacy behavior) every role passes; admins always pass.
+func (s *Service) roleCanPublish(role string) bool {
+	if s.roleChecker == nil {
+		return true
+	}
+	if s.roleChecker.IsAdmin(role) {
+		return true
+	}
+	return s.roleChecker.CanPublish(role)
+}
+
+func (s *Service) Create(ctx context.Context, userID int, role string, req CreateContentRequest) (*Content, error) {
 	if err := ValidateTitle(req.Title); err != nil {
 		return nil, fmt.Errorf("title validation failed: %w", err)
 	}
@@ -586,6 +741,19 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		}
 	}
 
+	// Per-type authorization: a role restricted to specific post types cannot
+	// create content for types outside its manage list (admins always pass).
+	if !s.roleCanManage(role, postType) {
+		return nil, ErrForbiddenPostType
+	}
+
+	// Publish capability: a role without it may still save content, but the
+	// item is forced to draft regardless of the requested status.
+	status := req.Status
+	if !s.roleCanPublish(role) && status == StatusPublished {
+		status = StatusDraft
+	}
+
 	// Capture pre-hook system field values
 	preHookSystemValues := s.getSystemFieldValues(postType, req.CustomFields)
 
@@ -636,7 +804,7 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 		Slug:               slug,
 		Content:            req.Content,
 		Tags:               tags,
-		Status:             req.Status,
+		Status:             status,
 		Format:             format,
 		PostType:           postType,
 		MetaDescription:    req.MetaDescription,
@@ -659,7 +827,7 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 	// SEO metadata (honoring any overrides, like Update) so it lands in the
 	// initial insert, then fire AfterPublish after the row is persisted. This
 	// makes create-when-published behave like create + publish.
-	if req.Status == StatusPublished && s.seoService != nil {
+	if status == StatusPublished && s.seoService != nil {
 		generated, err := s.generateSEOMetadata(content, req.MetaDescription, req.OGTitle, req.OGDescription)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate SEO metadata: %w", err)
@@ -678,7 +846,7 @@ func (s *Service) Create(ctx context.Context, userID int, req CreateContentReque
 
 	// Fire AfterPublish too when created directly as published, so plugins see
 	// the same draft→publish edge they get from the publish endpoint.
-	if req.Status == StatusPublished {
+	if status == StatusPublished {
 		s.executeAfterPublishHook(ctx, content)
 	}
 
@@ -1117,6 +1285,13 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 		effectivePostType = "post"
 	}
 
+	// Per-type authorization: a role demoted from the type (or attempting to
+	// move content into a type it cannot manage) is rejected. Ownership is
+	// enforced above; this covers capability, which ownership alone cannot.
+	if !s.roleCanManage(role, effectivePostType) {
+		return nil, ErrForbiddenPostType
+	}
+
 	// Capture pre-hook system field values from the combined view
 	mergedCustomFields := make(map[string]any)
 	if req.CustomFields != nil {
@@ -1200,8 +1375,15 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 		existing.AllowComments = false
 	}
 
-	// Auto-generate SEO metadata when transitioning to published status
+	// Auto-generate SEO metadata when transitioning to published status. A role
+	// without the publish capability may keep already-published content
+	// published but cannot promote a draft, so the requested status is forced
+	// back to draft only on the draft→published edge.
+	if !s.roleCanPublish(role) && existing.Status != StatusPublished && req.Status == StatusPublished {
+		req.Status = StatusDraft
+	}
 	isTransitioningToPublished := existing.Status != StatusPublished && req.Status == StatusPublished
+	isLeavingPublished := existing.Status == StatusPublished && req.Status != StatusPublished
 	existing.Status = req.Status
 
 	if isTransitioningToPublished && s.seoService != nil {
@@ -1228,6 +1410,11 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 	// Execute AfterPublish hook on status transition (fire and forget)
 	if isTransitioningToPublished {
 		s.executeAfterPublishHook(ctx, existing)
+	}
+
+	// Execute AfterUnpublish hook when content leaves the published state
+	if isLeavingPublished {
+		s.executeAfterUnpublishHook(ctx, existing)
 	}
 
 	return existing, nil
@@ -1278,7 +1465,8 @@ func (s *Service) generateSEOMetadata(
 
 // transitionStatus flips existing.Status to newStatus, persists the row, and
 // on the draft→published edge (and only on that edge) runs SEO auto-generation
-// (if seoService is configured) and fires the AfterPublish plugin hook. SEO
+// (if seoService is configured) and fires the AfterPublish plugin hook; on the
+// published→non-published edge it fires the AfterUnpublish plugin hook. SEO
 // overrides are intentionally NOT honored here — the publish/unpublish path is
 // status-only, so the auto-generated SEO is the single source of truth (the
 // Update path takes overrides from the request; that branch is inlined above
@@ -1296,6 +1484,7 @@ func (s *Service) transitionStatus(
 	userID int,
 ) error {
 	isTransitioningToPublished := existing.Status != StatusPublished && newStatus == StatusPublished
+	isLeavingPublished := existing.Status == StatusPublished && newStatus != StatusPublished
 	previousStatus := existing.Status
 	existing.Status = newStatus
 
@@ -1323,6 +1512,10 @@ func (s *Service) transitionStatus(
 		s.executeAfterPublishHook(ctx, existing)
 	}
 
+	if isLeavingPublished {
+		s.executeAfterUnpublishHook(ctx, existing)
+	}
+
 	return nil
 }
 
@@ -1344,6 +1537,17 @@ func (s *Service) Publish(ctx context.Context, id int, userID int, role string) 
 
 	if existing.UserID != userID && role != RoleAdmin {
 		return nil, ErrUnauthorized
+	}
+
+	postType := existing.PostType
+	if postType == "" {
+		postType = "post"
+	}
+	if !s.roleCanManage(role, postType) {
+		return nil, ErrForbiddenPostType
+	}
+	if !s.roleCanPublish(role) {
+		return nil, ErrForbiddenPublish
 	}
 
 	if err := s.transitionStatus(ctx, existing, StatusPublished, userID); err != nil {
@@ -1369,6 +1573,14 @@ func (s *Service) Unpublish(ctx context.Context, id int, userID int, role string
 
 	if existing.UserID != userID && role != RoleAdmin {
 		return nil, ErrUnauthorized
+	}
+
+	postType := existing.PostType
+	if postType == "" {
+		postType = "post"
+	}
+	if !s.roleCanManage(role, postType) {
+		return nil, ErrForbiddenPostType
 	}
 
 	if err := s.transitionStatus(ctx, existing, StatusDraft, userID); err != nil {
@@ -1485,6 +1697,28 @@ func (s *Service) DeleteContent(ctx context.Context, id int, userID int, role st
 
 	if existing.UserID != userID && role != RoleAdmin {
 		return ErrUnauthorized
+	}
+
+	postType := existing.PostType
+	if postType == "" {
+		postType = "post"
+	}
+	if !s.roleCanManage(role, postType) {
+		return ErrForbiddenPostType
+	}
+
+	if err := s.executeBeforeDeleteHook(ctx, existing, postType); err != nil {
+		return fmt.Errorf("before_delete hook failed: %w", err)
+	}
+
+	// Delete the item's aliases before the content row: on any failure below,
+	// the aliases are gone but the content stays live (recoverable), whereas
+	// the reverse order would leave dangling aliases pointing at a deleted row
+	// (silent 404s on the legacy URLs).
+	if s.aliasDeleter != nil {
+		if err := s.aliasDeleter.DeleteByContentID(ctx, id); err != nil {
+			return fmt.Errorf("failed to delete aliases: %w", err)
+		}
 	}
 
 	if role == RoleAdmin {

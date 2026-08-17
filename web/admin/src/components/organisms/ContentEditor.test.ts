@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ref, computed } from 'vue'
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import ContentEditor from './ContentEditor.vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { useContentStore } from '@/stores/domain/content'
 import type { Content } from '@/types/content'
 import type { PostType } from '@/types/posttype'
+import type { MeCapabilities } from '@/types/role'
 
 const mockUserRole = ref<string | null>(null)
 
@@ -35,6 +36,20 @@ vi.mock('@/composables/useConfig', () => ({
     fetchConfig: vi.fn(async () => mockLanguages.value),
     primaryLanguage: () => mockLanguages.value[0] ?? 'en',
   }),
+}))
+
+// Mutable role-store state so tests can control the config-driven publish
+// capability (or leave it null for the legacy role-name mapping).
+const roleStoreState = {
+  roles: [] as { name: string }[],
+  me: null as MeCapabilities | null,
+  capabilitiesLoaded: false,
+  isLoading: false,
+  error: null as Error | null,
+  load: vi.fn(),
+}
+vi.mock('@/stores/domain/role', () => ({
+  useRoleStore: vi.fn(() => roleStoreState),
 }))
 
 vi.mock('vue-router', () => ({
@@ -105,6 +120,8 @@ describe('ContentEditor', () => {
     vi.clearAllMocks()
     mockUserRole.value = null
     mockLanguages.value = ['en']
+    roleStoreState.me = null
+    roleStoreState.capabilitiesLoaded = false
   })
 
   describe('Status Management', () => {
@@ -302,6 +319,206 @@ describe('ContentEditor', () => {
       expect(vm.form.tags).toEqual(['tag1', 'tag2'])
       expect(vm.form.status).toBe('published')
       expect(vm.slug).toBe('test-title')
+    })
+  })
+
+  describe('Publish Capability', () => {
+    // Button is stubbed with a slot-rendering template (like formatStubs below)
+    // so the Publish/Unpublish labels are visible to DOM assertions.
+    const stubs = {
+      InputText: true,
+      Button: { template: '<button type="button" class="button-stub"><slot /></button>' },
+      Select: true,
+      FormField: true,
+      TipTapEditor: true,
+      MediaPanel: true,
+    }
+
+    const draftContent: Content = {
+      id: 1,
+      userId: 1,
+      title: 'Draft Content',
+      slug: 'draft-content',
+      content: '{"type":"doc"}',
+      tags: [],
+      status: 'draft',
+      postType: 'post',
+      language: 'en',
+      createdAt: '2026-04-08T00:00:00Z',
+      updatedAt: '2026-04-08T00:00:00Z',
+    }
+
+    const publishedContent: Content = {
+      ...draftContent,
+      title: 'Published Content',
+      slug: 'published-content',
+      status: 'published',
+    }
+
+    function mountEditor(content?: Content) {
+      return mount(ContentEditor, {
+        props: content
+          ? { userId: 1, contentId: content.id, initialContent: content }
+          : { userId: 1 },
+        global: { stubs },
+      })
+    }
+
+    function publishButtons(wrapper: VueWrapper): VueWrapper[] {
+      return wrapper.findAll('.button-stub').filter(button => button.text() === 'Publish')
+    }
+
+    it('hides the Publish button for new content when the role cannot publish', () => {
+      roleStoreState.me = {
+        role: 'Journalist',
+        postTypes: ['post'],
+        publish: false,
+        media: false,
+        comments: false,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor()
+
+      expect(publishButtons(wrapper)).toHaveLength(0)
+      expect(wrapper.text()).toContain('Save Draft')
+    })
+
+    it('shows the Publish button for new content when the role can publish', () => {
+      roleStoreState.me = {
+        role: 'Editor',
+        postTypes: ['post'],
+        publish: true,
+        media: true,
+        comments: true,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor()
+
+      expect(publishButtons(wrapper)).toHaveLength(1)
+    })
+
+    it('hides the Publish button for draft content when the role cannot publish', () => {
+      roleStoreState.me = {
+        role: 'Journalist',
+        postTypes: ['post'],
+        publish: false,
+        media: false,
+        comments: false,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor(draftContent)
+
+      expect(publishButtons(wrapper)).toHaveLength(0)
+      expect(wrapper.text()).toContain('Save Draft')
+    })
+
+    it('shows the Publish button for draft content when the role can publish', () => {
+      roleStoreState.me = {
+        role: 'Editor',
+        postTypes: ['post'],
+        publish: true,
+        media: true,
+        comments: true,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor(draftContent)
+
+      expect(publishButtons(wrapper)).toHaveLength(1)
+    })
+
+    it('shows the Publish button for an admin', () => {
+      roleStoreState.me = {
+        role: 'Admin',
+        postTypes: [],
+        publish: true,
+        media: true,
+        comments: true,
+        isAdmin: true,
+      }
+      const wrapper = mountEditor()
+
+      expect(publishButtons(wrapper)).toHaveLength(1)
+    })
+
+    it('keeps the Unpublish button for published content without the publish capability', () => {
+      roleStoreState.me = {
+        role: 'Journalist',
+        postTypes: ['post'],
+        publish: false,
+        media: false,
+        comments: false,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor(publishedContent)
+
+      expect(publishButtons(wrapper)).toHaveLength(0)
+      expect(wrapper.text()).toContain('Unpublish')
+    })
+
+    it('restricts the status options to Draft when the role cannot publish', () => {
+      roleStoreState.me = {
+        role: 'Journalist',
+        postTypes: ['post'],
+        publish: false,
+        media: false,
+        comments: false,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).statusOptions).toEqual([{ value: 'draft', label: 'Draft' }])
+    })
+
+    it('offers both status options when the role can publish', () => {
+      roleStoreState.me = {
+        role: 'Editor',
+        postTypes: ['post'],
+        publish: true,
+        media: true,
+        comments: true,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).statusOptions).toEqual([
+        { value: 'draft', label: 'Draft' },
+        { value: 'published', label: 'Published' },
+      ])
+    })
+
+    it('keeps both status options for published content without the publish capability', () => {
+      roleStoreState.me = {
+        role: 'Journalist',
+        postTypes: ['post'],
+        publish: false,
+        media: false,
+        comments: false,
+        isAdmin: false,
+      }
+      const wrapper = mountEditor(publishedContent)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((wrapper.vm as any).statusOptions).toEqual([
+        { value: 'draft', label: 'Draft' },
+        { value: 'published', label: 'Published' },
+      ])
+    })
+
+    it('falls back to the legacy role mapping when capabilities are unavailable', () => {
+      roleStoreState.me = null
+      mockUserRole.value = 'Contributor'
+      expect(publishButtons(mountEditor())).toHaveLength(1)
+
+      mockUserRole.value = 'Commentator'
+      expect(publishButtons(mountEditor())).toHaveLength(0)
+
+      mockUserRole.value = 'Admin'
+      expect(publishButtons(mountEditor())).toHaveLength(1)
+
+      mockUserRole.value = null
+      expect(publishButtons(mountEditor())).toHaveLength(0)
     })
   })
 

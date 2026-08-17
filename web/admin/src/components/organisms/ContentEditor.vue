@@ -20,6 +20,7 @@ import type { Media } from '@/stores/domain/media'
 import { validateCustomField, validateCustomFields } from '@/utils/validation'
 import { useAuth } from '@/composables/useAuth'
 import { useConfig } from '@/composables/useConfig'
+import { useRoleStore } from '@/stores/domain/role'
 import api from '@/utils/request'
 
 interface Props {
@@ -42,6 +43,32 @@ const contentStore = useContentStore()
 const { role } = useAuth()
 const { languages, commentsEnabled, fetchConfig, primaryLanguage } = useConfig()
 const isAdmin = computed(() => role.value === 'Admin')
+
+// Whether the caller may publish content directly. Config-driven capabilities
+// (me.publish from GET /api/v1/roles — already true for Admin) take precedence;
+// while they load or on a legacy deployment without the roles endpoint, fall
+// back to the historical role-name mapping like the navigation store does.
+const roleStore = useRoleStore()
+const canPublish = computed(() => {
+  if (roleStore.me) {
+    return roleStore.me.publish
+  }
+  return ['admin', 'contributor'].includes(role.value?.toLowerCase() ?? '')
+})
+
+// Status select options: roles without the publish capability only see Draft
+// (the backend forces their content to draft), except when the item is already
+// published — the current status must stay selectable so they can unpublish
+// their own content.
+const statusOptions = computed(() => {
+  if (canPublish.value || form.value.status === 'published') {
+    return [
+      { value: 'draft', label: 'Draft' },
+      { value: 'published', label: 'Published' },
+    ]
+  }
+  return [{ value: 'draft', label: 'Draft' }]
+})
 
 const activeLanguage = ref('en')
 const primaryContentId = ref<number | null>(null)
@@ -167,6 +194,16 @@ onMounted(async () => {
     postTypes.value = await contentStore.fetchPostTypes()
   } catch (err) {
     console.error('Failed to load post types:', err)
+  }
+
+  // A role scoped to a subset of post types may not manage the default "post"
+  // type. When creating new content, fall back to the first manageable type so
+  // the editor never opens on a type the caller cannot use.
+  if (isNewContent.value && form.value.postType !== 'all') {
+    const available = postTypeOptions.value
+    if (!available.some(o => o.value === form.value.postType)) {
+      form.value.postType = available[0]?.value ?? 'post'
+    }
   }
 
   try {
@@ -992,10 +1029,7 @@ function focusValidationField(slug: string) {
     <FormField label="Status">
       <Select
         v-model="form.status"
-        :options="[
-          { value: 'draft', label: 'Draft' },
-          { value: 'published', label: 'Published' }
-        ]"
+        :options="statusOptions"
       />
     </FormField>
 
@@ -1084,6 +1118,7 @@ function focusValidationField(slug: string) {
           Save Draft
         </Button>
         <Button
+          v-if="canPublish"
           type="button"
           variant="primary"
           :is-loading="isLoading"
@@ -1103,6 +1138,7 @@ function focusValidationField(slug: string) {
           Save Draft
         </Button>
         <Button
+          v-if="canPublish"
           type="button"
           variant="primary"
           :is-loading="isLoading"

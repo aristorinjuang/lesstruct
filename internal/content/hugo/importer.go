@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/aristorinjuang/lesstruct/internal/content/wordpress"
+	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
@@ -83,11 +85,18 @@ func truncateRunes(s string, max int) string {
 }
 
 type ContentCreator interface {
-	Create(ctx context.Context, userID int, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
+	Create(ctx context.Context, userID int, role string, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
+	GetByID(ctx context.Context, id int) (*contentdomain.Content, error)
 }
 
+// AliasCreator manages the legacy-URL aliases attached to imported items.
+// Create is the happy path; when it fails with ErrAliasAlreadyExists the
+// importer may FindByAlias + Repoint a dangling alias (one whose content_id
+// no longer exists) onto the newly imported item.
 type AliasCreator interface {
 	Create(ctx context.Context, contentID int, aliasStr string) error
+	FindByAlias(ctx context.Context, aliasStr string) (*aliasdomain.Alias, error)
+	Repoint(ctx context.Context, aliasStr string, fromContentID, toContentID int) error
 }
 
 // SlugResolver reports whether a slug already exists in a language and, when
@@ -139,17 +148,32 @@ func (imp *Importer) Import(
 		opts.SkipMedia,
 	)
 
+	// Every URL and alias the import is about to create/keep; root-relative
+	// references that match one of these are content permalinks, not dead
+	// static references, so the unresolved-ref scan stays silent for them.
+	knownTargets := make(map[string]struct{})
+	for _, item := range site.Items {
+		for _, target := range append([]string{item.URL}, item.Aliases...) {
+			target = strings.TrimPrefix(strings.TrimSpace(target), "/")
+			if target != "" {
+				knownTargets[target] = struct{}{}
+			}
+		}
+	}
+	// References already surfaced as warnings, so none is emitted twice.
+	warned := make(map[string]struct{})
+
 	for _, g := range GroupTranslations(site.Items) {
 		switch v := g.(type) {
 		case *HugoItem:
-			imp.importItem(ctx, v, mediaMapper, userID, nil, result)
+			imp.importItem(ctx, v, mediaMapper, knownTargets, warned, userID, nil, result)
 		case TranslationGroup:
-			enID, _ := imp.importItem(ctx, v.English, mediaMapper, userID, nil, result)
+			enID, _ := imp.importItem(ctx, v.English, mediaMapper, knownTargets, warned, userID, nil, result)
 			// Import the Indonesian variant whenever the English item is
 			// available — either freshly created or already imported on a
 			// re-run (enID is then the existing content ID).
 			if enID != 0 && v.Indonesian != nil {
-				imp.importItem(ctx, v.Indonesian, mediaMapper, userID, &enID, result)
+				imp.importItem(ctx, v.Indonesian, mediaMapper, knownTargets, warned, userID, &enID, result)
 			}
 		}
 
@@ -162,13 +186,75 @@ func (imp *Importer) Import(
 		}
 	}
 
+	// Flush failures recorded after the last item's flush (e.g. the final
+	// item's featured image) so nothing is lost.
+	imp.appendFailures(result, mediaMapper, warned)
+
 	return result
+}
+
+// appendFailures appends the mapper's unreported migration failures to the
+// result's errors list, each exactly once, and marks them so the unresolved-
+// ref scan does not re-warn the same reference.
+func (imp *Importer) appendFailures(result *ImportResult, mediaMapper *MediaMapper, warned map[string]struct{}) {
+	for _, f := range mediaMapper.TakeUnreportedFailures() {
+		warned[f.Ref] = struct{}{}
+		result.Errors = append(result.Errors,
+			fmt.Sprintf("warning: %q could not be migrated to media (%s); kept the original reference", f.Ref, f.Reason),
+		)
+	}
+}
+
+// scanUnresolvedRefs returns the root-relative href/src references in the body
+// that resolve to neither media, nor the theme static convention, nor a known
+// content target (URL or alias of an imported item), and carry a file
+// extension — i.e. likely dead references the operator should know about.
+func scanUnresolvedRefs(body string, knownTargets map[string]struct{}) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	staticRefRe.ReplaceAllStringFunc(body, func(attr string) string {
+		idx := staticRefRe.FindStringSubmatchIndex(attr)
+		ref := attr[idx[6]:idx[7]]
+		if _, ok := seen[ref]; ok {
+			return attr
+		}
+		seen[ref] = struct{}{}
+
+		trimmed := strings.TrimPrefix(ref, "/")
+		if strings.HasPrefix(ref, "/static/") || strings.HasPrefix(ref, "/uploads/") {
+			return attr
+		}
+		if _, ok := knownTargets[trimmed]; ok {
+			return attr
+		}
+		if hasFileExtension(ref) {
+			out = append(out, ref)
+		}
+		return attr
+	})
+	return out
+}
+
+// hasFileExtension reports whether the reference's path looks like a file
+// (last segment contains a dot), as opposed to a bare permalink path.
+func hasFileExtension(ref string) bool {
+	path := ref
+	if parsed, err := url.Parse(ref); err == nil && parsed.Path != "" {
+		path = parsed.Path
+	}
+	base := path
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	return strings.Contains(base, ".")
 }
 
 func (imp *Importer) importItem(
 	ctx context.Context,
 	item *HugoItem,
 	mediaMapper *MediaMapper,
+	knownTargets map[string]struct{},
+	warned map[string]struct{},
 	userID int,
 	translationGroupID *int,
 	result *ImportResult,
@@ -177,14 +263,34 @@ func (imp *Importer) importItem(
 
 	if mediaMapper != nil {
 		body = mediaMapper.RewriteBody(ctx, body, userID)
+		body = mediaMapper.RewriteStaticRefs(body)
+		imp.appendFailures(result, mediaMapper, warned)
+		// References still pointing at nothing — no media URL, no /static/
+		// copy, no known content target — get a warning instead of silence.
+		for _, ref := range scanUnresolvedRefs(body, knownTargets) {
+			if _, ok := warned[ref]; ok {
+				continue
+			}
+			warned[ref] = struct{}{}
+			result.Errors = append(result.Errors,
+				fmt.Sprintf("warning: %q left unresolved — no file in the archive's static/ dir and no content target", ref),
+			)
+		}
 	}
 
 	// Featured image: prepend the first frontmatter image (remapped) as a
 	// leading <img>, mirroring how the WordPress importer injects featured
-	// images as the first content node.
+	// images as the first content node. Skip the prepend when the rewritten
+	// body already opens with the same image — both sides resolve through the
+	// same media mapper cache (and media hash dedup), so identical sources
+	// compare equal after mapping — and when the image failed to migrate (a
+	// broken cover would be worse than none).
 	if mediaMapper != nil && len(item.Images) > 0 {
-		if featured, err := mediaMapper.Map(ctx, item.Images[0], userID); err == nil && featured != "" {
-			body = fmt.Sprintf(`<img src="%s" alt="%s">%s`, featured, item.Title, body)
+		featured := mediaMapper.Map(ctx, item.Images[0], userID)
+		if featured != "" && !mediaMapper.IsFailed(item.Images[0]) {
+			if firstImageSrc(body) != featured {
+				body = fmt.Sprintf(`<img src="%s" alt="%s">%s`, featured, item.Title, body)
+			}
 		}
 	}
 
@@ -261,7 +367,7 @@ func (imp *Importer) importItem(
 		req.Slug = slug
 	}
 
-	created, err := imp.contentService.Create(ctx, userID, req)
+	created, err := imp.contentService.Create(ctx, userID, contentdomain.RoleAdmin, req)
 	if err != nil {
 		result.Skipped++
 		if errors.Is(err, contentdomain.ErrSlugAlreadyExists) {
@@ -278,8 +384,49 @@ func (imp *Importer) importItem(
 			continue
 		}
 		if err := imp.aliasService.Create(ctx, created.ID, cleanAlias); err != nil {
+			if !errors.Is(err, aliasdomain.ErrAliasAlreadyExists) {
+				if imp.logger != nil {
+					imp.logger.Error("failed to create alias %q for content %d: %v", cleanAlias, created.ID, err)
+				}
+				continue
+			}
+			// The alias already exists. When it still points at a live item it
+			// stays (an alias is never stolen from another post); when its
+			// target no longer exists (dangling row from a deleted item) it is
+			// re-pointed onto the freshly imported content.
+			existing, findErr := imp.aliasService.FindByAlias(ctx, cleanAlias)
+			if findErr != nil {
+				if imp.logger != nil {
+					imp.logger.Error("failed to look up existing alias %q: %v", cleanAlias, findErr)
+				}
+				continue
+			}
+			if _, getErr := imp.contentService.GetByID(ctx, existing.ContentID); getErr != nil {
+				if errors.Is(getErr, contentdomain.ErrContentNotFound) {
+					if repointErr := imp.aliasService.Repoint(ctx, cleanAlias, existing.ContentID, created.ID); repointErr != nil {
+						if errors.Is(repointErr, aliasdomain.ErrAliasNotFound) {
+							if imp.logger != nil {
+								imp.logger.Info("alias %q gone or re-pointed concurrently; leaving it", cleanAlias)
+							}
+							continue
+						}
+						if imp.logger != nil {
+							imp.logger.Error("failed to re-point dangling alias %q to content %d: %v", cleanAlias, created.ID, repointErr)
+						}
+						continue
+					}
+					if imp.logger != nil {
+						imp.logger.Info("re-pointed dangling alias %q to content %d", cleanAlias, created.ID)
+					}
+					continue
+				}
+				if imp.logger != nil {
+					imp.logger.Error("failed to resolve alias %q target %d: %v", cleanAlias, existing.ContentID, getErr)
+				}
+				continue
+			}
 			if imp.logger != nil {
-				imp.logger.Error("failed to create alias %q for content %d: %v", cleanAlias, created.ID, err)
+				imp.logger.Info("alias %q already points at live content %d; keeping it", cleanAlias, existing.ContentID)
 			}
 		}
 	}

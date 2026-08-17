@@ -156,24 +156,24 @@ func buildContentFilterWhereClause(userID int, filters contentdomain.ContentFilt
 
 // ContentItem represents a content item in the database
 type ContentItem struct {
-	ID                 int            `json:"id"`
-	UserID             int            `json:"userId"`
-	Title              string         `json:"title"`
-	Slug               string         `json:"slug"`
-	Content            string         `json:"content"`
-	Tags               string         `json:"tags"`
-	Status             string         `json:"status"`
-	Format             string         `json:"format"`
-	PostType           string         `json:"postType"`
-	MetaDescription    *string        `json:"metaDescription"`
-	OGTitle            *string        `json:"ogTitle"`
-	OGDescription      *string        `json:"ogDescription"`
-	AllowComments      bool           `json:"allowComments"`
-	CustomFields       *string        `json:"customFields"`
-	Language           string         `json:"language"`
-	TranslationGroupID sql.NullInt64  `json:"translationGroupId"`
-	CreatedAt          time.Time      `json:"createdAt"`
-	UpdatedAt          time.Time      `json:"updatedAt"`
+	ID                 int           `json:"id"`
+	UserID             int           `json:"userId"`
+	Title              string        `json:"title"`
+	Slug               string        `json:"slug"`
+	Content            string        `json:"content"`
+	Tags               string        `json:"tags"`
+	Status             string        `json:"status"`
+	Format             string        `json:"format"`
+	PostType           string        `json:"postType"`
+	MetaDescription    *string       `json:"metaDescription"`
+	OGTitle            *string       `json:"ogTitle"`
+	OGDescription      *string       `json:"ogDescription"`
+	AllowComments      bool          `json:"allowComments"`
+	CustomFields       *string       `json:"customFields"`
+	Language           string        `json:"language"`
+	TranslationGroupID sql.NullInt64 `json:"translationGroupId"`
+	CreatedAt          time.Time     `json:"createdAt"`
+	UpdatedAt          time.Time     `json:"updatedAt"`
 }
 
 // ContentRepository handles content data operations
@@ -359,7 +359,8 @@ func (r *ContentRepository) ListByCursor(ctx context.Context, userID int, limit 
 	// search clause). Author matches the joined users.name (with users.username as
 	// fallback) case-insensitively. A zero ContentFilters value yields the original
 	// unfiltered query.
-	query := `
+	var query strings.Builder
+	query.WriteString(`
 		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
 		       c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username
@@ -367,46 +368,46 @@ func (r *ContentRepository) ListByCursor(ctx context.Context, userID int, limit 
 		LEFT JOIN users u ON c.user_id = u.id
 		LEFT JOIN users u2 ON c.updated_by = u2.id
 		WHERE c.user_id = ?
-	`
+	`)
 	args := []any{userID}
 	if beforeID > 0 {
-		query += ` AND c.id < ?`
+		query.WriteString(` AND c.id < ?`)
 		args = append(args, beforeID)
 	}
 	if filters.Status != "" {
-		query += ` AND c.status = ?`
+		query.WriteString(` AND c.status = ?`)
 		args = append(args, filters.Status)
 	}
 	if filters.PostType != "" {
-		query += ` AND c.post_type = ?`
+		query.WriteString(` AND c.post_type = ?`)
 		args = append(args, filters.PostType)
 	}
 	if filters.Language != "" {
-		query += ` AND c.language = ?`
+		query.WriteString(` AND c.language = ?`)
 		args = append(args, filters.Language)
 	}
 	if filters.Author != "" {
-		query += ` AND LOWER(COALESCE(u.name, u.username)) = LOWER(?)`
+		query.WriteString(` AND LOWER(COALESCE(u.name, u.username)) = LOWER(?)`)
 		args = append(args, filters.Author)
 	}
 	if filters.Search != "" {
 		escapedQuery := strings.ReplaceAll(filters.Search, "%", `\%`)
 		escapedQuery = strings.ReplaceAll(escapedQuery, "_", `\_`)
 		likePattern := "%" + escapedQuery + "%"
-		query += ` AND (LOWER(c.title) LIKE LOWER(?) ESCAPE '\' OR LOWER(c.meta_description) LIKE LOWER(?) ESCAPE '\')`
+		query.WriteString(` AND (LOWER(c.title) LIKE LOWER(?) ESCAPE '\' OR LOWER(c.meta_description) LIKE LOWER(?) ESCAPE '\')`)
 		args = append(args, likePattern, likePattern)
 	}
 	for _, tag := range filters.Tags {
 		escapedTag := strings.ReplaceAll(tag, "%", `\%`)
 		escapedTag = strings.ReplaceAll(escapedTag, "_", `\_`)
 		likePattern := `%"` + escapedTag + `"%`
-		query += ` AND c.tags LIKE ? ESCAPE '\'`
+		query.WriteString(` AND c.tags LIKE ? ESCAPE '\'`)
 		args = append(args, likePattern)
 	}
-	query += ` ORDER BY c.id DESC LIMIT ?`
+	query.WriteString(` ORDER BY c.id DESC LIMIT ?`)
 	args = append(args, limit)
 
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := r.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list content by cursor: %w", err)
 	}

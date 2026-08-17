@@ -48,6 +48,39 @@ func createTarGz(t *testing.T, files map[string]string) *bytes.Buffer {
 	return &buf
 }
 
+func createTarGzWithRootDir(t *testing.T, files map[string]string) *bytes.Buffer {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gzWriter := gzip.NewWriter(&buf)
+	tarWriter := tar.NewWriter(gzWriter)
+
+	// GNU tar archives built with default flags (tar -czf site.tar.gz .)
+	// carry a leading "./" directory entry for the archive root.
+	rootHdr := &tar.Header{
+		Name:     "./",
+		Mode:     0755,
+		Typeflag: tar.TypeDir,
+	}
+	require.NoError(t, tarWriter.WriteHeader(rootHdr))
+
+	for name, content := range files {
+		hdr := &tar.Header{
+			Name:     name,
+			Size:     int64(len(content)),
+			Mode:     0644,
+			Typeflag: tar.TypeReg,
+		}
+		require.NoError(t, tarWriter.WriteHeader(hdr))
+		_, err := tarWriter.Write([]byte(content))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, tarWriter.Close())
+	require.NoError(t, gzWriter.Close())
+	return &buf
+}
+
 func buildMultipartRequest(
 	t *testing.T,
 	method string,
@@ -155,6 +188,7 @@ func TestHugoHandler_Import(t *testing.T) {
 				contentCreator.EXPECT().Create(
 					mock.Anything,
 					1,
+					mock.Anything,
 					mock.AnythingOfType("content.CreateContentRequest"),
 				).Return(&contentdomain.Content{ID: 1}, nil)
 
@@ -193,6 +227,45 @@ func TestHugoHandler_Import(t *testing.T) {
 				contentCreator.EXPECT().Create(
 					mock.Anything,
 					1,
+					mock.Anything,
+					mock.AnythingOfType("content.CreateContentRequest"),
+				).Return(&contentdomain.Content{ID: 1}, nil)
+
+				return req, contentCreator, aliasCreator, slugChecker, mediaService
+			},
+			expectedStatus: http.StatusAccepted,
+			expectJobDone:  true,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				job := resp["data"].(map[string]any)["job"].(map[string]any)
+				assert.Equal(t, "done", job["state"])
+				assert.Equal(t, float64(1), job["imported"])
+			},
+		},
+		{
+			name: "success - archive with GNU tar root dir entry",
+			setupRequest: func(t *testing.T) (*http.Request, *hugomocks.MockContentCreator, *hugomocks.MockAliasCreator, *hugomocks.MockSlugResolver, *hugomocks.MockMediaService) {
+				tarGz := createTarGzWithRootDir(t, map[string]string{
+					"content/post.html": "---\ntitle: Root Entry Post\n---\n<p>Hello</p>",
+				})
+
+				req := buildMultipartRequest(t, http.MethodPost, "/admin/hugo/import", "file", "site.tar.gz", tarGz)
+				ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+				req = req.WithContext(ctx)
+
+				contentCreator := hugomocks.NewMockContentCreator(t)
+				aliasCreator := hugomocks.NewMockAliasCreator(t)
+				slugChecker := hugomocks.NewMockSlugResolver(t)
+				mediaService := hugomocks.NewMockMediaService(t)
+
+				slugChecker.EXPECT().SlugExists(
+					mock.Anything,
+					"root-entry-post",
+					"en",
+				).Return(false, nil).Once()
+				contentCreator.EXPECT().Create(
+					mock.Anything,
+					1,
+					mock.Anything,
 					mock.AnythingOfType("content.CreateContentRequest"),
 				).Return(&contentdomain.Content{ID: 1}, nil)
 

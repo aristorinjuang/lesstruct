@@ -67,25 +67,34 @@ Ask the user three questions:
 
 1. **What should the plugin do?** (enrich content with an external API,
    validate fields, log activity, etc.)
-2. **When should it run?** This determines the hook. The three currently
+2. **When should it run?** This determines the hook. The five currently
    invoked hooks are:
-   - `before_save` — runs before content is saved (create or update).
-     Result's `customFields` is applied to the saved item.
+   - `before_save` — runs before content is saved (create, update, or
+     admin system-fields update). Result's `customFields` is applied to
+     the saved item (system-fields updates read back system-field
+     changes only).
    - `after_create` — runs after content is created. Result is discarded
      (notification-style).
    - `after_publish` — runs after content is published. Result is
      discarded (notification-style).
+   - `before_delete` — runs before content is deleted (admin or owner
+     path), with the full payload including plugin-managed system
+     fields. Result is discarded; returning an error aborts the delete.
+   - `after_unpublish` — runs after content leaves the published state
+     (unpublish endpoint or Update status change). Result is discarded
+     (notification-style).
 3. **What host functions does it need?** Skip this if hooks-only.
    - `http_get`, `http_post` for external API calls.
    - `db_query`, `db_exec` for database access.
    - `log_info`, `log_error` for logging (always available if a manifest
      exists; no capability declaration needed).
 
-> **Reserved hooks.** Two hooks (`on_plugin_loaded`, `before_delete`) are
-> defined in the host but **not currently invoked**. If the user's plan
-> relies on one of these, warn them: "This hook is registered if exported,
-> but the host does not invoke it today. It will not run. Pick
-> `before_save`, `after_create`, or `after_publish` instead."
+> **Reserved hook.** `on_plugin_loaded` is defined in the host but
+> **not currently invoked**. If the user's plan relies on it, warn
+> them: "This hook is registered if exported, but the host does not
+> invoke it today. It will not run. Pick `before_save`,
+> `after_create`, `after_publish`, `before_delete`, or
+> `after_unpublish` instead."
 
 ### Step 4: Pick a starting point
 

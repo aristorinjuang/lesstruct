@@ -506,6 +506,7 @@ Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Render `
 | `.CreatedAt` | `time.Time` | Creation timestamp; format with `{{formatDate .Lang .CreatedAt}}` for a localized date, `{{.CreatedAt.Format "2006-01-02"}}` for a custom layout, or call any `time.Time` method |
 | `.PostType` | `string` | Post type (e.g. `post`, `article`, `event`); use it to branch card layouts, render type badges, or build type-aware links. Emitted as `data-post-type="…"` on the default cards |
 | `.Tags` | `[]string` | Post tags; render with `{{range .Tags}}<a href="/tags/{{. \| urlpath}}" class="tag">{{.}}</a>{{end}}` (empty when none). Not rendered on the default card — override `index.html` to show them |
+| `.CustomFields` | `map[string]any` | Raw custom fields of the post (empty when none). Same data as `ContentData.CustomFields` on the detail page. Use `{{index .CustomFields "slug"}}` to read a value — e.g. `{{if index .CustomFields "link"}}…{{end}}` to branch card links by field presence. Not rendered on the default card — override `index.html` or `homepage.html` to use them |
 
 **`ContentData`** — single post page:
 

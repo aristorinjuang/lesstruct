@@ -177,7 +177,7 @@ func splitLines(s string) []string {
 func splitByNewline(s string) []string {
 	var result []string
 	start := 0
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] == '\n' {
 			result = append(result, s[start:i])
 			start = i + 1

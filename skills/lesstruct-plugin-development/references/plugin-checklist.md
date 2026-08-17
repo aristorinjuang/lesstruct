@@ -13,12 +13,16 @@ item is a hard pass / fail.
 
 ## Hooks
 
-- [ ] Plugin exports at least one of the three currently-invoked hooks:
-      `hook_before_save`, `hook_after_create`, `hook_after_publish`.
-- [ ] Plugin does **not** rely on `hook_on_plugin_loaded` or
-      `hook_before_delete`. Both are defined in the host but not
-      currently invoked. Plugins that only export one of these will
-      load but never fire.
+- [ ] Plugin exports at least one of the five currently-invoked hooks:
+      `hook_before_save`, `hook_after_create`, `hook_after_publish`,
+      `hook_before_delete`, `hook_after_unpublish`.
+- [ ] Plugin does **not** rely on `hook_on_plugin_loaded`. It is defined
+      in the host but not currently invoked. Plugins that only export
+      it will load but never fire.
+- [ ] For `hook_before_delete`: the hook's result is discarded (a
+      deletion has nothing to write back), so only error/abort
+      semantics apply. Verify the plugin does not expect result
+      mutations to persist on this hook.
 - [ ] Each hook's result is a JSON object containing (at most)
       `customFields` for mutation. The host reads only `customFields`
       back; other fields in the result are ignored.

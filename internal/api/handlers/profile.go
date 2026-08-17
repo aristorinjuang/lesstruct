@@ -19,7 +19,7 @@ import (
 // sanitizeFilename removes characters that are unsafe in Content-Disposition headers
 func sanitizeFilename(name string) string {
 	safe := make([]byte, 0, len(name))
-	for i := 0; i < len(name); i++ {
+	for i := range len(name) {
 		c := name[i]
 		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' {
 			safe = append(safe, c)
@@ -62,7 +62,7 @@ type ProfileInfo struct {
 	Role           string         `json:"role"`
 	ProfilePicture string         `json:"profilePicture,omitempty"`
 	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt,omitempty"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 	CustomFields   map[string]any `json:"customFields,omitempty"`
 }
 

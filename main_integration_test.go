@@ -10,18 +10,13 @@ import (
 
 func TestServerStartupWithValidConfig(t *testing.T) {
 	// Setup environment
-	_ = os.Setenv("HOST", "127.0.0.1")
-	_ = os.Setenv("PORT", "8082")
-	_ = os.Setenv("DB_PATH", "test_data.db")
-	_ = os.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
-	_ = os.Setenv("LOG_LEVEL", "info")
+	t.Setenv("HOST", "127.0.0.1")
+	t.Setenv("PORT", "8082")
+	t.Setenv("DB_PATH", "test_data.db")
+	t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+	t.Setenv("LOG_LEVEL", "info")
 
 	defer func() {
-		_ = os.Unsetenv("HOST")
-		_ = os.Unsetenv("PORT")
-		_ = os.Unsetenv("DB_PATH")
-		_ = os.Unsetenv("JWT_SECRET")
-		_ = os.Unsetenv("LOG_LEVEL")
 		_ = os.Remove("test_data.db")
 	}()
 
@@ -66,8 +61,8 @@ func TestPortValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = os.Setenv("PORT", tt.port)
-			_ = os.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+			t.Setenv("PORT", tt.port)
+			t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
 
 			cfg, err := config.Load()
 
@@ -107,7 +102,7 @@ func TestJWTSecretValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = os.Setenv("JWT_SECRET", tt.secret)
+			t.Setenv("JWT_SECRET", tt.secret)
 
 			cfg, err := config.Load()
 

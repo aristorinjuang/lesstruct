@@ -224,3 +224,54 @@ func TestService_DeleteByContentID(t *testing.T) {
 		})
 	}
 }
+
+func TestService_Repoint(t *testing.T) {
+	tests := []struct {
+		name          string
+		aliasStr      string
+		fromContentID int
+		toContentID   int
+		repoErr       error
+		wantErr       bool
+	}{
+		{
+			name:          "success - re-points alias",
+			aliasStr:      "old-post.html",
+			fromContentID: 99,
+			toContentID:   42,
+			repoErr:       nil,
+			wantErr:       false,
+		},
+		{
+			name:          "error - repo returns error",
+			aliasStr:      "old-post.html",
+			fromContentID: 99,
+			toContentID:   42,
+			repoErr:       errors.New("db error"),
+			wantErr:       true,
+		},
+		{
+			name:          "error - alias not found",
+			aliasStr:      "old-post.html",
+			fromContentID: 99,
+			toContentID:   42,
+			repoErr:       alias.ErrAliasNotFound,
+			wantErr:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := mocks.NewMockRepository(t)
+			mockRepo.EXPECT().Repoint(mock.Anything, tt.aliasStr, tt.fromContentID, tt.toContentID).Return(tt.repoErr)
+
+			svc := alias.NewService(mockRepo)
+			err := svc.Repoint(context.Background(), tt.aliasStr, tt.fromContentID, tt.toContentID)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}

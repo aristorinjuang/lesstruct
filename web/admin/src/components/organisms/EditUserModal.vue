@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from '@/components/atoms/Button.vue'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
 import { useUserStore } from '@/stores/domain/user'
+import { useRoleStore } from '@/stores/domain/role'
 import { useAuth } from '@/composables/useAuth'
 import { useConfig } from '@/composables/useConfig'
 import { validateCustomField, validateCustomFields } from '@/utils/validation'
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const userStore = useUserStore()
+const roleStore = useRoleStore()
 const { role: currentUserRole, userId: currentUserId } = useAuth()
 const { commentsEnabled } = useConfig()
 
@@ -40,11 +42,16 @@ const errors = ref<FormErrors>({})
 const customFields = ref<Record<string, any>>({})
 const customFieldErrors = ref<Record<string, string>>({})
 
-// The Commentator role exists only for the comment system; it is not
-// assignable when comments are disabled. A legacy user who already holds the
-// role keeps it visible in the select so the form displays correctly (saving
-// with the role unchanged sends an empty role, which the backend keeps as-is).
+// The assignable roles come from the config-driven catalog (GET /api/v1/roles).
+// When the catalog is unavailable (legacy deployment), fall back to the
+// historical three-role list. The Commentator legacy exception keeps a
+// pre-existing Commentator visible in the select when comments are disabled
+// (saving with the role unchanged sends an empty role, which the backend keeps
+// as-is).
 const roles = computed<{ value: UserRole; label: string }[]>(() => {
+  if (roleStore.capabilitiesLoaded) {
+    return roleStore.roles.map(r => ({ value: r.name, label: r.name }))
+  }
   const all: { value: UserRole; label: string }[] = [
     { value: 'Admin', label: 'Admin' },
     { value: 'Contributor', label: 'Contributor' },
@@ -54,6 +61,15 @@ const roles = computed<{ value: UserRole; label: string }[]>(() => {
   }
   return all
 })
+
+function defaultRole(): UserRole {
+  if (roleStore.capabilitiesLoaded) {
+    const assignable = roleStore.roles.filter(r => !r.isAdmin)
+    if (assignable.some(r => r.name === 'Contributor')) return 'Contributor'
+    return assignable[0]?.name || 'Contributor'
+  }
+  return commentsEnabled.value ? 'Commentator' : 'Contributor'
+}
 
 // When the role is left at the user's current value, submit an empty role so
 // the backend keeps it (this matters when comments are disabled and the user
@@ -100,12 +116,16 @@ function populateForm() {
 function resetForm() {
   name.value = ''
   email.value = ''
-  role.value = commentsEnabled.value ? 'Commentator' : 'Contributor'
+  role.value = defaultRole()
   customFields.value = {}
   customFieldErrors.value = {}
   errors.value = {}
   state.value = 'form'
 }
+
+onMounted(() => {
+  void roleStore.load()
+})
 
 watch(() => props.isOpen, (open) => {
   if (open) {

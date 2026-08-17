@@ -30,6 +30,7 @@ type DataAssembler struct {
 	siteConfig          tpl.SiteConfig
 	postsPerPage        int
 	publicFieldRegistry PublicFieldLookup
+	iframeHosts         []string
 }
 
 func (a *DataAssembler) resolvePostImage(imageURL string) (thumbURL, srcset, sizes string, variants map[string]string, originalURL string) {
@@ -225,6 +226,11 @@ func (a *DataAssembler) buildPostItem(ctx context.Context, c *contentdomain.Cont
 		}
 	}
 
+	customFields := c.CustomFields
+	if customFields == nil {
+		customFields = map[string]any{}
+	}
+
 	return tpl.PostItem{
 		Slug:            c.Slug,
 		Title:           c.Title,
@@ -240,6 +246,7 @@ func (a *DataAssembler) buildPostItem(ctx context.Context, c *contentdomain.Cont
 		CreatedAt:       c.CreatedAt,
 		PostType:        c.PostType,
 		Tags:            c.Tags,
+		CustomFields:    customFields,
 	}
 }
 
@@ -305,6 +312,14 @@ func (a *DataAssembler) WithPublicFieldRegistry(registry PublicFieldLookup) *Dat
 	return a
 }
 
+// WithIFrameHosts attaches the sanitizer's iframe host allowlist (derived from
+// the CSP frame-src directive) so HTML-format content can render allowed
+// embeds on the read path. When not called, iframes stay stripped.
+func (a *DataAssembler) WithIFrameHosts(hosts ...string) *DataAssembler {
+	a.iframeHosts = append(a.iframeHosts, hosts...)
+	return a
+}
+
 func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (tpl.ContentData, error) {
 	content, err := a.contentService.GetPublishedBySlugAny(ctx, slug)
 	if err != nil {
@@ -319,7 +334,7 @@ func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (tpl.
 	var bodyHTML string
 	switch content.Format {
 	case contentdomain.FormatHTML:
-		bodyHTML = sanitize.SanitizeHTMLDocument(content.Content)
+		bodyHTML = sanitize.SanitizeHTMLDocument(content.Content, a.iframeHosts...)
 	default:
 		bodyHTML, err = a.renderer.Render(content.Content)
 		if err != nil {

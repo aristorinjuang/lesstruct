@@ -148,7 +148,7 @@ onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
 
   // Sync notification counts from dashboard store (admin only)
-  if (role.value === 'admin' && !dashboardStore.stats) {
+  if (role.value === 'Admin' && !dashboardStore.stats) {
     try {
       await dashboardStore.fetchDashboardStats()
     } catch {

@@ -254,7 +254,7 @@
   gap: 1rem;
 }
 
-/* 9 cards = 3x3 on wide screens; collapse gracefully on smaller ones. */
+/* 12 cards = 3x4 on wide screens; collapse gracefully on smaller ones. */
 @media (max-width: 900px) {
   .landing-feature-grid {
     grid-template-columns: repeat(2, 1fr);

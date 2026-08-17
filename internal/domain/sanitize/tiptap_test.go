@@ -165,8 +165,8 @@ func TestValidateTipTapDocument(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid empty document",
-			input: `{"type": "doc"}`,
+			name:    "valid empty document",
+			input:   `{"type": "doc"}`,
 			wantErr: false,
 		},
 		{
@@ -441,18 +441,18 @@ func TestValidateTipTapDocument(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "rejects deeply nested document",
-			input: buildDeeplyNestedDoc(55),
+			name:    "rejects deeply nested document",
+			input:   buildDeeplyNestedDoc(55),
 			wantErr: true,
 		},
 		{
-			name: "accepts max depth document",
-			input: buildDeeplyNestedDoc(48),
+			name:    "accepts max depth document",
+			input:   buildDeeplyNestedDoc(48),
 			wantErr: false,
 		},
 		{
-			name: "rejects oversized document",
-			input: buildOversizedDoc(10001),
+			name:    "rejects oversized document",
+			input:   buildOversizedDoc(10001),
 			wantErr: true,
 		},
 		{
@@ -594,8 +594,8 @@ func TestValidateTipTapDocument(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "rejects doc missing type",
-			input: `{"content": []}`,
+			name:    "rejects doc missing type",
+			input:   `{"content": []}`,
 			wantErr: true,
 		},
 	}
@@ -617,7 +617,7 @@ func TestValidateTipTapDocument(t *testing.T) {
 
 func buildDeeplyNestedDoc(depth int) string {
 	inner := `{"type": "paragraph", "content": [{"type": "text", "text": "deep"}]}`
-	for i := 0; i < depth; i++ {
+	for range depth {
 		inner = fmt.Sprintf(`{"type": "blockquote", "content": [%s]}`, inner)
 	}
 	return fmt.Sprintf(`{"type": "doc", "content": [%s]}`, inner)

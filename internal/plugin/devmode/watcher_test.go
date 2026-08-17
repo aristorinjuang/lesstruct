@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -40,12 +41,7 @@ func (l *logCapture) log(msg string) {
 func (l *logCapture) contains(s string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, m := range l.messages {
-		if m == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(l.messages, s)
 }
 
 func (l *logCapture) containsPrefix(prefix string) bool {
@@ -58,7 +54,6 @@ func (l *logCapture) containsPrefix(prefix string) bool {
 	}
 	return false
 }
-
 
 func (l *logCapture) count(s string) int {
 	l.mu.Lock()
@@ -278,11 +273,9 @@ func TestConcurrentAccess(t *testing.T) {
 
 		var wg sync.WaitGroup
 		for range 10 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				_ = os.WriteFile(wasmPath, addWasm, 0o644)
-			}()
+			})
 		}
 		wg.Wait()
 

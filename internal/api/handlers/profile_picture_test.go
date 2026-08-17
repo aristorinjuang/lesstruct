@@ -76,6 +76,11 @@ func (m *mockUserRepoForHandler) UpdateUserStatusIfCurrentStatus(ctx context.Con
 	return args.Error(0)
 }
 
+func (m *mockUserRepoForHandler) SetEmailVerified(ctx context.Context, userID int, emailVerified bool) error {
+	args := m.Called(ctx, userID, emailVerified)
+	return args.Error(0)
+}
+
 func (m *mockUserRepoForHandler) GetUserByEmail(ctx context.Context, email string) (*repository.User, error) {
 	args := m.Called(ctx, email)
 	if args.Get(0) == nil {
@@ -192,8 +197,8 @@ func createProfilePictureMultipartForm(t *testing.T) (*bytes.Buffer, string) {
 	t.Helper()
 
 	img := image.NewRGBA(image.Rect(0, 0, 200, 200))
-	for y := 0; y < 200; y++ {
-		for x := 0; x < 200; x++ {
+	for y := range 200 {
+		for x := range 200 {
 			img.Set(x, y, color.RGBA{uint8(x % 256), uint8(y % 256), 128, 255})
 		}
 	}

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import Modal from './Modal.vue'
 import Button from '@/components/atoms/Button.vue'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
 import { useUserStore } from '@/stores/domain/user'
+import { useRoleStore } from '@/stores/domain/role'
 import { useAuth } from '@/composables/useAuth'
 import { useConfig } from '@/composables/useConfig'
 import { validateCustomField, validateCustomFields } from '@/utils/validation'
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const userStore = useUserStore()
+const roleStore = useRoleStore()
 const { role: currentUserRole } = useAuth()
 const { commentsEnabled } = useConfig()
 
@@ -43,9 +45,13 @@ const passwordCopied = ref(false)
 const customFields = ref<Record<string, any>>({})
 const customFieldErrors = ref<Record<string, string>>({})
 
-// The Commentator role exists only for the comment system; it is not
-// assignable when comments are disabled.
+// The assignable roles come from the config-driven catalog (GET /api/v1/roles).
+// When the catalog is unavailable (legacy deployment), fall back to the
+// historical three-role list, with Commentator gated on the comment system.
 const roles = computed<{ value: UserRole; label: string }[]>(() => {
+  if (roleStore.capabilitiesLoaded) {
+    return roleStore.roles.map(r => ({ value: r.name, label: r.name }))
+  }
   const all: { value: UserRole; label: string }[] = [
     { value: 'Admin', label: 'Admin' },
     { value: 'Contributor', label: 'Contributor' },
@@ -55,6 +61,15 @@ const roles = computed<{ value: UserRole; label: string }[]>(() => {
   }
   return all
 })
+
+function defaultRole(): UserRole {
+  if (roleStore.capabilitiesLoaded) {
+    const assignable = roleStore.roles.filter(r => !r.isAdmin)
+    if (assignable.some(r => r.name === 'Contributor')) return 'Contributor'
+    return assignable[0]?.name || 'Contributor'
+  }
+  return commentsEnabled.value ? 'Commentator' : 'Contributor'
+}
 
 const usernamePattern = /^[a-zA-Z0-9_-]{1,50}$/
 const emailPattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$/
@@ -72,7 +87,7 @@ function resetForm() {
   username.value = ''
   displayName.value = ''
   email.value = ''
-  role.value = commentsEnabled.value ? 'Commentator' : 'Contributor'
+  role.value = defaultRole()
   errors.value = {}
   generatedPassword.value = ''
   passwordCopied.value = false
@@ -80,6 +95,10 @@ function resetForm() {
   customFieldErrors.value = {}
   state.value = 'form'
 }
+
+onMounted(() => {
+  void roleStore.load()
+})
 
 function validateCustomFieldOnBlur(fieldSlug: string) {
   const field = [...props.userFields, ...props.userSystemFields].find(f => f.slug === fieldSlug)
@@ -426,6 +445,7 @@ function handleClose() {
 .create-user-modal__copy-button {
   flex-shrink: 0;
   white-space: nowrap;
+  min-width: 5.5rem;
 }
 
 .create-user-modal__success {
@@ -461,13 +481,15 @@ function handleClose() {
   border-radius: 0.375rem;
   font-size: 0.875rem;
   font-family: monospace;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow-x: auto;
   user-select: all;
 }
 
 .create-user-modal__copy-button {
   flex-shrink: 0;
   white-space: nowrap;
+  min-width: 5.5rem;
 }
 
 .create-user-modal__warning {

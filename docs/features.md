@@ -36,7 +36,10 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Comments can be switched off entirely.** `[comments] enabled = false`
   hard-disables the comment system end to end — no comment routes, no comment
   UI, `allowComments` forced off on every item, and self-registration blocked
-  (the only self-registerable role, Commentator, exists solely for comments).
+  unless a `[registration]` block re-enables it. With a `[registration]` block,
+  registration is decoupled from the comment system entirely: `enabled`,
+  `default_role`, and `admin_approval` are configurable, so a site can let the
+  public register into any role.
   See [configuration.md](configuration.md).
 
 ## Content & authoring {#content-authoring}
@@ -78,8 +81,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   editor provides a CodeMirror 6 editor with syntax highlighting and a live
   preview (sandboxed iframe). HTML content is sanitized on write (dangerous
   elements/attributes stripped via bluemonday; inline `style` and class
-  attributes preserved) and on read (rendered through the same policy). Ideal
-  for WordPress Elementor imports and hand-authored HTML pages.
+  attributes preserved) and on read (rendered through the same policy).
+  Root-relative URLs (`/uploads/media/...`, same-site links) survive the
+  sanitizer, and `<iframe>` embeds are kept when their host is allowed by the
+  CSP `frame-src` directive (defaults + appends, `*.host` wildcards cover
+  subdomains only — YouTube works out of the box). Ideal for WordPress
+  Elementor imports and hand-authored HTML pages.
 - **Markdown as first-class ingest.** The CLI and `/api/v1` accept Markdown
   bodies; the server converts them to canonical TipTap JSON. Raw Markdown is
   never persisted.
@@ -122,13 +129,31 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   directory.
   - **Media migration.** Images referenced by the content (local `static/`
     files and remote `https://` URLs) are downloaded and re-uploaded as
-    Lesstruct media (WebP transcode + SHA-256 dedup); body `<img src>` paths
+    Lesstruct media (WebP passthrough for already-WebP input — no generation
+    loss — transcode for other formats, SHA-256 dedup); body `<img src>` paths
     are rewritten to the new media URLs and the first frontmatter `images:`
-    entry is prepended as a featured image. Use the **skip-media** option to
+    entry is prepended as a featured image — unless the rewritten body's
+    first image is already that same image, in which case the prepend is
+    skipped so the cover is never duplicated. Use the **skip-media** option to
     import text only with images hotlinked — available in the admin UI
     (checkbox) and the CLI (`--skip-media` flag).
+  - **Static references survive.** References that resolve to files under the
+    Hugo `static/` dir — links, iframe demos, stylesheets, and images that
+    could not be migrated — are rewritten to `/static/<path>`, the documented
+    convention (operators mirror their Hugo `static/` into the theme's
+    `static/`). Failed media migrations and references left unresolved (dead
+    links, missing images) are surfaced as `warning:` entries in the import
+    job's `errors` list — each exactly once — instead of failing silently;
+    content permalinks and aliases stay silent.
   - **Idempotent re-runs.** Items whose slug already exists are skipped as
     "already imported", so re-running after a partial failure is safe.
+  - **Legacy aliases survive delete + re-import.** Deleting a post removes its
+    alias rows (no more dangling `content_aliases`), and a re-import
+    automatically re-points an existing alias whose target no longer exists
+    onto the freshly imported item — the documented delete-and-reimport
+    remediation no longer breaks legacy `.html` redirects. Archives built with
+    default `tar -czf site.tar.gz .` flags (including the leading `./` entry)
+    are accepted.
   - **Admin UI.** Upload a `.tar.gz` archive (containing at least a
     `content/` directory) under *Import → Hugo*; the UI polls the job status
     and shows a progress bar plus per-item issues. The site's `config.toml` /
@@ -162,8 +187,13 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 {{< screenshot src="media-library" alt="The media library: a searchable grid of uploaded images with thumbnails and metadata." caption="The media library — search, filter, and manage uploads." >}}
 
 - **Media library.** Browse, search, and date-filter uploads from the admin panel.
-- **Automatic WebP conversion.** Every uploaded image is transcoded to WebP
-  (quality 80) on upload, so images never weigh down your content.
+- **Automatic WebP conversion.** Every uploaded image is served as WebP:
+  already-WebP uploads pass through without re-encoding (no generation loss,
+  and their EXIF/XMP/ICC metadata chunks are stripped — the same privacy
+  behavior the transcode path always had), every other format is transcoded to
+  WebP (quality 80) on upload, so images never weigh down your content.
+  Extended VP8X/alpha WebP files are fully supported; animated WebP is
+  rejected with a clear error.
 - **Configurable thumbnail variants.** Defaults ship `_thumb` (370px),
   `_medium` (800px), `_large` (1600px); all editable in `config.toml`. The content
   site emits a responsive `srcset` from them. Post cards also expose an
@@ -229,7 +259,9 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   [theme-development.md](theme-development.md).
 - **Multi-type aware.** Every post card and single-page template receives the
   item's `.PostType`, so a theme can branch layouts for articles, events, and any
-  custom post type from one template set.
+  custom post type from one template set. Cards also carry the post's raw
+  `.CustomFields` (e.g. `{{index .CustomFields "link"}}`), so list templates can
+  branch links or badges on field presence server-side — no client-side JS.
 - **Magazine homepages.** Optional `[[homepage_section]]` blocks in `config.toml`
   render per-post-type groupings (latest articles, upcoming events, …) alongside
   the latest-posts list — backward compatible (omitted = flat list). Each section
@@ -257,9 +289,10 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **WebAssembly plugins.** Drop a compiled `.wasm` into `plugins/` and it hooks
   into the content lifecycle. Any language that compiles to Wasm works.
 - **Familiar hook model.** Explicit registration, priority-based execution,
-  immutable data flow. Invoked hooks: `before_save`, `after_create`,
-  `after_publish`; reserved for forward compatibility: `on_plugin_loaded`,
-  `before_delete`.
+  immutable data flow. Invoked hooks: `before_save` (create, update, and
+  admin system-fields updates), `after_create`, `after_publish`,
+  `before_delete`, `after_unpublish`; reserved for forward compatibility:
+  `on_plugin_loaded`.
 - **Host functions.** Plugins call into the host for HTTP (`http_get`,
   `http_post`), the database (`db_query`, `db_exec`), and logging (`log_info`,
   `log_error`).
@@ -300,13 +333,23 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 
 ## Users, roles & security {#users-roles-security}
 
-- **Three roles.** Admin, Contributor, and Commentator — enforced by dedicated
-  middleware on each realm.
+- **Configurable roles.** Three built-in roles — Admin, Contributor, and
+  Commentator — enforced by dedicated middleware on each realm. Sites can add
+  custom roles or override the built-ins via `[[role]]` entries in `config.toml`,
+  each granting a per-post-type manage set plus publish, media, and comment
+  capabilities. Content, media, and comment endpoints enforce these
+  capabilities, and the admin UI gates navigation and forms off the caller's
+  derived capabilities — the content editor hides its Publish button (and the
+  Published status option) for roles without the `publish` capability.
 - **First-run setup.** A default `admin/admin` account is auto-created on first
   start; the first login forces a password change. Self-registration creates
-  `pending` Commentators an admin approves.
+  `pending` Commentators an admin approves (or a configurable default role;
+  see `[registration]`).
 - **User management.** Admins CRUD users, assign roles, suspend/unsuspend,
   soft-delete, and moderate the registration queue (approve / reject / mark-as-spam).
+  The pending queue shows each registrant's email-verification status; with
+  `[registration] admin_approval = true` a registrant must verify their email
+  before an admin can activate them (`409 EMAIL_NOT_VERIFIED` otherwise).
 - **Profiles.** Self-service profile (name, email, password, custom profile
   fields, avatar), self-service data export, and self-service account deletion.
 - **JWT auth (admin realm).** Bearer-JWT sessions for the admin SPA, with Argon2id
@@ -314,7 +357,9 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Failed-login lockout.** An account locks for 15 minutes after 3 failed
   attempts, with an email notification.
 - **Email verification and password reset.** Self-registration verifies via email
-  token; forgot-password / reset-password flows are built in.
+  token — verification is always mandatory — and with `admin_approval = true` the
+  verified registrant stays `pending` until an administrator activates the
+  account; forgot-password / reset-password flows are built in.
 - **Rate limiting.** Separate per-minute limits for auth, API, and public realms;
   per-key limiting on the agent API.
 - **CSRF and security headers.** CSRF token validation plus CSP,
@@ -323,7 +368,18 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   sources per directive, switch to Report-Only for safe rollout, add new
   directives, or override entirely (or disable when behind a CDN that manages
   its own CSP). Built-in defaults include `youtube-nocookie.com` (privacy-enhanced
-  YouTube) alongside the existing `unsafe-inline` / known CDN hosts.
+  YouTube) alongside the existing `unsafe-inline` / known CDN hosts. The same
+  `frame-src` sources also govern which `<iframe>` embeds survive the HTML
+  sanitizer in HTML-format content — a full `policy` override replaces the
+  sanitizer allowlist too, while `disable`/`report_only` keep the built-in
+  allowlist as a safety net.
+- **Configurable frame protection.** Same-origin framing is opt-in via
+  [`[csp] frame_ancestors`](configuration.md#csp): `["'self'"]` relaxes the
+  default `frame-ancestors 'none'` and switches `X-Frame-Options` to
+  `SAMEORIGIN` (host allowlists omit the legacy header entirely, flooring to
+  `DENY` under report-only so trials stay protected), so sites can embed
+  their own demo/interactive pages in `<iframe>`s — with `X-Frame-Options`
+  auto-derived from the same knob so the two headers never contradict.
 
 ## Engagement {#engagement}
 

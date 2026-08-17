@@ -113,6 +113,53 @@ To avoid disclosing which resources exist, operations on a resource you don't ow
 - **Published** content is readable by any authenticated key.
 - `GET`/`PUT`/`DELETE` on a resource you don't own → `404 NOT_FOUND` (existence is not disclosed).
 
+## Roles
+
+`GET /api/v1/roles` requires authentication and returns the registered role catalog **plus** the caller's own capabilities. The admin UI uses it to populate the role dropdown in user management and to gate navigation/forms — clients should derive UI decisions from `data.me`, never hardcode role names.
+
+Response:
+
+```json
+{
+  "data": {
+    "roles": [
+      {
+        "name": "Admin",
+        "allTypes": true,
+        "publish": true,
+        "media": true,
+        "comments": true,
+        "isAdmin": true
+      },
+      {
+        "name": "Journalist",
+        "postTypes": ["article"],
+        "allTypes": false,
+        "publish": true,
+        "media": false,
+        "comments": true,
+        "isAdmin": false
+      }
+    ],
+    "me": {
+      "role": "Journalist",
+      "postTypes": ["article"],
+      "publish": true,
+      "media": false,
+      "comments": true,
+      "isAdmin": false
+    }
+  },
+  "error": null,
+  "meta": { "timestamp": "..." }
+}
+```
+
+- `data.roles[]` — every registered role (built-ins plus any `[[role]]` overrides/extensions). Fields: `name`, `postTypes` (omitted when `allTypes`), `allTypes`, `publish`, `media`, `comments`, `isAdmin`.
+- `data.me` — the caller's capabilities: `role` (their role name), `postTypes` (post-type slugs they may manage; all types when Admin), `publish`, `media`, `comments`, `isAdmin`.
+- When the instance was started without a role registry (legacy config), the endpoint returns `404 roles_unavailable` — fail closed, never an empty grant.
+- The caller's capabilities also gate the other endpoints: the role-scoped `GET /api/v1/post_types` returns only the manageable types, and create/update/publish/delete on other types return `403 FORBIDDEN` (`ErrForbiddenPostType` / `ErrForbiddenPublish`).
+
 ## Content
 
 The Content resource lets you publish posts, pages, and other content types over the API. Content is stored as canonical **Tiptap JSON**; you may submit Markdown and let the server convert it (see [Authoring in Markdown](#authoring-in-markdown)).
@@ -244,6 +291,8 @@ Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `t
 
 **Response** `200 OK`: `{"data":{"content":{…}}}` with the updated item.
 
+Status transitions through this endpoint fire the plugin hooks: entering the published state fires `AfterPublish` (`hook_after_publish`), and leaving it (published → draft or any other status) fires `AfterUnpublish` (`hook_after_unpublish`). Non-status edits fire `BeforeSaveContent` as usual.
+
 Returns `404 NOT_FOUND` if the item does not exist or you are not its owner (and not Admin) — existence is not disclosed (see [Visibility](#visibility-no-enumeration-model)). Errors: `400 VALIDATION_ERROR`.
 
 ### Delete content
@@ -253,6 +302,10 @@ DELETE /api/v1/content/{id}
 ```
 
 **Response** `204 No Content` (empty body) on success. A subsequent `GET` returns `404 NOT_FOUND`.
+
+Deletion fires the `BeforeDeleteContent` plugin hook (`hook_before_delete`) **before** the row is removed, with the full content payload including plugin-managed system fields (`userId` is the content's author). A hook error aborts the delete and maps to `500 INTERNAL_SERVER_ERROR`; the hook's result is discarded.
+
+The item's `content_aliases` rows are removed along with the content (before the content row itself), so legacy URLs never point at a deleted item; a later re-import re-points any pre-existing dangling alias onto the newly imported item.
 
 Returns `404 NOT_FOUND` if the item does not exist or you are not its owner (and not Admin).
 
@@ -279,7 +332,7 @@ curl -X POST -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
 POST /api/v1/content/{id}/unpublish
 ```
 
-Standalone status-toggle verb. No request body. Sets `status: "draft"`. Never fires the `AfterPublish` hook (the hook is wired to the draft → published edge only). Unpublishing an already-draft post is a **200 no-op**.
+Standalone status-toggle verb. No request body. Sets `status: "draft"`. On the **published → draft** transition the server fires the `AfterUnpublish` plugin hook (`hook_after_unpublish`); the `AfterPublish` hook is never fired here (it is wired to the draft → published edge only). Unpublishing an already-draft post is a **200 no-op**: no hook fires, the row is persisted unchanged.
 
 **Response** `200 OK`: `{"data":{"content":{…}}}` with the item now in `status: "draft"`.
 
@@ -311,6 +364,10 @@ The server validates every key against the item's post-type system-field schema 
 Returns `403 FORBIDDEN` if the key does not belong to an Admin. Returns `404 NOT_FOUND` if the item does not exist. Errors: `400 VALIDATION_ERROR`.
 
 > System fields are **not** accepted inside `customFields` on [create](#create-content) or [update](#update-content) — they are rejected with a `400 VALIDATION_ERROR` naming the offending key. Use this endpoint instead.
+
+> This endpoint also fires the `BeforeSaveContent` plugin hook (`hook_before_save`) with the merged content payload (including the admin-set values); the hook may adjust **system fields only**, and a hook error aborts the update (`500`). Regular custom-field changes returned by the hook are ignored.
+
+> The authenticated admin is recorded as the item's `updatedBy` (audit), so the response's `updatedBy` is populated even for rows that were never edited since creation.
 
 ```bash
 curl -X PUT -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
@@ -1128,7 +1185,7 @@ true
 ------boundary--
 ```
 
-The archive must contain a `content/` directory at its root with the Hugo posts (HTML or Markdown files with YAML frontmatter). A `static/` directory is optional — images referenced by the content (local `static/` files or remote `https://` URLs) are downloaded and re-uploaded as Lesstruct media (WebP transcode + SHA-256 dedup), with body `<img src>` paths rewritten and the first frontmatter `images:` entry prepended as a featured image. The `skipMedia` field is optional — when set to `"true"` the server skips media migration and images stay linked to their original paths or URLs.
+The archive must contain a `content/` directory at its root with the Hugo posts (HTML or Markdown files with YAML frontmatter). Archives built with default GNU tar flags (`tar -czf site.tar.gz .` — including the leading `./` root entry) are accepted. A `static/` directory is optional — images referenced by the content (local `static/` files or remote `https://` URLs) are downloaded and re-uploaded as Lesstruct media (already-WebP input passes through without re-encoding, with metadata chunks stripped; other formats are transcoded; SHA-256 dedup), with body `<img src>` paths rewritten and the first frontmatter `images:` entry prepended as a featured image — unless the rewritten body's first image is already that same image, in which case the prepend is skipped so the cover is never duplicated (a featured image that fails to migrate is not prepended either). References that resolve to files under the archive's `static/` dir (links, iframe demos, stylesheets, images that could not be migrated, and all image references under `skipMedia`) are rewritten to `/static/<path>` — the documented convention that operators mirror their Hugo `static/` into the theme's `static/`. Migration failures and references left unresolved are surfaced in the job's `errors` list as `warning:` entries — each exactly once across the import — including missing static files; content permalinks and aliases are not warned about. The `skipMedia` field is optional — when set to `"true"` the server skips media migration and images stay linked to their original paths or `/static/<path>` URLs.
 
 The importer also reads the site's `hugo.toml` / `config.toml` for `baseURL` and `defaultContentLanguage`, preserves the frontmatter `date` as the content's publish date, and skips items whose slug already exists (idempotent re-runs).
 

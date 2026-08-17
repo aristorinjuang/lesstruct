@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/aristorinjuang/lesstruct/internal/domain/user"
 	"github.com/aristorinjuang/lesstruct/internal/email"
@@ -35,6 +35,7 @@ type PendingUser struct {
 	Username       string    `json:"username"`
 	Email          string    `json:"email"`
 	ProfilePicture string    `json:"profilePicture,omitempty"`
+	EmailVerified  bool      `json:"emailVerified"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
@@ -53,7 +54,7 @@ type UserDetail struct {
 	Status         string         `json:"status"`
 	ProfilePicture string         `json:"profilePicture,omitempty"`
 	CustomFields   map[string]any `json:"customFields,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
 }
 
 // RejectUserResponse represents the response for reject user
@@ -110,9 +111,9 @@ type UnsuspendUserResponse struct {
 
 // SoftDeleteUserResponse represents the response for soft delete user
 type SoftDeleteUserResponse struct {
-	Message            string `json:"message"`
-	User               *UserDetail `json:"user"`
-	DeletedContentCount int     `json:"deletedContentCount"`
+	Message             string      `json:"message"`
+	User                *UserDetail `json:"user"`
+	DeletedContentCount int         `json:"deletedContentCount"`
 }
 
 // SoftDeleteContentRequest represents the request for soft delete
@@ -129,18 +130,18 @@ type GetSoftDeletedContentResponse struct {
 
 // DeletedContentItem represents a soft deleted content item
 type DeletedContentItem struct {
-	ID         int    `json:"id"`
+	ID          int    `json:"id"`
 	ContentType string `json:"contentType"`
-	ContentID  int    `json:"contentId"`
-	DeletedAt  string `json:"deletedAt"`
-	DeletedBy  string `json:"deletedBy"`
-	Reason     string `json:"reason,omitempty"`
+	ContentID   int    `json:"contentId"`
+	DeletedAt   string `json:"deletedAt"`
+	DeletedBy   string `json:"deletedBy"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 // RestoreContentResponse represents the response for restore content
 type RestoreContentResponse struct {
-	Message string             `json:"message"`
-	Content *RestoredContent   `json:"content"`
+	Message string           `json:"message"`
+	Content *RestoredContent `json:"content"`
 }
 
 // RestoredContent represents restored content details
@@ -181,13 +182,13 @@ type UpdateUserProfileResponse struct {
 
 // UserManagementHandler handles user management HTTP requests
 type UserManagementHandler struct {
-	userService       *user.UserManagementService
-	adminCreateService *user.AdminCreateUserService
-	userRepo          repository.UserRepo
-	softDeleteRepo    repository.SoftDeleteRepo
-	jwtManager        *auth.JWTManager
-	emailService      email.EmailService
-	logger            *util.Logger
+	userService              *user.UserManagementService
+	adminCreateService       *user.AdminCreateUserService
+	userRepo                 repository.UserRepo
+	softDeleteRepo           repository.SoftDeleteRepo
+	jwtManager               *auth.JWTManager
+	emailService             email.EmailService
+	logger                   *util.Logger
 	profilePictureURLBuilder func(string) string
 }
 
@@ -241,6 +242,7 @@ func (h *UserManagementHandler) GetPendingUsers(w http.ResponseWriter, r *http.R
 			Username:       u.Username,
 			Email:          u.Email,
 			ProfilePicture: h.buildProfilePictureURL(u.ProfilePicture),
+			EmailVerified:  u.EmailVerified,
 			CreatedAt:      u.CreatedAt,
 		}
 	}
@@ -284,6 +286,10 @@ func (h *UserManagementHandler) ApproveUser(w http.ResponseWriter, r *http.Reque
 		h.logger.Error("Failed to approve user: %v", err)
 		if errors.Is(err, user.ErrInvalidStatus) {
 			response.Error(w, http.StatusBadRequest, "INVALID_USER_STATUS", "User is not in pending status", nil)
+			return
+		}
+		if errors.Is(err, user.ErrEmailNotVerified) {
+			response.Error(w, http.StatusConflict, "EMAIL_NOT_VERIFIED", "User email is not verified yet", nil)
 			return
 		}
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to approve user", nil)
@@ -463,11 +469,7 @@ func (h *UserManagementHandler) GetAllUsers(w http.ResponseWriter, r *http.Reque
 	if limitStr != "" {
 		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
 			// Enforce max limit of 1000
-			if parsedLimit > 1000 {
-				limit = 1000
-			} else {
-				limit = parsedLimit
-			}
+			limit = min(parsedLimit, 1000)
 		}
 	}
 
@@ -780,7 +782,7 @@ func (h *UserManagementHandler) SoftDeleteUser(w http.ResponseWriter, r *http.Re
 
 	// Send response
 	resp := SoftDeleteUserResponse{
-		Message:             "User account and content soft deleted successfully",
+		Message: "User account and content soft deleted successfully",
 		User: &UserDetail{
 			ID:             updatedUser.ID,
 			Username:       updatedUser.Username,
@@ -930,9 +932,9 @@ func (h *UserManagementHandler) CreateUser(w http.ResponseWriter, r *http.Reques
 	}
 
 	result, err := h.adminCreateService.CreateUser(r.Context(), user.AdminCreateUserRequest{
-		Username: req.Username,
-		Name:     req.Name,
-		Email:    req.Email,
+		Username:     req.Username,
+		Name:         req.Name,
+		Email:        req.Email,
 		Role:         req.Role,
 		CustomFields: req.CustomFields,
 	})
@@ -1074,13 +1076,13 @@ func NewUserManagementHandler(
 	profilePictureURLBuilder func(string) string,
 ) *UserManagementHandler {
 	return &UserManagementHandler{
-		userService:       userService,
-		adminCreateService: adminCreateService,
-		userRepo:          userRepo,
-		softDeleteRepo:    softDeleteRepo,
-		jwtManager:        jwtManager,
-		emailService:      emailService,
-		logger:            logger,
+		userService:              userService,
+		adminCreateService:       adminCreateService,
+		userRepo:                 userRepo,
+		softDeleteRepo:           softDeleteRepo,
+		jwtManager:               jwtManager,
+		emailService:             emailService,
+		logger:                   logger,
 		profilePictureURLBuilder: profilePictureURLBuilder,
 	}
 }

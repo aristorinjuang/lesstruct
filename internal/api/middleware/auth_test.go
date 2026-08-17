@@ -42,7 +42,7 @@ func TestAuthMiddleware_RequireAuth_ValidToken(t *testing.T) {
 	})
 
 	// Create request with valid token
-	req := httptest.NewRequest("GET", "/protected", nil)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act
@@ -67,7 +67,7 @@ func TestAuthMiddleware_RequireAuth_MissingToken(t *testing.T) {
 	})
 
 	// Create request without token
-	req := httptest.NewRequest("GET", "/protected", nil)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 
 	// Act
 	rr := httptest.NewRecorder()
@@ -90,7 +90,7 @@ func TestAuthMiddleware_RequireAuth_InvalidToken(t *testing.T) {
 	})
 
 	// Create request with invalid token
-	req := httptest.NewRequest("GET", "/protected", nil)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer invalid-token-123")
 
 	// Act
@@ -134,7 +134,7 @@ func TestAuthMiddleware_RequireAuth_MalformedHeader(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create request with malformed header
-			req := httptest.NewRequest("GET", "/protected", nil)
+			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 			req.Header.Set("Authorization", tt.authHeader)
 
 			// Act
@@ -170,7 +170,7 @@ func TestAuthMiddleware_OptionalAuth_ValidToken(t *testing.T) {
 	})
 
 	// Create request with valid token
-	req := httptest.NewRequest("GET", "/public", nil)
+	req := httptest.NewRequest(http.MethodGet, "/public", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act
@@ -198,7 +198,7 @@ func TestAuthMiddleware_OptionalAuth_NoToken(t *testing.T) {
 	})
 
 	// Create request without token
-	req := httptest.NewRequest("GET", "/public", nil)
+	req := httptest.NewRequest(http.MethodGet, "/public", nil)
 
 	// Act
 	rr := httptest.NewRecorder()
@@ -225,7 +225,7 @@ func TestAuthMiddleware_RequireRole_ValidRole(t *testing.T) {
 	})
 
 	// Create request with admin token
-	req := httptest.NewRequest("GET", "/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act
@@ -253,7 +253,7 @@ func TestAuthMiddleware_RequireRole_InvalidRole(t *testing.T) {
 	})
 
 	// Create request with contributor token trying to access admin endpoint
-	req := httptest.NewRequest("GET", "/admin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	// Act
@@ -271,7 +271,7 @@ func TestGetUserID(t *testing.T) {
 	ctx := context.WithValue(context.Background(), appmiddleware.UserIDKey, "123")
 
 	// Create request with context
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = req.WithContext(ctx)
 
 	// Act
@@ -288,7 +288,7 @@ func TestGetUsername(t *testing.T) {
 	ctx := context.WithValue(context.Background(), appmiddleware.UsernameKey, "testuser")
 
 	// Create request with context
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = req.WithContext(ctx)
 
 	// Act
@@ -305,7 +305,7 @@ func TestGetRole(t *testing.T) {
 	ctx := context.WithValue(context.Background(), appmiddleware.RoleKey, "Admin")
 
 	// Create request with context
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req = req.WithContext(ctx)
 
 	// Act

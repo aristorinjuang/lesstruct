@@ -62,8 +62,8 @@ type ContentProjection struct {
 	Tags         []string       `json:"tags,omitempty"`
 	CustomFields map[string]any `json:"customFields,omitempty"`
 	Author       string         `json:"author,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt,omitempty"`
-	UpdatedAt    time.Time      `json:"updatedAt,omitempty"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
 }
 
 // ContentResponse wraps a projected content item for the agent create/get responses.
@@ -109,20 +109,20 @@ type MediaMetadata struct {
 // mediadomain.Media carries (the numeric owner id, filePath, uploadedBy) so the
 // programmatic API surface does not over-disclose — mirroring ContentProjection.
 type MediaProjection struct {
-	ID               int                            `json:"id"`
-	Filename         string                         `json:"filename"`
-	OriginalFilename string                         `json:"originalFilename"`
-	MimeType         mediadomain.MimeType           `json:"mimeType"`
-	FileSize         int64                          `json:"fileSize"`
-	Width            int                            `json:"width"`
-	Height           int                            `json:"height"`
-	AltText          string                         `json:"altText"`
-	IsWebP           bool                           `json:"isWebp"`
-	Hash             string                         `json:"hash"`
-	URL              string                         `json:"url"`
+	ID               int                                 `json:"id"`
+	Filename         string                              `json:"filename"`
+	OriginalFilename string                              `json:"originalFilename"`
+	MimeType         mediadomain.MimeType                `json:"mimeType"`
+	FileSize         int64                               `json:"fileSize"`
+	Width            int                                 `json:"width"`
+	Height           int                                 `json:"height"`
+	AltText          string                              `json:"altText"`
+	IsWebP           bool                                `json:"isWebp"`
+	Hash             string                              `json:"hash"`
+	URL              string                              `json:"url"`
 	Variants         map[string]mediadomain.MediaVariant `json:"variants,omitempty"`
-	CreatedAt        time.Time                          `json:"createdAt,omitempty"`
-	UpdatedAt        time.Time                          `json:"updatedAt,omitempty"`
+	CreatedAt        time.Time                           `json:"createdAt"`
+	UpdatedAt        time.Time                           `json:"updatedAt"`
 }
 
 // MediaResponse wraps a projected media item for the agent media responses.

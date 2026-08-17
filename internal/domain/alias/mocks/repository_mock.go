@@ -349,3 +349,72 @@ func (_c *MockRepository_FindByContentID_Call) RunAndReturn(run func(ctx context
 	_c.Call.Return(run)
 	return _c
 }
+
+// Repoint provides a mock function for the type MockRepository
+func (_mock *MockRepository) Repoint(ctx context.Context, aliasStr string, fromContentID int, toContentID int) error {
+	ret := _mock.Called(ctx, aliasStr, fromContentID, toContentID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Repoint")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) error); ok {
+		r0 = returnFunc(ctx, aliasStr, fromContentID, toContentID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockRepository_Repoint_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Repoint'
+type MockRepository_Repoint_Call struct {
+	*mock.Call
+}
+
+// Repoint is a helper method to define mock.On call
+//   - ctx context.Context
+//   - aliasStr string
+//   - fromContentID int
+//   - toContentID int
+func (_e *MockRepository_Expecter) Repoint(ctx any, aliasStr any, fromContentID any, toContentID any) *MockRepository_Repoint_Call {
+	return &MockRepository_Repoint_Call{Call: _e.mock.On("Repoint", ctx, aliasStr, fromContentID, toContentID)}
+}
+
+func (_c *MockRepository_Repoint_Call) Run(run func(ctx context.Context, aliasStr string, fromContentID int, toContentID int)) *MockRepository_Repoint_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockRepository_Repoint_Call) Return(err error) *MockRepository_Repoint_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockRepository_Repoint_Call) RunAndReturn(run func(ctx context.Context, aliasStr string, fromContentID int, toContentID int) error) *MockRepository_Repoint_Call {
+	_c.Call.Return(run)
+	return _c
+}

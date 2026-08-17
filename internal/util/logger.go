@@ -10,6 +10,7 @@ import (
 // Logger provides structured logging capabilities
 type Logger struct {
 	infoLogger  *log.Logger
+	warnLogger  *log.Logger
 	errorLogger *log.Logger
 	debugLogger *log.Logger
 }
@@ -17,6 +18,11 @@ type Logger struct {
 // Info logs an informational message
 func (l *Logger) Info(format string, v ...any) {
 	_ = l.infoLogger.Output(2, fmt.Sprintf(format, v...))
+}
+
+// Warn logs a warning message
+func (l *Logger) Warn(format string, v ...any) {
+	_ = l.warnLogger.Output(2, fmt.Sprintf(format, v...))
 }
 
 // Error logs an error message
@@ -39,6 +45,7 @@ func (l *Logger) Fatal(format string, v ...any) {
 func NewLogger(w io.Writer) *Logger {
 	return &Logger{
 		infoLogger:  log.New(w, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile),
+		warnLogger:  log.New(w, "WARN: ", log.Ldate|log.Ltime|log.Lshortfile),
 		errorLogger: log.New(w, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile),
 		debugLogger: log.New(w, "DEBUG: ", log.Ldate|log.Ltime|log.Lshortfile),
 	}

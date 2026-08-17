@@ -2,6 +2,11 @@ info:
   name: Resend Verification
   type: http
   seq: 6
+  docs: >-
+    Re-issues a verification link for a pending registrant. In admin-approval
+    mode a pending user whose email is already verified is NOT issued another
+    link (generic anti-enumeration reply); in legacy mode a link is always
+    re-issued for pending users.
 
 http:
   method: POST

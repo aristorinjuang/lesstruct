@@ -129,7 +129,7 @@ Once installed, ask your agent things like:
 
 ## Plugin Development
 
-Plugins are sandboxed WebAssembly modules with a WordPress-familiar hook model — explicit registration, priority-based execution, immutable data flow. The currently-invoked hooks are `before_save`, `after_create`, and `after_publish`; reserved-but-unused hooks (`on_plugin_loaded`, `before_delete`) are documented for forward compatibility.
+Plugins are sandboxed WebAssembly modules with a WordPress-familiar hook model — explicit registration, priority-based execution, immutable data flow. The currently-invoked hooks are `before_save` (create, update, and admin system-fields updates), `after_create`, `after_publish`, `before_delete`, and `after_unpublish`; the reserved-but-unused hook (`on_plugin_loaded`) is documented for forward compatibility.
 
 - Full contract: [`docs/plugin-development.md`](docs/plugin-development.md)
 - Capability manifest & host functions: [`docs/plugin-capabilities.md`](docs/plugin-capabilities.md)

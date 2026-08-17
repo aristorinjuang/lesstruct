@@ -12,6 +12,7 @@ import (
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	contentmocks "github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/go-chi/chi/v5"
@@ -340,6 +341,105 @@ func TestCommentHandler_CreateComment(t *testing.T) {
 
 			if tt.validateResp != nil {
 				tt.validateResp(t, resp)
+			}
+		})
+	}
+}
+
+// TestCommentHandler_CreateComment_RoleGate verifies posting a comment is gated
+// by the caller's role capability when a role service is configured. A role
+// without the comments capability gets 403; a role with it proceeds to the
+// content service. Without a role service, every authenticated user may comment
+// (legacy behavior, covered by TestCommentHandler_CreateComment).
+func TestCommentHandler_CreateComment_RoleGate(t *testing.T) {
+	roleService := roledomain.NewService()
+	if err := roleService.Register(roledomain.Role{
+		Name:     "Journalist",
+		PostTypes: []string{"article"},
+		Publish:  true,
+		Media:    true,
+		Comments: false,
+	}); err != nil {
+		t.Fatalf("failed to register role: %v", err)
+	}
+
+	tests := []struct {
+		name           string
+		role           string
+		withRoleSvc    bool
+		expectedStatus int
+		validateResp   func(*testing.T, map[string]any)
+	}{
+		{
+			name:           "role cannot comment",
+			role:           "Journalist",
+			withRoleSvc:    true,
+			expectedStatus: http.StatusForbidden,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				err, ok := resp["error"].(map[string]any)
+				if !ok {
+					t.Errorf("expected error field")
+					return
+				}
+				if err["code"] != "forbidden" {
+					t.Errorf("expected code 'forbidden', got %v", err["code"])
+				}
+			},
+		},
+		{
+			name:           "role can comment",
+			role:           "Commentator",
+			withRoleSvc:    true,
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:           "no role service - legacy allows",
+			role:           "Journalist",
+			withRoleSvc:    false,
+			expectedStatus: http.StatusCreated,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := contentmocks.NewMockServiceInterface(t)
+			if tt.expectedStatus == http.StatusCreated {
+				mockService.EXPECT().GetPublishedBySlug(mock.Anything, "test-post", "en").Return(&contentdomain.Content{
+					ID:            1,
+					Slug:          "test-post",
+					AllowComments: true,
+				}, nil)
+				mockService.EXPECT().SubmitComment(mock.Anything, 1, userID, mock.Anything).Return(&contentdomain.Comment{
+					ID:        1,
+					Comment:   "Great!",
+					Status:    contentdomain.CommentStatusPending,
+					CreatedAt: time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
+				}, nil)
+			}
+
+			var opts []handlers.CommentHandlerOption
+			if tt.withRoleSvc {
+				opts = append(opts, handlers.WithCommentRoleService(roleService))
+			}
+			handler := handlers.NewCommentHandler(mockService, opts...)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/content_items/test-post/comments", bytes.NewReader([]byte(`{"comment": "Great!"}`)))
+			req.Header.Set("Content-Type", "application/json")
+
+			rctx := chi.NewRouteContext()
+			rctx.URLParams.Add("slug", "test-post")
+
+			ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+			ctx = context.WithValue(ctx, middleware.UserIDKey, "1")
+			ctx = context.WithValue(ctx, middleware.RoleKey, tt.role)
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+
+			handler.CreateComment(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, w.Code)
 			}
 		})
 	}

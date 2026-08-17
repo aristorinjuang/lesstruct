@@ -16,6 +16,7 @@ const (
 	HookAfterPublish   HookName = "AfterPublishContent"
 	HookBeforeDelete   HookName = "BeforeDeleteContent"
 	HookAfterCreate    HookName = "AfterCreateContent"
+	HookAfterUnpublish HookName = "AfterUnpublishContent"
 	HookOnPluginLoaded HookName = "OnPluginLoaded"
 )
 
@@ -24,7 +25,7 @@ const DefaultPriority = 100
 type FailureMode int
 
 const (
-	FailFast       FailureMode = iota
+	FailFast FailureMode = iota
 	LogAndContinue
 	Fallback
 )
@@ -58,17 +59,18 @@ var wasmHookMapping = map[string]HookName{
 	"after_publish":    HookAfterPublish,
 	"before_delete":    HookBeforeDelete,
 	"after_create":     HookAfterCreate,
+	"after_unpublish":  HookAfterUnpublish,
 	"on_plugin_loaded": HookOnPluginLoaded,
 }
 
 type HookHandler func(ctx context.Context, data []byte) ([]byte, error)
 
 type HookRegistration struct {
-	PluginName     string
-	HookName       HookName
-	Priority       int
-	Handler        HookHandler
-	FailureMode    FailureMode
+	PluginName      string
+	HookName        HookName
+	Priority        int
+	Handler         HookHandler
+	FailureMode     FailureMode
 	FallbackHandler HookHandler
 }
 

@@ -11,6 +11,7 @@ const mockPendingUsers: User[] = [
     email: 'john@example.com',
     role: 'Contributor',
     status: 'Pending',
+    emailVerified: true,
     createdAt: '2026-03-26T14:30:00Z',
   },
   {
@@ -19,6 +20,7 @@ const mockPendingUsers: User[] = [
     email: 'jane@example.com',
     role: 'Commentator',
     status: 'Pending',
+    emailVerified: false,
     createdAt: '2026-03-27T10:00:00Z',
   },
 ]
@@ -113,6 +115,12 @@ describe('PendingRegistrations', () => {
     expect(wrapper.text()).toContain('john@example.com')
     expect(wrapper.text()).toContain('janedoe')
     expect(wrapper.text()).toContain('jane@example.com')
+    expect(wrapper.find('.email-verified-badge--verified').text()).toContain(
+      'Email verified'
+    )
+    expect(wrapper.find('.email-verified-badge--unverified').text()).toContain(
+      'Email unverified'
+    )
   })
 
   it('should render UserActions component for each user', () => {

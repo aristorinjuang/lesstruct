@@ -14,6 +14,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/domain/media"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -81,10 +82,37 @@ type MediaServiceInterface interface {
 	Count(ctx context.Context, search string, dateFilter string) (int, error)
 }
 
+// MediaHandlerOption configures a MediaHandler. A role service makes the media
+// capabilities config-driven; without one every authenticated user may upload,
+// generate, and delete media (the legacy behavior).
+type MediaHandlerOption func(*MediaHandler)
+
+// WithMediaRoleService attaches the config-driven role registry so upload, generate,
+// and delete are gated by the caller's CanMedia capability.
+func WithMediaRoleService(rs *roledomain.Service) MediaHandlerOption {
+	return func(h *MediaHandler) {
+		h.roleService = rs
+	}
+}
+
 type MediaHandler struct {
 	mediaService    MediaServiceInterface
 	imageGenService media.ImageGenerationService
 	logger          *util.Logger
+	roleService     *roledomain.Service
+}
+
+// mediaAllowed reports whether the caller's role may manage media. Without a
+// role service every authenticated user may, matching the legacy behavior.
+func (h *MediaHandler) mediaAllowed(r *http.Request) bool {
+	if h.roleService == nil {
+		return true
+	}
+	role, ok := middleware.GetRole(r)
+	if !ok {
+		return false
+	}
+	return h.roleService.CanMedia(role)
 }
 
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +125,11 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID", nil)
+		return
+	}
+
+	if !h.mediaAllowed(r) {
+		sendErrorResponse(w, http.StatusForbidden, "forbidden", "Your role cannot manage media", nil)
 		return
 	}
 
@@ -240,6 +273,11 @@ func (h *MediaHandler) DeleteMedia(w http.ResponseWriter, r *http.Request) {
 
 	role, _ := middleware.GetRole(r)
 
+	if !h.mediaAllowed(r) {
+		sendErrorResponse(w, http.StatusForbidden, "forbidden", "Your role cannot manage media", nil)
+		return
+	}
+
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -266,6 +304,11 @@ func (h *MediaHandler) GenerateImage(w http.ResponseWriter, r *http.Request) {
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID", nil)
+		return
+	}
+
+	if !h.mediaAllowed(r) {
+		sendErrorResponse(w, http.StatusForbidden, "forbidden", "Your role cannot manage media", nil)
 		return
 	}
 
@@ -315,10 +358,15 @@ func NewMediaHandler(
 	mediaService MediaServiceInterface,
 	imageGenService media.ImageGenerationService,
 	logger *util.Logger,
+	opts ...MediaHandlerOption,
 ) *MediaHandler {
-	return &MediaHandler{
+	h := &MediaHandler{
 		mediaService:    mediaService,
 		imageGenService: imageGenService,
 		logger:          logger,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }

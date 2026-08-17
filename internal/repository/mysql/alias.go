@@ -54,6 +54,30 @@ func (r *AliasRepository) DeleteByContentID(ctx context.Context, contentID int) 
 	return err
 }
 
+func (r *AliasRepository) Repoint(ctx context.Context, aliasStr string, fromContentID, toContentID int) error {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE content_aliases SET content_id = ? WHERE alias = ? AND content_id = ?`,
+		toContentID, aliasStr, fromContentID,
+	)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return alias.ErrAliasNotFound
+	}
+	return nil
+}
+
 func (r *AliasRepository) FindByAlias(ctx context.Context, aliasStr string) (*alias.Alias, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc

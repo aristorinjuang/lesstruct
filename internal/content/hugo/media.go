@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -33,6 +34,26 @@ type MediaService interface {
 // imageSrcRe matches an <img> tag and captures its src attribute value.
 var imageSrcRe = regexp.MustCompile(`<img\b[^>]*\bsrc="([^"]*)"[^>]*>`)
 
+// staticRefRe matches href/src attributes on known HTML elements with a
+// root-relative value, so non-image references (links, iframe demos,
+// stylesheets, scripts) can be pointed at the theme's static/ dir. The
+// element-anchored pattern avoids rewriting string literals inside inline
+// <script>/<pre> text, and the attribute must be whitespace-preceded so
+// data-src/data-href stay untouched. <img> src is handled by RewriteBody and
+// only reaches this pass when it could not be mapped.
+var staticRefRe = regexp.MustCompile(`(?i)<(a|iframe|link|script|source|img)\b[^>]*[\s"](href|src)="(/[^"]*)"`)
+
+// firstImageSrc returns the src of the first <img> tag in the body, or ""
+// when the body has none. The importer uses it to detect whether prepending a
+// featured image would duplicate the body's leading image.
+func firstImageSrc(body string) string {
+	match := imageSrcRe.FindStringSubmatch(body)
+	if len(match) != 2 {
+		return ""
+	}
+	return match[1]
+}
+
 // isRemoteURL reports whether the reference is an absolute http(s) URL.
 func isRemoteURL(ref string) bool {
 	parsed, err := url.Parse(ref)
@@ -54,6 +75,14 @@ func isSupportedImagePath(ref string) bool {
 	return false
 }
 
+// failure records a reference whose migration failed, including what the body
+// was left pointing at (the /static/ fallback when available, else the
+// original reference) so retries return the same value as the first call.
+type failure struct {
+	reason string
+	url    string
+}
+
 // MediaMapper migrates images referenced by Hugo content into Lesstruct media.
 // Local references (e.g. "/images/foo.jpg") are resolved against the extracted
 // static/ directory; remote http(s) URLs are downloaded through the shared
@@ -65,8 +94,86 @@ type MediaMapper struct {
 	service    MediaService
 	downloader *wordpress.MediaDownloader
 	cache      map[string]string // reference -> local media URL
-	failed     map[string]struct{}
+	failed     map[string]failure
+	reported   map[string]struct{} // references already surfaced as warnings
 	skipMedia  bool
+}
+
+// staticURL returns the documented /static/<path> URL for a reference that
+// resolves to a file under the extracted static/ dir. The operator mirrors
+// their Hugo static/ into the theme's static/ so these references serve. The
+// path is resolved without query/fragment; the original suffix is preserved
+// in the returned URL. Returns "" when the reference does not resolve to an
+// existing static file.
+func (m *MediaMapper) staticURL(ref string) string {
+	path := ref
+	suffix := ""
+	if parsed, err := url.Parse(ref); err == nil && parsed.Path != "" {
+		path = parsed.Path
+		if parsed.RawQuery != "" {
+			suffix = "?" + parsed.RawQuery
+		}
+		if parsed.Fragment != "" {
+			suffix += "#" + parsed.Fragment
+		}
+	}
+
+	abs, ok := m.localPath(path)
+	if !ok {
+		return ""
+	}
+	info, err := os.Stat(abs)
+	if err != nil || info.IsDir() {
+		return ""
+	}
+	rel := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(path, "/")))
+	return "/static/" + rel + suffix
+}
+
+// recordFailure notes a reference whose media migration failed, along with
+// the URL the body was left pointing at; the importer surfaces these in the
+// job's errors list instead of failing silently.
+func (m *MediaMapper) recordFailure(ref string, reason string, url string) {
+	m.mu.Lock()
+	m.failed[ref] = failure{reason: reason, url: url}
+	m.mu.Unlock()
+}
+
+// IsFailed reports whether the reference's migration failed.
+func (m *MediaMapper) IsFailed(ref string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.failed[ref]
+	return ok
+}
+
+// Failure describes one reference the importer should surface as a warning.
+type Failure struct {
+	Ref    string
+	Reason string
+	URL    string
+}
+
+// TakeUnreportedFailures returns the failures not yet reported (sorted by
+// reference) and marks them reported, so each failure is warned exactly once
+// across the whole import.
+func (m *MediaMapper) TakeUnreportedFailures() []Failure {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Failure
+	for ref, f := range m.failed {
+		if _, ok := m.reported[ref]; ok {
+			continue
+		}
+		out = append(out, Failure{Ref: ref, Reason: f.reason, URL: f.url})
+	}
+	slices.SortFunc(out, func(a, b Failure) int {
+		return strings.Compare(a.Ref, b.Ref)
+	})
+	for _, f := range out {
+		m.reported[f.Ref] = struct{}{}
+	}
+	return out
 }
 
 // localPath resolves a content reference against the static dir. References are
@@ -90,32 +197,40 @@ func (m *MediaMapper) localPath(ref string) (string, bool) {
 }
 
 // Map resolves a single image reference to its Lesstruct media URL. Local files
-// are read from the static dir and re-uploaded via GenerateFromBytes (WebP
-// transcode + hash dedup); remote URLs go through the shared downloader. When
-// skipMedia is set, or the reference is not an image, the original reference is
-// returned unchanged.
-func (m *MediaMapper) Map(ctx context.Context, ref string, userID int) (string, error) {
+// are read from the static dir and re-uploaded via GenerateFromBytes; remote
+// URLs go through the shared downloader. A reference whose migration fails is
+// recorded (IsFailed/TakeUnreportedFailures) and mapped to its /static/ copy
+// when the file exists under the extracted static dir, otherwise kept at the
+// original reference — the same value is returned on every retry.
+func (m *MediaMapper) Map(ctx context.Context, ref string, userID int) string {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return "", nil
+		return ""
 	}
 	if !isSupportedImagePath(ref) {
-		return ref, nil
+		return ref
 	}
 
 	m.mu.Lock()
 	if local, ok := m.cache[ref]; ok {
 		m.mu.Unlock()
-		return local, nil
+		return local
 	}
-	if _, ok := m.failed[ref]; ok {
+	if f, ok := m.failed[ref]; ok {
 		m.mu.Unlock()
-		return ref, nil
+		return f.url
 	}
 	m.mu.Unlock()
 
 	if m.skipMedia {
-		return ref, nil
+		// No media upload: keep the reference when it is remote, or point it
+		// at the theme's static/ dir when it resolves to an extracted
+		// static/ file (the documented mirror convention).
+		if staticURL := m.staticURL(ref); staticURL != "" {
+			return staticURL
+		}
+		m.recordFailure(ref, "media migration skipped (skipMedia) and no file under the archive's static/ dir", ref)
+		return ref
 	}
 
 	var local string
@@ -123,32 +238,39 @@ func (m *MediaMapper) Map(ctx context.Context, ref string, userID int) (string, 
 
 	if isRemoteURL(ref) {
 		if m.downloader == nil {
-			return ref, nil
+			return ref
 		}
 		local, err = m.downloader.DownloadAndUpload(ctx, ref, userID)
 	} else {
 		path, ok := m.localPath(ref)
 		if !ok {
-			return ref, nil
+			return ref
 		}
 		local, err = m.uploadLocal(ctx, path, ref, userID)
 	}
 
 	if err != nil {
-		m.mu.Lock()
-		m.failed[ref] = struct{}{}
-		m.mu.Unlock()
-		return ref, err
+		// The migration failed; fall back to the /static/ copy when the file
+		// exists under the extracted static/ dir, and always record the
+		// failure so the import job surfaces it.
+		reason := err.Error()
+		if staticURL := m.staticURL(ref); staticURL != "" {
+			m.recordFailure(ref, reason, staticURL)
+			return staticURL
+		}
+		m.recordFailure(ref, reason, ref)
+		return ref
 	}
 
 	if local == "" {
-		return ref, nil
+		m.recordFailure(ref, "static file not found in the archive", ref)
+		return ref
 	}
 
 	m.mu.Lock()
 	m.cache[ref] = local
 	m.mu.Unlock()
-	return local, nil
+	return local
 }
 
 // uploadLocal reads a local static file and re-uploads it via the media
@@ -192,11 +314,31 @@ func (m *MediaMapper) RewriteBody(ctx context.Context, body string, userID int) 
 		if len(match) != 2 {
 			return tag
 		}
-		mapped, err := m.Map(ctx, match[1], userID)
-		if err != nil || mapped == "" {
+		mapped := m.Map(ctx, match[1], userID)
+		if mapped == "" {
 			return tag
 		}
 		return strings.Replace(tag, match[1], mapped, 1)
+	})
+}
+
+// RewriteStaticRefs rewrites root-relative href/src references that resolve to
+// files under the extracted Hugo static/ dir to their /static/<path> URLs —
+// the documented convention (operators mirror their Hugo static/ into the
+// theme's static/). References that resolve nowhere, remote URLs, and content
+// permalinks are left untouched.
+func (m *MediaMapper) RewriteStaticRefs(body string) string {
+	if m.staticDir == "" {
+		return body
+	}
+	return staticRefRe.ReplaceAllStringFunc(body, func(attr string) string {
+		idx := staticRefRe.FindStringSubmatchIndex(attr)
+		value := attr[idx[6]:idx[7]]
+		staticURL := m.staticURL(value)
+		if staticURL == "" {
+			return attr
+		}
+		return attr[:idx[6]] + staticURL + attr[idx[7]:]
 	})
 }
 
@@ -238,7 +380,8 @@ func NewMediaMapper(
 		service:    service,
 		downloader: downloader,
 		cache:      make(map[string]string),
-		failed:     make(map[string]struct{}),
+		failed:     make(map[string]failure),
+		reported:   make(map[string]struct{}),
 		skipMedia:  skipMedia,
 	}
 }

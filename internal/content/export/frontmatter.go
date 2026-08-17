@@ -2,6 +2,7 @@ package export
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
@@ -46,9 +47,7 @@ func BuildFrontmatter(c *contentdomain.Content, aliases []string) string {
 		fm["lastmod"] = c.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
 	}
 
-	for k, v := range c.CustomFields {
-		fm[k] = v
-	}
+	maps.Copy(fm, c.CustomFields)
 
 	out, err := yaml.Marshal(fm)
 	if err != nil {

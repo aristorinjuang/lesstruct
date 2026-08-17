@@ -131,10 +131,10 @@ func translationKey(item *HugoItem) string {
 	if item.Language == "id" {
 		lower := strings.ToLower(base)
 		for _, ext := range []string{".id.html", ".id.md"} {
-			if strings.HasSuffix(lower, ext) {
+			if before, ok := strings.CutSuffix(lower, ext); ok {
 				// Strip the ".id" language marker, keeping the real extension
 				// (".id.html" -> ".html", ".id.md" -> ".md").
-				base = strings.TrimSuffix(lower, ext) + ext[3:]
+				base = before + ext[3:]
 				break
 			}
 		}
@@ -163,7 +163,7 @@ func GroupTranslations(items []*HugoItem) []any {
 		}
 	}
 
-	var result []interface{}
+	var result []any
 	seen := make(map[string]bool)
 
 	for _, item := range items {

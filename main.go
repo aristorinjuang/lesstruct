@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -406,7 +407,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load comments config: %v", err)
 	}
+
+	registrationConfig, err := config.LoadRegistration(cfg)
+	if err != nil {
+		log.Fatalf("Failed to load registration config: %v", err)
+	}
 	commentsEnabled := commentsConfig.IsEnabled()
+	registrationEnabled := registrationConfig.IsEnabled(commentsEnabled)
 
 	// Ensure required directories exist
 	if err := ensureDirectories(cfg, utilLogger); err != nil {
@@ -507,8 +514,17 @@ func main() {
 
 	authService := authdomain.NewAuthService(defaultPasswordHash)
 	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(userRepo, commentsEnabled)
-	verificationService := authdomain.NewVerificationService(userRepo, tokenRepo, 24)
+	registrationService := authdomain.NewRegistrationService(
+		userRepo,
+		commentsEnabled,
+		authdomain.WithEnabled(registrationEnabled),
+		authdomain.WithDefaultRole(registrationConfig.DefaultRole),
+	)
+	verificationOpts := make([]authdomain.VerificationOption, 0, 1)
+	if registrationConfig.AdminApproval {
+		verificationOpts = append(verificationOpts, authdomain.WithAdminApprovalRequired())
+	}
+	verificationService := authdomain.NewVerificationService(userRepo, tokenRepo, 24, verificationOpts...)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, utilLogger)
 
 	passwordResetTokenRepo := newPasswordResetTokenRepo(cfg.DBDriver, db.DB())
@@ -541,6 +557,36 @@ func main() {
 		postTypeService = posttype.NewService()
 	}
 
+	// Initialize the config-driven role registry (Story: roles). Custom
+	// [[role]] entries may only reference registered post types, so the slug
+	// list is collected from the post type service after loading. Production
+	// always runs with this registry; the user/content services fall back to
+	// the legacy three-role allowlist only when it is absent.
+	postTypeSlugs := make([]string, 0, len(postTypeService.GetAll()))
+	for _, pt := range postTypeService.GetAll() {
+		postTypeSlugs = append(postTypeSlugs, pt.Slug)
+	}
+	roleService, err := config.LoadRoles(cfg, postTypeSlugs)
+	if err != nil {
+		log.Fatalf("Failed to load roles config: %v", err)
+	}
+
+	// The [registration] default role must resolve against the role registry.
+	// Fail closed at startup so a typo never silently creates users with an
+	// unregistered role (who would have zero capabilities). "Admin" is also
+	// rejected — public registration must never default to a superuser.
+	effectiveDefaultRole := registrationConfig.DefaultRole
+	if effectiveDefaultRole == "" {
+		effectiveDefaultRole = constants.RoleCommentator
+	}
+	defaultRole, err := roleService.Get(effectiveDefaultRole)
+	if err != nil {
+		log.Fatalf("Invalid [registration] default_role %q: %v", effectiveDefaultRole, err)
+	}
+	if defaultRole.IsAdmin {
+		log.Fatalf("Invalid [registration] default_role %q: public registration cannot default to an admin role", effectiveDefaultRole)
+	}
+
 	// Initialize thumbnail service
 	thumbnailService, err := config.LoadThumbnails(cfg)
 	if err != nil {
@@ -567,7 +613,7 @@ func main() {
 	// Initialize profile handler
 	profileHandler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, utilLogger, postTypeService, profilePictureStorage.GetURL)
 
-	postTypeHandler := handlers.NewPostTypeHandler(postTypeService, commentsEnabled, utilLogger)
+	postTypeHandler := handlers.NewPostTypeHandler(postTypeService, commentsEnabled, utilLogger, handlers.WithPostTypeRoleService(roleService))
 
 	// Initialize languages configuration (i18n) — loaded early so content
 	// service and WordPress importer can use the site's primary language.
@@ -583,6 +629,10 @@ func main() {
 	commentRepo := newCommentRepo(cfg.DBDriver, db.DB())
 	seoService := seodomain.NewService(baseURL, "Lesstruct")
 	postTypeAdapter := contentdomain.NewPostTypeAdapter(postTypeService)
+	// Initialize alias/redirect service before the content service so delete
+	// cascades its alias rows (Hugo import also depends on it).
+	aliasRepo := newAliasRepo(cfg.DBDriver, db.DB())
+	aliasService := aliasdomain.NewService(aliasRepo)
 	contentService := contentdomain.NewServiceWithHooks(
 		contentRepo,
 		commentRepo,
@@ -591,6 +641,8 @@ func main() {
 		pluginadapter.NewHookExecutorAdapter(pluginSys.Registry()),
 		contentdomain.WithDefaultLanguage(primaryLanguage),
 		contentdomain.WithCommentsEnabled(commentsEnabled),
+		contentdomain.WithRoleChecker(roleService),
+		contentdomain.WithAliasDeleter(aliasService),
 	)
 
 	// Initialize agent (Bearer) content handler — the streamlined API surface for
@@ -643,11 +695,11 @@ func main() {
 	// Initialize agent (Bearer) media handler — the streamlined API surface for
 	// programmatic media upload/retrieval (Story 2.3). Reuses the same mediaService so
 	// hashing, dedup, WebP conversion, and thumbnail variants run identically to admin.
-	agentMediaHandler := agent.NewMediaHandler(mediaService, utilLogger)
+	agentMediaHandler := agent.NewMediaHandler(mediaService, utilLogger, agent.WithMediaRoleService(roleService))
 	// Initialize agent (Bearer) comment handler — reuses the same contentService so
 	// the comment domain logic (text validation, the AllowComments gate, moderation
 	// status transitions) runs identically to the browser comment surface.
-	agentCommentHandler := agent.NewCommentHandler(contentService, utilLogger)
+	agentCommentHandler := agent.NewCommentHandler(contentService, utilLogger, agent.WithCommentRoleService(roleService))
 	var imageGenService mediadomain.ImageGenerationService
 	if cfg.IsImageGenerationEnabled() {
 		switch {
@@ -674,7 +726,7 @@ func main() {
 		}
 	}
 
-	mediaHandler := handlers.NewMediaHandler(mediaService, imageGenService, utilLogger)
+	mediaHandler := handlers.NewMediaHandler(mediaService, imageGenService, utilLogger, handlers.WithMediaRoleService(roleService))
 
 	// Initialize theme for content site (templates and static files).
 	// Done early so AI text generation can read the active theme's styles.
@@ -714,6 +766,10 @@ func main() {
 	dashboardService := dashboarddomain.NewService(dashboardRepo)
 	dashboardHandler := handlers.NewDashboardHandler(dashboardService, postTypeService, utilLogger)
 
+	authHandlerOpts := []handlers.AuthHandlerOption{}
+	if registrationConfig.AdminApproval {
+		authHandlerOpts = append(authHandlerOpts, handlers.WithAdminApprovalRequired())
+	}
 	authHandler := handlers.NewAuthHandler(
 		authService,
 		jwtManager,
@@ -728,13 +784,18 @@ func main() {
 		notificationRepo,
 		emailService,
 		blockedEmailRepo,
+		authHandlerOpts...,
 	)
 	firstLoginHandler := handlers.NewFirstLoginHandler(firstLoginService, userRepo, utilLogger)
 	notificationHandler := handlers.NewNotificationHandler(utilLogger, notificationRepo)
 
 	// Initialize user management service and handler
-	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, commentsEnabled)
-	adminCreateUserService := user.NewAdminCreateUserService(userRepo, blockedEmailRepo, commentsEnabled)
+	userManagementOpts := []user.UserManagementOption{user.WithManagementRoleService(roleService)}
+	if registrationConfig.AdminApproval {
+		userManagementOpts = append(userManagementOpts, user.WithApprovalEmailRequired())
+	}
+	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, commentsEnabled, userManagementOpts...)
+	adminCreateUserService := user.NewAdminCreateUserService(userRepo, blockedEmailRepo, commentsEnabled, user.WithRoleService(roleService))
 	userManagementHandler := handlers.NewUserManagementHandler(userManagementService, adminCreateUserService, userRepo, softDeleteRepo, jwtManager, emailService, utilLogger, profilePictureStorage.GetURL)
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
 	adminMiddleware := middleware.NewAdminMiddleware(authMiddleware)
@@ -743,7 +804,7 @@ func main() {
 	seoHandler := handlers.NewSEOHandler(contentService, baseURL, headlessEnabled, utilLogger)
 
 	// Initialize comment handler (Story 4.7)
-	commentHandler := handlers.NewCommentHandler(contentService)
+	commentHandler := handlers.NewCommentHandler(contentService, handlers.WithCommentRoleService(roleService))
 
 	// Initialize WordPress import handler (admin-only content migration)
 	wordpressDownloader := wordpress.NewMediaDownloader(
@@ -765,10 +826,6 @@ func main() {
 		cfg.ImportMaxSize(),
 		cfg.WordPressImportTimeout,
 	)
-
-	// Initialize alias/redirect service (Hugo import depends on it)
-	aliasRepo := newAliasRepo(cfg.DBDriver, db.DB())
-	aliasService := aliasdomain.NewService(aliasRepo)
 
 	// Initialize Hugo import handler (admin-only content migration)
 	hugoImporter := hugo.NewImporter(
@@ -831,11 +888,6 @@ func main() {
 	}
 
 	// Initialize content site templates and renderer
-	postTypes := postTypeService.GetAll()
-	postTypeSlugs := make([]string, 0, len(postTypes))
-	for _, pt := range postTypes {
-		postTypeSlugs = append(postTypeSlugs, pt.Slug)
-	}
 	contentTemplates, err := template.NewTemplates(theme, uiCatalog, postTypeSlugs...)
 	if err != nil {
 		log.Fatalf("Failed to load content templates: %v", err)
@@ -864,8 +916,8 @@ func main() {
 				Width: v.Width,
 			})
 		}
-		sort.Slice(result, func(i, j int) bool {
-			return result[i].Width < result[j].Width
+		slices.SortFunc(result, func(a, b tiptap.ImageVariant) int {
+			return cmp.Compare(a.Width, b.Width)
 		})
 		return result
 	})
@@ -907,7 +959,7 @@ func main() {
 		cspConfig = config.CSPConfig{}
 	}
 	cspHeaderName, cspHeaderValue := cspConfig.Build()
-	securityHeadersMiddleware := middleware.NewSecurityHeadersMiddleware(cspHeaderName, cspHeaderValue)
+	securityHeadersMiddleware := middleware.NewSecurityHeadersMiddleware(cspHeaderName, cspHeaderValue, cspConfig.XFrameOptions())
 
 	contentPageHandler := contentpage.NewContentPageHandler(
 		contentService,
@@ -922,8 +974,17 @@ func main() {
 		siteConfig,
 		cfg.PostPerPage,
 		commentsEnabled,
+		registrationEnabled,
 	)
 	contentPageHandler = contentPageHandler.WithPublicFieldRegistry(publicFieldRegistry)
+
+	// The sanitizer's iframe allowlist mirrors the CSP frame-src directive
+	// (defaults + operator appends) so embeds the CSP allows to be framed are
+	// also allowed through the HTML sanitizer on every path.
+	iframeHosts := cspConfig.IFrameHosts()
+	contentPageHandler = contentPageHandler.WithIFrameHosts(iframeHosts...)
+	contentHandler = contentHandler.WithIFrameHosts(iframeHosts...)
+	agentContentHandler = agentContentHandler.WithIFrameHosts(iframeHosts...)
 
 	// Initialize static file server for admin panel and content site
 	staticServer := static.NewStaticServer(

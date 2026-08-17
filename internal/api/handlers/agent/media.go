@@ -11,6 +11,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -52,12 +53,35 @@ type MediaService interface {
 	ListByCursor(ctx context.Context, userID int, limit int, beforeID int) ([]*mediadomain.Media, error)
 }
 
+// MediaHandlerOption configures a MediaHandler. A role service makes the upload
+// capability config-driven; without one every authenticated user may upload
+// (the legacy behavior).
+type MediaHandlerOption func(*MediaHandler)
+
+// WithMediaRoleService attaches the config-driven role registry so uploads are gated
+// by the caller's CanMedia capability.
+func WithMediaRoleService(rs *roledomain.Service) MediaHandlerOption {
+	return func(h *MediaHandler) {
+		h.roleService = rs
+	}
+}
+
 // MediaHandler exposes the Bearer-authenticated agent media endpoints. It reuses the
 // existing MediaService (which already validates files, hashes, dedups, converts to WebP,
 // and builds thumbnail variants) — it never duplicates that logic.
 type MediaHandler struct {
 	mediaService MediaService
 	logger       *util.Logger
+	roleService  *roledomain.Service
+}
+
+// uploadAllowed reports whether the caller's role may upload media. Without a
+// role service every authenticated user may, matching the legacy behavior.
+func (h *MediaHandler) uploadAllowed(r *http.Request) bool {
+	if h.roleService == nil {
+		return true
+	}
+	return h.roleService.CanMedia(authenticatedRole(r))
 }
 
 // Upload handles POST /api/v1/media. It parses a required `file` part and an optional JSON
@@ -74,6 +98,11 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	if err := r.ParseMultipartForm(mediadomain.MaxFileSize); err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Failed to parse multipart form", nil)
+		return
+	}
+
+	if !h.uploadAllowed(r) {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "Your role cannot manage media", nil)
 		return
 	}
 
@@ -195,12 +224,16 @@ func (h *MediaHandler) List(w http.ResponseWriter, r *http.Request) {
 // NewMediaHandler constructs a MediaHandler backed by the given media service. A nil logger
 // degrades to a discard sink so the handler is safe to construct in any context (mirrors
 // NewContentHandler).
-func NewMediaHandler(s MediaService, logger *util.Logger) *MediaHandler {
+func NewMediaHandler(s MediaService, logger *util.Logger, opts ...MediaHandlerOption) *MediaHandler {
 	if logger == nil {
 		logger = util.NewLogger(io.Discard)
 	}
-	return &MediaHandler{
+	h := &MediaHandler{
 		mediaService: s,
 		logger:       logger,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }

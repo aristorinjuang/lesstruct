@@ -84,8 +84,9 @@ func normalizeContentFormat(format string) (string, string) {
 }
 
 // convertContentBody converts the request body based on the normalized format.
-// This is the inner implementation shared by Create and Update.
-func convertContentBody(req ContentRequest, normalized string) (body string, errMsg string) {
+// This is the inner implementation shared by Create and Update. iframeHosts is
+// the sanitizer's iframe allowlist (derived from the CSP frame-src directive).
+func convertContentBody(req ContentRequest, normalized string, iframeHosts []string) (body string, errMsg string) {
 	if normalized == formatMarkdown {
 		converted, err := markdown.Convert(req.Body)
 		if err != nil {
@@ -94,7 +95,7 @@ func convertContentBody(req ContentRequest, normalized string) (body string, err
 		return converted, ""
 	}
 	if normalized == formatHTML {
-		return sanitize.SanitizeHTMLDocument(req.Body), ""
+		return sanitize.SanitizeHTMLDocument(req.Body, iframeHosts...), ""
 	}
 	return req.Body, ""
 }
@@ -107,14 +108,14 @@ func convertContentBody(req ContentRequest, normalized string) (body string, err
 // *_test files (CLAUDE.md mandates *_test packages, which cannot reach an
 // unexported mock).
 type ContentService interface {
-	Create(ctx context.Context, userID int, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
+	Create(ctx context.Context, userID int, role string, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
 	GetByID(ctx context.Context, id int) (*contentdomain.Content, error)
 	ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	Update(ctx context.Context, id int, userID int, role string, req contentdomain.UpdateContentRequest) (*contentdomain.Content, error)
 	DeleteContent(ctx context.Context, id int, userID int, role string) error
 	Publish(ctx context.Context, id int, userID int, role string) (*contentdomain.Content, error)
 	Unpublish(ctx context.Context, id int, userID int, role string) (*contentdomain.Content, error)
-	SetSystemFields(ctx context.Context, contentID int, systemFields map[string]any) (*contentdomain.Content, error)
+	SetSystemFields(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*contentdomain.Content, error)
 }
 
 // SystemFieldResolver resolves the admin-managed system field schemas for a post
@@ -133,6 +134,16 @@ type ContentHandler struct {
 	contentService ContentService
 	systemFields   SystemFieldResolver
 	logger         *util.Logger
+	iframeHosts    []string
+}
+
+// WithIFrameHosts attaches the sanitizer's iframe host allowlist (derived from
+// the CSP frame-src directive) so HTML-format content keeps allowed embeds on
+// the write path. When not called, iframes are stripped on save. Returns the
+// receiver for chaining at construction time.
+func (h *ContentHandler) WithIFrameHosts(hosts ...string) *ContentHandler {
+	h.iframeHosts = append(h.iframeHosts, hosts...)
+	return h
 }
 
 // systemFieldKeys returns the system-field slugs for postTypeSlug, or nil when the
@@ -208,7 +219,7 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", formatErr, nil)
 		return
 	}
-	body, convertErr := convertContentBody(req, normalized)
+	body, convertErr := convertContentBody(req, normalized, h.iframeHosts)
 	if convertErr != "" {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", convertErr, nil)
 		return
@@ -249,7 +260,7 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		TranslationGroupID: req.TranslationGroupID,
 	}
 
-	created, err := h.contentService.Create(r.Context(), userID, domainReq)
+	created, err := h.contentService.Create(r.Context(), userID, authenticatedRole(r), domainReq)
 	if err != nil {
 		h.logger.Error("agent create content failed: userID=%d err=%v", userID, err)
 		handleError(w, err)
@@ -459,7 +470,7 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", formatErr, nil)
 		return
 	}
-	body, convertErr := convertContentBody(req, normalized)
+	body, convertErr := convertContentBody(req, normalized, h.iframeHosts)
 	if convertErr != "" {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", convertErr, nil)
 		return
@@ -667,6 +678,12 @@ func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	userID, ok := authenticatedUserID(r)
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
@@ -682,7 +699,7 @@ func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	updated, err := h.contentService.SetSystemFields(r.Context(), id, req.SystemFields)
+	updated, err := h.contentService.SetSystemFields(r.Context(), id, userID, req.SystemFields)
 	if err != nil {
 		h.logger.Error("agent set system fields failed: id=%d err=%v", id, err)
 		handleError(w, err)

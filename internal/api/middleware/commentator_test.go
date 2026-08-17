@@ -56,7 +56,7 @@ func TestCommentatorMiddleware_CommentatorOnly(t *testing.T) {
 				_, _ = w.Write([]byte("OK"))
 			})
 
-			req := httptest.NewRequest("GET", "/protected", nil)
+			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 
 			if tt.role != "" {
 				token, err := jwtManager.GenerateToken("123", "testuser", tt.role)
@@ -86,7 +86,7 @@ func TestCommentatorMiddleware_RoleHierarchy(t *testing.T) {
 			token, err := jwtManager.GenerateToken("123", "testuser", role)
 			require.NoError(t, err, "Failed to generate token")
 
-			req := httptest.NewRequest("GET", "/comments", nil)
+			req := httptest.NewRequest(http.MethodGet, "/comments", nil)
 			req.Header.Set("Authorization", "Bearer "+token)
 
 			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

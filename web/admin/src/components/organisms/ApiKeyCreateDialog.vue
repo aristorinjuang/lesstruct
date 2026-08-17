@@ -293,15 +293,17 @@ function handleClose() {
   background-color: var(--brand-light-1);
   border: 1px solid var(--brand-light-2);
   border-radius: 0.375rem;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-family: monospace;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow-x: auto;
   user-select: all;
 }
 
 .api-key-create-dialog__copy-button {
   flex-shrink: 0;
   white-space: nowrap;
+  min-width: 5.5rem;
 }
 
 .api-key-create-dialog__warning {

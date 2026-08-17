@@ -342,7 +342,13 @@ func TestVerifyEmail_ValidToken(t *testing.T) {
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 
 	// UserRepo expectations: called by VerifyEmail handler after verification succeeds.
-	// Order: UpdateUserStatus (from VerifyEmail service), then GetUserByID (from handler).
+	// Order: SetEmailVerified, UpdateUserStatus (from VerifyEmail service), then GetUserByID (from handler).
+	userRepo.EXPECT().
+		SetEmailVerified(mock.Anything, testUser.ID, true).
+		Run(func(ctx context.Context, userID int, emailVerified bool) {
+			testUser.EmailVerified = emailVerified
+		}).
+		Return(nil)
 	userRepo.EXPECT().
 		UpdateUserStatus(mock.Anything, testUser.ID, "verified").
 		Run(func(ctx context.Context, userID int, status string) {

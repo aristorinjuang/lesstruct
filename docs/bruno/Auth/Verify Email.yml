@@ -2,6 +2,12 @@ info:
   name: Verify Email
   type: http
   seq: 7
+  docs: >-
+    Proves ownership of the registrant's email address. With
+    `[registration] admin_approval = true` the response carries
+    `awaitingApproval: true` and the account stays `pending` until an
+    administrator approves it; otherwise the account is activated
+    immediately.
 
 http:
   method: GET

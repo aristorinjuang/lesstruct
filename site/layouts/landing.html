@@ -56,9 +56,17 @@
       <h3>One binary, no Docker</h3>
       <p>A static Go binary plus embedded SQLite. No runtime, no container, no <code>node_modules</code> in production.</p>
     </a>
+    <a class="feature-card" href="/docs/features/#deploy-run">
+      <h3>Headless mode</h3>
+      <p>Flip <code>[headless] enabled = true</code> to serve only the admin panel and REST API — a pure headless CMS.</p>
+    </a>
     <a class="feature-card" href="/docs/features/#content-authoring">
       <h3>Custom post types &amp; fields</h3>
       <p>Define post types and fields in <code>config.toml</code>. The admin form, storage, and queries all read from it.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#content-authoring">
+      <h3>Importers &amp; Exporters</h3>
+      <p>Migrate from WordPress (WXR) or Hugo — posts, custom fields, media, authors — via async jobs. Export everything as a Hugo-compatible archive and HTML static files.</p>
     </a>
     <a class="feature-card" href="/docs/features/#extensibility">
       <h3>WebAssembly plugins</h3>
@@ -86,7 +94,11 @@
     </a>
     <a class="feature-card" href="/docs/features/#users-roles-security">
       <h3>Roles &amp; security</h3>
-      <p>Three roles, JWT auth, failed-login lockout, Argon2id, rate limits, and security headers.</p>
+      <p>JWT auth, failed-login lockout, Argon2id, rate limits, and security headers.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#users-roles-security">
+      <h3>Custom roles</h3>
+      <p>Add custom roles or override the built-ins with <code>[[role]]</code> entries in <code>config.toml</code> — per-post-type manage, publish, media, and comment capabilities.</p>
     </a>
   </div>
 </section>

@@ -77,6 +77,10 @@ func TestUpdateUser_WithCustomFields(t *testing.T) {
 		Return(nil)
 
 	userRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 1, false).
+		Return(nil)
+
+	userRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "new@example.com",

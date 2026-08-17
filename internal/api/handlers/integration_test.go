@@ -549,6 +549,12 @@ func TestCompleteVerificationFlow(t *testing.T) {
 		GetUserByID(mock.Anything, testUser.ID).
 		Return(testUser, nil)
 	userRepo.EXPECT().
+		SetEmailVerified(mock.Anything, testUser.ID, true).
+		Run(func(_ context.Context, _ int, emailVerified bool) {
+			testUser.EmailVerified = emailVerified
+		}).
+		Return(nil)
+	userRepo.EXPECT().
 		UpdateUserStatus(mock.Anything, testUser.ID, "verified").
 		Run(func(_ context.Context, _ int, status string) {
 			testUser.Status = status
@@ -837,6 +843,187 @@ func TestResendVerificationFlow(t *testing.T) {
 	if _, ok := data["message"]; !ok {
 		t.Error("Response data should have message field")
 	}
+}
+
+// TestResendVerificationFlow_EmailAlreadyVerified verifies that a pending user
+// whose email is already verified (admin-approval mode) is not issued another
+// verification link: the reply stays generic (anti-enumeration) and no token is
+// created and no email is sent.
+func TestResendVerificationFlow_EmailAlreadyVerified(t *testing.T) {
+	// Setup
+	defaultPasswordHash, _ := auth.HashPassword(constants.DefaultPassword)
+	authService := authdomain.NewAuthService(defaultPasswordHash)
+	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
+	logger := util.NewLogger(os.Stdout)
+	firstLoginService := authdomain.NewFirstLoginService()
+
+	// Create pending user with a verified email (awaiting admin approval)
+	pendingUser := &repository.User{
+		ID:            123,
+		Username:      "pendinguser",
+		Email:         "pending@example.com",
+		Status:        "pending",
+		EmailVerified: true,
+	}
+
+	// Configure user repository mock
+	userRepo := repomocks.NewMockUserRepo(t)
+	userRepo.EXPECT().
+		GetUserByEmail(mock.Anything, pendingUser.Email).
+		Return(pendingUser, nil)
+
+	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
+	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
+	notificationRepo := repomocks.NewMockNotificationRepo(t)
+	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, nil)
+
+	emailService := emailmocks.NewMockEmailService(t)
+	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
+	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, 1)
+
+	authHandler := handlers.NewAuthHandler(
+		authService,
+		jwtManager,
+		logger,
+		firstLoginService,
+		registrationService,
+		verificationService,
+		loginService,
+		passwordResetService,
+		userRepo,
+		failedLoginRepo,
+		notificationRepo,
+		emailService,
+		blockedEmailRepo,
+		handlers.WithAdminApprovalRequired(),
+	)
+
+	// Execute resend verification request
+	reqBody := handlers.ResendVerificationRequest{
+		Email: pendingUser.Email,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/resend-verification", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	authHandler.ResendVerificationEmail(w, req)
+
+	// Assert response status
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	// No token may be created and no email may be sent for an already-verified
+	// address — the handler must short-circuit with the generic reply.
+	verificationTokenRepo.AssertNotCalled(t, "CreateToken", mock.Anything, mock.Anything)
+	emailService.AssertNotCalled(t, "SendVerificationEmail", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestResendVerificationFlow_EmailAlreadyVerifiedLegacyMode verifies that a
+// pending user whose email is already verified is STILL issued a new
+// verification link when the site does not run in admin-approval mode (legacy).
+// Such a row can only exist through a partial failure or a config flip, and the
+// resend endpoint must not refuse it — otherwise the account would be stuck
+// pending forever with no self-service path.
+func TestResendVerificationFlow_EmailAlreadyVerifiedLegacyMode(t *testing.T) {
+	// Setup
+	defaultPasswordHash, _ := auth.HashPassword(constants.DefaultPassword)
+	authService := authdomain.NewAuthService(defaultPasswordHash)
+	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
+	logger := util.NewLogger(os.Stdout)
+	firstLoginService := authdomain.NewFirstLoginService()
+
+	// Create pending user with a verified email
+	pendingUser := &repository.User{
+		ID:            123,
+		Username:      "pendinguser",
+		Email:         "pending@example.com",
+		Status:        "pending",
+		EmailVerified: true,
+	}
+
+	// Configure user repository mock
+	userRepo := repomocks.NewMockUserRepo(t)
+	userRepo.EXPECT().
+		GetUserByEmail(mock.Anything, pendingUser.Email).
+		Return(pendingUser, nil)
+
+	var newVerificationTokenHash string
+	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo.EXPECT().
+		DeleteUserTokens(mock.Anything, pendingUser.ID).
+		Return(nil)
+	verificationTokenRepo.EXPECT().
+		CreateToken(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, token *repository.VerificationToken) {
+			newVerificationTokenHash = token.TokenHash
+		}).
+		Return(nil)
+
+	registrationService := authdomain.NewRegistrationService(userRepo, true)
+	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
+	notificationRepo := repomocks.NewMockNotificationRepo(t)
+	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, nil)
+
+	// Configure email service mock - use Maybe since it runs in a goroutine
+	emailService := emailmocks.NewMockEmailService(t)
+	emailService.EXPECT().
+		SendVerificationEmail(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(nil)
+
+	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
+	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, 1)
+
+	// No admin-approval option: legacy mode
+	authHandler := handlers.NewAuthHandler(
+		authService,
+		jwtManager,
+		logger,
+		firstLoginService,
+		registrationService,
+		verificationService,
+		loginService,
+		passwordResetService,
+		userRepo,
+		failedLoginRepo,
+		notificationRepo,
+		emailService,
+		blockedEmailRepo,
+	)
+
+	// Execute resend verification request
+	reqBody := handlers.ResendVerificationRequest{
+		Email: pendingUser.Email,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/resend-verification", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	authHandler.ResendVerificationEmail(w, req)
+
+	// Wait for asynchronous email sending to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Assert response status
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	// A new token must have been created and the email must have been sent:
+	// in legacy mode the verified-email gate must not apply.
+	if newVerificationTokenHash == "" {
+		t.Error("Expected a new verification token to be created in legacy mode")
+	}
+	emailService.AssertCalled(t, "SendVerificationEmail", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestForgotPasswordAndResetFlow tests forgot-password -> reset-password -> login with new password

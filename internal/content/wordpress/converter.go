@@ -414,6 +414,17 @@ func isEmptyNode(n ttNode) bool {
 	return false
 }
 
+// contentStartsWithImage reports whether the first content node is an image
+// with the given src — the case where prepending a featured image would
+// duplicate the body's leading image.
+func contentStartsWithImage(content []ttNode, src string) bool {
+	if len(content) == 0 || content[0].Type != "image" {
+		return false
+	}
+	s, ok := content[0].Attrs["src"].(string)
+	return ok && s == src
+}
+
 // ConvertBlocks converts WordPress block-editor HTML into a TipTap JSON document
 // string. imageMap remaps WordPress image URLs to local media URLs; entries not
 // present in the map keep their original URL. If featuredImageURL is non-empty,
@@ -435,7 +446,10 @@ func ConvertBlocks(wpContent string, imageMap map[string]string, featuredImageUR
 		content = []ttNode{{Type: "paragraph"}}
 	}
 
-	if featuredImageURL != "" {
+	// Prepend the featured image as the first node, unless the body already
+	// opens with the same image (both resolve through the same media map, so
+	// identical sources compare equal after mapping).
+	if featuredImageURL != "" && !contentStartsWithImage(content, featuredImageURL) {
 		featuredNode := ttNode{
 			Type:  "image",
 			Attrs: map[string]any{"src": featuredImageURL},

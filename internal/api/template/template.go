@@ -137,6 +137,7 @@ type PostItem struct {
 	CreatedAt       time.Time
 	PostType        string
 	Tags            []string
+	CustomFields    map[string]any
 }
 
 // HomeSection is a per-post-type grouping rendered on the homepage. It is only
@@ -379,14 +380,14 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) 
 	assetHash := ComputeAssetHash(theme)
 
 	layout := template.Must(template.New("layout").Funcs(template.FuncMap{
-		"urlpath":      url.PathEscape,
-		"t":            tFunc,
+		"urlpath": url.PathEscape,
+		"t":       tFunc,
 		"assetURL": func(name string) string {
 			ext := ".css"
 			base := strings.TrimSuffix(name, ext)
 			return "/static/" + base + "." + assetHash + ext
 		},
-		"formatDate":   FormatDate,
+		"formatDate":     FormatDate,
 		"formatDateTime": FormatDateTime,
 	}).Parse(readThemeFile(theme, "layout.html")))
 

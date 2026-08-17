@@ -12,6 +12,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/agent"
 	agentmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/agent/mocks"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -226,6 +227,91 @@ func TestCommentHandler_Create(t *testing.T) {
 				r = newAuthenticatedRequest(http.MethodPost, target, tt.body, false)
 			}
 			r.SetPathValue("id", tt.contentID)
+			w := httptest.NewRecorder()
+			handler.Create(w, r)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantCode != "" {
+				assert.Equal(t, tt.wantCode, envelopeError(t, w))
+			}
+			if tt.wantCommID != 0 {
+				assert.Equal(t, tt.wantCommID, envelopeDataCommentID(t, w), "envelope data.comment.id")
+			}
+		})
+	}
+}
+
+// TestCommentHandler_Create_RoleGate verifies the agent comment-create endpoint
+// is gated by the caller's role capability when a role service is configured. A
+// role without the comments capability gets FORBIDDEN before any service call;
+// without a role service every authenticated user may comment (legacy behavior,
+// covered by TestCommentHandler_Create).
+func TestCommentHandler_Create_RoleGate(t *testing.T) {
+	roleService := roledomain.NewService()
+	if err := roleService.Register(roledomain.Role{
+		Name:     "Journalist",
+		PostTypes: []string{"article"},
+		Publish:  true,
+		Media:    true,
+		Comments: false,
+	}); err != nil {
+		t.Fatalf("failed to register role: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		role         string
+		withRoleSvc  bool
+		wantStatus   int
+		wantCode     string
+		wantCommID   int
+		expectSubmit bool
+	}{
+		{
+			name:         "role cannot comment is forbidden",
+			role:         "Journalist",
+			withRoleSvc:  true,
+			wantStatus:   http.StatusForbidden,
+			wantCode:     "FORBIDDEN",
+			expectSubmit: false,
+		},
+		{
+			name:         "role can comment succeeds",
+			role:         "Commentator",
+			withRoleSvc:  true,
+			wantStatus:   http.StatusOK,
+			wantCommID:   101,
+			expectSubmit: true,
+		},
+		{
+			name:         "no role service preserves legacy behavior",
+			role:         "Journalist",
+			withRoleSvc:  false,
+			wantStatus:   http.StatusOK,
+			wantCommID:   102,
+			expectSubmit: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := agentmocks.NewMockCommentService(t)
+			if tt.expectSubmit {
+				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
+					ID: 5, UserID: 999, Status: contentdomain.StatusPublished, AllowComments: true,
+				}, nil)
+				svc.EXPECT().SubmitComment(mock.Anything, 5, testUserID, mock.Anything).
+					Return(buildComment(tt.wantCommID, 5, testUserID, contentdomain.CommentStatusPending, "hi"), nil)
+			}
+
+			var opts []agent.CommentHandlerOption
+			if tt.withRoleSvc {
+				opts = append(opts, agent.WithCommentRoleService(roleService))
+			}
+			handler := agent.NewCommentHandler(svc, util.NewLogger(io.Discard), opts...)
+
+			r := newAuthenticatedRequestAs(http.MethodPost, "/api/v1/content/5/comments", marshalJSON(map[string]any{"comment": "hi"}), testUserID, tt.role)
+			r.SetPathValue("id", "5")
 			w := httptest.NewRecorder()
 			handler.Create(w, r)
 

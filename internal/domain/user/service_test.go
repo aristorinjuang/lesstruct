@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/domain/user"
 	"github.com/aristorinjuang/lesstruct/internal/domain/user/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
@@ -144,6 +145,120 @@ func TestUserManagementService_ApproveUser_NonPendingStatus(t *testing.T) {
 
 	// Assert
 	require.Error(t, err)
+}
+
+// TestUserManagementService_ApproveUser_EmailNotVerified tests that approval is
+// refused for registrants who have not yet proven their email address when the
+// service runs in admin-approval mode.
+func TestUserManagementService_ApproveUser_EmailNotVerified(t *testing.T) {
+	// Arrange
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true, user.WithApprovalEmailRequired())
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{ID: 1, Username: "testuser", Email: "test@example.com", Status: "pending", EmailVerified: false}, nil)
+
+	// Act
+	err := service.ApproveUser(context.Background(), 1)
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, user.ErrEmailNotVerified)
+	mockUserRepo.AssertNotCalled(t, "UpdateUserStatusIfCurrentStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestUserManagementService_ApproveUser_EmailRequiredNonPending tests that a
+// non-pending user is reported as INVALID_USER_STATUS before the email-proof
+// check in admin-approval mode, so a suspended or soft-deleted registrant is
+// never misreported as EMAIL_NOT_VERIFIED.
+func TestUserManagementService_ApproveUser_EmailRequiredNonPending(t *testing.T) {
+	// Arrange
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true, user.WithApprovalEmailRequired())
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{ID: 1, Username: "testuser", Email: "test@example.com", Status: "suspended", EmailVerified: false}, nil)
+
+	// Act
+	err := service.ApproveUser(context.Background(), 1)
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, user.ErrInvalidStatus)
+	assert.NotErrorIs(t, err, user.ErrEmailNotVerified)
+	mockUserRepo.AssertNotCalled(t, "UpdateUserStatusIfCurrentStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestUserManagementService_ApproveUser_EmailRequiredUserNotFound tests that a
+// missing user is reported with the ErrUserNotFound sentinel in admin-approval
+// mode.
+func TestUserManagementService_ApproveUser_EmailRequiredUserNotFound(t *testing.T) {
+	// Arrange
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true, user.WithApprovalEmailRequired())
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 999).
+		Return(nil, errors.New("user not found with ID 999"))
+
+	// Act
+	err := service.ApproveUser(context.Background(), 999)
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, user.ErrUserNotFound)
+	mockUserRepo.AssertNotCalled(t, "UpdateUserStatusIfCurrentStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestUserManagementService_ApproveUser_EmailRequiredSuccess tests that approval
+// proceeds once the registrant's email address is verified in admin-approval mode.
+func TestUserManagementService_ApproveUser_EmailRequiredSuccess(t *testing.T) {
+	// Arrange
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true, user.WithApprovalEmailRequired())
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{ID: 1, Username: "testuser", Email: "test@example.com", Status: "pending", EmailVerified: true}, nil)
+
+	mockUserRepo.EXPECT().
+		UpdateUserStatusIfCurrentStatus(mock.Anything, 1, "pending", "verified").
+		Return(nil)
+
+	// Act
+	err := service.ApproveUser(context.Background(), 1)
+
+	// Assert
+	require.NoError(t, err)
+}
+
+// TestUserManagementService_ApproveUser_EmailRequiredRepoError tests that a
+// repository failure while fetching the registrant in admin-approval mode is
+// surfaced with the ErrUserNotFound sentinel.
+func TestUserManagementService_ApproveUser_EmailRequiredRepoError(t *testing.T) {
+	// Arrange
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true, user.WithApprovalEmailRequired())
+
+	repoErr := errors.New("database unavailable")
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(nil, repoErr)
+
+	// Act
+	err := service.ApproveUser(context.Background(), 1)
+
+	// Assert
+	require.Error(t, err)
+	assert.ErrorIs(t, err, user.ErrUserNotFound)
+	mockUserRepo.AssertNotCalled(t, "UpdateUserStatusIfCurrentStatus", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestUserManagementService_RejectUser_Success tests successful user rejection
@@ -943,6 +1058,10 @@ func TestUserManagementService_UpdateUserProfile_Success(t *testing.T) {
 		Return(nil)
 
 	mockUserRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 1, false).
+		Return(nil)
+
+	mockUserRepo.EXPECT().
 		GetUserByID(mock.Anything, 1).
 		Return(&repository.User{
 			ID: 1, Username: "testuser", Email: "new@example.com",
@@ -1126,6 +1245,99 @@ func TestUserManagementService_UpdateUserProfile_CommentatorAllowedWhenCommentsE
 	assert.Equal(t, "Commentator", result.Role)
 }
 
+// TestUserManagementService_UpdateUserProfile_RoleServiceAllowsCustomRole
+// verifies the update path accepts roles registered in the config-driven role
+// registry, beyond the three built-ins.
+func TestUserManagementService_UpdateUserProfile_RoleServiceAllowsCustomRole(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepo(t)
+
+	roleService := role.NewService()
+	require.NoError(t, roleService.Register(role.Role{Name: "Journalist", PostTypes: []string{"article"}}))
+
+	service := user.NewUserManagementService(
+		mockUserRepo,
+		nil,
+		true,
+		user.WithManagementRoleService(roleService),
+	)
+
+	updated := &repository.User{
+		ID: 1, Username: "testuser", Email: "test@example.com",
+		Name: "Test", Role: "Journalist",
+	}
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "test@example.com",
+			Name: "Test", Role: "Admin",
+		}, nil).Once()
+	mockUserRepo.EXPECT().
+		UpdateProfile(mock.Anything, 1, mock.Anything, mock.Anything, "Journalist", mock.Anything).
+		Return(nil)
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(updated, nil).Once()
+
+	result, err := service.UpdateUserProfile(context.Background(), 1, "", "", "Journalist", nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "Journalist", result.Role)
+}
+
+// TestUserManagementService_UpdateUserProfile_RoleServiceRejectsUnknown
+// verifies the update path rejects roles absent from the registry.
+func TestUserManagementService_UpdateUserProfile_RoleServiceRejectsUnknown(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepo(t)
+
+	roleService := role.NewService()
+	service := user.NewUserManagementService(
+		mockUserRepo,
+		nil,
+		true,
+		user.WithManagementRoleService(roleService),
+	)
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "test@example.com",
+			Name: "Test", Role: "Admin",
+		}, nil)
+
+	_, err := service.UpdateUserProfile(context.Background(), 1, "", "", "Ghost", nil)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, user.ErrInvalidRole))
+	mockUserRepo.AssertNotCalled(t, "UpdateProfile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestUserManagementService_UpdateUserProfile_RoleServiceGatesCommentatorByComments
+// verifies the Commentator gate holds even with a role service attached: with
+// comments disabled the registry-driven allowlist must still reject it.
+func TestUserManagementService_UpdateUserProfile_RoleServiceGatesCommentatorByComments(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepo(t)
+
+	roleService := role.NewService()
+	service := user.NewUserManagementService(
+		mockUserRepo,
+		nil,
+		false,
+		user.WithManagementRoleService(roleService),
+	)
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "test@example.com",
+			Name: "Test", Role: "Admin",
+		}, nil)
+
+	_, err := service.UpdateUserProfile(context.Background(), 1, "", "", "Commentator", nil)
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, user.ErrInvalidRole))
+}
+
 // TestUserManagementService_UpdateUserProfile_EmailExists tests email already in use by another user
 func TestUserManagementService_UpdateUserProfile_EmailExists(t *testing.T) {
 	mockUserRepo := mocks.NewMockUserRepo(t)
@@ -1176,6 +1388,78 @@ func TestUserManagementService_UpdateUserProfile_SameEmail(t *testing.T) {
 	_, err := service.UpdateUserProfile(context.Background(), 1, "New Name", "test@example.com", "", nil)
 
 	require.NoError(t, err)
+}
+
+// TestUserManagementService_UpdateUserProfile_EmailChangeResetsVerification
+// tests that changing a user's email address clears the email_verified flag:
+// the flag certifies ownership of the CURRENT address, which the new one has
+// not proven yet.
+func TestUserManagementService_UpdateUserProfile_EmailChangeResetsVerification(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "old@example.com",
+			Name: "Test", Role: "Admin", EmailVerified: true,
+		}, nil).Once()
+
+	mockUserRepo.EXPECT().
+		CheckEmailExistsForOtherUser(mock.Anything, 1, "new@example.com").
+		Return(false, nil)
+
+	mockUserRepo.EXPECT().
+		UpdateProfile(mock.Anything, 1, "testuser", "new@example.com", "Admin", mock.Anything).
+		Return(nil)
+
+	mockUserRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 1, false).
+		Return(nil)
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "new@example.com",
+			Name: "Test", Role: "Admin", EmailVerified: false,
+		}, nil).Once()
+
+	updated, err := service.UpdateUserProfile(context.Background(), 1, "", "new@example.com", "", nil)
+
+	require.NoError(t, err)
+	assert.False(t, updated.EmailVerified)
+}
+
+// TestUserManagementService_UpdateUserProfile_EmailUnchangedKeepsVerification
+// tests that an unchanged email address does NOT clear the email_verified flag.
+func TestUserManagementService_UpdateUserProfile_EmailUnchangedKeepsVerification(t *testing.T) {
+	mockUserRepo := mocks.NewMockUserRepo(t)
+	_ = mocks.NewMockBlockedEmailRepo(t)
+	service := user.NewUserManagementService(mockUserRepo, nil, true)
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "test@example.com",
+			Name: "Test", Role: "Admin", EmailVerified: true,
+		}, nil).Once()
+
+	mockUserRepo.EXPECT().
+		UpdateProfile(mock.Anything, 1, "New Name", "test@example.com", "Admin", mock.Anything).
+		Return(nil)
+
+	mockUserRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&repository.User{
+			ID: 1, Username: "testuser", Email: "test@example.com",
+			Name: "New Name", Role: "Admin", EmailVerified: true,
+		}, nil).Once()
+
+	_, err := service.UpdateUserProfile(context.Background(), 1, "New Name", "test@example.com", "", nil)
+
+	require.NoError(t, err)
+	mockUserRepo.AssertNotCalled(t, "SetEmailVerified", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestUserManagementService_UpdateUserProfile_RepoErrorGetUser tests repo error on GetUserByID
@@ -1263,6 +1547,10 @@ func TestUserManagementService_UpdateUserProfile_RepoErrorFetchUpdatedUser(t *te
 
 	mockUserRepo.EXPECT().
 		UpdateProfile(mock.Anything, 1, "testuser", "new@example.com", "Admin", mock.Anything).
+		Return(nil)
+
+	mockUserRepo.EXPECT().
+		SetEmailVerified(mock.Anything, 1, false).
 		Return(nil)
 
 	mockUserRepo.EXPECT().

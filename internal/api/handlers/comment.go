@@ -10,11 +10,39 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/go-chi/chi/v5"
 )
 
+// CommentHandlerOption configures a CommentHandler. A role service makes the
+// comment capability config-driven; without one every authenticated user may
+// comment (the legacy behavior).
+type CommentHandlerOption func(*CommentHandler)
+
+// WithCommentRoleService attaches the config-driven role registry so posting comments
+// is gated by the caller's CanComment capability.
+func WithCommentRoleService(rs *roledomain.Service) CommentHandlerOption {
+	return func(h *CommentHandler) {
+		h.roleService = rs
+	}
+}
+
 type CommentHandler struct {
 	contentService contentdomain.ServiceInterface
+	roleService    *roledomain.Service
+}
+
+// commentAllowed reports whether the caller's role may post comments. Without a
+// role service every authenticated user may, matching the legacy behavior.
+func (h *CommentHandler) commentAllowed(r *http.Request) bool {
+	if h.roleService == nil {
+		return true
+	}
+	role, ok := middleware.GetRole(r)
+	if !ok {
+		return false
+	}
+	return h.roleService.CanComment(role)
 }
 
 type CreateCommentRequest struct {
@@ -141,6 +169,11 @@ func (h *CommentHandler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "Invalid user ID", nil)
+		return
+	}
+
+	if !h.commentAllowed(r) {
+		sendErrorResponse(w, http.StatusForbidden, "forbidden", "Your role cannot post comments", nil)
 		return
 	}
 
@@ -371,8 +404,12 @@ func (h *CommentHandler) DeleteOwnComment(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func NewCommentHandler(contentService contentdomain.ServiceInterface) *CommentHandler {
-	return &CommentHandler{
+func NewCommentHandler(contentService contentdomain.ServiceInterface, opts ...CommentHandlerOption) *CommentHandler {
+	h := &CommentHandler{
 		contentService: contentService,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }

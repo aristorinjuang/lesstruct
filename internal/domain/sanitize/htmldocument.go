@@ -2,6 +2,7 @@ package sanitize
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
@@ -38,6 +39,10 @@ func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 
 	// Allow safe URL schemes only (http, https, mailto).
 	p.AllowURLSchemes("http", "https", "mailto")
+	// Allow scheme-less URLs too: media remapping rewrites uploads to
+	// root-relative paths (e.g. /uploads/media/...), and imported HTML
+	// frequently references same-site files without a scheme.
+	p.AllowRelativeURLs(true)
 
 	// Link attributes.
 	p.AllowAttrs("href", "target", "rel").OnElements("a")
@@ -75,12 +80,45 @@ func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 	// neutralized by modern browsers.
 	p.AllowUnsafe(true)
 
-	// Allow iframe embeds when allowlist is provided.
+	// Allow iframe embeds restricted to the allowlisted hosts when provided.
+	// bluemonday's AllowIFrames only manages the sandbox attribute, so host
+	// restriction is implemented directly: the src attribute must match an
+	// allowlisted host (a "*." prefix allows one or more subdomain labels) or
+	// be a root-relative path (same-origin embed). Without an allowlist
+	// iframes stay stripped.
 	if len(iframeAllowlist) > 0 {
-		p.AllowIFrames()
+		p.AllowElements("iframe")
+		p.AllowAttrs("src").Matching(iframeSrcRegexp(iframeAllowlist)).OnElements("iframe")
+		p.AllowAttrs("width", "height", "title", "loading", "allow", "allowfullscreen", "referrerpolicy", "frameborder", "scrolling", "name", "sandbox").OnElements("iframe")
 	}
 
 	return p
+}
+
+// iframeSrcRegexp builds the matcher for iframe src attributes from the
+// allowlisted hosts. Hosts may carry a "*." prefix to require one or more
+// subdomain labels, and may include a port or path (from CSP sources) to
+// narrow matching. The pattern is fully anchored and case-insensitive, and
+// userinfo ("@") is rejected anywhere so a host cannot be smuggled into an
+// allowlisted domain. Relative srcs must be root-relative: a leading "//" is
+// a scheme-relative absolute URL, not a relative path, so it only passes
+// when its host is allowlisted.
+func iframeSrcRegexp(hosts []string) *regexp.Regexp {
+	var hostsRe strings.Builder
+	for i, host := range hosts {
+		if i > 0 {
+			hostsRe.WriteString("|")
+		}
+		if strings.HasPrefix(host, "*.") {
+			hostsRe.WriteString(`[^/?#]+\.`)
+			host = strings.TrimPrefix(host, "*.")
+		}
+		hostsRe.WriteString(regexp.QuoteMeta(host))
+	}
+	return regexp.MustCompile(fmt.Sprintf(
+		`(?i)^(?:/(?:[^/?#][^?#]*)?|(?:https?:)?//(?:%s)(?:[:/][^@?#]*)?(?:[?#][^@]*)?)$`,
+		hostsRe.String(),
+	))
 }
 
 // SanitizeHTMLDocument sanitizes an HTML document body using the permissive

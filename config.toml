@@ -137,6 +137,45 @@ slug = "bio"
 type = "textarea"
 max_length = 1000
 
+# ── Roles & Registration (optional) ─────────────────────────────────
+# User roles gate content, media, and comment capabilities. Three built-in
+# roles always exist:
+#   Admin        - reserved superuser (cannot be redefined)
+#   Contributor  - manages every post type, may publish, media, comments
+#   Commentator  - no content types, but media + comments
+# A [[role]] entry overrides a built-in (except Admin) or adds a custom role.
+#
+#   post_types = ["article", "page"]  # post-type slugs this role may manage
+#                                     # (empty on a NEW role = no content types;
+#                                     # overriding Contributor keeps all types)
+#   publish  = true   # may publish content directly (else drafts only)
+#   media    = true   # may upload / generate media
+#   comments = true   # may post comments
+#
+# A role may only reference post types defined in this file; a typo fails
+# closed at startup.
+
+# Example: a journalist who manages only articles (publishes directly),
+# may post comments, but cannot touch media.
+# [[role]]
+# name = "Journalist"
+# post_types = ["article"]
+# publish = true
+# media = false
+# comments = true
+
+# Self-registration. Absent block = registration follows the comment system
+# (enabled iff comments are enabled), new users get the "Commentator" role and
+# stay "pending" until an admin approves them. Override to decouple
+# registration from comments or to require admin approval:
+# [registration]
+# enabled = true                # absent: follows [comments]
+# default_role = "Commentator"  # role assigned to new registrants
+# admin_approval = false        # true: approve pending users only after their
+#                               # email is verified (409 EMAIL_NOT_VERIFIED otherwise)
+#
+# Email verification is always mandatory.
+
 # ── Content Security Policy (optional) ──────────────────────────────
 # [csp]
 # disable = false                      # set to true to omit the CSP header entirely

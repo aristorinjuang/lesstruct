@@ -7,6 +7,7 @@ const (
 	HookAfterPublish   = "after_publish"
 	HookBeforeDelete   = "before_delete"
 	HookAfterCreate    = "after_create"
+	HookAfterUnpublish = "after_unpublish"
 	HookOnPluginLoaded = "on_plugin_loaded"
 )
 

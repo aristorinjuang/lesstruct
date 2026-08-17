@@ -211,6 +211,8 @@ The first line is silently overridden by the empty second line — Lesstruct end
 | `[[thumbnail]]` | array of tables | `[{max_width=370, suffix="_thumb"}]` | Image processing variants. See below. |
 | `[headless]` | table | disabled | Headless-mode toggle. When enabled, the server-rendered content site is not served. See below. |
 | `[comments]` | table | enabled | Comment-system toggle. When disabled, the comment system is hard-disabled end to end. See below. |
+| `[[role]]` | array of tables | three built-in roles | Custom user roles, or overrides of the built-in roles. See below. |
+| `[registration]` | table | follows comments | Self-registration toggle, default role, and admin-approval gate. See below. |
 
 ### `[user_fields]`
 
@@ -362,30 +364,32 @@ The default CSP (structured as an ordered directive table in the binary) is:
 default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
 ```
 
-Each `_src` list **appends** to the directive's built-in sources — the policy can only become more permissive; nothing existing is replaced. Use `extra_directives` to add wholly new directives (e.g. `worker-src`, `report-uri`). Use `policy` for a complete override (documented as "advanced" — the operator takes ownership).
+Each `_src` list **appends** to the directive's built-in sources — the policy can only become more permissive; nothing existing is replaced. The exceptions are `frame_ancestors` (dedicated replace knob for that directive — appending to the default `'none'` is meaningless per the CSP spec) and `policy` (complete override, documented as "advanced" — the operator takes ownership). Use `extra_directives` to add wholly new directives (e.g. `worker-src`, `report-uri`).
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `disable` | `bool` | `false` | When `true`, no CSP header is emitted at all. For operators behind a CDN/WAF that manages CSP. |
+| `disable` | `bool` | `false` | When `true`, no CSP header is emitted at all. For operators behind a CDN/WAF that manages CSP. The framing floor still applies: `X-Frame-Options` keeps following `frame_ancestors` (default `DENY`). |
 | `report_only` | `bool` | `false` | When `true`, emits `Content-Security-Policy-Report-Only` instead, for safe rollout testing. |
 | `script_src` | `[]string` | `[]` | Appended to the directive's default sources. |
 | `style_src` | `[]string` | `[]` | Appended to the directive's default sources. |
 | `img_src` | `[]string` | `[]` | Appended to the directive's default sources. |
 | `font_src` | `[]string` | `[]` | Appended to the directive's default sources. |
 | `connect_src` | `[]string` | `[]` | Appended to the directive's default sources. |
-| `frame_src` | `[]string` | `[]` | Appended to the directive's default sources. |
+| `frame_src` | `[]string` | `[]` | Appended to the directive's default sources. Also feeds the HTML sanitizer's iframe allowlist: `<iframe>` embeds in HTML-format content are only kept when their host appears in `frame-src` (defaults + appends). A `https://*.host` entry allows subdomains only — the apex host must be listed separately (e.g. `https://disqus.com`); a port or path in an entry narrows matching to it. Root-relative `src` (same-origin embeds) is always allowed; scheme-relative `//host` srcs are host-checked like absolute URLs. With a `policy` override the sanitizer follows the override's `frame-src` (an override without `frame-src` keeps iframes stripped); `disable`/`report_only` keep the default-based allowlist as a safety net. |
 | `media_src` | `[]string` | `[]` | Appended to the directive's default sources. |
 | `object_src` | `[]string` | `[]` | Appended to the directive's default sources. |
 | `worker_src` | `[]string` | `[]` | Appended to the directive's default sources. |
-| `extra_directives` | `map[string]string` | `{}` | New directives not in the defaults. Key = directive name, value = sources (or empty for flag directives like `upgrade-insecure-requests`). |
+| `frame_ancestors` | `[]string` | `[]` | **Replaces** the default `frame-ancestors 'none'` (the only directive with replace semantics — appending to `'none'` is meaningless). `["'self'"]` allows same-origin framing (demo pages, interactive helpers). Also drives `X-Frame-Options`: no sources → `DENY`; `"['self']"` → `SAMEORIGIN`; a host list (e.g. `["https://embedder.example.com"]`) → the header is omitted because `X-Frame-Options` cannot express host allowlists (the CSP directive is the control then) — except under `report_only`, where a host list floors to `DENY` so a rollout trial never silently drops all framing protection. A `policy` override takes precedence over the knob for this derivation (mirroring the emitted CSP, where the policy replaces everything); `'none'` anywhere in the sources maps to `DENY`; `'self'` is matched case-insensitively and duplicates are ignored. Validation rejects entries containing whitespace and lists mixing `'none'` with other sources (browsers discard such directives entirely, opening framing up). |
+| `extra_directives` | `map[string]string` | `{}` | New directives not in the defaults. Key = directive name, value = sources (or empty for flag directives like `upgrade-insecure-requests`). Note: adding `frame-ancestors` here creates a *duplicate* directive, which browsers ignore in favor of the first occurrence (the default `'none'`) — use `frame_ancestors` instead. |
 | `policy` | `string` | `""` | Complete override. When non-empty, replaces the safe builder. The operator takes full responsibility for the resulting policy. |
 
-Example — enable Google Analytics, data: URI fonts, and the privacy-enhanced YouTube host:
+Example — allow same-origin framing (embedded demo pages), Google Analytics, data: URI fonts, and the privacy-enhanced YouTube host:
 
 ```toml
 [csp]
-script_src = ["https://www.googletagmanager.com"]
-font_src   = ["data:"]
+frame_ancestors = ["'self'"]
+script_src      = ["https://www.googletagmanager.com"]
+font_src        = ["data:"]
 ```
 
 The CSP is built once at startup. Restart the server to pick up changes.
@@ -421,7 +425,7 @@ Absent block → headless disabled (the default; fully backward compatible).
 
 ### `[comments]`
 
-Optional. When `enabled = false`, the comment system is **hard-disabled** end to end. This is intended for instances that do not want comments at all — most importantly it stops self-registration, which otherwise lets anyone create a `Commentator` account (a role that only exists for commenting).
+Optional. When `enabled = false`, the comment system is **hard-disabled** end to end. This is intended for instances that do not want comments at all — most importantly it stops self-registration (see below), which otherwise lets anyone create a `Commentator` account (a role that only exists for commenting).
 
 ```toml
 [comments]
@@ -431,12 +435,89 @@ enabled = false
 Effects of disabling comments:
 
 - All comment routes are unmounted in all three realms: agent/Bearer (`/api/v1/content/{id}/comments`), public (`/api/v1/public/content_items/{slug}/comments`), and browser admin (moderation, `/api/v1/my-comments`). Requests to them 404.
-- `POST /api/auth/register` returns `403 REGISTRATION_DISABLED` — self-registration only ever creates `Commentator` users, which are meaningless without comments. The `/register` page returns 404 and the login page hides the "create account" link.
+- **Without a `[registration]` override**, `POST /api/auth/register` returns `403 REGISTRATION_DISABLED`, the `/register` page returns 404, and the login page hides the "create account" link. A `[registration]` block re-enables all three for the role it names.
 - Admins can no longer assign the `Commentator` role when creating users (`ErrInvalidRole`).
 - New content always stores `allowComments = false`, even if a request explicitly sends `allowComments: true`; the admin editor hides the "Allow comments" checkbox.
 - The admin UI hides the Comments nav item and redirects comment routes.
 
 Absent block (or `enabled` omitted) → comments enabled (the default; fully backward compatible). The `comment` post type itself cannot be hidden via `hidden = true` — use this block instead.
+
+### `[[role]]`
+
+Optional. Roles gate what a user may do: which post types they can manage (create/edit/delete), whether they can publish content directly, and whether they can upload media and post comments. Three built-in roles always exist:
+
+| Role | Post types | Publish | Media | Comments | Notes |
+|------|-----------|---------|-------|----------|-------|
+| `Admin` | all | yes | yes | yes | Reserved superuser. Cannot be redefined. |
+| `Contributor` | all | yes | yes | yes | The default content author. |
+| `Commentator` | none | no | yes | yes | Exists for the comment system. |
+
+A `[[role]]` entry either **overrides** a built-in (except `Admin`) or **adds** a custom role. Overriding a built-in narrows/widens its capabilities in place; overriding `Contributor` without an explicit `post_types` keeps its manage-all-types behavior. A **new** custom role with no `post_types` manages no content types.
+
+> **Override semantics.** An override **replaces** the built-in's capabilities wholesale: keys you omit (`publish`, `media`, `comments`, `post_types`) are reset to `false`/empty. To widen a built-in, spell out every capability you want to keep. (This always fails toward *less* privilege — it can never silently grant more.)
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `name` | `string` | yes | Role name stored in `users.role`. 1-200 characters. `Admin` is reserved and rejected. |
+| `post_types` | `[]string` | no | Post-type slugs the role may manage (own-content CRUD). Each must reference a post type defined in this file — a typo fails closed at startup. |
+| `publish` | `bool` | no | When `true`, the role may publish content directly; otherwise content is saved as a draft (admins publish). |
+| `media` | `bool` | no | When `true`, the role may upload and generate media. |
+| `comments` | `bool` | no | When `true`, the role may post comments. |
+
+Example — a journalist who manages only `article` content, publishes directly, and comments, but cannot touch media:
+
+```toml
+[[role]]
+name = "Journalist"
+post_types = ["article"]
+publish = true
+media = false
+comments = true
+```
+
+Effects:
+
+- `GET /api/v1/post_types` (admin) returns only the role's manageable types; the admin sidebar, content list tabs, and editor type select follow suit.
+- Creating/editing/deleting content of a type the role does not manage returns `403 forbidden` (`ErrForbiddenPostType`).
+- Publishing without the `publish` capability is rejected (`ErrForbiddenPublish`); a non-publishing role's new content is forced to draft.
+- The admin content editor hides the **Publish** button and the **Published** status option for roles without the `publish` capability (the button stays visible for admins). The **Unpublish** action remains available (see below), and editing an item that is already published keeps its current status selectable.
+- Media endpoints return `403` for roles without `media`; comment endpoints return `403` for roles without `comments`.
+- Admins can assign any registered role in the user management UI (the dropdown is populated from `GET /api/v1/roles`).
+
+Note: a non-publishing role may still set its **own** published content back to draft (unpublish) — the `publish` capability gates draft→published only. It cannot re-publish; that requires the `publish` capability or an admin.
+
+Absent block → only the three built-in roles (the default; fully backward compatible).
+
+### `[registration]`
+
+Optional. Decouples self-registration from the comment system. Historically registration was enabled iff comments were enabled, because the only self-registerable role — `Commentator` — was meaningless without them. With custom `[[role]]` entries a site may want public registration for a different role (e.g. a journalist), so this block overrides the coupling.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | `bool` | follows `[comments]` | When set, overrides the comment-system coupling. `true` = registration allowed (the `/register` page renders and the login page shows the "create account" link), `false` = `POST /api/auth/register` returns `403 REGISTRATION_DISABLED` and `/register` 404s. |
+| `default_role` | `string` | `"Commentator"` | Role assigned to new registrants. Must be a registered role (built-in or `[[role]]`) and **cannot be an admin role** — a typo or an `Admin` default fails closed at startup. |
+| `admin_approval` | `bool` | `false` | When `true`, email verification is required **before** an admin can activate a registrant: approving a user whose email is still unverified fails with `409 EMAIL_NOT_VERIFIED`. When `false` (default), admins may approve pending registrants regardless of email verification (legacy behavior). |
+
+Email verification is **always mandatory**: every registrant must click the link in the verification email before the account can become active. The `admin_approval` flag only decides *when* verification happens relative to activation:
+
+| `admin_approval` | Verify-email link result | Activation path |
+|------------------|--------------------------|-----------------|
+| `false` (default) | Marks the email verified **and** activates the account (`verified`) | Email link alone is enough |
+| `true` | Marks the email verified; account stays `pending` with the message "Email verified. An administrator will activate your account." | Admin approval in the registration queue is the only path from `pending` to active |
+
+Example — public registration for a journalist role, with email verification plus admin approval, comments disabled site-wide:
+
+```toml
+[comments]
+enabled = false
+
+[registration]
+enabled = true
+default_role = "Journalist"
+admin_approval = true
+```
+
+Absent block → registration enabled iff comments are enabled, default role `Commentator`, pending until approved (the default; fully backward compatible).
 
 ## Validation Rules
 
@@ -462,6 +543,14 @@ These are enforced at startup by the runtime. Violations cause the server to fai
 
 - `CONFIG_FILE` must not contain path separators or `..` (`internal/config/posttypes.go:19-21`).
 - The config directory must exist and be readable; the file is optional (defaults apply if missing).
+
+### Role rules
+
+- `name` must be 1-200 characters (`internal/domain/role/types.go:43-48`).
+- `Admin` is reserved and cannot be redefined (`ErrAdminRoleReserved`).
+- A duplicate `name` is rejected for new roles (`ErrDuplicateRole`); reusing a built-in name overrides it instead.
+- Every `post_types` entry must reference a registered post type — a typo fails closed at startup (`internal/config/roles.go:62-67`).
+- A role entry cannot declare `all_types` (that flag is internal and derived).
 
 ## Worked Examples
 
@@ -737,6 +826,48 @@ AI_TEXT_GENERATION_BASE_URL=https://api.deepseek.com
 AI_TEXT_GENERATION_MODEL=deepseek-chat
 ```
 
+### Example D — Role-scoped journalism site with open registration
+
+A magazine where registered readers can write articles, a small editorial team publishes them, and media stays admin-only. Registration is decoupled from the comment system and auto-verified.
+
+```toml
+languages = ["en"]
+
+[user_fields]
+fields = [
+  { name = "Bio", slug = "bio", type = "textarea", max_length = 500 },
+]
+
+[[post_type]]
+name = "Article"
+slug = "article"
+description = "Long-form articles"
+supports = ["title", "content", "tags", "featured_image", "excerpt"]
+
+# Readers submit drafts; the editorial team publishes them.
+[[role]]
+name = "Journalist"
+post_types = ["article"]
+publish = false
+media = false
+comments = true
+
+# The editor role manages everything except media, and publishes directly.
+[[role]]
+name = "Editor"
+post_types = ["article", "page"]
+publish = true
+media = false
+comments = true
+
+[registration]
+enabled = true
+default_role = "Journalist"
+admin_approval = true
+```
+
+With this config: new registrants become `Journalist` (articles only, drafts, comments allowed, no media); editors publish articles/pages; the built-in `Admin` keeps the full surface including media and user management.
+
 ## What is NOT Configurable from `config.toml`
 
 `config.toml` and the env vars cover deployment and content schema, but several other surfaces are configured elsewhere:
@@ -816,7 +947,7 @@ Cross-reference the `lesstruct-theme-development` skill. Common causes: `THEME_D
 
 ### Plugin hooks are not firing
 
-Cross-reference the `lesstruct-plugin-development` skill. The currently-invoked hooks are `before_save`, `after_create`, and `after_publish`. `on_plugin_loaded` and `before_delete` are defined but not invoked today.
+Cross-reference the `lesstruct-plugin-development` skill. The currently-invoked hooks are `before_save` (create, update, and admin system-fields updates), `after_create`, `after_publish`, `before_delete`, and `after_unpublish`. `on_plugin_loaded` is defined but not invoked today.
 
 ### Env var appears to have no effect (`.env`)
 
@@ -891,6 +1022,18 @@ policy = ""                      # full override (operator takes ownership)
 [[thumbnail]]
 max_width = 370                  # > 0
 suffix = "_thumb"                # unique
+
+[[role]]
+name = ""                        # required, 1-200 chars; "Admin" reserved
+post_types = []                  # post-type slugs the role may manage
+publish = false                  # may publish content directly
+media = false                    # may upload / generate media
+comments = false                 # may post comments
+
+[registration]
+enabled = true                   # absent: follows [comments]
+default_role = "Commentator"
+admin_approval = false           # true: admin must approve after email verification
 ```
 
 ### All field types

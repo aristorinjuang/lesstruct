@@ -28,7 +28,7 @@ type fakeContentCreator struct {
 	callNext int
 }
 
-func (f *fakeContentCreator) Create(_ context.Context, userID int, req contentdomain.CreateContentRequest) (*contentdomain.Content, error) {
+func (f *fakeContentCreator) Create(_ context.Context, userID int, _ string, req contentdomain.CreateContentRequest) (*contentdomain.Content, error) {
 	idx := f.callNext
 	f.callNext++
 	f.created = append(f.created, req)
@@ -410,7 +410,8 @@ func TestImporter_AssignsPostsToCreators(t *testing.T) {
 	}
 }
 
-func float64Ptr(v float64) *float64 { return &v }
+//go:fix inline
+func float64Ptr(v float64) *float64 { return new(v) }
 
 func TestImporter_CustomFields(t *testing.T) {
 	eventFields := []customfield.FieldSchema{

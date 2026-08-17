@@ -41,6 +41,14 @@ func extractTarGz(r io.Reader, dest string) error {
 			return fmt.Errorf("failed to read tar entry: %w", err)
 		}
 
+		// GNU tar archives created with default flags (tar -czf site.tar.gz .)
+		// carry a leading "./" directory entry for the archive root; filepath.Join
+		// cleans it to exactly dest, which the traversal prefix check below would
+		// reject. Skip the root entry — every real member still gets checked.
+		if filepath.Clean(header.Name) == "." {
+			continue
+		}
+
 		path := filepath.Join(dest, header.Name)
 		if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(dest)+string(os.PathSeparator)) {
 			return fmt.Errorf("invalid tar entry path: %s", header.Name)
@@ -78,7 +86,7 @@ type hugoJob struct {
 	Total      int       `json:"total"`
 	Errors     []string  `json:"errors,omitempty"`
 	StartedAt  time.Time `json:"startedAt"`
-	FinishedAt time.Time `json:"finishedAt,omitempty"`
+	FinishedAt time.Time `json:"finishedAt"`
 }
 
 // hugoJobStore holds in-memory Hugo import jobs keyed by job ID.
