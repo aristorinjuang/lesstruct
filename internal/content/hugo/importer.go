@@ -279,17 +279,29 @@ func (imp *Importer) importItem(
 	}
 
 	// Featured image: prepend the first frontmatter image (remapped) as a
-	// leading <img>, mirroring how the WordPress importer injects featured
-	// images as the first content node. Skip the prepend when the rewritten
-	// body already opens with the same image — both sides resolve through the
-	// same media mapper cache (and media hash dedup), so identical sources
-	// compare equal after mapping — and when the image failed to migrate (a
-	// broken cover would be worse than none).
+	// leading <figure>, mirroring how the WordPress importer injects featured
+	// images as the first content node (TipTap renders them as figures) —
+	// unless the body would then show the
+	// same picture twice: either a leading body image already carries the
+	// exact mapped URL, or one of them is perceptually the same picture under
+	// a different URL (a re-upload or hotlink variant that content-hash dedup
+	// cannot see). Perceptual skips are surfaced as warnings so site owners
+	// can audit what was left out. Prepending is also skipped when the image
+	// failed to migrate (a broken cover would be worse than none).
 	if mediaMapper != nil && len(item.Images) > 0 {
 		featured := mediaMapper.Map(ctx, item.Images[0], userID)
 		if featured != "" && !mediaMapper.IsFailed(item.Images[0]) {
-			if firstImageSrc(body) != featured {
-				body = fmt.Sprintf(`<img src="%s" alt="%s">%s`, featured, item.Title, body)
+			reason, duplicateOf := featuredDuplicate(body, featured, mediaMapper)
+			switch reason {
+			case dupReasonExact:
+			case dupReasonVisual:
+				result.Errors = append(result.Errors, fmt.Sprintf(
+					"warning: featured image %q looks identical to the body's leading image %q — prepend skipped",
+					item.Images[0],
+					duplicateOf,
+				))
+			default:
+				body = fmt.Sprintf(`<figure><img src="%s" alt="%s"></figure>%s`, featured, item.Title, body)
 			}
 		}
 	}

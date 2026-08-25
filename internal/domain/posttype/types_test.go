@@ -536,7 +536,7 @@ func TestUserFieldsValidation(t *testing.T) {
 			name: "number custom field min > max",
 			userFields: posttype.UserFields{
 				Fields: []customfield.FieldSchema{
-					{Name: "Score", Slug: "score", Type: customfield.FieldTypeNumber, Min: floatPtr(100), Max: floatPtr(10)},
+					{Name: "Score", Slug: "score", Type: customfield.FieldTypeNumber, Min: new(100.0), Max: new(10.0)},
 				},
 			},
 			wantErr: true,
@@ -553,9 +553,4 @@ func TestUserFieldsValidation(t *testing.T) {
 			}
 		})
 	}
-}
-
-//go:fix inline
-func floatPtr(v float64) *float64 {
-	return new(v)
 }

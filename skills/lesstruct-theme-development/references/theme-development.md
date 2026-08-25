@@ -30,6 +30,8 @@ defaults.
 ```
 themes/
   mytheme/
+    root/            # Optional; copied to the site ROOT (see "Root-Level Files")
+      webpushr-sw.js
     static/          # Served at /static/*
       base.css
       style.css
@@ -63,6 +65,29 @@ inspect the served versions at the URLs listed below in
 [Reference URLs](#reference-urls). You can also add per-post-type templates
 (e.g. `page.html`, `event.html`) — see
 [Per-post-type templates](#per-post-type-templates).
+
+## Root-Level Files
+
+Some files must live at the **site root** to work: push service workers (the
+Webpushr SDK registers `/webpushr-sw.js`), `manifest.json` for some PWA setups,
+or `.well-known/` verification files. Place them in your theme's optional
+`root/` directory:
+
+```
+themes/
+  mytheme/
+    root/
+      webpushr-sw.js     # → https://example.com/webpushr-sw.js (both surfaces)
+```
+
+- **Dynamic server**: a request is answered from `root/` only when it names an
+  existing regular file there; every other path falls through to alias
+  redirects and content pages, so `root/` files never shadow posts or pages.
+- **Static export**: the whole `root/` tree lands at the archive root (not
+  under `/static/`).
+
+`static/` remains the right home for everything that can live under `/static/*`;
+use `root/` only when an external system demands a fixed root URL.
 
 ## Quick Start: CSS-Only Theme
 
@@ -269,6 +294,10 @@ files and for each named template. You can override `style.css` only and keep
 the embedded `search.js`, `auth.js`, `layout.html`, and every other file. The
 fallbacks compose — partial themes are the normal case.
 
+The `root/` directory does **not** participate in this fallback — it is additive
+only (files there are never overridden by, or fall back to, anything embedded).
+See [Root-Level Files](#root-level-files).
+
 ## Template Overrides
 
 Themes can override any of the 10 page templates. Place your overrides in
@@ -398,6 +427,21 @@ operations = ["sort"]
 
 See the **Public custom-field query** section of the API reference for the full parameter catalog and the numeric-safety rules.
 
+### Per-post scripts
+
+For post-specific scripts (e.g., Chart.js canvases), declare a `post_script` custom field (`textarea`) on the post type — declaration is the operator's opt-in:
+
+```toml
+[[post_type]]
+slug = "post"
+  [[post_type.fields]]
+  name = "Post Script"
+  slug = "post_script"
+  type = "textarea"
+```
+
+When declared and non-empty, its raw HTML is emitted verbatim at the end of the post via `{{.PostScripts}}` (excluded from the visible custom-fields section and stripped from AMP). Raw emission means the admin-authored value is **executable** — only declare it on types whose editors are fully trusted (like Ghost's per-post code injection). Prefer `<script src="/static/...">` references (same-origin, `script-src 'self'`-clean); inline `<script>…</script>` requires `'unsafe-inline'`. The embedded `post.html` already emits `{{.PostScripts}}`; custom themes add the same one line.
+
 ### Block contract
 
 Templates use Go's `html/template` with two `{{define}}` blocks:
@@ -441,7 +485,7 @@ the fields below.
 | `.Description` | `string` | Meta description |
 | `.OGTitle` | `string` | Open Graph title |
 | `.OGDesc` | `string` | Open Graph description |
-| `.OGImage` | `string` | Open Graph image URL (may be empty) |
+| `.OGImage` | `string` | Open Graph image URL (may be empty). Always absolutized against `SITE_URL`, so it is safe to drop into `og:image`/`twitter:image` verbatim — unlike body/card image URLs, which keep their storage-native (possibly root-relative) shape. |
 | `.NavigationItems` | `[]NavigationItem` | Nav items, each with `.Title`, `.URL`, `.IsActive` |
 | `.CurrentPath` | `string` | Current request path |
 | `.Lang` | `string` | Current language code (e.g. `"en"`, `"fr"`); **required** by `<html lang="…">` and `{{t}}` calls |
@@ -495,7 +539,7 @@ Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Render `
 | `.Slug` | `string` | URL slug |
 | `.Title` | `string` | Post title |
 | `.MetaDescription` | `string` | Short description |
-| `.ImageURL` | `string` | Cover image URL (may be empty) |
+| `.ImageURL` | `string` | Cover image URL (may be empty). Storage-native shape: root-relative (`/uploads/media/<file>`) with the default local driver, absolute with S3/MinIO — render as-is in `<img src>`; only SEO meta tags need absolutizing. |
 | `.ImageSrcset` | `string` | Responsive image `srcset` (may be empty) |
 | `.ImageSizes` | `string` | Responsive image `sizes` (may be empty) |
 | `.ImageVariants` | `map[string]string` | Map of thumbnail variant URLs keyed by configured suffix (e.g. `"_large"`, `"_medium"`, `"_thumb"`). Guard with `{{with (index .ImageVariants "_large")}}` — keys depend on `[[thumbnail]]` config. Populated when a media record is resolved; empty when no media. |
@@ -709,7 +753,8 @@ Recommended sequence for a new theme:
 1. **Pick a base.** Decide whether you are re-skinning (CSS only),
    rearranging the layout (`layout.html` only), or rebuilding page templates
    individually.
-2. **Create the directory.** `mkdir -p themes/mytheme/{static,templates}`.
+2. **Create the directory.** `mkdir -p themes/mytheme/{static,templates}` — add
+   `themes/mytheme/root` too when you need site-root files (e.g. a service worker).
 3. **Copy only what you need.** Start with `static/style.css` (copy from
    `references/default-style-reference.css`); copy more files from the
    embedded defaults only as your design requires.

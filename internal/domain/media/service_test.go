@@ -81,7 +81,7 @@ func TestService_Upload(t *testing.T) {
 				repo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 				repo.On("Create", mock.Anything, mock.Anything).Return(nil)
 				storage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
-				storage.On("GetURL", mock.Anything).Return("http://localhost:8080/uploads/media/test.webp")
+				storage.On("GetURL", mock.Anything).Return("/uploads/media/test.webp")
 			},
 		},
 		{
@@ -172,7 +172,7 @@ func TestService_GetByID(t *testing.T) {
 				mockMedia := &media.Media{
 					ID:     1,
 					UserID: 1,
-					URL:    "http://localhost:8080/uploads/media/test.webp",
+					URL:    "/uploads/media/test.webp",
 				}
 				repo.On("FindByID", mock.Anything, 1).Return(mockMedia, nil)
 			},
@@ -562,7 +562,7 @@ func TestService_Upload_RepositoryCreateError(t *testing.T) {
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(errors.New("database error"))
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
-	mockStorage.On("GetURL", mock.Anything).Return("http://localhost:8080/uploads/media/test.webp")
+	mockStorage.On("GetURL", mock.Anything).Return("/uploads/media/test.webp")
 	mockStorage.On("Delete", "/uploads/media/test.webp").Return(nil)
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
@@ -850,7 +850,7 @@ func TestService_Upload_AllSignatureTypes(t *testing.T) {
 			mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 			mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 			mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
-			mockStorage.On("GetURL", mock.Anything).Return("http://localhost:8080/uploads/media/test.webp")
+			mockStorage.On("GetURL", mock.Anything).Return("/uploads/media/test.webp")
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -1028,7 +1028,7 @@ func TestService_ForceUpload(t *testing.T) {
 		mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 		mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 		mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
-		mockStorage.On("GetURL", mock.Anything).Return("http://localhost:8080/uploads/media/test.webp")
+		mockStorage.On("GetURL", mock.Anything).Return("/uploads/media/test.webp")
 
 		svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -1064,7 +1064,7 @@ func TestService_ForceUpload(t *testing.T) {
 		mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound).Once()
 		mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 		mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
-		mockStorage.On("GetURL", mock.Anything).Return("http://localhost:8080/uploads/media/test.webp")
+		mockStorage.On("GetURL", mock.Anything).Return("/uploads/media/test.webp")
 
 		svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -1381,8 +1381,8 @@ func TestService_Upload_WithThumbnailService(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil).Once()
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test_thumb.webp", nil).Once()
-	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("http://localhost:8080/uploads/media/test.webp")
-	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("http://localhost:8080/uploads/media/test_thumb.webp")
+	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("/uploads/media/test.webp")
+	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("/uploads/media/test_thumb.webp")
 
 	svc := media.NewService(mockRepo, mockStorage, thumbSvc)
 
@@ -1400,7 +1400,7 @@ func TestService_Upload_WithThumbnailService(t *testing.T) {
 	require.NotNil(t, got.Variants)
 	require.Contains(t, got.Variants, "_thumb")
 	assert.Equal(t, "/uploads/media/test_thumb.webp", got.Variants["_thumb"].FilePath)
-	assert.Equal(t, "http://localhost:8080/uploads/media/test_thumb.webp", got.Variants["_thumb"].URL)
+	assert.Equal(t, "/uploads/media/test_thumb.webp", got.Variants["_thumb"].URL)
 	assert.Greater(t, got.Variants["_thumb"].Width, 0)
 	assert.Greater(t, got.Variants["_thumb"].Height, 0)
 
@@ -1422,8 +1422,8 @@ func TestService_Upload_VariantFilenamePattern(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil).Once()
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test_thumb.webp", nil).Once()
-	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("http://localhost:8080/uploads/media/test.webp")
-	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("http://localhost:8080/uploads/media/test_thumb.webp")
+	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("/uploads/media/test.webp")
+	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("/uploads/media/test_thumb.webp")
 
 	svc := media.NewService(mockRepo, mockStorage, thumbSvc)
 
@@ -1450,7 +1450,7 @@ func TestService_Upload_VariantsNilWhenThumbnailServiceNil(t *testing.T) {
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
-	mockStorage.On("GetURL", mock.Anything).Return("http://localhost:8080/uploads/media/test.webp")
+	mockStorage.On("GetURL", mock.Anything).Return("/uploads/media/test.webp")
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 
@@ -1486,8 +1486,8 @@ func TestService_ForceUpload_WithThumbnailService(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil).Once()
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test_thumb.webp", nil).Once()
-	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("http://localhost:8080/uploads/media/test.webp")
-	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("http://localhost:8080/uploads/media/test_thumb.webp")
+	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("/uploads/media/test.webp")
+	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("/uploads/media/test_thumb.webp")
 
 	svc := media.NewService(mockRepo, mockStorage, thumbSvc)
 
@@ -1566,8 +1566,8 @@ func TestService_Upload_VariantDimensionsCorrect(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil).Once()
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test_thumb.webp", nil).Once()
-	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("http://localhost:8080/uploads/media/test.webp")
-	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("http://localhost:8080/uploads/media/test_thumb.webp")
+	mockStorage.On("GetURL", "/uploads/media/test.webp").Return("/uploads/media/test.webp")
+	mockStorage.On("GetURL", "/uploads/media/test_thumb.webp").Return("/uploads/media/test_thumb.webp")
 
 	svc := media.NewService(mockRepo, mockStorage, thumbSvc)
 
@@ -1593,7 +1593,7 @@ func TestService_ForceUpload_VariantsNilWhenThumbnailServiceNil(t *testing.T) {
 	mockRepo.On("FindByHash", mock.Anything, mock.Anything).Return((*media.Media)(nil), media.ErrMediaNotFound)
 	mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 	mockStorage.On("Save", mock.Anything, mock.Anything).Return("/uploads/media/test.webp", nil)
-	mockStorage.On("GetURL", mock.Anything).Return("http://localhost:8080/uploads/media/test.webp")
+	mockStorage.On("GetURL", mock.Anything).Return("/uploads/media/test.webp")
 
 	svc := media.NewService(mockRepo, mockStorage, nil)
 

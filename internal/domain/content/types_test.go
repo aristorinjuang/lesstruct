@@ -313,6 +313,21 @@ func TestValidateSlug(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name:    "valid slug with dots",
+			slug:    "jquery.semantic-tabs",
+			wantErr: nil,
+		},
+		{
+			name:    "valid slug with multiple dots",
+			slug:    "v1.2.3",
+			wantErr: nil,
+		},
+		{
+			name:    "valid slug with dot between words",
+			slug:    "my.test",
+			wantErr: nil,
+		},
+		{
 			name:    "invalid empty slug",
 			slug:    "",
 			wantErr: contentdomain.ErrInvalidSlug,
@@ -345,6 +360,31 @@ func TestValidateSlug(t *testing.T) {
 		{
 			name:    "invalid slug with underscore",
 			slug:    "my_test_slug",
+			wantErr: contentdomain.ErrInvalidSlug,
+		},
+		{
+			name:    "invalid slug with leading dot",
+			slug:    ".my-test",
+			wantErr: contentdomain.ErrInvalidSlug,
+		},
+		{
+			name:    "invalid slug with trailing dot",
+			slug:    "my-test.",
+			wantErr: contentdomain.ErrInvalidSlug,
+		},
+		{
+			name:    "invalid slug with double dots",
+			slug:    "my..test",
+			wantErr: contentdomain.ErrInvalidSlug,
+		},
+		{
+			name:    "invalid single dot slug",
+			slug:    ".",
+			wantErr: contentdomain.ErrInvalidSlug,
+		},
+		{
+			name:    "invalid double dot slug",
+			slug:    "..",
 			wantErr: contentdomain.ErrInvalidSlug,
 		},
 	}

@@ -1012,7 +1012,7 @@ func TestContentRepository_GetPublishedByTag(t *testing.T) {
 			require.NoError(t, tt.setupDB(db))
 
 			repo := sqlite.NewContentRepository(db)
-			contents, err := repo.GetPublishedByTag(context.Background(), tt.tag, "", 0, 0, 10, 0)
+			contents, err := repo.GetPublishedByTag(context.Background(), tt.tag, nil, 0, 0, 10, 0)
 
 			require.NoError(t, err)
 			assert.Len(t, contents, tt.wantLen)
@@ -1040,7 +1040,7 @@ func TestContentRepository_GetPublishedByTag_NullTags(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := sqlite.NewContentRepository(db)
-	contents, err := repo.GetPublishedByTag(context.Background(), "golang", "", 0, 0, 10, 0)
+	contents, err := repo.GetPublishedByTag(context.Background(), "golang", []string{"en"}, 0, 0, 10, 0)
 
 	require.NoError(t, err)
 	assert.Len(t, contents, 1)
@@ -1604,7 +1604,7 @@ func TestContentRepository_FormatColumnRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := sqlite.NewContentRepository(db)
-		items, err := repo.GetPublishedByPostType(context.Background(), "post", "en", 0, 0, 10, 0)
+		items, err := repo.GetPublishedByPostType(context.Background(), "post", []string{"en"}, 0, 0, 10, 0)
 
 		require.NoError(t, err)
 		require.Len(t, items, 2)

@@ -86,6 +86,9 @@ func formatCustomFields(
 ) []tpl.FormattedField {
 	result := make([]tpl.FormattedField, 0, len(fields))
 	for _, f := range fields {
+		if f.Slug == customfield.PostScriptSlug {
+			continue
+		}
 		val, exists := values[f.Slug]
 		if !exists || isEmptyValue(val) {
 			continue
@@ -269,12 +272,12 @@ type ContentService interface {
 	GetPublished(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	GetPublishedBySlugAny(ctx context.Context, slug string) (*contentdomain.Content, error)
 	GetPublishedByID(ctx context.Context, id int) (*contentdomain.Content, error)
-	GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*contentdomain.Content, error)
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	GetPublishedPages(ctx context.Context) ([]*contentdomain.Content, error)
 	GetPublishedCustomPostTypes(ctx context.Context) ([]string, error)
-	GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
-	GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
 	GetPublishedTags(ctx context.Context) ([]string, error)
 	GetCommentsForContent(ctx context.Context, contentID int) ([]*contentdomain.Comment, error)
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
@@ -563,6 +566,13 @@ func (h *ContentPageHandler) WithPublicFieldRegistry(registry PublicFieldLookup)
 // receiver for chaining at construction time.
 func (h *ContentPageHandler) WithIFrameHosts(hosts ...string) *ContentPageHandler {
 	h.assembler.WithIFrameHosts(hosts...)
+	return h
+}
+
+// WithBaseURL sets the canonical site URL used to absolutize media URLs in
+// SEO meta tags. Returns the receiver for chaining at construction time.
+func (h *ContentPageHandler) WithBaseURL(baseURL string) *ContentPageHandler {
+	h.assembler.WithBaseURL(baseURL)
 	return h
 }
 

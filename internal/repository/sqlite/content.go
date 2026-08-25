@@ -843,7 +843,7 @@ func (r *ContentRepository) GetPublishedBySlugAny(ctx context.Context, slug stri
 	return content, nil
 }
 
-func (r *ContentRepository) GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*contentdomain.Content, error) {
+func (r *ContentRepository) GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*contentdomain.Content, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -868,10 +868,12 @@ func (r *ContentRepository) GetPublishedByAuthorUsername(ctx context.Context, us
 		WHERE u.username = ? AND c.status = ?
 	`
 	args := []any{username, contentdomain.StatusPublished}
-	if language != "" {
-		query += ` AND c.language = ?`
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
+		{SQL: "AND lang_sibling.user_id = c.user_id", Args: nil},
+	})
+	query += languageFilter
+	args = append(args, languageArgs...)
 	query += ` ORDER BY c.created_at DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 
@@ -944,7 +946,7 @@ func (r *ContentRepository) TranslationGroupExists(ctx context.Context, id int) 
 	return exists, nil
 }
 
-func (r *ContentRepository) GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
+func (r *ContentRepository) GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -971,10 +973,12 @@ func (r *ContentRepository) GetPublishedByTag(ctx context.Context, tag string, l
 		)
 	`
 	args := []any{contentdomain.StatusPublished, tag}
-	if language != "" {
-		query += ` AND c.language = ?`
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
+		{SQL: "AND EXISTS (SELECT 1 FROM json_each(lang_sibling.tags) WHERE LOWER(json_each.value) = LOWER(?))", Args: []any{tag}},
+	})
+	query += languageFilter
+	args = append(args, languageArgs...)
 	if year > 0 && month > 0 {
 		query += ` AND strftime('%Y', c.created_at) = ? AND strftime('%m', c.created_at) = ?`
 		args = append(args, fmt.Sprintf("%04d", year), fmt.Sprintf("%02d", month))
@@ -1229,7 +1233,7 @@ func (r *ContentRepository) GetPublishedCustomPostTypes(ctx context.Context) ([]
 	return postTypes, nil
 }
 
-func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
+func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -1254,10 +1258,12 @@ func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType
 		WHERE c.post_type = ? AND c.status = ?
 	`
 	args := []any{postType, contentdomain.StatusPublished}
-	if language != "" {
-		query += ` AND c.language = ?`
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
+		{SQL: "AND lang_sibling.post_type = ?", Args: []any{postType}},
+	})
+	query += languageFilter
+	args = append(args, languageArgs...)
 	if year > 0 && month > 0 {
 		query += ` AND strftime('%Y', c.created_at) = ? AND strftime('%m', c.created_at) = ?`
 		args = append(args, fmt.Sprintf("%04d", year), fmt.Sprintf("%02d", month))
@@ -1447,7 +1453,7 @@ func (r *ContentRepository) GetPublishedAuthor(ctx context.Context, username str
 	return &a, nil
 }
 
-func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error) {
+func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -1466,10 +1472,15 @@ func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType st
 		query += ` AND c.post_type = ?`
 		args = append(args, postType)
 	}
-	if language != "" {
-		query += ` AND c.language = ?`
-		args = append(args, language)
+	siblingConjuncts := []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
 	}
+	if postType != "" {
+		siblingConjuncts = append(siblingConjuncts, repository.SiblingConjunct{SQL: "AND lang_sibling.post_type = ?", Args: []any{postType}})
+	}
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, siblingConjuncts)
+	query += languageFilter
+	args = append(args, languageArgs...)
 	query += ` GROUP BY year, month ORDER BY year DESC, month DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, args...)

@@ -25,6 +25,7 @@ type fakeMediaService struct {
 	lastFilename   string
 	returnMedia    *mediadomain.Media
 	returnErr      error
+	urlByFilename  map[string]string // optional per-image URL override keyed by original filename
 }
 
 func (f *fakeMediaService) GenerateFromBytes(_ context.Context, b []byte, _ int, alt, filename string) (*mediadomain.Media, error) {
@@ -32,7 +33,11 @@ func (f *fakeMediaService) GenerateFromBytes(_ context.Context, b []byte, _ int,
 	f.lastBytes = b
 	f.lastAlt = alt
 	f.lastFilename = filename
-	return f.returnMedia, f.returnErr
+	media := f.returnMedia
+	if u, ok := f.urlByFilename[filename]; ok {
+		media = &mediadomain.Media{URL: u}
+	}
+	return media, f.returnErr
 }
 
 func TestMediaDownloader_Success(t *testing.T) {

@@ -805,7 +805,7 @@ func (r *ContentRepository) GetPublishedBySlugAny(
 func (r *ContentRepository) GetPublishedByAuthorUsername(
 	ctx context.Context,
 	username string,
-	language string,
+	languages []string,
 	limit int,
 	offset int,
 ) ([]*contentdomain.Content, error) {
@@ -829,10 +829,12 @@ func (r *ContentRepository) GetPublishedByAuthorUsername(
 		WHERE u.username = ? AND ci.status = 'published'
 	`
 	args := []any{username}
-	if language != "" {
-		query += ` AND ci.language = ?`
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("ci", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = 'published'", Args: nil},
+		{SQL: "AND lang_sibling.user_id = ci.user_id", Args: nil},
+	})
+	query += languageFilter
+	args = append(args, languageArgs...)
 	query += ` ORDER BY ci.created_at DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -1084,7 +1086,7 @@ func (r *ContentRepository) GetPublishedCustomPostTypes(
 func (r *ContentRepository) GetPublishedByPostType(
 	ctx context.Context,
 	postType string,
-	language string,
+	languages []string,
 	year int,
 	month int,
 	limit int,
@@ -1110,10 +1112,12 @@ func (r *ContentRepository) GetPublishedByPostType(
 		WHERE ci.post_type = ? AND ci.status = 'published'
 	`
 	args := []any{postType}
-	if language != "" {
-		query += ` AND ci.language = ?`
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("ci", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = 'published'", Args: nil},
+		{SQL: "AND lang_sibling.post_type = ?", Args: []any{postType}},
+	})
+	query += languageFilter
+	args = append(args, languageArgs...)
 	if year > 0 && month > 0 {
 		query += ` AND YEAR(ci.created_at) = ? AND MONTH(ci.created_at) = ?`
 		args = append(args, year, month)
@@ -1129,13 +1133,14 @@ func (r *ContentRepository) GetPublishedByPostType(
 	return scanContentRows(rows)
 }
 
-// GetPublishedByTag returns published content with a specific tag.
-// When language is non-empty, results are restricted to that language.
-// When year and month are both non-zero, results are restricted to that month.
+// GetPublishedByTag returns published content with a specific tag, filtered
+// by the priority-ordered languages slice (Hugo-style fallback; see
+// repository.LanguageFilter). When year and month are both non-zero, results
+// are restricted to that month.
 func (r *ContentRepository) GetPublishedByTag(
 	ctx context.Context,
 	tag string,
-	language string,
+	languages []string,
 	year int,
 	month int,
 	limit int,
@@ -1163,10 +1168,12 @@ func (r *ContentRepository) GetPublishedByTag(
 		WHERE JSON_CONTAINS(ci.tags, ?) AND ci.status = 'published'
 	`
 	args := []any{tagJSON}
-	if language != "" {
-		query += ` AND ci.language = ?`
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("ci", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = 'published'", Args: nil},
+		{SQL: "AND JSON_CONTAINS(lang_sibling.tags, ?)", Args: []any{tagJSON}},
+	})
+	query += languageFilter
+	args = append(args, languageArgs...)
 	if year > 0 && month > 0 {
 		query += ` AND YEAR(ci.created_at) = ? AND MONTH(ci.created_at) = ?`
 		args = append(args, year, month)
@@ -1343,7 +1350,7 @@ func (r *ContentRepository) GetPublishedAuthor(ctx context.Context, username str
 	return &a, nil
 }
 
-func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error) {
+func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error) {
 	query := `
 		SELECT YEAR(ci.created_at) AS year,
 		       MONTH(ci.created_at) AS month,
@@ -1356,10 +1363,15 @@ func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType st
 		query += ` AND ci.post_type = ?`
 		args = append(args, postType)
 	}
-	if language != "" {
-		query += ` AND ci.language = ?`
-		args = append(args, language)
+	siblingConjuncts := []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = 'published'", Args: nil},
 	}
+	if postType != "" {
+		siblingConjuncts = append(siblingConjuncts, repository.SiblingConjunct{SQL: "AND lang_sibling.post_type = ?", Args: []any{postType}})
+	}
+	languageFilter, languageArgs := repository.LanguageFilter("ci", "lang_sibling", languages, siblingConjuncts)
+	query += languageFilter
+	args = append(args, languageArgs...)
 	query += ` GROUP BY year, month ORDER BY year DESC, month DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, args...)

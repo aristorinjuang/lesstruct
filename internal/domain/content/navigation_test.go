@@ -72,12 +72,12 @@ func TestService_GetPublishedCustomPostTypes(t *testing.T) {
 func TestService_GetPublishedByPostType(t *testing.T) {
 	t.Run("returns content filtered by post type", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("GetPublishedByPostType", mock.Anything, "menu-item", "", 0, 0, 50, 0).Return([]*content.Content{
+		mockRepo.On("GetPublishedByPostType", mock.Anything, "menu-item", []string(nil), 0, 0, 50, 0).Return([]*content.Content{
 			{ID: 1, Title: "Croissant", PostType: "menu-item"},
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		items, err := service.GetPublishedByPostType(context.Background(), "menu-item", "", 0, 0, 50, 0)
+		items, err := service.GetPublishedByPostType(context.Background(), "menu-item", nil, 0, 0, 50, 0)
 
 		require.NoError(t, err)
 		require.Len(t, items, 1)
@@ -87,10 +87,10 @@ func TestService_GetPublishedByPostType(t *testing.T) {
 
 	t.Run("returns error when repository fails", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("GetPublishedByPostType", mock.Anything, "menu-item", "", 0, 0, 50, 0).Return(nil, errors.New("database error"))
+		mockRepo.On("GetPublishedByPostType", mock.Anything, "menu-item", []string(nil), 0, 0, 50, 0).Return(nil, errors.New("database error"))
 
 		service := content.NewService(mockRepo, nil, nil)
-		_, err := service.GetPublishedByPostType(context.Background(), "menu-item", "", 0, 0, 50, 0)
+		_, err := service.GetPublishedByPostType(context.Background(), "menu-item", nil, 0, 0, 50, 0)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get published content by post type")

@@ -21,6 +21,9 @@ func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 		"div", "span", "section", "article", "aside", "header", "footer", "nav", "main",
 		"h1", "h2", "h3", "h4", "h5", "h6",
 		"p", "br", "hr", "pre", "blockquote",
+		// Code elements: chroma/highlight output uses <code> inside <pre>,
+		// kbd/samp/var are the remaining HTML5 phrase elements.
+		"code", "kbd", "samp", "var",
 		"ul", "ol", "li", "dl", "dt", "dd",
 		"a", "img", "picture", "source", "figure", "figcaption",
 		"strong", "em", "b", "i", "u", "s", "small", "sub", "sup", "mark", "del", "ins",
@@ -35,6 +38,9 @@ func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 
 	// Global attributes.
 	p.AllowAttrs("id", "class", "style", "title", "lang", "dir", "role", "tabindex").Globally()
+	// aria-hidden appears on chroma line-number cells in externally produced
+	// highlight markup; it is a safe accessibility hint.
+	p.AllowAttrs("aria-hidden").Globally()
 	p.AllowDataAttributes()
 
 	// Allow safe URL schemes only (http, https, mailto).

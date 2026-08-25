@@ -30,7 +30,7 @@ var (
 	// ErrInvalidStatus is returned when status is not valid
 	ErrInvalidStatus = errors.New("status must be either 'draft' or 'published'")
 	// ErrInvalidSlug is returned when slug validation fails
-	ErrInvalidSlug = errors.New("slug must be between 1 and 200 characters and contain only lowercase letters, numbers, and hyphens")
+	ErrInvalidSlug = errors.New("slug must be between 1 and 200 characters and contain only lowercase letters, numbers, hyphens, and dots")
 	// ErrSlugAlreadyExists is returned when slug already exists
 	ErrSlugAlreadyExists = errors.New("slug already exists")
 	// ErrUnauthorized is returned when user doesn't have permission to access content
@@ -387,8 +387,11 @@ func ValidateSlug(slug string) error {
 	if slug == "" || utf8.RuneCountInString(slug) > 200 {
 		return ErrInvalidSlug
 	}
+	if strings.HasPrefix(slug, ".") || strings.HasSuffix(slug, ".") || strings.Contains(slug, "..") {
+		return ErrInvalidSlug
+	}
 	for _, r := range slug {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '.' {
 			return ErrInvalidSlug
 		}
 	}

@@ -918,3 +918,69 @@ textarea.form-control {
     grid-template-columns: 1fr;
   }
 }
+
+/* Server-rendered code blocks (chroma HTML emitted by the Hugo importer).
+   Palette mirrors the highlight.js github-dark theme used by the layout. */
+.highlight {
+  margin: var(--space-5) 0;
+}
+
+.highlight .chroma {
+  background: #0d1117;
+  color: #e6edf3;
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+}
+
+.highlight pre.chroma {
+  margin: 0;
+  padding: var(--space-4);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.highlight table.lntable {
+  width: 100%;
+  border-spacing: 0;
+  border-collapse: collapse;
+}
+
+.highlight td.lntd {
+  vertical-align: top;
+  padding: 0;
+}
+
+.highlight td.lntd:last-child {
+  width: 100%;
+}
+
+.highlight .lnt,
+.highlight .ln {
+  color: #6e7681;
+  white-space: pre;
+  user-select: none;
+}
+
+.highlight .x { color: #f85149; }
+.highlight .err { color: #f85149; }
+.highlight .k, .highlight .kc, .highlight .kd, .highlight .kn,
+.highlight .kp, .highlight .kr, .highlight .kt, .highlight .o,
+.highlight .ow { color: #ff7b72; }
+.highlight .s, .highlight .sa, .highlight .sb, .highlight .sc,
+.highlight .dl, .highlight .s2, .highlight .se, .highlight .sh,
+.highlight .si, .highlight .sx, .highlight .sr, .highlight .s1,
+.highlight .ss { color: #a5d6ff; }
+.highlight .m, .highlight .mb, .highlight .mf, .highlight .mh,
+.highlight .mi, .highlight .il, .highlight .mo { color: #79c0ff; }
+.highlight .na, .highlight .nb, .highlight .no, .highlight .nf,
+.highlight .fm, .highlight .bn { color: #79c0ff; }
+.highlight .nc, .highlight .ne, .highlight .nl, .highlight .nt,
+.highlight .nd, .highlight .ni, .highlight .nn, .highlight .nx,
+.highlight .py { color: #ffa657; }
+.highlight .c, .highlight .ch, .highlight .cm, .highlight .cp,
+.highlight .cpf, .highlight .c1, .highlight .cs,
+.highlight .sd { color: #8b949e; }
+.highlight .gd { color: #ffa198; background-color: #67060c; }
+.highlight .gi { color: #56d364; background-color: #0c5325; }
+.highlight .w { color: #8b949e; }

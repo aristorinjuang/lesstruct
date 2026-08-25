@@ -141,10 +141,10 @@ func TestExtractImageURL(t *testing.T) {
 
 func TestTruncateText(t *testing.T) {
 	tests := []struct {
-		name       string
-		text       string
-		maxLength  int
-		want       string
+		name      string
+		text      string
+		maxLength int
+		want      string
 	}{
 		{
 			name:      "text shorter than max",
@@ -259,6 +259,92 @@ func TestBuildURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := appseo.BuildURL(tt.baseURL, tt.path)
 			assert.Equal(t, tt.want, got, "BuildURL() mismatch")
+		})
+	}
+}
+
+func TestExtractImageURLFromHTML(t *testing.T) {
+	tests := []struct {
+		name        string
+		htmlContent string
+		want        string
+	}{
+		{
+			name:        "empty HTML",
+			htmlContent: "",
+			want:        "",
+		},
+		{
+			name:        "no image tag",
+			htmlContent: "<p>Hello world</p>",
+			want:        "",
+		},
+		{
+			name:        "img without src",
+			htmlContent: `<p><img alt="no source"></p>`,
+			want:        "",
+		},
+		{
+			name:        "root-relative quoted src",
+			htmlContent: `<p><img src="/uploads/media/photo.webp" alt="Photo"></p>`,
+			want:        "/uploads/media/photo.webp",
+		},
+		{
+			name:        "root-relative single-quoted src",
+			htmlContent: `<p><img src='/uploads/media/photo.webp' alt="Photo"></p>`,
+			want:        "/uploads/media/photo.webp",
+		},
+		{
+			name:        "absolute https src",
+			htmlContent: `<p><img src="https://cdn.example.com/photo.jpg" alt="Photo"></p>`,
+			want:        "https://cdn.example.com/photo.jpg",
+		},
+		{
+			name:        "absolute http src",
+			htmlContent: `<p><img src="http://cdn.example.com/photo.jpg" alt="Photo"></p>`,
+			want:        "http://cdn.example.com/photo.jpg",
+		},
+		{
+			name:        "unquoted root-relative src",
+			htmlContent: `<p><img src=/uploads/media/photo.webp alt="Photo"></p>`,
+			want:        "/uploads/media/photo.webp",
+		},
+		{
+			name:        "protocol-relative src rejected",
+			htmlContent: `<p><img src="//cdn.example.com/photo.jpg" alt="Photo"></p>`,
+			want:        "",
+		},
+		{
+			name:        "data URI rejected",
+			htmlContent: `<p><img src="data:image/png;base64,AAAA" alt="Photo"></p>`,
+			want:        "",
+		},
+		{
+			name:        "javascript URI rejected",
+			htmlContent: `<p><img src="javascript:alert(1)" alt="Photo"></p>`,
+			want:        "",
+		},
+		{
+			name:        "relative path without leading slash rejected",
+			htmlContent: `<p><img src="uploads/media/photo.webp" alt="Photo"></p>`,
+			want:        "",
+		},
+		{
+			name:        "first image wins",
+			htmlContent: `<p><img src="/uploads/media/first.webp" alt="First"><img src="/uploads/media/second.webp" alt="Second"></p>`,
+			want:        "/uploads/media/first.webp",
+		},
+		{
+			name:        "uppercase img and src attributes",
+			htmlContent: `<P><IMG SRC="/uploads/media/photo.webp" ALT="Photo"></P>`,
+			want:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := appseo.ExtractImageURLFromHTML(tt.htmlContent)
+			assert.Equal(t, tt.want, got, "ExtractImageURLFromHTML() mismatch")
 		})
 	}
 }

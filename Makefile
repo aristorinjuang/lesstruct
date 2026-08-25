@@ -12,8 +12,8 @@ CLI_LDFLAGS := -X $(MODULE)/cmd/lesstruct-cli/cmd.version=$(VERSION)
 MODERNIZE_VERSION := v0.21.1
 MODERNIZE_PACKAGES := $(shell go list ./... | grep -v '/web/')
 
-lint:
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
+lint: modernize
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 	golangci-lint run
 
 # Fails (exit non-zero) when the modernize analyzer finds old Go syntax.

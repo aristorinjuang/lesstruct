@@ -897,7 +897,7 @@ func (r *ContentRepository) GetPublishedBySlugAny(ctx context.Context, slug stri
 	return content, nil
 }
 
-func (r *ContentRepository) GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*contentdomain.Content, error) {
+func (r *ContentRepository) GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*contentdomain.Content, error) {
 
 	if limit <= 0 {
 		limit = 100
@@ -909,29 +909,26 @@ func (r *ContentRepository) GetPublishedByAuthorUsername(ctx context.Context, us
 		offset = 0
 	}
 
-	var rows *sql.Rows
-	var err error
-	if language != "" {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
-			       COALESCE(u.name, u.username) as author, u.username
-			FROM content_items c
-			LEFT JOIN users u ON c.user_id = u.id
-			WHERE u.username = $1 AND c.status = $2 AND c.language = $3
-			ORDER BY c.created_at DESC
-			LIMIT $4 OFFSET $5
-		`, username, contentdomain.StatusPublished, language, limit, offset)
-	} else {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
-			       COALESCE(u.name, u.username) as author, u.username
-			FROM content_items c
-			LEFT JOIN users u ON c.user_id = u.id
-			WHERE u.username = $1 AND c.status = $2
-			ORDER BY c.created_at DESC
-			LIMIT $3 OFFSET $4
-		`, username, contentdomain.StatusPublished, limit, offset)
-	}
+	query := `
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		       COALESCE(u.name, u.username) as author, u.username
+		FROM content_items c
+		LEFT JOIN users u ON c.user_id = u.id
+		WHERE u.username = $1 AND c.status = $2
+	`
+	args := []any{username, contentdomain.StatusPublished}
+	argN := 2
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
+		{SQL: "AND lang_sibling.user_id = c.user_id", Args: nil},
+	})
+	languageFilter, argN = repository.DollarPlaceholders(languageFilter, argN)
+	query += languageFilter
+	args = append(args, languageArgs...)
+	query += fmt.Sprintf(` ORDER BY c.created_at DESC LIMIT $%d OFFSET $%d`, argN+1, argN+2)
+	args = append(args, limit, offset)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return []*contentdomain.Content{}, nil
@@ -985,7 +982,7 @@ func (r *ContentRepository) TranslationGroupExists(ctx context.Context, id int) 
 	return exists, nil
 }
 
-func (r *ContentRepository) GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
+func (r *ContentRepository) GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
 
 	if limit <= 0 {
 		limit = 100
@@ -1008,11 +1005,13 @@ func (r *ContentRepository) GetPublishedByTag(ctx context.Context, tag string, l
 	`
 	args := []any{contentdomain.StatusPublished, tag}
 	argN := 2
-	if language != "" {
-		argN++
-		query += fmt.Sprintf(` AND c.language = $%d`, argN)
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
+		{SQL: "AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(lang_sibling.tags) AS sib_elem WHERE LOWER(sib_elem) = LOWER(?))", Args: []any{tag}},
+	})
+	languageFilter, argN = repository.DollarPlaceholders(languageFilter, argN)
+	query += languageFilter
+	args = append(args, languageArgs...)
 	if year > 0 && month > 0 {
 		argN++
 		query += fmt.Sprintf(` AND EXTRACT(YEAR FROM c.created_at)::int = $%d`, argN)
@@ -1205,7 +1204,7 @@ func (r *ContentRepository) GetPublishedAuthor(ctx context.Context, username str
 	return &a, nil
 }
 
-func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error) {
+func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error) {
 	query := `
 		SELECT EXTRACT(YEAR FROM c.created_at)::int AS year,
 		       EXTRACT(MONTH FROM c.created_at)::int AS month,
@@ -1220,11 +1219,16 @@ func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType st
 		query += fmt.Sprintf(` AND c.post_type = $%d`, argN)
 		args = append(args, postType)
 	}
-	if language != "" {
-		argN++
-		query += fmt.Sprintf(` AND c.language = $%d`, argN)
-		args = append(args, language)
+	siblingConjuncts := []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
 	}
+	if postType != "" {
+		siblingConjuncts = append(siblingConjuncts, repository.SiblingConjunct{SQL: "AND lang_sibling.post_type = ?", Args: []any{postType}})
+	}
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, siblingConjuncts)
+	languageFilter, _ = repository.DollarPlaceholders(languageFilter, argN)
+	query += languageFilter
+	args = append(args, languageArgs...)
 	query += ` GROUP BY year, month ORDER BY year DESC, month DESC`
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -1366,7 +1370,7 @@ func (r *ContentRepository) GetPublishedCustomPostTypes(ctx context.Context) ([]
 	return postTypes, nil
 }
 
-func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
+func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
 
 	if limit <= 0 {
 		limit = 100
@@ -1387,11 +1391,13 @@ func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType
 	`
 	args := []any{postType, contentdomain.StatusPublished}
 	argN := 2
-	if language != "" {
-		argN++
-		query += fmt.Sprintf(` AND c.language = $%d`, argN)
-		args = append(args, language)
-	}
+	languageFilter, languageArgs := repository.LanguageFilter("c", "lang_sibling", languages, []repository.SiblingConjunct{
+		{SQL: "AND lang_sibling.status = ?", Args: []any{contentdomain.StatusPublished}},
+		{SQL: "AND lang_sibling.post_type = ?", Args: []any{postType}},
+	})
+	languageFilter, argN = repository.DollarPlaceholders(languageFilter, argN)
+	query += languageFilter
+	args = append(args, languageArgs...)
 	if year > 0 && month > 0 {
 		argN++
 		query += fmt.Sprintf(` AND EXTRACT(YEAR FROM c.created_at)::int = $%d`, argN)

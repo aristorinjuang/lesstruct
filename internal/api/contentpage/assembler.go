@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"html/template"
 
@@ -31,6 +32,34 @@ type DataAssembler struct {
 	postsPerPage        int
 	publicFieldRegistry PublicFieldLookup
 	iframeHosts         []string
+	baseURL             string
+}
+
+// absoluteImageURL absolutizes a media URL for contexts that require it
+// (og:image, twitter:image, JSON-LD). Absolute inputs pass through unchanged,
+// so legacy rows and S3-hosted files are untouched; without a base URL the
+// value is returned as-is. An empty input stays empty — emitting the bare
+// site URL as og:image would both bypass the theme's default-image fallback
+// and point crawlers at a non-fetchable resource.
+func (a *DataAssembler) absoluteImageURL(imageURL string) string {
+	if imageURL == "" || a.baseURL == "" {
+		return imageURL
+	}
+	return seo.BuildURL(a.baseURL, imageURL)
+}
+
+func declaresPostScript(pt posttype.PostType) bool {
+	for _, f := range pt.Fields {
+		if f.Slug == customfield.PostScriptSlug {
+			return true
+		}
+	}
+	for _, f := range pt.SystemFields {
+		if f.Slug == customfield.PostScriptSlug {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *DataAssembler) resolvePostImage(imageURL string) (thumbURL, srcset, sizes string, variants map[string]string, originalURL string) {
@@ -78,6 +107,49 @@ func (a *DataAssembler) isPostTypeSlug(slug string) bool {
 	return err == nil
 }
 
+// preferredPages keeps one page per translation group for navigation,
+// preferring configured languages in config order — a page that only exists
+// in a secondary language still gets a nav slot instead of disappearing.
+// Pages written in unconfigured languages are always dropped, matching the
+// repository-level listing behaviour. Input order is preserved.
+func (a *DataAssembler) preferredPages(pages []*contentdomain.Content) []*contentdomain.Content {
+	if len(pages) == 0 {
+		return nil
+	}
+
+	rank := make(map[string]int, len(a.languages))
+	for i, lang := range a.languages {
+		rank[lang] = i
+	}
+
+	groupKey := func(page *contentdomain.Content) int {
+		if page.TranslationGroupID != nil {
+			return *page.TranslationGroupID
+		}
+		return page.ID
+	}
+
+	best := make(map[int]*contentdomain.Content, len(pages))
+	for _, page := range pages {
+		pageRank, ok := rank[page.Language]
+		if !ok {
+			continue
+		}
+		current, ok := best[groupKey(page)]
+		if !ok || pageRank < rank[current.Language] {
+			best[groupKey(page)] = page
+		}
+	}
+
+	chosen := make([]*contentdomain.Content, 0, len(best))
+	for _, page := range pages {
+		if best[groupKey(page)] == page {
+			chosen = append(chosen, page)
+		}
+	}
+	return chosen
+}
+
 func (a *DataAssembler) buildNavigationItems(ctx context.Context, currentPath string) []tpl.NavigationItem {
 	items := []tpl.NavigationItem{
 		{Title: "Home", URL: "/", IsActive: currentPath == "/"},
@@ -85,11 +157,7 @@ func (a *DataAssembler) buildNavigationItems(ctx context.Context, currentPath st
 
 	pages, err := a.contentService.GetPublishedPages(ctx)
 	if err == nil {
-		primaryLang := config.PrimaryLanguage(a.languages)
-		for _, page := range pages {
-			if page.Language != primaryLang {
-				continue
-			}
+		for _, page := range a.preferredPages(pages) {
 			items = append(items, tpl.NavigationItem{
 				Title:    page.Title,
 				URL:      "/" + page.Slug,
@@ -168,7 +236,7 @@ func (a *DataAssembler) buildLanguageLinks(ctx context.Context, content *content
 	return links
 }
 
-func (a *DataAssembler) buildHomeSections(ctx context.Context, primaryLang string) []tpl.HomeSection {
+func (a *DataAssembler) buildHomeSections(ctx context.Context) []tpl.HomeSection {
 	if len(a.homepageSections) == 0 {
 		return nil
 	}
@@ -178,7 +246,7 @@ func (a *DataAssembler) buildHomeSections(ctx context.Context, primaryLang strin
 		if limit <= 0 {
 			limit = defaultHomeSectionLimit
 		}
-		contents, err := a.contentService.GetPublishedByPostType(ctx, hs.PostType, primaryLang, 0, 0, limit, hs.Offset)
+		contents, err := a.contentService.GetPublishedByPostType(ctx, hs.PostType, a.languages, 0, 0, limit, hs.Offset)
 		if err != nil {
 			log.Printf("failed to get homepage section %q: %v", hs.PostType, err)
 			continue
@@ -320,6 +388,15 @@ func (a *DataAssembler) WithIFrameHosts(hosts ...string) *DataAssembler {
 	return a
 }
 
+// WithBaseURL sets the site's canonical base URL (SITE_URL), used only to
+// absolutize media URLs in SEO contexts (og:image/twitter:image). Body images,
+// cards and srcsets intentionally keep storage-native URLs — relative for the
+// local driver, absolute for S3/MinIO.
+func (a *DataAssembler) WithBaseURL(baseURL string) *DataAssembler {
+	a.baseURL = strings.TrimRight(baseURL, "/")
+	return a
+}
+
 func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (tpl.ContentData, error) {
 	content, err := a.contentService.GetPublishedBySlugAny(ctx, slug)
 	if err != nil {
@@ -364,12 +441,20 @@ func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (tpl.
 	navItems := a.buildNavigationItems(ctx, currentPath)
 
 	var formattedFields []tpl.FormattedField
+	var postScripts template.HTML
 	if a.postTypeResolver != nil && content.PostType != "" {
 		if pt, ptErr := a.postTypeResolver.GetBySlug(content.PostType); ptErr == nil {
 			if content.CustomFields != nil {
 				formattedFields = formatCustomFields(pt.Fields, content.CustomFields, lang)
 				formattedFields = append(formattedFields,
 					formatCustomFields(pt.SystemFields, content.CustomFields, lang)...)
+				if declaresPostScript(pt) {
+					if raw, ok := content.CustomFields[customfield.PostScriptSlug]; ok {
+						if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
+							postScripts = template.HTML(s)
+						}
+					}
+				}
 			}
 		}
 	}
@@ -414,7 +499,7 @@ func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (tpl.
 			PageTitle:       fmt.Sprintf("%s - %s", content.Title, a.siteConfig.Name),
 			OGTitle:         ogTitle,
 			OGDesc:          ogDesc,
-			OGImage:         featuredImage,
+			OGImage:         a.absoluteImageURL(featuredImage),
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            lang,
@@ -434,6 +519,7 @@ func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (tpl.
 		Related:               relatedItems,
 		Comments:              commentItems,
 		PostType:              content.PostType,
+		PostScripts:           postScripts,
 	}, nil
 }
 
@@ -442,7 +528,7 @@ func (a *DataAssembler) BuildHomeData(ctx context.Context, page, year, month int
 	perPage := a.PostsPerPage()
 	offset := (page - 1) * perPage
 
-	contents, err := a.contentService.GetPublishedByPostType(ctx, "post", primaryLang, year, month, perPage+1, offset)
+	contents, err := a.contentService.GetPublishedByPostType(ctx, "post", a.languages, year, month, perPage+1, offset)
 	if err != nil {
 		return tpl.IndexData{}, err
 	}
@@ -463,7 +549,7 @@ func (a *DataAssembler) BuildHomeData(ctx context.Context, page, year, month int
 		tags = nil
 	}
 
-	sections := a.buildHomeSections(ctx, primaryLang)
+	sections := a.buildHomeSections(ctx)
 
 	currentPath := "/"
 	navItems := a.buildNavigationItems(ctx, currentPath)
@@ -472,7 +558,7 @@ func (a *DataAssembler) BuildHomeData(ctx context.Context, page, year, month int
 		LayoutData: tpl.LayoutData{
 			Title:           a.siteConfig.Name,
 			PageTitle:       a.siteConfig.Name,
-			OGImage:         ogImage,
+			OGImage:         a.absoluteImageURL(ogImage),
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
@@ -490,7 +576,7 @@ func (a *DataAssembler) BuildIndexData(ctx context.Context, postTypeSlug string,
 	perPage := a.PostsPerPage()
 	offset := (page - 1) * perPage
 
-	contents, err := a.contentService.GetPublishedByPostType(ctx, postTypeSlug, primaryLang, year, month, perPage+1, offset)
+	contents, err := a.contentService.GetPublishedByPostType(ctx, postTypeSlug, a.languages, year, month, perPage+1, offset)
 	if err != nil {
 		return tpl.IndexData{}, err
 	}
@@ -524,7 +610,7 @@ func (a *DataAssembler) BuildIndexData(ctx context.Context, postTypeSlug string,
 			PageTitle:       fmt.Sprintf("%s - %s", pageTitle, a.siteConfig.Name),
 			Description:     fmt.Sprintf("Browse %s.", pageTitle),
 			OGDesc:          fmt.Sprintf("Browse %s.", pageTitle),
-			OGImage:         ogImage,
+			OGImage:         a.absoluteImageURL(ogImage),
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
@@ -545,7 +631,7 @@ func (a *DataAssembler) BuildAuthorData(ctx context.Context, username string, pa
 	perPage := a.PostsPerPage()
 	offset := (page - 1) * perPage
 
-	contents, err := a.contentService.GetPublishedByAuthorUsername(ctx, username, primaryLang, perPage+1, offset)
+	contents, err := a.contentService.GetPublishedByAuthorUsername(ctx, username, a.languages, perPage+1, offset)
 	if err != nil {
 		return tpl.AuthorData{}, err
 	}
@@ -600,7 +686,7 @@ func (a *DataAssembler) BuildAuthorData(ctx context.Context, username string, pa
 			PageTitle:       fmt.Sprintf("%s - %s", authorName, a.siteConfig.Name),
 			Description:     fmt.Sprintf("Posts by %s.", authorName),
 			OGDesc:          fmt.Sprintf("Posts by %s.", authorName),
-			OGImage:         ogImage,
+			OGImage:         a.absoluteImageURL(ogImage),
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
@@ -624,7 +710,7 @@ func (a *DataAssembler) BuildTagData(ctx context.Context, tag string, page, year
 	perPage := a.PostsPerPage()
 	offset := (page - 1) * perPage
 
-	contents, err := a.contentService.GetPublishedByTag(ctx, tag, primaryLang, year, month, perPage+1, offset)
+	contents, err := a.contentService.GetPublishedByTag(ctx, tag, a.languages, year, month, perPage+1, offset)
 	if err != nil {
 		return tpl.TagData{}, err
 	}
@@ -648,7 +734,7 @@ func (a *DataAssembler) BuildTagData(ctx context.Context, tag string, page, year
 			PageTitle:       fmt.Sprintf("%s - %s", tag, a.siteConfig.Name),
 			Description:     fmt.Sprintf("Posts tagged %q.", tag),
 			OGDesc:          fmt.Sprintf("Posts tagged %q.", tag),
-			OGImage:         ogImage,
+			OGImage:         a.absoluteImageURL(ogImage),
 			NavigationItems: navItems,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,

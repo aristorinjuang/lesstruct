@@ -39,7 +39,7 @@ func TestLocalStorage_Save(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage := appstorage.NewLocalStorage(tt.baseDir, "localhost", 8080, "/uploads/media/")
+			storage := appstorage.NewLocalStorage(tt.baseDir, "/uploads/media/")
 
 			reader := bytes.NewReader(tt.content)
 			filePath, err := storage.Save(tt.filename, reader)
@@ -62,7 +62,7 @@ func TestLocalStorage_Save(t *testing.T) {
 func TestLocalStorage_Save_MkdirAllError(t *testing.T) {
 	// Use a path that cannot be created as a directory
 	invalidDir := "/dev/null/invalid/path/that/cannot/be/created"
-	storage := appstorage.NewLocalStorage(invalidDir, "localhost", 8080, "/uploads/media/")
+	storage := appstorage.NewLocalStorage(invalidDir, "/uploads/media/")
 
 	reader := bytes.NewReader([]byte("test content"))
 	_, err := storage.Save("test.txt", reader)
@@ -78,7 +78,7 @@ func TestLocalStorage_Save_CreateFileError(t *testing.T) {
 	err := os.Mkdir(readOnlyDir, 0500) // Read and execute only, no write
 	require.NoError(t, err)
 
-	storage := appstorage.NewLocalStorage(readOnlyDir, "localhost", 8080, "/uploads/media/")
+	storage := appstorage.NewLocalStorage(readOnlyDir, "/uploads/media/")
 
 	reader := bytes.NewReader([]byte("test content"))
 	_, err = storage.Save("test.txt", reader)
@@ -94,7 +94,7 @@ func TestLocalStorage_Save_CreateFileError(t *testing.T) {
 
 func TestLocalStorage_Save_CopyError(t *testing.T) {
 	tmpDir := t.TempDir()
-	storage := appstorage.NewLocalStorage(tmpDir, "localhost", 8080, "/uploads/media/")
+	storage := appstorage.NewLocalStorage(tmpDir, "/uploads/media/")
 
 	reader := &storageErrorReader{}
 	_, err := storage.Save("test.txt", reader)
@@ -137,7 +137,7 @@ func TestLocalStorage_Delete_AbsolutePath(t *testing.T) {
 			require.NoError(t, err)
 
 			baseDir := filepath.Dir(filePath)
-			storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/media/")
+			storage := appstorage.NewLocalStorage(baseDir, "/uploads/media/")
 
 			err = storage.Delete(filePath)
 			if tt.wantErr {
@@ -157,7 +157,7 @@ func TestLocalStorage_Delete_RelativePath(t *testing.T) {
 	err := os.WriteFile(filepath.Join(tmpDir, "user_123.webp"), []byte("fake data"), 0644)
 	require.NoError(t, err)
 
-	storage := appstorage.NewLocalStorage(tmpDir, "localhost", 8080, "/uploads/profile_pictures/")
+	storage := appstorage.NewLocalStorage(tmpDir, "/uploads/profile_pictures/")
 
 	err = storage.Delete("user_123.webp")
 	assert.NoError(t, err, "LocalStorage.Delete() should resolve relative paths against baseDir")
@@ -172,7 +172,7 @@ func TestLocalStorage_Delete_ReadOnlyFile(t *testing.T) {
 	err := os.WriteFile(filePath, []byte("test"), 0444) // Read-only file
 	require.NoError(t, err)
 
-	storage := appstorage.NewLocalStorage(tmpDir, "localhost", 8080, "/uploads/media/")
+	storage := appstorage.NewLocalStorage(tmpDir, "/uploads/media/")
 
 	// Deleting a read-only file should succeed (we have write permission on directory)
 	err = storage.Delete(filePath)
@@ -186,7 +186,7 @@ func TestLocalStorage_Delete_DirectoryInsteadOfFile(t *testing.T) {
 	err := os.Mkdir(dirPath, 0755)
 	require.NoError(t, err)
 
-	storage := appstorage.NewLocalStorage(tmpDir, "localhost", 8080, "/uploads/media/")
+	storage := appstorage.NewLocalStorage(tmpDir, "/uploads/media/")
 
 	// Attempting to delete a directory instead of a file
 	// On most systems this will fail with an error other than IsNotExist
@@ -218,7 +218,7 @@ func TestLocalStorage_Delete_FileInNonWritableDirectory(t *testing.T) {
 	err = os.Chmod(subDir, 0500) // read+execute only
 	require.NoError(t, err)
 
-	storage := appstorage.NewLocalStorage(tmpDir, "localhost", 8080, "/uploads/media/")
+	storage := appstorage.NewLocalStorage(tmpDir, "/uploads/media/")
 
 	// Try to delete the file - this might fail with a permission error
 	err = storage.Delete(filePath)
@@ -237,41 +237,33 @@ func TestLocalStorage_Delete_FileInNonWritableDirectory(t *testing.T) {
 func TestLocalStorage_GetURL(t *testing.T) {
 	tests := []struct {
 		name          string
-		host          string
-		port          int
 		urlPathPrefix string
 		filePath      string
 		want          string
 	}{
 		{
-			name:          "media url with default port",
-			host:          "localhost",
-			port:          8080,
+			name:          "media url is relative",
 			urlPathPrefix: "/uploads/media/",
 			filePath:      "/uploads/media/test-file.jpg",
-			want:          "http://localhost:8080/uploads/media/test-file.jpg",
+			want:          "/uploads/media/test-file.jpg",
 		},
 		{
-			name:          "media url extracts filename from path",
-			host:          "localhost",
-			port:          8080,
+			name:          "media url extracts filename from nested path",
 			urlPathPrefix: "/uploads/media/",
 			filePath:      "/uploads/media/subdir/nested-file.gif",
-			want:          "http://localhost:8080/uploads/media/nested-file.gif",
+			want:          "/uploads/media/nested-file.gif",
 		},
 		{
 			name:          "profile picture url with relative filename",
-			host:          "example.com",
-			port:          3000,
 			urlPathPrefix: "/uploads/profile_pictures/",
 			filePath:      "user_123.webp",
-			want:          "http://example.com:3000/uploads/profile_pictures/user_123.webp",
+			want:          "/uploads/profile_pictures/user_123.webp",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage := appstorage.NewLocalStorage("/tmp", tt.host, tt.port, tt.urlPathPrefix)
+			storage := appstorage.NewLocalStorage("/tmp", tt.urlPathPrefix)
 
 			got := storage.GetURL(tt.filePath)
 
@@ -284,43 +276,25 @@ func TestNewLocalStorage(t *testing.T) {
 	tests := []struct {
 		name    string
 		baseDir string
-		host    string
-		port    int
 		prefix  string
 	}{
 		{
-			name:    "creates storage with default values",
+			name:    "creates storage for media uploads",
 			baseDir: "/uploads/media",
-			host:    "localhost",
-			port:    8080,
 			prefix:  "/uploads/media/",
 		},
 		{
-			name:    "creates storage with custom values",
+			name:    "creates storage for profile pictures",
 			baseDir: "/var/storage",
-			host:    "example.com",
-			port:    3000,
 			prefix:  "/uploads/profile_pictures/",
-		},
-		{
-			name:    "zero host resolves to localhost for URL building",
-			baseDir: "/uploads/media",
-			host:    "0.0.0.0",
-			port:    8080,
-			prefix:  "/uploads/media/",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage := appstorage.NewLocalStorage(tt.baseDir, tt.host, tt.port, tt.prefix)
+			storage := appstorage.NewLocalStorage(tt.baseDir, tt.prefix)
 
 			assert.NotNil(t, storage)
-
-			if tt.host == "0.0.0.0" {
-				got := storage.GetURL("file.webp")
-				assert.Equal(t, "http://localhost:8080"+tt.prefix+"file.webp", got)
-			}
 		})
 	}
 }

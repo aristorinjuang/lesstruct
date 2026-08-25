@@ -688,8 +688,8 @@ func (_c *MockContentServiceInterface_GetPublished_Call) RunAndReturn(run func(c
 }
 
 // GetPublishedArchive provides a mock function for the type MockContentServiceInterface
-func (_mock *MockContentServiceInterface) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*content.ArchiveMonth, error) {
-	ret := _mock.Called(ctx, postType, language)
+func (_mock *MockContentServiceInterface) GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*content.ArchiveMonth, error) {
+	ret := _mock.Called(ctx, postType, languages)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedArchive")
@@ -697,18 +697,18 @@ func (_mock *MockContentServiceInterface) GetPublishedArchive(ctx context.Contex
 
 	var r0 []*content.ArchiveMonth
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) ([]*content.ArchiveMonth, error)); ok {
-		return returnFunc(ctx, postType, language)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) ([]*content.ArchiveMonth, error)); ok {
+		return returnFunc(ctx, postType, languages)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) []*content.ArchiveMonth); ok {
-		r0 = returnFunc(ctx, postType, language)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string) []*content.ArchiveMonth); ok {
+		r0 = returnFunc(ctx, postType, languages)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.ArchiveMonth)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
-		r1 = returnFunc(ctx, postType, language)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string) error); ok {
+		r1 = returnFunc(ctx, postType, languages)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -723,12 +723,12 @@ type MockContentServiceInterface_GetPublishedArchive_Call struct {
 // GetPublishedArchive is a helper method to define mock.On call
 //   - ctx context.Context
 //   - postType string
-//   - language string
-func (_e *MockContentServiceInterface_Expecter) GetPublishedArchive(ctx any, postType any, language any) *MockContentServiceInterface_GetPublishedArchive_Call {
-	return &MockContentServiceInterface_GetPublishedArchive_Call{Call: _e.mock.On("GetPublishedArchive", ctx, postType, language)}
+//   - languages []string
+func (_e *MockContentServiceInterface_Expecter) GetPublishedArchive(ctx any, postType any, languages any) *MockContentServiceInterface_GetPublishedArchive_Call {
+	return &MockContentServiceInterface_GetPublishedArchive_Call{Call: _e.mock.On("GetPublishedArchive", ctx, postType, languages)}
 }
 
-func (_c *MockContentServiceInterface_GetPublishedArchive_Call) Run(run func(ctx context.Context, postType string, language string)) *MockContentServiceInterface_GetPublishedArchive_Call {
+func (_c *MockContentServiceInterface_GetPublishedArchive_Call) Run(run func(ctx context.Context, postType string, languages []string)) *MockContentServiceInterface_GetPublishedArchive_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -738,9 +738,9 @@ func (_c *MockContentServiceInterface_GetPublishedArchive_Call) Run(run func(ctx
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 []string
 		if args[2] != nil {
-			arg2 = args[2].(string)
+			arg2 = args[2].([]string)
 		}
 		run(
 			arg0,
@@ -756,7 +756,7 @@ func (_c *MockContentServiceInterface_GetPublishedArchive_Call) Return(archiveMo
 	return _c
 }
 
-func (_c *MockContentServiceInterface_GetPublishedArchive_Call) RunAndReturn(run func(ctx context.Context, postType string, language string) ([]*content.ArchiveMonth, error)) *MockContentServiceInterface_GetPublishedArchive_Call {
+func (_c *MockContentServiceInterface_GetPublishedArchive_Call) RunAndReturn(run func(ctx context.Context, postType string, languages []string) ([]*content.ArchiveMonth, error)) *MockContentServiceInterface_GetPublishedArchive_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -898,8 +898,8 @@ func (_c *MockContentServiceInterface_GetPublishedAuthors_Call) RunAndReturn(run
 }
 
 // GetPublishedByAuthorUsername provides a mock function for the type MockContentServiceInterface
-func (_mock *MockContentServiceInterface) GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, username, language, limit, offset)
+func (_mock *MockContentServiceInterface) GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, username, languages, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedByAuthorUsername")
@@ -907,18 +907,18 @@ func (_mock *MockContentServiceInterface) GetPublishedByAuthorUsername(ctx conte
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, username, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, username, languages, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, username, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, username, languages, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int) error); ok {
-		r1 = returnFunc(ctx, username, language, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, int, int) error); ok {
+		r1 = returnFunc(ctx, username, languages, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -933,14 +933,14 @@ type MockContentServiceInterface_GetPublishedByAuthorUsername_Call struct {
 // GetPublishedByAuthorUsername is a helper method to define mock.On call
 //   - ctx context.Context
 //   - username string
-//   - language string
+//   - languages []string
 //   - limit int
 //   - offset int
-func (_e *MockContentServiceInterface_Expecter) GetPublishedByAuthorUsername(ctx any, username any, language any, limit any, offset any) *MockContentServiceInterface_GetPublishedByAuthorUsername_Call {
-	return &MockContentServiceInterface_GetPublishedByAuthorUsername_Call{Call: _e.mock.On("GetPublishedByAuthorUsername", ctx, username, language, limit, offset)}
+func (_e *MockContentServiceInterface_Expecter) GetPublishedByAuthorUsername(ctx any, username any, languages any, limit any, offset any) *MockContentServiceInterface_GetPublishedByAuthorUsername_Call {
+	return &MockContentServiceInterface_GetPublishedByAuthorUsername_Call{Call: _e.mock.On("GetPublishedByAuthorUsername", ctx, username, languages, limit, offset)}
 }
 
-func (_c *MockContentServiceInterface_GetPublishedByAuthorUsername_Call) Run(run func(ctx context.Context, username string, language string, limit int, offset int)) *MockContentServiceInterface_GetPublishedByAuthorUsername_Call {
+func (_c *MockContentServiceInterface_GetPublishedByAuthorUsername_Call) Run(run func(ctx context.Context, username string, languages []string, limit int, offset int)) *MockContentServiceInterface_GetPublishedByAuthorUsername_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -950,9 +950,9 @@ func (_c *MockContentServiceInterface_GetPublishedByAuthorUsername_Call) Run(run
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 []string
 		if args[2] != nil {
-			arg2 = args[2].(string)
+			arg2 = args[2].([]string)
 		}
 		var arg3 int
 		if args[3] != nil {
@@ -978,14 +978,14 @@ func (_c *MockContentServiceInterface_GetPublishedByAuthorUsername_Call) Return(
 	return _c
 }
 
-func (_c *MockContentServiceInterface_GetPublishedByAuthorUsername_Call) RunAndReturn(run func(ctx context.Context, username string, language string, limit int, offset int) ([]*content.Content, error)) *MockContentServiceInterface_GetPublishedByAuthorUsername_Call {
+func (_c *MockContentServiceInterface_GetPublishedByAuthorUsername_Call) RunAndReturn(run func(ctx context.Context, username string, languages []string, limit int, offset int) ([]*content.Content, error)) *MockContentServiceInterface_GetPublishedByAuthorUsername_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetPublishedByPostType provides a mock function for the type MockContentServiceInterface
-func (_mock *MockContentServiceInterface) GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, postType, language, year, month, limit, offset)
+func (_mock *MockContentServiceInterface) GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, postType, languages, year, month, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedByPostType")
@@ -993,18 +993,18 @@ func (_mock *MockContentServiceInterface) GetPublishedByPostType(ctx context.Con
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, postType, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, postType, languages, year, month, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, postType, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, postType, languages, year, month, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int, int, int) error); ok {
-		r1 = returnFunc(ctx, postType, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, int, int, int, int) error); ok {
+		r1 = returnFunc(ctx, postType, languages, year, month, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1019,16 +1019,16 @@ type MockContentServiceInterface_GetPublishedByPostType_Call struct {
 // GetPublishedByPostType is a helper method to define mock.On call
 //   - ctx context.Context
 //   - postType string
-//   - language string
+//   - languages []string
 //   - year int
 //   - month int
 //   - limit int
 //   - offset int
-func (_e *MockContentServiceInterface_Expecter) GetPublishedByPostType(ctx any, postType any, language any, year any, month any, limit any, offset any) *MockContentServiceInterface_GetPublishedByPostType_Call {
-	return &MockContentServiceInterface_GetPublishedByPostType_Call{Call: _e.mock.On("GetPublishedByPostType", ctx, postType, language, year, month, limit, offset)}
+func (_e *MockContentServiceInterface_Expecter) GetPublishedByPostType(ctx any, postType any, languages any, year any, month any, limit any, offset any) *MockContentServiceInterface_GetPublishedByPostType_Call {
+	return &MockContentServiceInterface_GetPublishedByPostType_Call{Call: _e.mock.On("GetPublishedByPostType", ctx, postType, languages, year, month, limit, offset)}
 }
 
-func (_c *MockContentServiceInterface_GetPublishedByPostType_Call) Run(run func(ctx context.Context, postType string, language string, year int, month int, limit int, offset int)) *MockContentServiceInterface_GetPublishedByPostType_Call {
+func (_c *MockContentServiceInterface_GetPublishedByPostType_Call) Run(run func(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int)) *MockContentServiceInterface_GetPublishedByPostType_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1038,9 +1038,9 @@ func (_c *MockContentServiceInterface_GetPublishedByPostType_Call) Run(run func(
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 []string
 		if args[2] != nil {
-			arg2 = args[2].(string)
+			arg2 = args[2].([]string)
 		}
 		var arg3 int
 		if args[3] != nil {
@@ -1076,7 +1076,7 @@ func (_c *MockContentServiceInterface_GetPublishedByPostType_Call) Return(conten
 	return _c
 }
 
-func (_c *MockContentServiceInterface_GetPublishedByPostType_Call) RunAndReturn(run func(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockContentServiceInterface_GetPublishedByPostType_Call {
+func (_c *MockContentServiceInterface_GetPublishedByPostType_Call) RunAndReturn(run func(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockContentServiceInterface_GetPublishedByPostType_Call {
 	_c.Call.Return(run)
 	return _c
 }

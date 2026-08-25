@@ -1,8 +1,12 @@
 package wordpress_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -410,15 +414,12 @@ func TestImporter_AssignsPostsToCreators(t *testing.T) {
 	}
 }
 
-//go:fix inline
-func float64Ptr(v float64) *float64 { return new(v) }
-
 func TestImporter_CustomFields(t *testing.T) {
 	eventFields := []customfield.FieldSchema{
 		{Slug: "start", Type: customfield.FieldTypeDatetime, Required: true},
 		{Slug: "location", Type: customfield.FieldTypeText, Required: true},
 		{Slug: "type", Type: customfield.FieldTypeSelect, Required: true, Options: []string{"journalist", "community", "point"}},
-		{Slug: "point", Type: customfield.FieldTypeNumber, Required: true, Min: float64Ptr(1)},
+		{Slug: "point", Type: customfield.FieldTypeNumber, Required: true, Min: new(1.0)},
 		{Slug: "created_at", Type: customfield.FieldTypeDate},
 		{Slug: "image_pdf", Type: customfield.FieldTypeUrl},
 		{Slug: "link", Type: customfield.FieldTypeUrl},
@@ -751,6 +752,161 @@ func TestImporter_FeaturedImage(t *testing.T) {
 			assert.Equal(t, tt.wantImported, result.Imported)
 			require.Len(t, creator.created, tt.wantImported)
 			assert.Contains(t, creator.created[0].Content, tt.wantContentHas)
+		})
+	}
+}
+
+// testGradientPNG builds a w×h diagonal luma ramp as PNG bytes.
+func testGradientPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			v := uint8((x + y) * 255 / (w + h))
+			img.Set(x, y, color.RGBA{R: v, G: v, B: v, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	return buf.Bytes()
+}
+
+func testSplitPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			if x >= w/2 {
+				img.Set(x, y, color.White)
+			} else {
+				img.Set(x, y, color.Black)
+			}
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	return buf.Bytes()
+}
+
+func TestImporter_FeaturedVisualDuplicate(t *testing.T) {
+	// Real decodable PNGs: /photo-small.png is a smaller re-encode of the same
+	// picture as /featured.png (perceptually identical, different bytes);
+	// /other.png is an unrelated picture.
+	pngPhoto := testGradientPNG(t, 64, 48)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		switch r.URL.Path {
+		case "/photo-small.png":
+			_, _ = w.Write(testGradientPNG(t, 32, 24))
+		case "/other.png":
+			_, _ = w.Write(testSplitPNG(t, 64, 48))
+		default:
+			_, _ = w.Write(pngPhoto)
+		}
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name           string
+		bodyImgPath    string
+		thumbPath      string
+		wantContentHas []string
+		wantNoContent  []string
+		wantWarning    bool
+	}{
+		{
+			name:        "success - prepend skipped when cover visually duplicates a leading body image",
+			bodyImgPath: "/photo-small.png",
+			thumbPath:   "/featured.png",
+			wantContentHas: []string{
+				`"src":"http://localhost:8080/uploads/media/body-photo.webp"`,
+			},
+			wantNoContent: []string{
+				`"src":"http://localhost:8080/uploads/media/featured.webp"`,
+			},
+			wantWarning: true,
+		},
+		{
+			name:        "success - prepend skipped when attachment URL equals a leading body image",
+			bodyImgPath: "/featured.png",
+			thumbPath:   "/featured.png",
+			wantContentHas: []string{
+				`"src":"http://localhost:8080/uploads/media/featured.webp"`,
+			},
+			wantWarning: false,
+		},
+		{
+			name:        "success - cover prepended when body images differ",
+			bodyImgPath: "/other.png",
+			thumbPath:   "/featured.png",
+			wantContentHas: []string{
+				`"src":"http://localhost:8080/uploads/media/featured.webp"`,
+				`"src":"http://localhost:8080/uploads/media/other.webp"`,
+			},
+			wantWarning: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mediaSvc := &fakeMediaService{
+				returnMedia: &mediadomain.Media{URL: "http://localhost:8080/uploads/media/featured.webp"},
+				urlByFilename: map[string]string{
+					"photo-small.png": "http://localhost:8080/uploads/media/body-photo.webp",
+					"other.png":       "http://localhost:8080/uploads/media/other.webp",
+				},
+			}
+
+			xml := `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>T</title><wp:base_blog_url>http://x.local</wp:base_blog_url>
+<item>
+<title>Dup Post</title>
+<content:encoded><![CDATA[<!-- wp:image --><figure class="wp-block-image"><img src="` + server.URL + tt.bodyImgPath + `" alt="Body"/></figure><!-- /wp:image --><!-- wp:paragraph --><p>Hello</p><!-- /wp:paragraph -->]]></content:encoded>
+<wp:post_name>dup-post</wp:post_name>
+<wp:status>publish</wp:status>
+<wp:post_type>post</wp:post_type>
+<wp:postmeta>
+<wp:meta_key><![CDATA[_thumbnail_id]]></wp:meta_key>
+<wp:meta_value><![CDATA[100]]></wp:meta_value>
+</wp:postmeta>
+</item>
+<item>
+<title>Thumb</title>
+<content:encoded><![CDATA[]]></content:encoded>
+<wp:post_id>100</wp:post_id>
+<wp:post_name>thumb</wp:post_name>
+<wp:status>inherit</wp:status>
+<wp:post_type>attachment</wp:post_type>
+<wp:attachment_url><![CDATA[` + server.URL + tt.thumbPath + `]]></wp:attachment_url>
+</item>
+</channel>
+</rss>`
+
+			creator := &fakeContentCreator{failOn: -1}
+			importer := wordpress.NewImporter(
+				creator,
+				wordpress.NewMediaDownloader(server.Client(), mediaSvc),
+				&fakeUserResolver{},
+				nil,
+				"en",
+				nil,
+			)
+			result, err := importer.Import(context.Background(), strings.NewReader(xml), 1, wordpress.ImportOptions{}, nil)
+			require.NoError(t, err)
+			assert.Equal(t, 1, result.Imported)
+			require.Len(t, creator.created, 1)
+
+			content := creator.created[0].Content
+			for _, want := range tt.wantContentHas {
+				assert.Contains(t, content, want)
+			}
+			for _, absent := range tt.wantNoContent {
+				assert.NotContains(t, content, absent)
+			}
+			hasWarning := strings.Contains(strings.Join(result.Errors, "\n"), "prepend skipped")
+			assert.Equal(t, tt.wantWarning, hasWarning)
 		})
 	}
 }

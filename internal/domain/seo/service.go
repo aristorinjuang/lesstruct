@@ -2,6 +2,7 @@ package seo
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aristorinjuang/lesstruct/internal/seo"
 )
@@ -63,6 +64,10 @@ func (s *Service) Generate(input GenerateInput) (*GeneratedMetadata, error) {
 		imageURL = seo.ExtractImageURL(input.Content)
 	}
 
+	// Collapse internal whitespace (raw newlines from body extraction would
+	// otherwise end up inside HTML meta/og attributes).
+	plainText = strings.Join(strings.Fields(plainText), " ")
+
 	if input.FeaturedImage != "" {
 		imageURL = input.FeaturedImage
 	}
@@ -95,9 +100,11 @@ func (s *Service) Generate(input GenerateInput) (*GeneratedMetadata, error) {
 		return nil, fmt.Errorf("og title validation failed: %w", err)
 	}
 
+	// Fall back to the resolved meta description before deriving from body
+	// text (Hugo parity: og:description mirrors <meta name="description">).
 	ogDescription := input.OGDescription
 	if ogDescription == "" {
-		ogDescription = seo.TruncateText(descriptionSource, 160)
+		ogDescription = metaDescription
 	}
 
 	if err := ValidateOGDescription(ogDescription); err != nil {

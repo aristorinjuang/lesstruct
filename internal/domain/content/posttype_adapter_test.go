@@ -97,7 +97,7 @@ func TestPostTypeAdapter_GetFieldsByPostType(t *testing.T) {
 					Slug:     "product",
 					Supports: []string{"title", "content"},
 					Fields: []customfield.FieldSchema{
-						{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: ptrF(0), Max: ptrF(10000)},
+						{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: new(0.0), Max: new(10000.0)},
 						{Name: "SKU", Slug: "sku", Type: customfield.FieldTypeText, MaxLength: &maxLen},
 					},
 				}

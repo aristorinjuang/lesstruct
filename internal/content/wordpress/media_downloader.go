@@ -1,6 +1,7 @@
 package wordpress
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -112,20 +113,33 @@ func isRetryableStatusCode(code int) bool {
 // MediaDownloader downloads images from a WordPress site and re-uploads them
 // through the media service (which converts to WebP, deduplicates by hash, and
 // generates thumbnails). Results are cached per URL so each image is fetched at
-// most once per import.
+// most once per import. A perceptual hash is computed from the downloaded
+// bytes so callers can detect visually identical images that content-hash
+// dedup cannot see.
 type MediaDownloader struct {
 	mu           sync.Mutex
 	httpClient   *http.Client
 	mediaService mediaService
-	cache        map[string]string // WordPress URL -> local media URL
+	cache        map[string]string  // WordPress URL -> local media URL
 	failed       map[string]struct{}
+	phashes      map[string]uint64 // WordPress URL -> perceptual hash of the image bytes
+}
+
+// PHash returns the perceptual hash recorded for the downloaded image URL and
+// whether one is known — hashes are only available for URLs that were
+// successfully downloaded through this downloader.
+func (d *MediaDownloader) PHash(imageURL string) (uint64, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	hash, ok := d.phashes[imageURL]
+	return hash, ok
 }
 
 func (d *MediaDownloader) download(ctx context.Context, imageURL string, userID int) (string, error) {
 	var lastErr error
 	backoff := initialBackoff
 
-	for attempt := 0; attempt <= maxRetries; attempt++ {
+	for attempt := range maxRetries + 1 {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
@@ -170,6 +184,12 @@ func (d *MediaDownloader) download(ctx context.Context, imageURL string, userID 
 
 		if !isImageContent(body) {
 			return "", fmt.Errorf("downloaded content from %q is not a supported image", imageURL)
+		}
+
+		if hash, hashErr := mediadomain.PerceptualHash(bytes.NewReader(body)); hashErr == nil {
+			d.mu.Lock()
+			d.phashes[imageURL] = hash
+			d.mu.Unlock()
 		}
 
 		media, err := d.mediaService.GenerateFromBytes(ctx, body, userID, altTextFromURL(imageURL), filenameFromURL(imageURL))
@@ -233,5 +253,6 @@ func NewMediaDownloader(httpClient *http.Client, mediaService mediaService) *Med
 		mediaService: mediaService,
 		cache:        make(map[string]string),
 		failed:       make(map[string]struct{}),
+		phashes:      make(map[string]uint64),
 	}
 }

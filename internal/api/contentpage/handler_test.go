@@ -88,7 +88,7 @@ func setupNavMocks(mockService *mocks.MockContentService) {
 
 func TestServeIndex(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -108,7 +108,7 @@ func TestServeIndex(t *testing.T) {
 
 func TestServeIndex_PostTypeScopedAtQueryLevel(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -125,7 +125,7 @@ func TestServeIndex_PostTypeScopedAtQueryLevel(t *testing.T) {
 	assert.Contains(t, body, "Hello World")
 	// serveIndex must request only the "post" type from the service (Tier 2.3),
 	// so non-post filtering happens at the query level rather than in Go.
-	mockService.AssertCalled(t, "GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0)
+	mockService.AssertCalled(t, "GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0)
 	mockService.AssertNotCalled(t, "GetPublished")
 	mockService.AssertExpectations(t)
 }
@@ -173,7 +173,7 @@ func TestServeContent_NotFound(t *testing.T) {
 func TestServeAuthor(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin User", PostType: "post", CreatedAt: time.Date(2026, 5, 12, 10, 30, 0, 0, time.UTC), Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -207,10 +207,10 @@ func TestServeAuthor_NotFound(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-func TestServeAuthor_FiltersByPrimaryLanguage(t *testing.T) {
+func TestServeAuthor_PassesLanguageFallbackChain(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en", "id"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", Author: "Admin", PostType: "post", Language: "en"},
 		{Slug: "second-post", Title: "Second Post", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
@@ -227,16 +227,16 @@ func TestServeAuthor_FiltersByPrimaryLanguage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, "Hello World")
 	assert.Contains(t, body, "Second Post")
-	// Language filtering now happens at the query level: the handler must pass
-	// the primary language ("en") to the service so non-primary content never
-	// reaches the template.
-	mockService.AssertCalled(t, "GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0)
+	// Language fallback now happens at the query level: the handler must pass
+	// the full configured language chain (priority-ordered) to the service so
+	// posts missing from the primary language still surface via a translation.
+	mockService.AssertCalled(t, "GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en", "id"}, 51, 0)
 	mockService.AssertExpectations(t)
 }
 
-func TestServeTag_FiltersByPrimaryLanguage(t *testing.T) {
+func TestServeTag_PassesLanguageFallbackChain(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByTag", mock.Anything, "news", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByTag", mock.Anything, "news", []string{"en", "id"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "en-news", Title: "EN News", PostType: "post", Language: "en"},
 		{Slug: "en-update", Title: "EN Update", PostType: "post", Language: "en"},
 	}, nil)
@@ -253,18 +253,18 @@ func TestServeTag_FiltersByPrimaryLanguage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, "EN News")
 	assert.Contains(t, body, "EN Update")
-	mockService.AssertCalled(t, "GetPublishedByTag", mock.Anything, "news", "en", 0, 0, 51, 0)
+	mockService.AssertCalled(t, "GetPublishedByTag", mock.Anything, "news", []string{"en", "id"}, 0, 0, 51, 0)
 	mockService.AssertExpectations(t)
 }
 
 func TestServeIndex_NavigationIncludesPages(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
-		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
+		{ID: 10, Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{
-		{Slug: "about", Title: "About", PostType: "page", Language: "en"},
-		{Slug: "contact", Title: "Contact", PostType: "page", Language: "en"},
+		{ID: 1, Slug: "about", Title: "About", PostType: "page", Language: "en"},
+		{ID: 2, Slug: "contact", Title: "Contact", PostType: "page", Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{}, nil)
 	mockService.On("GetPublishedTags", mock.Anything).Return([]string{}, nil).Maybe()
@@ -286,12 +286,17 @@ func TestServeIndex_NavigationIncludesPages(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-func TestServeIndex_NavigationExcludesSecondaryLanguage(t *testing.T) {
+func TestServeIndex_NavigationLanguageFallback(t *testing.T) {
+	idGroup := 1
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en", "id"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{
-		{Slug: "about", Title: "About", PostType: "page", Language: "en"},
-		{Slug: "tentang", Title: "Tentang", PostType: "page", Language: "id"},
+		// Translated pair: only the primary-language page becomes a nav item.
+		{ID: 1, Slug: "about", Title: "About", PostType: "page", Language: "en"},
+		{ID: 2, Slug: "tentang", Title: "Tentang", PostType: "page", Language: "id", TranslationGroupID: &idGroup},
+		// Standalone secondary-language page: falls back into the nav instead
+		// of disappearing.
+		{ID: 3, Slug: "karier", Title: "Karier", PostType: "page", Language: "id"},
 	}, nil)
 	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{}, nil)
 	mockService.On("GetPublishedTags", mock.Anything).Return([]string{}, nil).Maybe()
@@ -306,13 +311,18 @@ func TestServeIndex_NavigationExcludesSecondaryLanguage(t *testing.T) {
 	body := w.Body.String()
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, `href="/about"`)
+	assert.Contains(t, body, "About")
+	// The translated sibling must not produce a second nav item.
 	assert.NotContains(t, body, `href="/tentang"`)
+	// The untranslated secondary-language page still gets a nav slot.
+	assert.Contains(t, body, `href="/karier"`)
+	assert.Contains(t, body, "Karier")
 	mockService.AssertExpectations(t)
 }
 
 func TestServeIndex_NavigationIncludesCustomPostTypes(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{}, nil)
 	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{"menu-item", "team-member"}, nil)
 	mockService.On("GetPublishedTags", mock.Anything).Return([]string{}, nil).Maybe()
@@ -368,7 +378,7 @@ func TestServeIndex_NavigationActiveClass(t *testing.T) {
 
 func TestServePostTypeListing(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "croissant", Title: "Croissant", PostType: "menu-item", MetaDescription: "A pastry", Language: "en"},
 		{Slug: "eclair", Title: "Eclair", PostType: "menu-item", Language: "en"},
 	}, nil)
@@ -424,7 +434,7 @@ func TestServePostTypeListing_NotPostTypeSlug_FallsThroughToContent(t *testing.T
 func TestServeIndex_PostCardImage(t *testing.T) {
 	tiptapJSON := `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://example.com/photo.webp"}}]}`
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "photo-post", Title: "Photo Post", PostType: "post", Content: tiptapJSON, Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -447,7 +457,7 @@ func TestServeIndex_PostCardImage(t *testing.T) {
 func TestServeIndex_OGImageFromFirstPost(t *testing.T) {
 	tiptapJSON := `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://example.com/first.webp"}}]}`
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "first-post", Title: "First Post", PostType: "post", Content: tiptapJSON, Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -468,7 +478,7 @@ func TestServeIndex_OGImageFromFirstPost(t *testing.T) {
 
 func TestServeIndex_NoImage_GracefulEmptyState(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "text-post", Title: "Text Post", PostType: "post", Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`, Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -508,6 +518,99 @@ func TestServeContent_OGImageAndTwitterImage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, `<meta property="og:image" content="https://example.com/hero.webp">`)
 	assert.Contains(t, body, `<meta name="twitter:image" content="https://example.com/hero.webp">`)
+	mockService.AssertExpectations(t)
+}
+
+func TestServeContent_OGImageAbsoluteURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		src     string
+		wantOG  string
+	}{
+		{
+			name:    "relative local upload is absolutized",
+			baseURL: "https://example.org/",
+			src:     "/uploads/media/hero.webp",
+			wantOG:  "https://example.org/uploads/media/hero.webp",
+		},
+		{
+			name:    "absolute s3 url passes through unchanged",
+			baseURL: "https://example.org/",
+			src:     "https://bucket.s3.us-east-1.amazonaws.com/media/hero.webp",
+			wantOG:  "https://bucket.s3.us-east-1.amazonaws.com/media/hero.webp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tiptapJSON := fmt.Sprintf(`{"type":"doc","content":[{"type":"image","attrs":{"src":%q}},{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`, tt.src)
+			mockService := new(mocks.MockContentService)
+			mockService.On("GetPublishedBySlugAny", mock.Anything, "photo-article").Return(&contentdomain.Content{
+				Slug: "photo-article", Title: "Photo Article", Content: tiptapJSON,
+				Author: "Admin", Tags: []string{},
+			}, nil)
+			setupNavMocks(mockService)
+
+			handler := setupHandler(t, mockService).WithBaseURL(tt.baseURL)
+
+			req := httptest.NewRequest(http.MethodGet, "/photo-article", nil)
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			body := w.Body.String()
+			assert.Equal(t, http.StatusOK, w.Code)
+			assert.Contains(t, body, fmt.Sprintf(`<meta property="og:image" content="%s">`, tt.wantOG))
+			assert.Contains(t, body, fmt.Sprintf(`<meta name="twitter:image" content="%s">`, tt.wantOG))
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestServeContent_NoImage_NoBareDomainOGImage(t *testing.T) {
+	mockService := new(mocks.MockContentService)
+	mockService.On("GetPublishedBySlugAny", mock.Anything, "photo-article").Return(&contentdomain.Content{
+		Slug: "photo-article", Title: "Photo Article",
+		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`,
+		Author:  "Admin", Tags: []string{},
+	}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandler(t, mockService).WithBaseURL("https://example.org")
+
+	req := httptest.NewRequest(http.MethodGet, "/photo-article", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.NotContains(t, body, `og:image`)
+	assert.NotContains(t, body, `twitter:image`)
+	assert.NotContains(t, body, `content="https://example.org">`)
+	mockService.AssertExpectations(t)
+}
+
+func TestServeContent_RelativeImageStaysRelativeInBody(t *testing.T) {
+	tiptapJSON := `{"type":"doc","content":[{"type":"image","attrs":{"src":"/uploads/media/hero.webp"}},{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`
+	mockService := new(mocks.MockContentService)
+	mockService.On("GetPublishedBySlugAny", mock.Anything, "photo-article").Return(&contentdomain.Content{
+		Slug: "photo-article", Title: "Photo Article", Content: tiptapJSON,
+		Author: "Admin", Tags: []string{},
+	}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandler(t, mockService).WithBaseURL("https://example.org")
+
+	req := httptest.NewRequest(http.MethodGet, "/photo-article", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, `<img src="/uploads/media/hero.webp"`)
 	mockService.AssertExpectations(t)
 }
 
@@ -560,7 +663,7 @@ func TestServeAuthor_PostCardImage(t *testing.T) {
 	tiptapJSON := `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://example.com/author-photo.webp"}}]}`
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin User", PostType: "post", Content: tiptapJSON, Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -583,7 +686,7 @@ func TestServeAuthor_PostCardImage(t *testing.T) {
 
 func TestServeIndex_DateFormatting(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", CreatedAt: time.Date(2026, 5, 12, 10, 30, 0, 0, time.UTC), Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -628,7 +731,7 @@ func TestServeContent_DateFormatting(t *testing.T) {
 func TestServeAuthor_DateFormatting(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin User", PostType: "post", CreatedAt: time.Date(2026, 5, 12, 10, 30, 0, 0, time.UTC), Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -649,7 +752,7 @@ func TestServeAuthor_DateFormatting(t *testing.T) {
 
 func TestServePostTypeListing_DateFormatting(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "croissant", Title: "Croissant", PostType: "menu-item", CreatedAt: time.Date(2026, 5, 12, 10, 30, 0, 0, time.UTC), Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{}, nil)
@@ -673,9 +776,9 @@ func TestServePostTypeListing_DateFormatting(t *testing.T) {
 	mockResolver.AssertExpectations(t)
 }
 
-func TestServePostTypeListing_FiltersByPrimaryLanguage(t *testing.T) {
+func TestServePostTypeListing_PassesLanguageFallbackChain(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", []string{"en", "id"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "croissant", Title: "Croissant", PostType: "menu-item", Language: "en"},
 		{Slug: "eclair", Title: "Eclair", PostType: "menu-item", Language: "en"},
 	}, nil)
@@ -696,14 +799,14 @@ func TestServePostTypeListing_FiltersByPrimaryLanguage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, "Croissant")
 	assert.Contains(t, body, "Eclair")
-	mockService.AssertCalled(t, "GetPublishedByPostType", mock.Anything, "menu-item", "en", 0, 0, 51, 0)
+	mockService.AssertCalled(t, "GetPublishedByPostType", mock.Anything, "menu-item", []string{"en", "id"}, 0, 0, 51, 0)
 	mockService.AssertExpectations(t)
 	mockResolver.AssertExpectations(t)
 }
 
 func TestServeIndex_EmptyCreatedAt_NoPanic(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "no-date", Title: "No Date Post", PostType: "post", CreatedAt: time.Time{}, Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -721,7 +824,7 @@ func TestServeIndex_EmptyCreatedAt_NoPanic(t *testing.T) {
 
 func TestServeIndex_InvalidCreatedAt_PassThrough(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "bad-date", Title: "Bad Date Post", PostType: "post", CreatedAt: time.Time{}, Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -741,7 +844,7 @@ func TestServeIndex_InvalidCreatedAt_PassThrough(t *testing.T) {
 
 func TestServeIndex_PostTypeExposedOnCards(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -769,7 +872,7 @@ func TestServeIndex_PostItemCustomFieldsAvailableToThemes(t *testing.T) {
 	))
 
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{
 			Slug:         "hello-world",
 			Title:        "Hello World",
@@ -803,7 +906,7 @@ func TestServeIndex_PostItemCustomFieldsAvailableToThemes(t *testing.T) {
 
 func TestServeIndex_TagsPopulated(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{}, nil)
 	mockService.On("GetPublishedCustomPostTypes", mock.Anything).Return([]string{}, nil)
 	mockService.On("GetPublishedTags", mock.Anything).Return([]string{"golang", "tutorial"}, nil)
@@ -822,8 +925,8 @@ func TestServeIndex_TagsPopulated(t *testing.T) {
 
 func TestServeIndex_HomeSections(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
-	mockService.On("GetPublishedByPostType", mock.Anything, "article", "en", 0, 0, 4, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedByPostType", mock.Anything, "article", []string{"en"}, 0, 0, 4, 0).Return([]*contentdomain.Content{
 		{Slug: "feature-1", Title: "Feature One", PostType: "article", Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{}, nil)
@@ -877,7 +980,7 @@ func TestServeIndex_PaginationNextAndPrev(t *testing.T) {
 				Slug: fmt.Sprintf("post-%d", i), Title: fmt.Sprintf("Post %d", i), PostType: "post", Language: "en",
 			})
 		}
-		mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return(contents, nil)
+		mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return(contents, nil)
 		setupNavMocks(mockService)
 
 		handler := setupHandler(t, mockService)
@@ -897,7 +1000,7 @@ func TestServeIndex_PaginationNextAndPrev(t *testing.T) {
 
 	t.Run("prev page link on page 2", func(t *testing.T) {
 		mockService := new(mocks.MockContentService)
-		mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 50).Return([]*contentdomain.Content{
+		mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 50).Return([]*contentdomain.Content{
 			{Slug: "p51", Title: "Post 51", PostType: "post", Language: "en"},
 		}, nil)
 		setupNavMocks(mockService)
@@ -919,7 +1022,7 @@ func TestServeIndex_PaginationNextAndPrev(t *testing.T) {
 
 	t.Run("invalid page param defaults to page 1", func(t *testing.T) {
 		mockService := new(mocks.MockContentService)
-		mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+		mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
 		setupNavMocks(mockService)
 
 		handler := setupHandler(t, mockService)
@@ -930,7 +1033,7 @@ func TestServeIndex_PaginationNextAndPrev(t *testing.T) {
 		handler.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		mockService.AssertCalled(t, "GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0)
+		mockService.AssertCalled(t, "GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0)
 		mockService.AssertExpectations(t)
 	})
 }
@@ -1004,7 +1107,7 @@ func TestServeContent_AuthorFallbackToUsername(t *testing.T) {
 func TestServePostTypeListing_PostCardImage(t *testing.T) {
 	tiptapJSON := `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://example.com/item.webp"}}]}`
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "menu-item", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "croissant", Title: "Croissant", PostType: "menu-item", Content: tiptapJSON, Language: "en"},
 	}, nil)
 	mockService.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{}, nil)
@@ -1413,6 +1516,105 @@ func TestServeContent_NoCustomFieldsWhenPostTypeResolveFails(t *testing.T) {
 	mockResolver.AssertExpectations(t)
 }
 
+func TestServeContent_PostScripts(t *testing.T) {
+	tests := []struct {
+		name               string
+		fields             []customfield.FieldSchema
+		customFields       map[string]any
+		wantScript         string
+		wantNotScript      string
+		wantFormattedAbsent string
+	}{
+		{
+			name: "success - declared field emits verbatim script and omits from formatted section",
+			fields: []customfield.FieldSchema{
+				{Name: "Title", Slug: "title", Type: customfield.FieldTypeText},
+				{Name: "Post Script", Slug: customfield.PostScriptSlug, Type: customfield.FieldTypeTextarea},
+			},
+			customFields: map[string]any{
+				"title":                   "Hello",
+				customfield.PostScriptSlug: `<script>new Chart(document.getElementById('barGraph'),{type:'bar'})</script>`,
+			},
+			wantScript:         `<script>new Chart(document.getElementById('barGraph'),{type:'bar'})</script>`,
+			wantFormattedAbsent: "Post Script",
+		},
+		{
+			name: "success - declared field with empty value emits nothing",
+			fields: []customfield.FieldSchema{
+				{Name: "Post Script", Slug: customfield.PostScriptSlug, Type: customfield.FieldTypeTextarea},
+			},
+			customFields: map[string]any{
+				customfield.PostScriptSlug: "   ",
+			},
+		},
+		{
+			name: "success - undeclared field value does not emit even if present",
+			fields: []customfield.FieldSchema{
+				{Name: "Title", Slug: "title", Type: customfield.FieldTypeText},
+			},
+			customFields: map[string]any{
+				"title":                   "Hello",
+				customfield.PostScriptSlug: `<script>alert(1)</script>`,
+			},
+			wantNotScript: "<script>alert(1)</script>",
+		},
+		{
+			name: "success - non-string value does not emit",
+			fields: []customfield.FieldSchema{
+				{Name: "Post Script", Slug: customfield.PostScriptSlug, Type: customfield.FieldTypeTextarea},
+			},
+			customFields: map[string]any{
+				customfield.PostScriptSlug: float64(123),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tiptapJSON := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`
+			mockService := new(mocks.MockContentService)
+			mockService.On("GetPublishedBySlugAny", mock.Anything, "post-item").Return(&contentdomain.Content{
+				Slug:         "post-item",
+				Title:        "Post Item",
+				Content:      tiptapJSON,
+				PostType:     "post",
+				Tags:         []string{},
+				CustomFields: tt.customFields,
+			}, nil)
+			setupNavMocks(mockService)
+
+			mockResolver := new(mocks.MockPostTypeResolver)
+			mockResolver.On("GetBySlug", "post-item").Return(posttype.PostType{}, assert.AnError)
+			mockResolver.On("GetBySlug", "post").Return(posttype.PostType{
+				Name:   "Post",
+				Slug:   "post",
+				Fields: tt.fields,
+			}, nil)
+
+			handler := setupHandlerWithResolver(t, mockService, mockResolver)
+
+			req := httptest.NewRequest(http.MethodGet, "/post-item", nil)
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			body := w.Body.String()
+			require.Equal(t, http.StatusOK, w.Code)
+			if tt.wantScript != "" {
+				assert.Contains(t, body, tt.wantScript)
+			}
+			if tt.wantNotScript != "" {
+				assert.NotContains(t, body, tt.wantNotScript)
+			}
+			if tt.wantFormattedAbsent != "" {
+				assert.NotContains(t, body, tt.wantFormattedAbsent)
+			}
+			mockService.AssertExpectations(t)
+			mockResolver.AssertExpectations(t)
+		})
+	}
+}
+
 func TestServeContent_CustomFieldsNilCustomFields(t *testing.T) {
 	tiptapJSON := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`
 	mockService := new(mocks.MockContentService)
@@ -1719,7 +1921,7 @@ func TestServeAuthPages_IncludeHeaderNavigation(t *testing.T) {
 
 func TestServeAuthPages_ExistingPagesStillWork(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -1944,7 +2146,7 @@ func TestServeContent_CommentsExistingPagesUnchanged(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 
 	// Index page
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello", Title: "Hello", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -1967,7 +2169,7 @@ func TestServeContent_CommentsExistingPagesUnchanged(t *testing.T) {
 
 	// Author page
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	req = httptest.NewRequest(http.MethodGet, "/authors/admin", nil)
@@ -2028,7 +2230,7 @@ func TestStaticCSSContainsInterFont(t *testing.T) {
 
 func TestAllPagesRenderWithCSS(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2074,7 +2276,7 @@ func TestAllPagesRenderWithCSS_AuthorAnd404(t *testing.T) {
 
 	// Author page
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin User", PostType: "post", Language: "en"},
 	}, nil)
 
@@ -2110,7 +2312,7 @@ func TestAllPagesRenderWithCSS_AuthorAnd404(t *testing.T) {
 
 func TestPageRendersContainLesstructBranding(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2141,7 +2343,7 @@ func setupHandlerWithSiteConfig(t *testing.T, mockService *mocks.MockContentServ
 
 func TestServeIndex_SiteConfigNameAppearsInTitleAndOG(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
 	setupNavMocks(mockService)
 
 	handler := setupHandlerWithSiteConfig(t, mockService, config.SiteConfig{Name: "Astra Motor Kalbar"})
@@ -2161,7 +2363,7 @@ func TestServeIndex_SiteConfigNameAppearsInTitleAndOG(t *testing.T) {
 
 func TestServeIndex_SiteConfigLogoRendersImg(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
 	setupNavMocks(mockService)
 
 	handler := setupHandlerWithSiteConfig(t, mockService, config.SiteConfig{
@@ -2181,7 +2383,7 @@ func TestServeIndex_SiteConfigLogoRendersImg(t *testing.T) {
 
 func TestServeIndex_SiteConfigLogoEmptyRendersNameAsText(t *testing.T) {
 	mockService := new(mocks.MockContentService)
-	mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{}, nil)
 	setupNavMocks(mockService)
 
 	handler := setupHandlerWithSiteConfig(t, mockService, config.SiteConfig{Name: "My Site"})
@@ -2680,7 +2882,7 @@ func setupAuthorHandler(t *testing.T, mockService *mocks.MockContentService, moc
 func TestServeAuthor_CustomFieldsDisplayed(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin User", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2723,7 +2925,7 @@ func TestServeAuthor_CustomFieldsDisplayed(t *testing.T) {
 func TestServeAuthor_SystemFieldsExcluded(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2761,7 +2963,7 @@ func TestServeAuthor_SystemFieldsExcluded(t *testing.T) {
 func TestServeAuthor_SystemFieldsExposed(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2814,7 +3016,7 @@ func TestServeAuthor_SystemFieldsExposed(t *testing.T) {
 func TestServeAuthor_EmptyCustomFieldsOmitted(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2853,7 +3055,7 @@ func TestServeAuthor_EmptyCustomFieldsOmitted(t *testing.T) {
 func TestServeAuthor_NoUserFieldsConfigured(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2887,7 +3089,7 @@ func TestServeAuthor_NoUserFieldsConfigured(t *testing.T) {
 func TestServeAuthor_UserHasNoCustomFieldValues(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2924,7 +3126,7 @@ func TestServeAuthor_UserHasNoCustomFieldValues(t *testing.T) {
 func TestServeAuthor_UserNotFoundStillRendersPosts(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2956,7 +3158,7 @@ func TestServeAuthor_UserNotFoundStillRendersPosts(t *testing.T) {
 func TestServeAuthor_UserProviderNil_NoCustomFields(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -2978,7 +3180,7 @@ func TestServeAuthor_UserProviderNil_NoCustomFields(t *testing.T) {
 func TestServeAuthor_CheckboxAndDateFormatting(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "jane").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "jane", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "jane", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Jane Doe", PostType: "post", Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -3017,7 +3219,7 @@ func TestServeAuthor_CheckboxAndDateFormatting(t *testing.T) {
 func TestServeAuthor_ExistingFunctionalityPreserved(t *testing.T) {
 	mockService := new(mocks.MockContentService)
 	mockService.On("AuthorExists", mock.Anything, "admin").Return(true, nil)
-	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", "en", 51, 0).Return([]*contentdomain.Content{
+	mockService.On("GetPublishedByAuthorUsername", mock.Anything, "admin", []string{"en"}, 51, 0).Return([]*contentdomain.Content{
 		{Slug: "post-1", Title: "Post One", Author: "Admin User", PostType: "post", CreatedAt: time.Date(2026, 5, 12, 10, 30, 0, 0, time.UTC), Language: "en"},
 	}, nil)
 	setupNavMocks(mockService)
@@ -3190,7 +3392,7 @@ func TestResolvePostImage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockService := new(mocks.MockContentService)
 			contentBody := encodeImageContent(tt.imageURL)
-			mockService.On("GetPublishedByPostType", mock.Anything, "post", "en", 0, 0, 51, 0).Return([]*contentdomain.Content{
+			mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]*contentdomain.Content{
 				{
 					Slug:     "test-post",
 					Title:    "Test Post",

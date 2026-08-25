@@ -18,11 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:fix inline
-func ptrF(v float64) *float64 {
-	return new(v)
-}
-
 type mockHookExecutor struct {
 	mock.Mock
 	transform func(plugin.HookName, []byte) ([]byte, error)
@@ -2414,33 +2409,33 @@ func TestService_GetPublishedByTag(t *testing.T) {
 	tests := []struct {
 		name        string
 		tag         string
-		language    string
+		languages   []string
 		limit       int
 		offset      int
 		setupMock   func(*mocks.MockRepository)
 		expectedErr error
 	}{
 		{
-			name:     "successful retrieval",
-			tag:      "golang",
-			language: "",
-			limit:    10,
-			offset:   0,
+			name:      "successful retrieval",
+			tag:       "golang",
+			languages: nil,
+			limit:     10,
+			offset:    0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByTag", mock.Anything, "golang", "", 0, 0, 10, 0).Return([]*content.Content{
+				m.On("GetPublishedByTag", mock.Anything, "golang", []string(nil), 0, 0, 10, 0).Return([]*content.Content{
 					{ID: 1, Title: "Go Basics", Tags: []string{"golang", "tutorial"}},
 				}, nil)
 			},
 			expectedErr: nil,
 		},
 		{
-			name:     "repository error",
-			tag:      "golang",
-			language: "",
-			limit:    10,
-			offset:   0,
+			name:      "repository error",
+			tag:       "golang",
+			languages: nil,
+			limit:     10,
+			offset:    0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByTag", mock.Anything, "golang", "", 0, 0, 10, 0).Return(nil, errors.New("database error"))
+				m.On("GetPublishedByTag", mock.Anything, "golang", []string(nil), 0, 0, 10, 0).Return(nil, errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to get published content by tag"),
 		},
@@ -2452,7 +2447,7 @@ func TestService_GetPublishedByTag(t *testing.T) {
 			tt.setupMock(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			result, err := service.GetPublishedByTag(context.Background(), tt.tag, tt.language, 0, 0, tt.limit, tt.offset)
+			result, err := service.GetPublishedByTag(context.Background(), tt.tag, tt.languages, 0, 0, tt.limit, tt.offset)
 
 			if tt.expectedErr != nil {
 				require.Error(t, err)
@@ -2465,6 +2460,113 @@ func TestService_GetPublishedByTag(t *testing.T) {
 			require.NotNil(t, result)
 			assert.Len(t, result, 1)
 			assert.Equal(t, "Go Basics", result[0].Title)
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_GetPublishedByAuthorUsername(t *testing.T) {
+	tests := []struct {
+		name        string
+		username    string
+		languages   []string
+		setupMock   func(*mocks.MockRepository)
+		wantTitles  []string
+		expectedErr string
+	}{
+		{
+			name:      "success - returns author content",
+			username:  "alice",
+			languages: []string{"en", "id"},
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetPublishedByAuthorUsername", mock.Anything, "alice", []string{"en", "id"}, 10, 0).Return([]*content.Content{
+					{ID: 1, Title: "Alice Post"},
+				}, nil)
+			},
+			wantTitles: []string{"Alice Post"},
+		},
+		{
+			name:      "error - repository failure propagates",
+			username:  "alice",
+			languages: nil,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetPublishedByAuthorUsername", mock.Anything, "alice", []string(nil), 10, 0).Return(nil, errors.New("database error"))
+			},
+			expectedErr: "failed to get published content by author",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &mocks.MockRepository{}
+			tt.setupMock(mockRepo)
+
+			service := content.NewService(mockRepo, nil, nil)
+			result, err := service.GetPublishedByAuthorUsername(context.Background(), tt.username, tt.languages, 10, 0)
+
+			if tt.expectedErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, result, len(tt.wantTitles))
+			for i, want := range tt.wantTitles {
+				assert.Equal(t, want, result[i].Title)
+			}
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_GetPublishedArchive(t *testing.T) {
+	tests := []struct {
+		name        string
+		postType    string
+		languages   []string
+		setupMock   func(*mocks.MockRepository)
+		wantCount   int
+		expectedErr string
+	}{
+		{
+			name:      "success - returns archive months",
+			postType:  "post",
+			languages: []string{"en", "id"},
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetPublishedArchive", mock.Anything, "post", []string{"en", "id"}).Return([]*content.ArchiveMonth{
+					{Year: 2026, Month: 3, Count: 4},
+				}, nil)
+			},
+			wantCount: 1,
+		},
+		{
+			name:      "error - repository failure propagates",
+			postType:  "",
+			languages: nil,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetPublishedArchive", mock.Anything, "", []string(nil)).Return(nil, errors.New("database error"))
+			},
+			expectedErr: "failed to get published archive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &mocks.MockRepository{}
+			tt.setupMock(mockRepo)
+
+			service := content.NewService(mockRepo, nil, nil)
+			result, err := service.GetPublishedArchive(context.Background(), tt.postType, tt.languages)
+
+			if tt.expectedErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, result, tt.wantCount)
 			mockRepo.AssertExpectations(t)
 		})
 	}
@@ -2488,7 +2590,7 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		mockRepo, mockPostType := setupCreateMocks()
 		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
-			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: ptrF(0), Max: ptrF(10000)},
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: new(0.0), Max: new(10000.0)},
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
@@ -2518,7 +2620,7 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
 		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
-			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: ptrF(0), Max: ptrF(10000)},
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: new(0.0), Max: new(10000.0)},
 		}, nil)
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 
@@ -2545,7 +2647,7 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 	t.Run("create fails when number value exceeds max", func(t *testing.T) {
 		mockRepo, mockPostType := setupCreateMocks()
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
-			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: ptrF(0), Max: ptrF(100)},
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: new(0.0), Max: new(100.0)},
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
@@ -2761,7 +2863,7 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 	t.Run("create with number below min", func(t *testing.T) {
 		mockRepo, mockPostType := setupCreateMocks()
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
-			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Min: ptrF(10)},
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Min: new(10.0)},
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
@@ -3401,7 +3503,7 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
 		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
-			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: ptrF(0)},
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber, Required: true, Min: new(0.0)},
 		}, nil)
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 
@@ -3997,7 +4099,7 @@ func TestService_SetSystemFields(t *testing.T) {
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{
-			{Name: "Priority", Slug: "priority", Type: customfield.FieldTypeNumber, Min: ptrF(1), Max: ptrF(10)},
+			{Name: "Priority", Slug: "priority", Type: customfield.FieldTypeNumber, Min: new(1.0), Max: new(10.0)},
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)

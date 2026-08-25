@@ -224,7 +224,7 @@ POST /api/v1/content
 | `postType` | no | Content type. |
 | `tags` | no | Array of tag strings. Server normalizes (trim, lowercase, dedupe, length-bound) via `ValidateTags`; an invalid tag returns 400 `VALIDATION_ERROR`. |
 | `language` | no | Language code (e.g. `"en"`, `"id"`). Must be in the server's configured languages list (`config.toml` `[languages]`); an unknown code returns 400 `VALIDATION_ERROR` (`ErrInvalidLanguage`). |
-| `slug` | no | A custom slug (lowercase letters, digits, and hyphens; 1–200 chars; unique per language, else 400 `ErrSlugAlreadyExists`). Omit to auto-generate from the title. The slug is **immutable after creation** — see [Update content](#update-content). |
+| `slug` | no | A custom slug (lowercase letters, digits, hyphens, and dots; 1–200 chars; must not start or end with a dot and must not contain `..`; unique per language, else 400 `ErrSlugAlreadyExists`). Omit to auto-generate from the title. The slug is **immutable after creation** — see [Update content](#update-content). |
 | `customFields` | no | Custom-field values, validated through the same path the admin uses. Admin-managed **system fields** (declared per post type) are rejected here with `400 VALIDATION_ERROR` — set them via [Set system fields](#set-system-fields). |
 | `translationGroupId` | no | ID of an existing content item whose translation group this item joins. The server validates the ID exists; a miss returns 400 `ErrTranslationGroupNotFound`. |
 | `isPublished` | no | `true` → `"published"`; `false`/omitted → `"draft"`. |
@@ -394,9 +394,9 @@ Upload, retrieve, and list media (images). Media is deduplicated by content hash
   "altText": "A scenic mountain view",
   "isWebp": true,
   "hash": "a1b2c3d4e5f6...",
-  "url": "https://your-lesstruct.example/uploads/media/a1b2c3d4.webp",
+  "url": "/uploads/media/a1b2c3d4.webp",
   "variants": {
-    "thumbnail": { "url": "https://your-lesstruct.example/uploads/media/a1b2c3d4-200.webp", "width": 200 }
+    "thumbnail": { "url": "/uploads/media/a1b2c3d4-200.webp", "width": 200 }
   },
   "createdAt": "2026-06-15T10:00:00Z",
   "updatedAt": "2026-06-15T10:00:00Z"
@@ -413,7 +413,7 @@ Upload, retrieve, and list media (images). Media is deduplicated by content hash
 | `altText` | string | Accessibility text. |
 | `isWebp` | bool | Whether the primary stored file is WebP. (Note the key `isWebp`, not `isWebP`.) |
 | `hash` | string | Content hash used for dedup. |
-| `url` | string | The absolute URL to reference this media in content (e.g. `https://your-lesstruct.example/uploads/media/<file>`). |
+| `url` | string | URL to reference this media in content. Shape depends on the storage driver: **root-relative** with the default `local` driver (`/uploads/media/<file>` — resolves against the site origin) and **absolute** with the `s3` driver (`<STORAGE_S3_PUBLIC_BASE_URL>/<key>`). Both forms embed correctly in content bodies; render `<img src>` values as-is. |
 | `variants` | object | Map of variant name → `{ "url", "width" }` (e.g. `thumbnail`). |
 | `createdAt` / `updatedAt` | string | ISO 8601 timestamps. |
 
@@ -665,17 +665,18 @@ A link or image with another scheme (`javascript:`, `data:`, `file:`, …) cause
 ## Images
 
 - **External images** — `![alt](https://cdn.example.com/img.png)` passes through unchanged; the `src` is stored as-is (subject to the `http(s)` scheme rule above).
-- **Local media** — to embed an image you upload, first upload it via `POST /api/v1/media`, then reference the returned `url` in your Markdown:
+- **Local media** — to embed an image you upload, first upload it via `POST /api/v1/media`, then reference the returned `url` in your Markdown. Root-relative `url` values (default `local` storage driver) are valid image targets — only *schemes other than* `http(s)` are rejected:
 
   ```bash
   # 1. Upload
   curl -H "Authorization: Bearer lesstruct_<...>" \
     -F "file=@photo.jpg" -F 'metadata={"altText":"..."}' \
     "https://your-lesstruct.example/api/v1/media"
-  # → { "data": { "media": { "url": "https://your-lesstruct.example/uploads/media/a1b2c3d4.webp", ... } } }
+  # → { "data": { "media": { "url": "/uploads/media/a1b2c3d4.webp", ... } } }
+  #   (absolute https:// URL instead when STORAGE_DRIVER=s3)
 
   # 2. Reference the returned url
-  ![A scenic view](https://your-lesstruct.example/uploads/media/a1b2c3d4.webp)
+  ![A scenic view](/uploads/media/a1b2c3d4.webp)
   ```
 
 ## Rate limiting
@@ -866,7 +867,7 @@ Returns the users who have published at least one content item, with **only safe
     {
       "username": "johndoe",
       "displayName": "John Doe",
-      "avatarURL": "http://your-lesstruct.example/uploads/profile_pictures/abc.jpg",
+      "avatarURL": "/uploads/profile_pictures/abc.jpg",
       "profileURL": "http://your-lesstruct.example/authors/johndoe",
       "contentCount": 42,
       "postTypes": ["article", "event"],
@@ -886,7 +887,7 @@ Returns the users who have published at least one content item, with **only safe
 |---|---|
 | `username` | Author username. |
 | `displayName` | `users.name`, falling back to `username` when name is unset. |
-| `avatarURL` | Absolute profile-picture URL; empty string when the author has no picture. |
+| `avatarURL` | Profile-picture URL — root-relative with the default `local` storage driver (`/uploads/profile_pictures/<file>`), absolute with `s3`; empty string when the author has no picture. |
 | `profileURL` | Absolute URL of the server-rendered author page (`<baseURL>/authors/<username>`), which renders profile custom and exposed system fields server-side. |
 | `contentCount` | Number of published content items by the author. |
 | `postTypes` | Distinct post types the author publishes under. Always a non-nil array (renders `[]` when single-type). |
@@ -917,7 +918,7 @@ Returns a single published author's public profile, using the same response shap
   "data": {
     "username": "johndoe",
     "displayName": "John Doe",
-    "avatarURL": "http://your-lesstruct.example/uploads/profile_pictures/abc.jpg",
+    "avatarURL": "/uploads/profile_pictures/abc.jpg",
     "profileURL": "http://your-lesstruct.example/authors/johndoe",
     "contentCount": 42,
     "postTypes": ["article", "event"],
@@ -1261,7 +1262,7 @@ Each content item becomes a `<postType>/<slug>.<language>.html` file with YAML f
 
 Generate a fully static HTML site from all published content. Available in both realms: the browser **admin** realm at `GET /api/admin/ssg` (JWT + CSRF, used by the admin UI under *Export*) and the agent (Bearer API key) realm at `GET /api/v1/ssg` (used by `lesstruct-cli ssg`).
 
-`GET /api/v1/ssg` — renders the full site (homepage and pagination, content pages with AMP variants, post type listings, author and tag pages, theme CSS, media, sitemap, robots.txt) from the same data layer as the live site, and streams the result as a `tar.gz`.
+`GET /api/v1/ssg` — renders the full site (homepage and pagination, content pages with AMP variants, post type listings, author and tag pages, static assets, media, sitemap, robots.txt, a `404.html` not-found page, and an RSS 2.0 feed of recent posts at `index.xml`) from the same data layer as the live site, and streams the result as a `tar.gz`.
 
 **Auth:** API key belonging to an **Admin** role (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
 
@@ -1287,10 +1288,16 @@ page/2/index.html, …          Pagination
 <post-type>/index.html        Post type listings
 authors/<username>/index.html Author pages
 tags/<tag>/index.html         Tag pages
-static/base.css, style.css    Theme CSS
+static/                       Static assets (active theme's static/ overlaid on the referenced subset of the embedded defaults — plus the two core stylesheets)
 uploads/media/                Media files
-sitemap.xml, robots.txt       SEO files
+sitemap.xml, robots.txt       SEO files (alias redirect pages are excluded from the sitemap)
+404.html                      Not-found page (theme error template)
+index.xml                     RSS 2.0 feed of the 20 most recent posts
+<alias>[/index.html]          Meta-refresh redirect page per published content alias (.html aliases become flat files; aliases shadowing emitted pages or reserved root files are skipped)
+<root-file>                   Files from the theme's optional root/ directory, at the archive root (e.g. webpushr-sw.js)
 ```
+
+All page URLs in the export — sitemap entries, RSS feed item links, AMP canonical links, and alias redirect targets — use the trailing-slash directory form (`/<slug>/`) matching the `<slug>/index.html` layout so they address the page rather than a flat alias stub. Hosts serving the export should resolve clean URLs to directory indexes before flat `.html` files; on hosts that prefer the flat file (e.g., AWS Amplify / S3 + CloudFront), a slash-less target resolves back to the stub itself and self-loops.
 
 
 

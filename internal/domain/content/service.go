@@ -1074,8 +1074,8 @@ func (s *Service) GetPublishedByID(ctx context.Context, id int) (*Content, error
 	return content, nil
 }
 
-func (s *Service) GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByAuthorUsername(ctx, username, language, limit, offset)
+func (s *Service) GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByAuthorUsername(ctx, username, languages, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by author: %w", err)
 	}
@@ -1086,8 +1086,8 @@ func (s *Service) AuthorExists(ctx context.Context, username string) (bool, erro
 	return s.repo.AuthorExists(ctx, username)
 }
 
-func (s *Service) GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByTag(ctx, tag, language, year, month, limit, offset)
+func (s *Service) GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByTag(ctx, tag, languages, year, month, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by tag: %w", err)
 	}
@@ -1110,8 +1110,8 @@ func (s *Service) GetPublishedCustomPostTypes(ctx context.Context) ([]string, er
 	return postTypes, nil
 }
 
-func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByPostType(ctx, postType, language, year, month, limit, offset)
+func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*Content, error) {
+	contents, err := s.repo.GetPublishedByPostType(ctx, postType, languages, year, month, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published content by post type: %w", err)
 	}
@@ -1150,8 +1150,8 @@ func (s *Service) GetPublishedAuthor(ctx context.Context, username string) (*Pub
 	return author, nil
 }
 
-func (s *Service) GetPublishedArchive(ctx context.Context, postType string, language string) ([]*ArchiveMonth, error) {
-	archive, err := s.repo.GetPublishedArchive(ctx, postType, language)
+func (s *Service) GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*ArchiveMonth, error) {
+	archive, err := s.repo.GetPublishedArchive(ctx, postType, languages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get published archive: %w", err)
 	}

@@ -104,7 +104,7 @@ func TestContentRepository_GetPublishedByPostType(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := sqlite.NewContentRepository(db)
-		items, err := repo.GetPublishedByPostType(context.Background(), "menu-item", "", 0, 0, 50, 0)
+		items, err := repo.GetPublishedByPostType(context.Background(), "menu-item", nil, 0, 0, 50, 0)
 
 		require.NoError(t, err)
 		require.Len(t, items, 2)
@@ -117,7 +117,7 @@ func TestContentRepository_GetPublishedByPostType(t *testing.T) {
 		defer teardownContentTestDB(t, db)
 
 		repo := sqlite.NewContentRepository(db)
-		items, err := repo.GetPublishedByPostType(context.Background(), "nonexistent", "", 0, 0, 50, 0)
+		items, err := repo.GetPublishedByPostType(context.Background(), "nonexistent", nil, 0, 0, 50, 0)
 
 		require.NoError(t, err)
 		assert.Empty(t, items)
@@ -138,7 +138,7 @@ func TestContentRepository_GetPublishedByPostType(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := sqlite.NewContentRepository(db)
-		items, err := repo.GetPublishedByPostType(context.Background(), "menu-item", "en", 0, 0, 50, 0)
+		items, err := repo.GetPublishedByPostType(context.Background(), "menu-item", []string{"en"}, 0, 0, 50, 0)
 
 		require.NoError(t, err)
 		require.Len(t, items, 2)

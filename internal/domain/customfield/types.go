@@ -21,6 +21,8 @@ var (
 
 var slugPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
+const PostScriptSlug = "post_script"
+
 type FieldType string
 
 const (

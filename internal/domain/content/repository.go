@@ -26,11 +26,10 @@ type Repository interface {
 	GetPublished(ctx context.Context, limit int, offset int) ([]*Content, error)
 	GetPublishedBySlug(ctx context.Context, slug string, language string) (*Content, error)
 	// GetPublishedByAuthorUsername returns published content by the given author
-	// username. When language is non-empty, results are additionally restricted
-	// to that language at the database level (used by the paginated public
-	// author page so the fetch-limit+1 HasMore probe stays accurate). An empty
-	// language returns content in every language.
-	GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*Content, error)
+	// username, filtered by languages as described in GetPublishedByPostType
+	// (used by the paginated public author page so the fetch-limit+1 HasMore
+	// probe stays accurate).
+	GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*Content, error)
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	Delete(ctx context.Context, id int, userID int) error
 	DeleteByID(ctx context.Context, id int) error
@@ -43,18 +42,25 @@ type Repository interface {
 	Count(ctx context.Context, userID int, filters ContentFilters) (int, error)
 	GetPublishedPages(ctx context.Context) ([]*Content, error)
 	GetPublishedCustomPostTypes(ctx context.Context) ([]string, error)
-	// GetPublishedByPostType returns published content of the given post type.
-	// When language is non-empty, results are additionally restricted to that
-	// language at the database level. An empty language returns every language.
-	// When year and month are both non-zero, results are restricted to that
-	// calendar month.
-	GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*Content, error)
-	// GetPublishedByTag returns published content carrying the given tag. When
-	// language is non-empty, results are additionally restricted to that
-	// language at the database level. An empty language returns every language.
-	// When year and month are both non-zero, results are restricted to that
-	// calendar month.
-	GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*Content, error)
+	// GetPublishedByPostType returns published content of the given post type,
+	// filtered by languages. The languages slice is priority-ordered:
+	//
+	//   - empty: no language restriction, every language is returned.
+	//   - single element: restricted to exactly that language.
+	//   - multiple elements: each translation group is represented once by the
+	//     best-ranked available language — a post missing from the primary
+	//     language falls back to the next configured one (Hugo-style fallback).
+	//     Rows in languages outside the slice are never returned.
+	//
+	// The filter is applied before LIMIT/OFFSET so pagination and counts stay
+	// exact under deduplication. When year and month are both non-zero, results
+	// are restricted to that calendar month.
+	GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*Content, error)
+	// GetPublishedByTag returns published content carrying the given tag,
+	// filtered by languages as described in GetPublishedByPostType. When year
+	// and month are both non-zero, results are restricted to that calendar
+	// month.
+	GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*Content, error)
 	// GetPublishedTags returns the distinct set of tags used by any published
 	// content item, ordered for stable display. An empty (non-nil) slice is
 	// returned when no published content carries tags.
@@ -81,10 +87,11 @@ type Repository interface {
 	// custom_fields map.
 	GetPublishedAuthor(ctx context.Context, username string) (*PublishedAuthor, error)
 	// GetPublishedArchive returns published-content counts grouped by year and
-	// month, ordered newest-first. When postType is non-empty, results are
-	// restricted to that post type; when language is non-empty, to that language.
-	// An empty postType aggregates across all types.
-	GetPublishedArchive(ctx context.Context, postType string, language string) ([]*ArchiveMonth, error)
+	// month, ordered newest-first, filtered by languages as described in
+	// GetPublishedByPostType. When postType is non-empty, results are
+	// restricted to that post type. An empty postType aggregates across all
+	// types.
+	GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*ArchiveMonth, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*Content, error)
 	// GetTranslations returns all content items in the same translation group, excluding the given content ID.
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*Content, error)

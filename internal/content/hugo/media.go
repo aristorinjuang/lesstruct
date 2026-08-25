@@ -1,6 +1,7 @@
 package hugo
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +35,21 @@ type MediaService interface {
 // imageSrcRe matches an <img> tag and captures its src attribute value.
 var imageSrcRe = regexp.MustCompile(`<img\b[^>]*\bsrc="([^"]*)"[^>]*>`)
 
+// featuredCheckLimit is the number of body <img> tags examined when deciding
+// whether prepending the featured image would show the same picture twice.
+const featuredCheckLimit = 3
+
+// Reasons reported by featuredDuplicate.
+const (
+	// dupReasonNone: no duplicate — the featured image should be prepended.
+	dupReasonNone = ""
+	// dupReasonExact: a leading body image already carries the exact same URL.
+	dupReasonExact = "exact"
+	// dupReasonVisual: a leading body image is perceptually the same picture
+	// under a different URL (different export, size, or query string).
+	dupReasonVisual = "visual"
+)
+
 // staticRefRe matches href/src attributes on known HTML elements with a
 // root-relative value, so non-image references (links, iframe demos,
 // stylesheets, scripts) can be pointed at the theme's static/ dir. The
@@ -43,15 +59,44 @@ var imageSrcRe = regexp.MustCompile(`<img\b[^>]*\bsrc="([^"]*)"[^>]*>`)
 // only reaches this pass when it could not be mapped.
 var staticRefRe = regexp.MustCompile(`(?i)<(a|iframe|link|script|source|img)\b[^>]*[\s"](href|src)="(/[^"]*)"`)
 
-// firstImageSrc returns the src of the first <img> tag in the body, or ""
-// when the body has none. The importer uses it to detect whether prepending a
-// featured image would duplicate the body's leading image.
-func firstImageSrc(body string) string {
-	match := imageSrcRe.FindStringSubmatch(body)
-	if len(match) != 2 {
-		return ""
+// leadingImageSrcs returns the src values of the body's first limit <img>
+// tags, in document order.
+func leadingImageSrcs(body string, limit int) []string {
+	matches := imageSrcRe.FindAllStringSubmatch(body, limit)
+	srcs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		srcs = append(srcs, match[1])
 	}
-	return match[1]
+	return srcs
+}
+
+// featuredDuplicate reports whether prepending the mapped featured image would
+// render the same picture twice at the top of the body. The body's first
+// featuredCheckLimit images are checked: an exact URL match (the cover already
+// appears among them) wins silently; otherwise a perceptual-hash comparison
+// catches the same picture under a different URL — a re-upload, resized
+// export, or hotlink variant that content-hash dedup cannot see. Images whose
+// perceptual hash is unknown (unmappable references, undecodable files) fall
+// back to the exact-URL check only.
+func featuredDuplicate(body string, featuredURL string, mapper *MediaMapper) (string, string) {
+	srcs := leadingImageSrcs(body, featuredCheckLimit)
+	for _, src := range srcs {
+		if src == featuredURL {
+			return dupReasonExact, src
+		}
+	}
+
+	featuredHash, ok := mapper.PHashFor(featuredURL)
+	if !ok {
+		return dupReasonNone, ""
+	}
+	for _, src := range srcs {
+		hash, ok := mapper.PHashFor(src)
+		if ok && mediadomain.PerceptuallySimilar(featuredHash, hash) {
+			return dupReasonVisual, src
+		}
+	}
+	return dupReasonNone, ""
 }
 
 // isRemoteURL reports whether the reference is an absolute http(s) URL.
@@ -93,8 +138,9 @@ type MediaMapper struct {
 	staticDir  string
 	service    MediaService
 	downloader *wordpress.MediaDownloader
-	cache      map[string]string // reference -> local media URL
-	failed     map[string]failure
+	cache      map[string]string   // reference -> local media URL
+	failed     map[string]failure  // reference -> migration failure
+	phashes    map[string]uint64   // mapped media URL -> perceptual hash of the image bytes
 	reported   map[string]struct{} // references already surfaced as warnings
 	skipMedia  bool
 }
@@ -145,6 +191,44 @@ func (m *MediaMapper) IsFailed(ref string) bool {
 	defer m.mu.Unlock()
 	_, ok := m.failed[ref]
 	return ok
+}
+
+// PHashFor returns the perceptual hash recorded for a mapped media URL and
+// whether one is known. Hashes are recorded when the image is ingested —
+// re-uploaded from the archive, downloaded from a remote URL, or served from
+// its /static/ copy under skipMedia.
+func (m *MediaMapper) PHashFor(mediaURL string) (uint64, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	hash, ok := m.phashes[mediaURL]
+	return hash, ok
+}
+
+// recordPHash stores the perceptual hash computed for a mapped media URL.
+func (m *MediaMapper) recordPHash(mediaURL string, hash uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.phashes[mediaURL] = hash
+}
+
+// hashStaticFile records the perceptual hash of an image served from its
+// /static/ copy so duplicate detection also works without media migration.
+// Failures are silently ignored — hashing is best-effort.
+func (m *MediaMapper) hashStaticFile(ref string, staticURL string) {
+	path, ok := m.localPath(ref)
+	if !ok {
+		return
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	hash, err := mediadomain.PerceptualHash(file)
+	if err == nil {
+		m.recordPHash(staticURL, hash)
+	}
 }
 
 // Failure describes one reference the importer should surface as a warning.
@@ -227,6 +311,7 @@ func (m *MediaMapper) Map(ctx context.Context, ref string, userID int) string {
 		// at the theme's static/ dir when it resolves to an extracted
 		// static/ file (the documented mirror convention).
 		if staticURL := m.staticURL(ref); staticURL != "" {
+			m.hashStaticFile(ref, staticURL)
 			return staticURL
 		}
 		m.recordFailure(ref, "media migration skipped (skipMedia) and no file under the archive's static/ dir", ref)
@@ -241,6 +326,11 @@ func (m *MediaMapper) Map(ctx context.Context, ref string, userID int) string {
 			return ref
 		}
 		local, err = m.downloader.DownloadAndUpload(ctx, ref, userID)
+		if err == nil && local != "" {
+			if hash, ok := m.downloader.PHash(ref); ok {
+				m.recordPHash(local, hash)
+			}
+		}
 	} else {
 		path, ok := m.localPath(ref)
 		if !ok {
@@ -295,13 +385,24 @@ func (m *MediaMapper) uploadLocal(ctx context.Context, path string, ref string, 
 		return "", fmt.Errorf("failed to read static image %q: %w", ref, err)
 	}
 
+	// Record the perceptual hash of the source bytes so the importer can
+	// detect visually identical covers; best-effort, undecodable files simply
+	// have no hash.
+	hash, hashErr := mediadomain.PerceptualHash(bytes.NewReader(body))
+
 	media, err := m.service.GenerateFromBytes(ctx, body, userID, altTextFromRef(ref), filepath.Base(path))
 	if err != nil {
 		var dupErr *mediadomain.DuplicateMediaError
 		if errors.As(err, &dupErr) && dupErr.Existing != nil {
+			if hashErr == nil {
+				m.recordPHash(dupErr.Existing.URL, hash)
+			}
 			return dupErr.Existing.URL, nil
 		}
 		return "", fmt.Errorf("failed to re-upload static image %q: %w", ref, err)
+	}
+	if hashErr == nil {
+		m.recordPHash(media.URL, hash)
 	}
 	return media.URL, nil
 }
@@ -381,6 +482,7 @@ func NewMediaMapper(
 		downloader: downloader,
 		cache:      make(map[string]string),
 		failed:     make(map[string]failure),
+		phashes:    make(map[string]uint64),
 		reported:   make(map[string]struct{}),
 		skipMedia:  skipMedia,
 	}

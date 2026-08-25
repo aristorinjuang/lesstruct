@@ -149,17 +149,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-			data := template.IndexData{
-				LayoutData: template.LayoutData{
-					Title:     "Test Site",
-					PageTitle: "Test Site",
-					SiteConfig: template.SiteConfig{
-						Name: "Lesstruct",
+				data := template.IndexData{
+					LayoutData: template.LayoutData{
+						Title:     "Test Site",
+						PageTitle: "Test Site",
+						SiteConfig: template.SiteConfig{
+							Name: "Lesstruct",
+						},
 					},
-				},
-				Posts: []template.PostItem{},
-			}
-			require.NoError(t, templates.RenderIndex(w, data))
+					Posts: []template.PostItem{},
+				}
+				require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "Lesstruct",
@@ -171,17 +171,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-			data := template.IndexData{
-				LayoutData: template.LayoutData{
-					Title:     "Test Site",
-					PageTitle: "Test Site",
-					SiteConfig: template.SiteConfig{
-						Name: "Lesstruct",
+				data := template.IndexData{
+					LayoutData: template.LayoutData{
+						Title:     "Test Site",
+						PageTitle: "Test Site",
+						SiteConfig: template.SiteConfig{
+							Name: "Lesstruct",
+						},
 					},
-				},
-				Posts: []template.PostItem{},
-			}
-			require.NoError(t, templates.RenderIndex(w, data))
+					Posts: []template.PostItem{},
+				}
+				require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "Lesstruct",
@@ -215,17 +215,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-			data := template.IndexData{
-				LayoutData: template.LayoutData{
-					Title:     "Test Site",
-					PageTitle: "Test Site",
-					SiteConfig: template.SiteConfig{
-						Name: "Lesstruct",
+				data := template.IndexData{
+					LayoutData: template.LayoutData{
+						Title:     "Test Site",
+						PageTitle: "Test Site",
+						SiteConfig: template.SiteConfig{
+							Name: "Lesstruct",
+						},
 					},
-				},
-				Posts: []template.PostItem{},
-			}
-			require.NoError(t, templates.RenderIndex(w, data))
+					Posts: []template.PostItem{},
+				}
+				require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "CustomTheme",
@@ -260,17 +260,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-			data := template.IndexData{
-				LayoutData: template.LayoutData{
-					Title:     "Test Site",
-					PageTitle: "Test Site",
-					SiteConfig: template.SiteConfig{
-						Name: "Lesstruct",
+				data := template.IndexData{
+					LayoutData: template.LayoutData{
+						Title:     "Test Site",
+						PageTitle: "Test Site",
+						SiteConfig: template.SiteConfig{
+							Name: "Lesstruct",
+						},
 					},
-				},
-				Posts: []template.PostItem{},
-			}
-			require.NoError(t, templates.RenderIndex(w, data))
+					Posts: []template.PostItem{},
+				}
+				require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "ui.no_posts",
@@ -298,17 +298,17 @@ func TestNewTemplates_WithTheme(t *testing.T) {
 			},
 			renderFunc: func(t *testing.T, templates *template.Templates) string {
 				w := httptest.NewRecorder()
-			data := template.IndexData{
-				LayoutData: template.LayoutData{
-					Title:     "Test Site",
-					PageTitle: "Test Site",
-					SiteConfig: template.SiteConfig{
-						Name: "Lesstruct",
+				data := template.IndexData{
+					LayoutData: template.LayoutData{
+						Title:     "Test Site",
+						PageTitle: "Test Site",
+						SiteConfig: template.SiteConfig{
+							Name: "Lesstruct",
+						},
 					},
-				},
-				Posts: []template.PostItem{},
-			}
-			require.NoError(t, templates.RenderIndex(w, data))
+					Posts: []template.PostItem{},
+				}
+				require.NoError(t, templates.RenderIndex(w, data))
 				return w.Body.String()
 			},
 			wantInOutput: "Custom Index Page",
@@ -407,11 +407,11 @@ func TestNewTemplates_WithTheme_RenderNotFound(t *testing.T) {
 // the embedded defaults when a file is not present on disk.
 func TestReadThemeStyles(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupTheme     func(t *testing.T) *template.Theme
-		wantBaseCSS    string
-		wantStyleCSS   string
-		wantBaseNonEmpty bool
+		name              string
+		setupTheme        func(t *testing.T) *template.Theme
+		wantBaseCSS       string
+		wantStyleCSS      string
+		wantBaseNonEmpty  bool
 		wantStyleNonEmpty bool
 	}{
 		{
@@ -448,8 +448,8 @@ func TestReadThemeStyles(t *testing.T) {
 				))
 				return &template.Theme{Dir: dir}
 			},
-			wantBaseCSS:    ":root{--color-primary:#ff0000}",
-			wantStyleCSS:   ".custom-btn{color:red}",
+			wantBaseCSS:       ":root{--color-primary:#ff0000}",
+			wantStyleCSS:      ".custom-btn{color:red}",
 			wantBaseNonEmpty:  true,
 			wantStyleNonEmpty: true,
 		},
@@ -466,7 +466,7 @@ func TestReadThemeStyles(t *testing.T) {
 				))
 				return &template.Theme{Dir: dir}
 			},
-			wantStyleCSS:     ".custom-btn{color:red}",
+			wantStyleCSS:      ".custom-btn{color:red}",
 			wantBaseNonEmpty:  true,
 			wantStyleNonEmpty: true,
 		},
@@ -489,6 +489,138 @@ func TestReadThemeStyles(t *testing.T) {
 			if tt.wantStyleNonEmpty {
 				assert.NotEmpty(t, styleCSS, "style.css should not be empty")
 			}
+		})
+	}
+}
+
+func TestRootFilesFS(t *testing.T) {
+	tests := []struct {
+		name    string
+		setupFS func(t *testing.T) fs.FS
+		wantNil bool
+	}{
+		{
+			name: "nil theme returns nil",
+			setupFS: func(_ *testing.T) fs.FS {
+				return template.RootFilesFS(nil)
+			},
+			wantNil: true,
+		},
+		{
+			name: "theme without root directory returns nil",
+			setupFS: func(t *testing.T) fs.FS {
+				dir := t.TempDir()
+				return template.RootFilesFS(&template.Theme{Dir: dir})
+			},
+			wantNil: true,
+		},
+		{
+			name: "theme with root directory returns filesystem",
+			setupFS: func(t *testing.T) fs.FS {
+				dir := t.TempDir()
+				rootDir := filepath.Join(dir, "root")
+				require.NoError(t, os.MkdirAll(rootDir, 0755))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(rootDir, "webpushr-sw.js"),
+					[]byte("self.addEventListener('push', () => {})"),
+					0644,
+				))
+				return template.RootFilesFS(&template.Theme{Dir: dir})
+			},
+			wantNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := tt.setupFS(t)
+			if tt.wantNil {
+				assert.Nil(t, fsys)
+				return
+			}
+
+			require.NotNil(t, fsys)
+			data, err := fs.ReadFile(fsys, "webpushr-sw.js")
+			require.NoError(t, err)
+			assert.Equal(t, "self.addEventListener('push', () => {})", string(data))
+		})
+	}
+}
+
+func TestRootFilesHandler(t *testing.T) {
+	newThemeWithRootFile := func(t *testing.T) *template.Theme {
+		dir := t.TempDir()
+		rootDir := filepath.Join(dir, "root")
+		require.NoError(t, os.MkdirAll(rootDir, 0755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(rootDir, "webpushr-sw.js"),
+			[]byte("console.log('sw')"),
+			0644,
+		))
+
+		return &template.Theme{Dir: dir}
+	}
+
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte("next"))
+	})
+
+	tests := []struct {
+		name       string
+		theme      *template.Theme
+		target     string
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "serves existing root file at site root",
+			theme:      newThemeWithRootFile(t),
+			target:     "/webpushr-sw.js",
+			wantStatus: http.StatusOK,
+			wantBody:   "console.log('sw')",
+		},
+		{
+			name:       "missing file falls through to next handler",
+			theme:      newThemeWithRootFile(t),
+			target:     "/missing.txt",
+			wantStatus: http.StatusTeapot,
+			wantBody:   "next",
+		},
+		{
+			name:       "directory request falls through to next handler",
+			theme:      newThemeWithRootFile(t),
+			target:     "/",
+			wantStatus: http.StatusTeapot,
+			wantBody:   "next",
+		},
+		{
+			name:       "content page path falls through when not a root file",
+			theme:      newThemeWithRootFile(t),
+			target:     "/some-post",
+			wantStatus: http.StatusTeapot,
+			wantBody:   "next",
+		},
+		{
+			name:       "theme without root directory returns next unchanged",
+			theme:      &template.Theme{Dir: t.TempDir()},
+			target:     "/webpushr-sw.js",
+			wantStatus: http.StatusTeapot,
+			wantBody:   "next",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := template.RootFilesHandler(tt.theme, nextHandler)
+
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+			assert.Contains(t, w.Body.String(), tt.wantBody)
 		})
 	}
 }

@@ -1730,7 +1730,7 @@ func TestContentHandler_ListPublishedContents(t *testing.T) {
 
 	t.Run("with post_type calls GetPublishedByPostType", func(t *testing.T) {
 		mockService := handlersmocks.NewMockContentServiceInterface(t)
-		mockService.EXPECT().GetPublishedByPostType(mock.Anything, "article", "", 0, 0, 5, 0).
+		mockService.EXPECT().GetPublishedByPostType(mock.Anything, "article", []string(nil), 0, 0, 5, 0).
 			Return([]*contentdomain.Content{
 				{ID: 2, Title: "Article", Slug: "article-1", Content: "{}", PostType: "article"},
 			}, nil)

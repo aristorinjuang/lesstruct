@@ -89,6 +89,21 @@ func TestSanitizeHTMLDocument(t *testing.T) {
 			input: `<svg viewBox="0 0 24 24"><path d="M12 2L2 22h20z"/></svg>`,
 			want:  `<svg viewbox="0 0 24 24"><path d="M12 2L2 22h20z"/></svg>`,
 		},
+		{
+			name:  "code block with language class preserved",
+			input: `<pre class="chroma"><code class="language-go nohighlight" data-lang="go">x := 1</code></pre>`,
+			want:  `<pre class="chroma"><code class="language-go nohighlight" data-lang="go">x := 1</code></pre>`,
+		},
+		{
+			name:  "chroma highlight wrapper preserved",
+			input: `<div class="highlight"><span class="k">func</span><span aria-hidden="true">1</span></div>`,
+			want:  `<div class="highlight"><span class="k">func</span><span aria-hidden="true">1</span></div>`,
+		},
+		{
+			name:  "inline code elements preserved",
+			input: `<p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd>, read <var>x</var> from <samp>output</samp> or <code>input</code>.</p>`,
+			want:  `<p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd>, read <var>x</var> from <samp>output</samp> or <code>input</code>.</p>`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

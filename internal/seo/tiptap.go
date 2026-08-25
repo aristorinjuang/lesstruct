@@ -137,8 +137,21 @@ func BuildURL(baseURL, path string) string {
 	return fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(path, "/"))
 }
 
+// isAcceptedImageSrc reports whether an <img> src should be returned by the
+// extractors. Absolute http(s) URLs and root-relative paths (the local storage
+// driver bakes "/uploads/..." into stored content) are accepted; callers
+// absolutize root-relative values with seo.BuildURL downstream.
+func isAcceptedImageSrc(src string) bool {
+	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+		return true
+	}
+
+	return strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "//")
+}
+
 // ExtractImageURLFromHTML finds the first image URL in HTML content.
-// It looks for <img> tags with src attributes pointing to http(s) URLs.
+// It looks for <img> tags with src attributes holding http(s) URLs or
+// root-relative paths.
 func ExtractImageURLFromHTML(htmlContent string) string {
 	if htmlContent == "" {
 		return ""
@@ -162,9 +175,8 @@ func ExtractImageURLFromHTML(htmlContent string) string {
 		if !ok {
 			return ""
 		}
-		src := before
-		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-			return src
+		if isAcceptedImageSrc(before) {
+			return before
 		}
 		return ""
 	}
@@ -173,9 +185,8 @@ func ExtractImageURLFromHTML(htmlContent string) string {
 	if end == -1 {
 		return ""
 	}
-	src := tag[:end]
-	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-		return src
+	if isAcceptedImageSrc(tag[:end]) {
+		return tag[:end]
 	}
 	return ""
 }

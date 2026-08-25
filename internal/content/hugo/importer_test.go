@@ -1,12 +1,17 @@
 package hugo_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/image/draw"
 )
 
 // testImgSrcRe extracts every img src attribute from a body so tests can
@@ -512,14 +518,14 @@ func TestImporter_MediaRewriteAndFeatured(t *testing.T) {
 			body:        `<p>Hi</p><img src="/images/foo.jpg" alt="Foo">`,
 			images:      []string{"/images/cover.jpg"},
 			skipMedia:   false,
-			wantBodyHas: `<img src="http://media.local/cover" alt="First Post"><p>Hi</p><img src="http://media.local/foo" alt="Foo">`,
+			wantBodyHas: `<figure><img src="http://media.local/cover" alt="First Post"></figure><p>Hi</p><img src="http://media.local/foo" alt="Foo">`,
 		},
 		{
 			name:        "success - skip media rewrites static files to /static",
 			body:        `<p>Hi</p><img src="/images/foo.jpg" alt="Foo">`,
 			images:      []string{"/images/cover.jpg"},
 			skipMedia:   true,
-			wantBodyHas: `<img src="/static/images/cover.jpg" alt="First Post"><p>Hi</p><img src="/static/images/foo.jpg" alt="Foo">`,
+			wantBodyHas: `<figure><img src="/static/images/cover.jpg" alt="First Post"></figure><p>Hi</p><img src="/static/images/foo.jpg" alt="Foo">`,
 		},
 		{
 			name:        "success - featured skipped when body opens with same image in figure",
@@ -536,11 +542,11 @@ func TestImporter_MediaRewriteAndFeatured(t *testing.T) {
 			wantBodyHas: `<img src="/static/images/cover.jpg" alt="Cover"><p>Hi</p>`,
 		},
 		{
-			name:        "success - featured prepended when it only appears later in body",
+			name:        "success - featured skipped when it appears later in body",
 			body:        `<p>Hi</p><img src="/images/foo.jpg" alt="Foo"><img src="/images/cover.jpg" alt="Cover">`,
 			images:      []string{"/images/cover.jpg"},
 			skipMedia:   false,
-			wantBodyHas: `<img src="http://media.local/cover" alt="First Post"><p>Hi</p><img src="http://media.local/foo" alt="Foo"><img src="http://media.local/cover" alt="Cover">`,
+			wantBodyHas: `<p>Hi</p><img src="http://media.local/foo" alt="Foo"><img src="http://media.local/cover" alt="Cover">`,
 		},
 	}
 
@@ -605,6 +611,133 @@ func TestImporter_MediaRewriteAndFeatured(t *testing.T) {
 
 			assert.Equal(t, 1, result.Imported)
 			assert.Equal(t, tt.wantBodyHas, captured.Content)
+		})
+	}
+}
+
+// testGradientImage builds a w×h smooth diagonal luma ramp.
+func testGradientImage(w, h int) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			v := uint8((x + y) * 255 / (w + h))
+			img.Set(x, y, color.RGBA{R: v, G: v, B: v, A: 255})
+		}
+	}
+	return img
+}
+
+func testEncodePNG(t *testing.T, img image.Image) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	return buf.Bytes()
+}
+
+func TestImporter_FeaturedVisualDuplicate(t *testing.T) {
+	ctx := context.Background()
+
+	// The same picture as two distinct files — a full-size PNG and a smaller
+	// re-encode — plus an unrelated picture.
+	photo := testGradientImage(64, 48)
+	small := image.NewRGBA(image.Rect(0, 0, 32, 24))
+	draw.BiLinear.Scale(small, small.Bounds(), photo, photo.Bounds(), draw.Src, nil)
+	other := image.NewRGBA(image.Rect(0, 0, 64, 48))
+	for y := range 48 {
+		for x := range 64 {
+			if x >= 32 {
+				other.Set(x, y, color.White)
+			} else {
+				other.Set(x, y, color.Black)
+			}
+		}
+	}
+
+	fileBytes := map[string][]byte{
+		"/images/cover.jpg":       testEncodePNG(t, photo),
+		"/images/photo-small.jpg": testEncodePNG(t, small),
+		"/images/other.jpg":       testEncodePNG(t, other),
+	}
+	fileURLs := map[string]string{
+		"/images/cover.jpg":       "http://media.local/cover",
+		"/images/photo-small.jpg": "http://media.local/photo-small",
+		"/images/other.jpg":       "http://media.local/other",
+	}
+
+	tests := []struct {
+		name           string
+		body           string
+		wantContent    string
+		wantDupWarning bool
+	}{
+		{
+			name:           "success - prepend skipped when cover visually duplicates the leading body image",
+			body:           `<img src="/images/photo-small.jpg" alt="Photo"><p>Hi</p>`,
+			wantContent:    `<img src="http://media.local/photo-small" alt="Photo"><p>Hi</p>`,
+			wantDupWarning: true,
+		},
+		{
+			name:           "success - cover prepended when leading body image is a different picture",
+			body:           `<img src="/images/other.jpg" alt="Other"><p>Hi</p>`,
+			wantContent:    `<figure><img src="http://media.local/cover" alt="First Post"></figure><img src="http://media.local/other" alt="Other"><p>Hi</p>`,
+			wantDupWarning: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			staticDir := t.TempDir()
+			err := os.MkdirAll(filepath.Join(staticDir, "images"), 0755)
+			require.NoError(t, err)
+			for ref, data := range fileBytes {
+				require.NoError(t, os.WriteFile(filepath.Join(staticDir, ref), data, 0644))
+			}
+
+			cc := hugomocks.NewMockContentCreator(t)
+			ac := hugomocks.NewMockAliasCreator(t)
+			sc := hugomocks.NewMockSlugResolver(t)
+			ms := hugomocks.NewMockMediaService(t)
+
+			uploaded := map[string]struct{}{"/images/cover.jpg": {}}
+			for _, src := range imageSrcsInBody(tt.body) {
+				uploaded[src] = struct{}{}
+			}
+			for ref := range uploaded {
+				ms.On("GenerateFromBytes", mock.Anything, fileBytes[ref], 1, mock.Anything, mock.Anything).
+					Return(&mediadomain.Media{URL: fileURLs[ref]}, nil).Once()
+			}
+
+			sc.On("SlugExists", mock.Anything, "first-post", "en").Return(false, nil).Once()
+			var captured contentdomain.CreateContentRequest
+			cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
+				func(req contentdomain.CreateContentRequest) bool {
+					captured = req
+					return true
+				},
+			)).Return(&contentdomain.Content{ID: 1}, nil).Once()
+
+			imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+			result := imp.Import(ctx, &hugo.HugoSite{
+				Items: []*hugo.HugoItem{{
+					Title:        "First Post",
+					Language:     "en",
+					URL:          "/first-post.html",
+					OriginalBody: tt.body,
+					Images:       []string{"/images/cover.jpg"},
+					FilePath:     "content/en/first.md",
+				}},
+				StaticDir: staticDir,
+			}, 1, hugo.ImportOptions{}, nil)
+
+			assert.Equal(t, 1, result.Imported)
+			assert.Equal(t, tt.wantContent, captured.Content)
+			foundWarning := false
+			for _, entry := range result.Errors {
+				if strings.Contains(entry, "prepend skipped") && strings.Contains(entry, "/images/cover.jpg") {
+					foundWarning = true
+				}
+			}
+			assert.Equal(t, tt.wantDupWarning, foundWarning)
 		})
 	}
 }
@@ -941,4 +1074,68 @@ func TestImporter_KeepsAliasOfLiveContent(t *testing.T) {
 
 	assert.Equal(t, 1, result.Imported)
 	ac.AssertNotCalled(t, "Repoint", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestImporter_HighlightShortcodesRenderChroma(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name         string
+		originalBody string
+		wantInBody   []string
+	}{
+		{
+			name:         "success - whitespace-tolerant closing tag renders chroma block",
+			originalBody: "<p>intro</p>{{< highlight go >}}package main{{< / highlight >}}",
+			wantInBody: []string{
+				"<p>intro</p>",
+				`<div class="highlight">`,
+				`<code class="language-go nohighlight" data-lang="go">`,
+			},
+		},
+		{
+			name:         "success - linenos=table renders line-number table",
+			originalBody: "{{< highlight go \"linenos=table\" >}}package main{{< /highlight >}}",
+			wantInBody: []string{
+				`class="lntable"`,
+				`class="lnt"`,
+				`<code class="language-go nohighlight" data-lang="go">`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cc := hugomocks.NewMockContentCreator(t)
+			ac := hugomocks.NewMockAliasCreator(t)
+			sc := hugomocks.NewMockSlugResolver(t)
+			ms := hugomocks.NewMockMediaService(t)
+
+			item := &hugo.HugoItem{
+				Title:        "Code Post",
+				Language:     "en",
+				URL:          "/code-post.html",
+				OriginalBody: tt.originalBody,
+				FilePath:     "content/en/code.md",
+			}
+
+			sc.On("SlugExists", mock.Anything, "code-post", "en").Return(false, nil).Once()
+			cc.On("Create", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(
+				func(req contentdomain.CreateContentRequest) bool {
+					for _, want := range tt.wantInBody {
+						if !strings.Contains(req.Content, want) {
+							return false
+						}
+					}
+					return !strings.Contains(req.Content, "{{<")
+				}),
+			).Return(&contentdomain.Content{ID: 1}, nil).Once()
+
+			imp := hugo.NewImporter(cc, ac, sc, ms, nil, "en", util.NewLogger(io.Discard))
+			result := imp.Import(ctx, &hugo.HugoSite{Items: []*hugo.HugoItem{item}, SourcePath: "test"}, 1, hugo.ImportOptions{}, nil)
+
+			require.NotNil(t, result)
+			assert.Equal(t, 1, result.Imported)
+		})
+	}
 }

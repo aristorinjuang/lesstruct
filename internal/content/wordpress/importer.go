@@ -15,6 +15,7 @@ import (
 
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
+	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
 	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
@@ -232,11 +233,23 @@ func (imp *Importer) downloadImages(ctx context.Context, items []ParsedItem, use
 	return imageMap, errs
 }
 
+// featuredCheckLimit is the number of body images examined when deciding
+// whether prepending the featured image would show the same picture twice.
+const featuredCheckLimit = 3
+
+// Reasons reported by featuredDuplicateOfBody.
+const (
+	dupNone   = ""
+	dupExact  = "exact"
+	dupVisual = "visual"
+)
+
 func (imp *Importer) importItem(
 	ctx context.Context,
 	item ParsedItem,
 	imageMap map[string]string,
 	featuredImageURL string,
+	featuredSourceURL string,
 	userID int,
 	result *ImportResult,
 ) {
@@ -251,6 +264,25 @@ func (imp *Importer) importItem(
 		}
 		format = contentdomain.FormatHTML
 	} else {
+		// Prepend the featured image unless the body would then show the
+		// same picture twice — either an existing body image carries the
+		// exact same source URL, or one of them is perceptually the same
+		// picture under a different URL (a resized export or hotlink variant
+		// that content-hash dedup cannot see). Perceptual skips are surfaced
+		// as warnings so site owners can audit what was left out.
+		reason, duplicateOf := imp.featuredDuplicateOfBody(item.Content, featuredSourceURL)
+		switch reason {
+		case dupExact:
+			featuredImageURL = ""
+		case dupVisual:
+			featuredImageURL = ""
+			result.Errors = append(result.Errors, fmt.Sprintf(
+				"warning: featured image %q looks identical to an existing body image %q — prepend skipped",
+				featuredSourceURL,
+				duplicateOf,
+			))
+		}
+
 		var err error
 		contentBody, err = ConvertBlocks(item.Content, imageMap, featuredImageURL)
 		if err != nil {
@@ -440,29 +472,65 @@ func (imp *Importer) resolveUserID(
 	return id
 }
 
+// featuredDuplicateOfBody reports whether the post's body already shows the
+// featured picture among its first images — compared in source-URL space
+// against the perceptual hashes recorded by the media downloader during
+// download. An exact source-URL match wins silently; otherwise a
+// perceptual-hash comparison catches the same picture under a different URL.
+// Images whose hash is unknown (not downloaded, undecodable) fall back to the
+// exact check only.
+func (imp *Importer) featuredDuplicateOfBody(content string, featuredSourceURL string) (string, string) {
+	if featuredSourceURL == "" || imp.downloader == nil {
+		return dupNone, ""
+	}
+
+	srcs := ExtractImageURLs(content)
+	if len(srcs) > featuredCheckLimit {
+		srcs = srcs[:featuredCheckLimit]
+	}
+	for _, src := range srcs {
+		if src == featuredSourceURL {
+			return dupExact, src
+		}
+	}
+
+	featuredHash, ok := imp.downloader.PHash(featuredSourceURL)
+	if !ok {
+		return dupNone, ""
+	}
+	for _, src := range srcs {
+		hash, ok := imp.downloader.PHash(src)
+		if ok && mediadomain.PerceptuallySimilar(featuredHash, hash) {
+			return dupVisual, src
+		}
+	}
+	return dupNone, ""
+}
+
 // resolveFeaturedImage resolves a WordPress post's _thumbnail_id to a local
 // media URL. The attachment post ID is looked up in the pre-built attachments
 // map (built by the parser from attachment items), downloaded via the media
 // downloader, and remapped to a local URL. On failure the original WordPress
-// URL is returned so the image is hotlinked rather than lost.
+// URL is returned so the image is hotlinked rather than lost. The original
+// WordPress URL is returned alongside for duplicate detection.
 func (imp *Importer) resolveFeaturedImage(
 	ctx context.Context,
 	item ParsedItem,
 	attachments map[int]string,
 	userID int,
 	result *ImportResult,
-) string {
+) (string, string) {
 	thumbnailID, ok := item.Meta["_thumbnail_id"]
 	if !ok || strings.TrimSpace(thumbnailID) == "" {
-		return ""
+		return "", ""
 	}
 	id, err := strconv.Atoi(strings.TrimSpace(thumbnailID))
 	if err != nil || id == 0 {
-		return ""
+		return "", ""
 	}
 	wpURL, ok := attachments[id]
 	if !ok || wpURL == "" {
-		return ""
+		return "", ""
 	}
 	local, err := imp.downloader.DownloadAndUpload(ctx, wpURL, userID)
 	if err != nil {
@@ -470,12 +538,12 @@ func (imp *Importer) resolveFeaturedImage(
 			imp.logger.Error("WordPress import: featured image download failed for %s: %v", wpURL, err)
 		}
 		result.Errors = append(result.Errors, fmt.Sprintf("featured image not downloaded: %s", wpURL))
-		return wpURL
+		return wpURL, wpURL
 	}
 	if local != "" {
-		return local
+		return local, wpURL
 	}
-	return wpURL
+	return wpURL, wpURL
 }
 
 func (imp *Importer) allowedPostTypes() map[string]bool {
@@ -527,16 +595,16 @@ func (imp *Importer) Import(ctx context.Context, wxrData io.Reader, userID int, 
 
 	for _, item := range doc.Items {
 		var itemImageMap map[string]string
-		var featuredURL string
+		var featuredURL, featuredSource string
 		if !opts.SkipMedia {
 			var downloadErrs []string
 			itemImageMap, downloadErrs = imp.downloadImages(ctx, []ParsedItem{item}, userID)
 			result.Errors = append(result.Errors, downloadErrs...)
-			featuredURL = imp.resolveFeaturedImage(ctx, item, doc.Attachments, userID, result)
+			featuredURL, featuredSource = imp.resolveFeaturedImage(ctx, item, doc.Attachments, userID, result)
 		}
 
 		itemUserID := imp.resolveUserID(ctx, item.Creator, authorByLogin, userID, creatorCache, result)
-		imp.importItem(ctx, item, itemImageMap, featuredURL, itemUserID, result)
+		imp.importItem(ctx, item, itemImageMap, featuredURL, featuredSource, itemUserID, result)
 
 		if onProgress != nil {
 			onProgress(Progress{

@@ -419,7 +419,7 @@ type ContentServiceInterface interface {
 	GetPublished(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	GetPublishedBySlug(ctx context.Context, slug string, language string) (*contentdomain.Content, error)
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
-	GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*contentdomain.Content, error)
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error)
@@ -427,8 +427,8 @@ type ContentServiceInterface interface {
 	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
 	GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error)
 	GetPublishedAuthor(ctx context.Context, username string) (*contentdomain.PublishedAuthor, error)
-	GetPublishedArchive(ctx context.Context, postType string, language string) ([]*contentdomain.ArchiveMonth, error)
-	GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error)
+	GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
 }
 
 type ContentHandler struct {
@@ -996,7 +996,7 @@ func (h *ContentHandler) ListPublishedContents(w http.ResponseWriter, r *http.Re
 		}
 		contents, err = h.contentService.ListByFilters(r.Context(), 0, filters)
 	} else if postType != "" {
-		contents, err = h.contentService.GetPublishedByPostType(r.Context(), postType, "", 0, 0, limit, offset)
+		contents, err = h.contentService.GetPublishedByPostType(r.Context(), postType, nil, 0, 0, limit, offset)
 	} else {
 		contents, err = h.contentService.GetPublished(r.Context(), limit, offset)
 	}
@@ -1112,7 +1112,7 @@ func (h *ContentHandler) GetPublishedContentByAuthor(w http.ResponseWriter, r *h
 		}
 	}
 
-	contents, err := h.contentService.GetPublishedByAuthorUsername(r.Context(), username, "", limit, offset)
+	contents, err := h.contentService.GetPublishedByAuthorUsername(r.Context(), username, nil, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list published content by author: %v", err)
 		handleContentError(w, err)
@@ -1247,8 +1247,12 @@ func (h *ContentHandler) GetPublishedAuthor(w http.ResponseWriter, r *http.Reque
 func (h *ContentHandler) ListPublishedArchive(w http.ResponseWriter, r *http.Request) {
 	postType := r.URL.Query().Get("post_type")
 	language := r.URL.Query().Get("language")
+	var languages []string
+	if language != "" {
+		languages = []string{language}
+	}
 
-	archive, err := h.contentService.GetPublishedArchive(r.Context(), postType, language)
+	archive, err := h.contentService.GetPublishedArchive(r.Context(), postType, languages)
 	if err != nil {
 		h.logger.Error("Failed to list published archive: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "internal_error", "Failed to list published archive", nil)

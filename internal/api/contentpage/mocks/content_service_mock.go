@@ -247,8 +247,8 @@ func (_c *MockContentService_GetPublished_Call) RunAndReturn(run func(ctx contex
 }
 
 // GetPublishedByAuthorUsername provides a mock function for the type MockContentService
-func (_mock *MockContentService) GetPublishedByAuthorUsername(ctx context.Context, username string, language string, limit int, offset int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, username, language, limit, offset)
+func (_mock *MockContentService) GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, username, languages, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedByAuthorUsername")
@@ -256,18 +256,18 @@ func (_mock *MockContentService) GetPublishedByAuthorUsername(ctx context.Contex
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, username, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, username, languages, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, username, language, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, username, languages, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int) error); ok {
-		r1 = returnFunc(ctx, username, language, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, int, int) error); ok {
+		r1 = returnFunc(ctx, username, languages, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -282,14 +282,14 @@ type MockContentService_GetPublishedByAuthorUsername_Call struct {
 // GetPublishedByAuthorUsername is a helper method to define mock.On call
 //   - ctx context.Context
 //   - username string
-//   - language string
+//   - languages []string
 //   - limit int
 //   - offset int
-func (_e *MockContentService_Expecter) GetPublishedByAuthorUsername(ctx any, username any, language any, limit any, offset any) *MockContentService_GetPublishedByAuthorUsername_Call {
-	return &MockContentService_GetPublishedByAuthorUsername_Call{Call: _e.mock.On("GetPublishedByAuthorUsername", ctx, username, language, limit, offset)}
+func (_e *MockContentService_Expecter) GetPublishedByAuthorUsername(ctx any, username any, languages any, limit any, offset any) *MockContentService_GetPublishedByAuthorUsername_Call {
+	return &MockContentService_GetPublishedByAuthorUsername_Call{Call: _e.mock.On("GetPublishedByAuthorUsername", ctx, username, languages, limit, offset)}
 }
 
-func (_c *MockContentService_GetPublishedByAuthorUsername_Call) Run(run func(ctx context.Context, username string, language string, limit int, offset int)) *MockContentService_GetPublishedByAuthorUsername_Call {
+func (_c *MockContentService_GetPublishedByAuthorUsername_Call) Run(run func(ctx context.Context, username string, languages []string, limit int, offset int)) *MockContentService_GetPublishedByAuthorUsername_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -299,9 +299,9 @@ func (_c *MockContentService_GetPublishedByAuthorUsername_Call) Run(run func(ctx
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 []string
 		if args[2] != nil {
-			arg2 = args[2].(string)
+			arg2 = args[2].([]string)
 		}
 		var arg3 int
 		if args[3] != nil {
@@ -327,7 +327,7 @@ func (_c *MockContentService_GetPublishedByAuthorUsername_Call) Return(contents 
 	return _c
 }
 
-func (_c *MockContentService_GetPublishedByAuthorUsername_Call) RunAndReturn(run func(ctx context.Context, username string, language string, limit int, offset int) ([]*content.Content, error)) *MockContentService_GetPublishedByAuthorUsername_Call {
+func (_c *MockContentService_GetPublishedByAuthorUsername_Call) RunAndReturn(run func(ctx context.Context, username string, languages []string, limit int, offset int) ([]*content.Content, error)) *MockContentService_GetPublishedByAuthorUsername_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -401,8 +401,8 @@ func (_c *MockContentService_GetPublishedByID_Call) RunAndReturn(run func(ctx co
 }
 
 // GetPublishedByPostType provides a mock function for the type MockContentService
-func (_mock *MockContentService) GetPublishedByPostType(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, postType, language, year, month, limit, offset)
+func (_mock *MockContentService) GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, postType, languages, year, month, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedByPostType")
@@ -410,18 +410,18 @@ func (_mock *MockContentService) GetPublishedByPostType(ctx context.Context, pos
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, postType, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, postType, languages, year, month, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, postType, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, postType, languages, year, month, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int, int, int) error); ok {
-		r1 = returnFunc(ctx, postType, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, int, int, int, int) error); ok {
+		r1 = returnFunc(ctx, postType, languages, year, month, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -436,16 +436,16 @@ type MockContentService_GetPublishedByPostType_Call struct {
 // GetPublishedByPostType is a helper method to define mock.On call
 //   - ctx context.Context
 //   - postType string
-//   - language string
+//   - languages []string
 //   - year int
 //   - month int
 //   - limit int
 //   - offset int
-func (_e *MockContentService_Expecter) GetPublishedByPostType(ctx any, postType any, language any, year any, month any, limit any, offset any) *MockContentService_GetPublishedByPostType_Call {
-	return &MockContentService_GetPublishedByPostType_Call{Call: _e.mock.On("GetPublishedByPostType", ctx, postType, language, year, month, limit, offset)}
+func (_e *MockContentService_Expecter) GetPublishedByPostType(ctx any, postType any, languages any, year any, month any, limit any, offset any) *MockContentService_GetPublishedByPostType_Call {
+	return &MockContentService_GetPublishedByPostType_Call{Call: _e.mock.On("GetPublishedByPostType", ctx, postType, languages, year, month, limit, offset)}
 }
 
-func (_c *MockContentService_GetPublishedByPostType_Call) Run(run func(ctx context.Context, postType string, language string, year int, month int, limit int, offset int)) *MockContentService_GetPublishedByPostType_Call {
+func (_c *MockContentService_GetPublishedByPostType_Call) Run(run func(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int)) *MockContentService_GetPublishedByPostType_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -455,9 +455,9 @@ func (_c *MockContentService_GetPublishedByPostType_Call) Run(run func(ctx conte
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 []string
 		if args[2] != nil {
-			arg2 = args[2].(string)
+			arg2 = args[2].([]string)
 		}
 		var arg3 int
 		if args[3] != nil {
@@ -493,7 +493,7 @@ func (_c *MockContentService_GetPublishedByPostType_Call) Return(contents []*con
 	return _c
 }
 
-func (_c *MockContentService_GetPublishedByPostType_Call) RunAndReturn(run func(ctx context.Context, postType string, language string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockContentService_GetPublishedByPostType_Call {
+func (_c *MockContentService_GetPublishedByPostType_Call) RunAndReturn(run func(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockContentService_GetPublishedByPostType_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -567,8 +567,8 @@ func (_c *MockContentService_GetPublishedBySlugAny_Call) RunAndReturn(run func(c
 }
 
 // GetPublishedByTag provides a mock function for the type MockContentService
-func (_mock *MockContentService) GetPublishedByTag(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, tag, language, year, month, limit, offset)
+func (_mock *MockContentService) GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, tag, languages, year, month, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPublishedByTag")
@@ -576,18 +576,18 @@ func (_mock *MockContentService) GetPublishedByTag(ctx context.Context, tag stri
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, tag, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int, int, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, tag, languages, year, month, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int, int, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, tag, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int, int, int, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, tag, languages, year, month, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int, int, int) error); ok {
-		r1 = returnFunc(ctx, tag, language, year, month, limit, offset)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, int, int, int, int) error); ok {
+		r1 = returnFunc(ctx, tag, languages, year, month, limit, offset)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -602,16 +602,16 @@ type MockContentService_GetPublishedByTag_Call struct {
 // GetPublishedByTag is a helper method to define mock.On call
 //   - ctx context.Context
 //   - tag string
-//   - language string
+//   - languages []string
 //   - year int
 //   - month int
 //   - limit int
 //   - offset int
-func (_e *MockContentService_Expecter) GetPublishedByTag(ctx any, tag any, language any, year any, month any, limit any, offset any) *MockContentService_GetPublishedByTag_Call {
-	return &MockContentService_GetPublishedByTag_Call{Call: _e.mock.On("GetPublishedByTag", ctx, tag, language, year, month, limit, offset)}
+func (_e *MockContentService_Expecter) GetPublishedByTag(ctx any, tag any, languages any, year any, month any, limit any, offset any) *MockContentService_GetPublishedByTag_Call {
+	return &MockContentService_GetPublishedByTag_Call{Call: _e.mock.On("GetPublishedByTag", ctx, tag, languages, year, month, limit, offset)}
 }
 
-func (_c *MockContentService_GetPublishedByTag_Call) Run(run func(ctx context.Context, tag string, language string, year int, month int, limit int, offset int)) *MockContentService_GetPublishedByTag_Call {
+func (_c *MockContentService_GetPublishedByTag_Call) Run(run func(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int)) *MockContentService_GetPublishedByTag_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -621,9 +621,9 @@ func (_c *MockContentService_GetPublishedByTag_Call) Run(run func(ctx context.Co
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 string
+		var arg2 []string
 		if args[2] != nil {
-			arg2 = args[2].(string)
+			arg2 = args[2].([]string)
 		}
 		var arg3 int
 		if args[3] != nil {
@@ -659,7 +659,7 @@ func (_c *MockContentService_GetPublishedByTag_Call) Return(contents []*content.
 	return _c
 }
 
-func (_c *MockContentService_GetPublishedByTag_Call) RunAndReturn(run func(ctx context.Context, tag string, language string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockContentService_GetPublishedByTag_Call {
+func (_c *MockContentService_GetPublishedByTag_Call) RunAndReturn(run func(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*content.Content, error)) *MockContentService_GetPublishedByTag_Call {
 	_c.Call.Return(run)
 	return _c
 }

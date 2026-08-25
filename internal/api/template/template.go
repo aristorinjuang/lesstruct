@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -197,6 +199,7 @@ type ContentData struct {
 	Related               []PostItem
 	Comments              []CommentItem
 	PostType              string
+	PostScripts           template.HTML
 }
 
 type AuthorData struct {
@@ -453,4 +456,31 @@ func StaticFiles(theme *Theme) http.Handler {
 		fs:        handlerFS,
 		assetHash: assetHash,
 	}
+}
+
+// EmbeddedStaticFS returns the built-in static assets served under /static/
+// when no theme overrides them. The SSG exporter copies this tree as the base
+// layer of the exported /static/ directory.
+func EmbeddedStaticFS() fs.FS {
+	sub, _ := fs.Sub(staticFS, "static")
+
+	return sub
+}
+
+// ThemeStaticFS returns the active theme's static subtree on disk, or nil when
+// no theme is configured or the theme ships no static directory. The SSG
+// exporter copies it over the embedded layer so theme files win on name
+// conflicts, mirroring the live server's resolution order.
+func ThemeStaticFS(theme *Theme) fs.FS {
+	if theme == nil || theme.Dir == "" {
+		return nil
+	}
+
+	dir := filepath.Join(theme.Dir, "static")
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return nil
+	}
+
+	return os.DirFS(dir)
 }

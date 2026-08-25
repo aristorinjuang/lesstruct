@@ -173,21 +173,21 @@ func TestService_Generate_ValidationErrors(t *testing.T) {
 		{
 			name: "invalid og title override - too long",
 			input: seo.GenerateInput{
-				Title:    "This is a very long title that exceeds the sixty character limit for OG titles",
-				Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
-				OGTitle:  "This is a very long title that exceeds the sixty character limit for OG titles",
+				Title:   "This is a very long title that exceeds the sixty character limit for OG titles",
+				Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
+				OGTitle: "This is a very long title that exceeds the sixty character limit for OG titles",
 			},
 			wantErr: seo.ErrInvalidOGTitle,
 		},
-			{
-				name: "invalid og description override - too long",
-				input: seo.GenerateInput{
-					Title:         "Test Title",
-					Content:       `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
-					OGDescription: "This is a very long og description that exceeds one hundred and sixty characters limit and should fail validation because it is simply too long for search engines to accept properly",
-				},
-				wantErr: seo.ErrInvalidOGDescription,
+		{
+			name: "invalid og description override - too long",
+			input: seo.GenerateInput{
+				Title:         "Test Title",
+				Content:       `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
+				OGDescription: "This is a very long og description that exceeds one hundred and sixty characters limit and should fail validation because it is simply too long for search engines to accept properly",
 			},
+			wantErr: seo.ErrInvalidOGDescription,
+		},
 	}
 
 	for _, tt := range tests {
@@ -587,6 +587,91 @@ func TestService_Generate_EmptyContentFallsBackToTitle(t *testing.T) {
 			assert.Equal(t, tt.wantOGTitle, metadata.OGTitle)
 			assert.Equal(t, tt.wantOGDesc, metadata.OGDescription)
 			assert.Equal(t, tt.wantOGTitle, metadata.TwitterTitle)
+		})
+	}
+}
+
+func TestService_Generate_OGDescriptionMirrorsMetaDescription(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      seo.GenerateInput
+		wantOGDesc string
+	}{
+		{
+			name: "success - og description mirrors meta description when unset",
+			input: seo.GenerateInput{
+				Title:           "Test Title",
+				Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Body text that should be ignored for og"}]}]}`,
+				MetaDescription: "Custom meta description",
+			},
+			wantOGDesc: "Custom meta description",
+		},
+		{
+			name: "success - explicit og description override wins",
+			input: seo.GenerateInput{
+				Title:           "Test Title",
+				Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Body text"}]}]}`,
+				MetaDescription: "Custom meta description",
+				OGDescription:   "Custom OG description",
+			},
+			wantOGDesc: "Custom OG description",
+		},
+		{
+			name: "success - both derived from body when neither set",
+			input: seo.GenerateInput{
+				Title:   "Test Title",
+				Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Derived from body text"}]}]}`,
+			},
+			wantOGDesc: "Derived from body text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := seo.NewService("https://example.com", "Test Site")
+
+			metadata, err := service.Generate(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantOGDesc, metadata.OGDescription)
+			assert.Equal(t, metadata.OGDescription, metadata.TwitterDescription)
+		})
+	}
+}
+
+func TestService_Generate_CollapsesBodyWhitespace(t *testing.T) {
+	tests := []struct {
+		name         string
+		content      string
+		format       string
+		wantMetaDesc string
+	}{
+		{
+			name:         "success - tiptap body newlines and tabs collapsed",
+			content:      `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"First   line.\nSecond\n\tparagraph."}]}]}`,
+			format:       "",
+			wantMetaDesc: "First line. Second paragraph.",
+		},
+		{
+			name:         "success - html body newlines collapsed",
+			content:      "<p>First   line.</p>\n<p>Second\n\tparagraph.</p>",
+			format:       "html",
+			wantMetaDesc: "First line. Second paragraph.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := seo.NewService("https://example.com", "Test Site")
+
+			metadata, err := service.Generate(seo.GenerateInput{
+				Title:   "Test Title",
+				Content: tt.content,
+				Format:  tt.format,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMetaDesc, metadata.MetaDescription)
+			assert.NotContains(t, metadata.MetaDescription, "\n")
+			assert.Equal(t, metadata.MetaDescription, metadata.OGDescription)
 		})
 	}
 }

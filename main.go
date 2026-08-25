@@ -220,7 +220,7 @@ func newStorage(driver string, cfg *config.Config, keyPrefix string, localDir st
 			KeyPrefix:       keyPrefix,
 		})
 	}
-	return appstorage.NewLocalStorage(localDir, cfg.Host, cfg.Port, localURLPrefix), nil
+	return appstorage.NewLocalStorage(localDir, localURLPrefix), nil
 }
 
 func newDashboardRepo(driver string, db *sql.DB) dashboarddomain.Repository {
@@ -540,7 +540,10 @@ func main() {
 		Password: cfg.SMTPPassword,
 		From:     cfg.SMTPFrom,
 	}
-	baseURL := fmt.Sprintf("http://%s:%d", cfg.Host, cfg.Port)
+	// SITE_URL is the canonical public origin: it drives SEO meta tags,
+	// sitemaps, robots.txt and author profile links so they stay correct
+	// behind reverse proxies and HTTPS (HOST/PORT only bind the listener).
+	baseURL := strings.TrimRight(cfg.SiteURL, "/")
 	emailService := email.NewService(smtpConfig, logger, cfg.SiteURL)
 
 	blockedEmailRepo := newBlockedEmailRepo(cfg.DBDriver, db.DB())
@@ -977,6 +980,7 @@ func main() {
 		registrationEnabled,
 	)
 	contentPageHandler = contentPageHandler.WithPublicFieldRegistry(publicFieldRegistry)
+	contentPageHandler = contentPageHandler.WithBaseURL(baseURL)
 
 	// The sanitizer's iframe allowlist mirrors the CSP frame-src directive
 	// (defaults + operator appends) so embeds the CSP allows to be framed are
@@ -997,10 +1001,13 @@ func main() {
 	staticHandler := template.StaticFiles(theme)
 
 	// Alias redirect handler wraps the content site catch-all to serve 301s.
+	// Theme root files (theme's root/ directory, e.g. webpushr-sw.js) sit
+	// between the alias lookup and the content renderer so they are served at
+	// the site root on the dynamic server too.
 	aliasRedirectHandler := handlers.NewAliasRedirectHandler(
 		aliasService,
 		contentService,
-		http.HandlerFunc(staticServer.ServeContent),
+		template.RootFilesHandler(theme, http.HandlerFunc(staticServer.ServeContent)),
 	)
 
 	// Initialize content exporter (Phase 2) — exports all content as Hugo-compatible
@@ -1017,7 +1024,8 @@ func main() {
 	exportHandler := handlers.NewExportHandler(exporter, utilLogger)
 
 	// Initialize static site generator (Phase 3) — generates a fully rendered
-	// static site with AMP variants as a tar.gz archive.
+	// static site with AMP variants as a tar.gz archive. Aliases are attached
+	// so legacy URLs ship as meta-refresh redirect pages.
 	ssgGenerator := ssg.NewGenerator(
 		contentPageHandler.Assembler(),
 		contentTemplates,
@@ -1025,7 +1033,7 @@ func main() {
 		filepath.Join("data", "uploads", "media"),
 		theme,
 		cfg.SiteURL,
-	)
+	).WithAliases(aliasService)
 	ssgHandler := handlers.NewSSGHandler(ssgGenerator, utilLogger)
 
 	// Start HTTP server

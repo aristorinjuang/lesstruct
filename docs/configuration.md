@@ -63,6 +63,8 @@ All env vars are loaded by `internal/config/config.go:Load()` and override the c
 
 Media files and profile pictures are stored through a single `Storage` interface (`internal/storage/`) with two backends: **local** (default) and **s3**. The `s3` backend works against **both AWS S3 and MinIO** — they speak the same S3 API, so one driver serves either; the difference is configuration (endpoint + path style), not code.
 
+The driver also decides the **shape of stored media URLs**: the `local` backend produces **root-relative URLs** (`/uploads/media/<file>`) — they resolve against whatever origin serves the page, so reverse proxies and HTTPS need no extra config — while the `s3` backend produces **absolute URLs** (`<STORAGE_S3_PUBLIC_BASE_URL>/<key>`). SEO contexts that require absolute values (Open Graph/Twitter images, JSON-LD) are absolutized with `SITE_URL`.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `STORAGE_DRIVER` | `local` | One of `local`, `s3`. |
@@ -76,10 +78,10 @@ Media files and profile pictures are stored through a single `Storage` interface
 
 **Per-driver requirements** (enforced at startup):
 
-- **Local** — files live under `data/uploads/media/` and `data/uploads/profile_pictures/`, served by the server's built-in fileserver at `/uploads/media/*` and `/uploads/profile_pictures/*`. No configuration needed.
-- **S3** — `STORAGE_S3_REGION`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, and `STORAGE_S3_PUBLIC_BASE_URL` are required. Files are stored under the `media/` and `profile_pictures/` key prefixes; the local fileserver is **not** mounted — clients fetch bytes directly from the public base URL.
+- **Local** — files live under `data/uploads/media/` and `data/uploads/profile_pictures/`, served by the server's built-in fileserver at `/uploads/media/*` and `/uploads/profile_pictures/*`. `GetURL` returns root-relative URLs (`/uploads/media/<file>`). No configuration needed.
+- **S3** — `STORAGE_S3_REGION`, `STORAGE_S3_BUCKET`, `STORAGE_S3_ACCESS_KEY_ID`, `STORAGE_S3_SECRET_ACCESS_KEY`, and `STORAGE_S3_PUBLIC_BASE_URL` are required. Files are stored under the `media/` and `profile_pictures/` key prefixes; `GetURL` returns absolute URLs (`<STORAGE_S3_PUBLIC_BASE_URL>/<key>`); the local fileserver is **not** mounted — clients fetch bytes directly from the public base URL.
 
-**Switching drivers after data exists**: `media_files.file_path`/`url` and the profile picture column store whatever the active backend produced (absolute disk paths for `local`, object keys + public URLs for `s3`). Rows created under one driver are not readable under the other — switching requires a one-time migration that re-uploads the existing files and rewrites the stored paths/URLs (there is no built-in migration tool yet).
+**Switching drivers after data exists**: `media_files.file_path`/`url` and the profile picture column store whatever the active backend produced (root-relative URL paths for `local`, object keys + public URLs for `s3`). Rows created under one driver are not readable under the other — switching requires a one-time migration that re-uploads the existing files and rewrites the stored paths/URLs (there is no built-in migration tool yet). Rows written by older Lesstruct versions under the local driver contain absolute `http://host:port` URLs; they keep rendering as-is (both shapes resolve), and new uploads use the relative form.
 
 ### Authentication
 
@@ -116,7 +118,7 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SITE_URL` | `http://localhost:8080` | Base URL of the public site. Used in email verification links, password reset links, and Open Graph tags. |
+| `SITE_URL` | `http://localhost:8080` | Canonical public origin of the site. Used for email verification/reset links, SEO metadata (Open Graph/Twitter/JSON-LD image absolutization), the XML sitemap, robots.txt, static-site generation, and author profile links in the public API. Set it to the public `https://` origin when running behind a reverse proxy — `HOST`/`PORT` only bind the listener and never appear in generated links. |
 | `DEV_MODE` | `false` | When `true`, the admin panel is served from the Vite dev server (`ADMIN_DEV_URL`) instead of the embedded build. **Same env var enables plugin hot-reload** — see the plugin skill. |
 | `ADMIN_DEV_URL` | `http://localhost:5173` | URL of the Vite dev server (only used when `DEV_MODE=true`). |
 | `THEME_DIR` | empty | Path to a custom theme directory. Empty uses the embedded theme. See the theme skill. |
@@ -201,7 +203,7 @@ The first line is silently overridden by the empty second line — Lesstruct end
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `languages` | `[]string` | `["en"]` | ISO 639-1 language codes. The first is the primary language. Used by the i18n catalog, the admin language switcher, and the content language switcher. |
+| `languages` | `[]string` | `["en"]` | ISO 639-1 language codes. The first is the primary language. Used by the i18n catalog, the admin language switcher, and the content language switcher. Public listings (homepage, sections, tag/author pages, static export) list each translation group once, preferring languages in this order — a post missing from the primary language falls back to the next configured one. |
 | `[site_config]` | table | empty | Site-wide identity: `name` and `logo`. See below. |
 | `[user_fields]` | table | empty | Global user profile fields. Applies to all users. |
 | `[[post_type]]` | array of tables | four built-in types | Custom post types, or extensions to built-in types (see below). Add as many as needed. |
@@ -269,11 +271,13 @@ Used in `[user_fields].fields`, `[user_fields].system_fields`, `[[post_type]].fi
 | `max` | `float` | for `number` | Maximum allowed value. |
 | `max_length` | `int` | for `text`/`textarea` | Maximum character count. |
 
+> **Reserved slug `post_script`:** When a post type declares a `post_script` field (recommended type `textarea`), its raw HTML is emitted verbatim at the end of the post via `{{.PostScripts}}` — excluded from the visible custom-fields section and stripped from AMP. Declaration is the operator's opt-in (like Ghost's per-post code injection): only declare it on types whose editors are fully trusted, and ensure your CSP allows what you emit (external `src` is `'self'`-clean; inline needs `'unsafe-inline'`).
+
 ### `[[homepage_section]]`
 
 Each entry tells the public homepage to render a per-post-type grouping (for example, a magazine-style "Latest Articles" or "Upcoming Events" block) **in addition to** the flat latest-posts list. Sections are opt-in: when no `[[homepage_section]]` blocks are configured, the homepage renders only the latest-posts list (fully backward compatible).
 
-The latest-posts list and each section are both scoped to the primary language and the post type at the database level. Section items use the same `PostItem` shape as the post grid, and the homepage template exposes them via `.Sections` (see the theme development guide).
+The latest-posts list and each section are both scoped to the configured languages (in priority order) and the post type at the database level: every translation group appears once, under its best-ranked available language, so a post without a primary-language version is not dropped from the list. Section items use the same `PostItem` shape as the post grid, and the homepage template exposes them via `.Sections` (see the theme development guide).
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|

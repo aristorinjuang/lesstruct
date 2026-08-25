@@ -10,7 +10,7 @@ import (
 // LocalStorage implements the Storage interface for local file storage
 type LocalStorage struct {
 	baseDir string
-	baseURL string
+	urlPathPrefix string
 }
 
 // Save saves a file to the local storage
@@ -47,20 +47,19 @@ func (s *LocalStorage) Delete(filePath string) error {
 	return nil
 }
 
-// GetURL returns the URL for a file
+// GetURL returns the relative URL path for a file. Local uploads are always
+// served by this same process (the /uploads/ file server is mounted only when
+// the local driver is active), so a root-relative URL keeps working behind
+// reverse proxies and HTTPS without baking host/port into stored data.
 func (s *LocalStorage) GetURL(filePath string) string {
-	return s.baseURL + filepath.Base(filePath)
+	return s.urlPathPrefix + filepath.Base(filePath)
 }
 
 // NewLocalStorage creates a new local file storage rooted at baseDir and served
 // under the given URL path prefix (e.g. "/uploads/media/")
-func NewLocalStorage(baseDir string, host string, port int, urlPathPrefix string) *LocalStorage {
-	if host == "0.0.0.0" {
-		host = "localhost"
-	}
-	baseURL := fmt.Sprintf("http://%s:%d%s", host, port, urlPathPrefix)
+func NewLocalStorage(baseDir string, urlPathPrefix string) *LocalStorage {
 	return &LocalStorage{
-		baseDir: baseDir,
-		baseURL: baseURL,
+		baseDir:       baseDir,
+		urlPathPrefix: urlPathPrefix,
 	}
 }

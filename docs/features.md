@@ -17,9 +17,21 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   it — `FROM scratch` works.
 - **Static site generation (SSG).** Generate a fully static HTML site (tar.gz) with
   AMP variants for content pages, listing pages, author pages, tag pages, a
-  sitemap, and robots.txt — all rendered from the same data layer as the live site.
-  Download from the admin panel under *Export*, via the agent API, or via
-  `lesstruct-cli ssg`.
+  sitemap, robots.txt, a `404.html` not-found page, and an RSS 2.0 feed of recent
+  posts (`index.xml`) — all rendered from the same data layer as the live site.
+  The archive bundles the active theme's `static/` directory overlaid on only
+  the built-in assets your rendered pages actually reference (plus the two core
+  stylesheets), so exports stay lean and render identically offline. Legacy
+  URL aliases ship as self-contained meta-refresh redirect pages — their
+  targets, like sitemap entries, AMP canonical links, and RSS feed item links,
+  all use the trailing-slash directory form (`/<slug>/`) matching the
+  `<slug>/index.html` export layout so they address the page rather than a
+  flat alias stub; hosts should resolve directory indexes before flat `.html`
+  files — and the theme's `root/` files (e.g. `webpushr-sw.js`) land at the
+  archive root.
+  Download from the admin panel under *Export*,
+  via the agent API, or via `lesstruct-cli ssg` (use `--extract-dir` to unpack the
+  files straight into a deploy directory instead of keeping the archive).
 - **Multi-database.** Embedded SQLite is the default; PostgreSQL and MySQL are
   first-class via `DB_DRIVER`. Schema migrations run automatically on first start,
   per driver.
@@ -69,7 +81,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   format-aware: TipTap content uses JSON extraction, HTML content uses
   tag-stripping — so HTML-format imports (e.g. WordPress Elementor pages)
   get real extracted text in their meta descriptions, not empty strings.
-- **Immutable URL slugs.** The slug is the public URL (`/<slug>`).
+  Image extraction accepts both absolute and root-relative (`/uploads/…`) image
+  URLs; derived descriptions collapse newlines/whitespace; an unset
+  og:description mirrors the resolved meta description (Hugo parity); and a
+  post without any image emits no `og:image` at all instead of a bare domain,
+  letting the theme's default image apply.
+- **Immutable URL slugs.** The slug is the public URL (`/<slug>`). Slugs may contain lowercase letters, digits, hyphens, and dots (no leading/trailing dot, no `..`); `jquery.semantic-tabs` is a valid slug, with legacy `jquery.semantic-tabs.html` served via the alias redirect.
   Any authenticated user can set a custom slug when creating content (in the
   editor or via `--slug` on `lesstruct-cli content create`); otherwise the slug
   is auto-generated from the title. Once saved, the slug is **locked for
@@ -99,12 +116,16 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   Custom post types and field schemas are read from `config.toml`; items whose
   post type is not registered are silently skipped. Featured images
   (`_thumbnail_id`) are resolved from attachment items, downloaded, transcoded
-  to WebP, and prepended to each post's content body; inline body images are
-  likewise downloaded and remapped (downloading is concurrent with a bounded
-  worker pool; transient errors are retried with backoff). Failed downloads fall
-  back to hotlinking the original WordPress URL. Elementor-built pages are
-  imported as `format=html` using the rendered HTML from the Elementor cache,
-  preserving their original layout.
+  to WebP, and prepended to each post's content body — unless the body already
+  shows the same picture among its first images (same source URL, or a
+  perceptually identical image under a different URL), in which case the
+  prepend is skipped so the cover is never duplicated; perceptual skips are
+  reported as `warning:` entries. Inline body images are likewise downloaded
+  and remapped (downloading is concurrent with a bounded worker pool; transient
+  errors are retried with backoff). Failed downloads fall back to hotlinking
+  the original WordPress URL. Elementor-built pages are imported as
+  `format=html` using the rendered HTML from the Elementor cache, preserving
+  their original layout.
   - **Skip-media option.** When importing, you can optionally skip downloading
     media (inline images and featured images). Content imports with original
     WordPress URLs hotlinked — useful for fast imports when you already have
@@ -118,8 +139,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   with YAML frontmatter) into Lesstruct. The import runs asynchronously as a
   background job (202 Accepted + job ID) with a status endpoint for progress
   tracking — identical to the WordPress importer. Hugo `{{</* highlight */>}}`
-  shortcodes are converted to `<pre><code>` blocks and `{{</* iframe */>}}`
-  shortcodes to `<iframe>` elements. YAML frontmatter fields (`title`, `date`,
+  shortcodes (including whitespace-tolerant closing tags) are converted to
+  server-rendered, syntax-highlighted code blocks via chroma — class-based HTML
+  honoring `linenos=table|inline` and escaping code bodies, so themes can style
+  them with their existing `.chroma` CSS; unknown languages fall back to plain
+  escaped code blocks. `{{</* iframe */>}}`
+  shortcodes become `<iframe>` elements. YAML frontmatter fields (`title`, `date`,
   `tags`, `description`, `url`, `aliases`, `draft`, `language`, `hasMath`,
   etc.) are mapped to their Lesstruct equivalents — including `date`, which
   becomes the content's publish date instead of the import time. Old `.html`
@@ -132,11 +157,15 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
     Lesstruct media (WebP passthrough for already-WebP input — no generation
     loss — transcode for other formats, SHA-256 dedup); body `<img src>` paths
     are rewritten to the new media URLs and the first frontmatter `images:`
-    entry is prepended as a featured image — unless the rewritten body's
-    first image is already that same image, in which case the prepend is
-    skipped so the cover is never duplicated. Use the **skip-media** option to
-    import text only with images hotlinked — available in the admin UI
-    (checkbox) and the CLI (`--skip-media` flag).
+    entry is prepended as a featured image — unless the body's first images
+    already show that picture, in which case the prepend is skipped so the
+    cover is never duplicated. The duplicate check compares the body's first
+    three image URLs exactly and their perceptual hashes (8×8 average hash),
+    catching covers that reappear under a different URL — a re-upload, resized
+    export, or hotlink variant that SHA-256 dedup cannot see. Perceptual skips
+    are reported as `warning:` entries in the import result. Use the
+    **skip-media** option to import text only with images hotlinked — available
+    in the admin UI (checkbox) and the CLI (`--skip-media` flag).
   - **Static references survive.** References that resolve to files under the
     Hugo `static/` dir — links, iframe demos, stylesheets, and images that
     could not be migrated — are rewritten to `/static/<path>`, the documented
@@ -209,6 +238,10 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Multilingual by default.** Declare your languages in `config.toml`
   (e.g. `languages = ["en", "id"]`). Content carries a `Language` and authors
   link translations into translation groups.
+- **Listing fallback.** Public listings (homepage, sections, post-type, tag and
+  author pages) show each translation group once, preferring your configured
+  language order — a post without a primary-language version still appears via
+  its translation instead of disappearing.
 - **Translation-aware SEO.** The sitemap declares `hreflang` alternates from
   translation groups.
 - **Localized date formatting.** Post dates follow each content item's
@@ -246,6 +279,11 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   CSS, JS, and HTML templates. The contract (CSS variables, layout blocks, JS DOM
   ids, CDN assets) is documented so fork-and-modify is safe. See
   [theme-development.md](theme-development.md).
+- **Root-level theme files.** A theme's optional `root/` directory is served at
+  the site root (and copied to the static-export archive root) — so fixed-URL
+  files like `/webpushr-sw.js` or `.well-known/` verifications ship with the
+  theme instead of needing host-level copy hacks. Existing paths always win:
+  a `root/` file never shadows content pages or aliases.
 - **Per-post-type templates.** Each post type gets its own content template
   (e.g. `page.html`, `event.html`), falling back to `post.html`, then the
   embedded default. Theme authors can ship a `page.html` without blog chrome
@@ -257,6 +295,7 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   `page-{slug}.php` convention but generalizes to every post type. Pure
   additive fallback — no existing theme breaks. See
   [theme-development.md](theme-development.md).
+- **Per-post scripts.** Declare a `post_script` custom field (`textarea`) on a post type in `config.toml` to opt in; its raw HTML is emitted verbatim at the end of the post via `{{.PostScripts}}` (excluded from the visible custom-fields section and stripped from AMP). Only declare it on types whose editors are fully trusted (like Ghost's per-post code injection), and ensure your CSP allows what you emit — external `src` is `'self'`-clean, inline needs `'unsafe-inline'`.
 - **Multi-type aware.** Every post card and single-page template receives the
   item's `.PostType`, so a theme can branch layouts for articles, events, and any
   custom post type from one template set. Cards also carry the post's raw

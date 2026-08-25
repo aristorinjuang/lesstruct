@@ -251,7 +251,7 @@ func setupProfilePictureTestRouter(
 
 func TestProfilePictureHandler_DeleteProfilePicture_Success(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
+	storage := appstorage.NewLocalStorage(baseDir, "/uploads/profile_pictures/")
 
 	// Pre-save a file
 	_, err := storage.Save("testuser_20260101000000.webp", bytes.NewReader([]byte("fake webp")))
@@ -287,7 +287,7 @@ func TestProfilePictureHandler_DeleteProfilePicture_Success(t *testing.T) {
 
 func TestProfilePictureHandler_DeleteProfilePicture_NoPicture(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
+	storage := appstorage.NewLocalStorage(baseDir, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepoForHandler)
@@ -313,7 +313,7 @@ func TestProfilePictureHandler_DeleteProfilePicture_NoPicture(t *testing.T) {
 
 func TestProfilePictureHandler_UploadProfilePicture_Success(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
+	storage := appstorage.NewLocalStorage(baseDir, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepoForHandler)
@@ -347,7 +347,7 @@ func TestProfilePictureHandler_UploadProfilePicture_Success(t *testing.T) {
 
 func TestProfilePictureHandler_AdminUploadUserPicture_Success(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
+	storage := appstorage.NewLocalStorage(baseDir, "/uploads/profile_pictures/")
 	processor := profilepicture.NewProcessor()
 
 	mockRepo := new(mockUserRepoForHandler)
@@ -381,7 +381,7 @@ func TestProfilePictureHandler_AdminUploadUserPicture_Success(t *testing.T) {
 
 func TestProfilePictureHandler_AdminDeleteUserPicture_Success(t *testing.T) {
 	baseDir := t.TempDir()
-	storage := appstorage.NewLocalStorage(baseDir, "localhost", 8080, "/uploads/profile_pictures/")
+	storage := appstorage.NewLocalStorage(baseDir, "/uploads/profile_pictures/")
 
 	// Pre-save
 	_, err := storage.Save("targetuser_20260101000000.webp", bytes.NewReader([]byte("fake webp")))
