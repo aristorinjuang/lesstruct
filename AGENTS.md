@@ -22,7 +22,7 @@
 - Put all private structs or functions before all public structs or functions!
 - Do not ever use `interface{}`, use `any`!
 - Always use constants instead of typed strings, especially to define HTTP methods! E.g., `http.MethodDelete` instead of `"DELETE"`.
-- **Write modern Go (the toolchain is Go 1.26).** The `modernize` analyzer (`make modernize`) enforces this in CI; write the modern form directly:
+- **Write modern Go (the toolchain is Go 1.27).** The `modernize` analyzer (`make modernize`) enforces this in CI; write the modern form directly:
   - `for i := 0; i < n; i++` → `for i := range n` (and `for y := 0; y < h; y++` → `for y := range h`).
   - Manual `contains` loops → `slices.Contains`; `sort.Slice`/`sort.Strings` → `slices.SortFunc`/`slices.Sort`; loop-built maps/keys → `maps.Copy`, `maps.Keys`, `slices.Sorted`.
   - Manual `min`/`max` `if`-blocks → the `min`/`max` builtins.

@@ -14,7 +14,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 ## Technology Stack & Versions
 
 ### Backend (Go)
-- **Go** 1.26 — module: `github.com/aristorinjuang/lesstruct`
+- **Go** 1.27 — module: `github.com/aristorinjuang/lesstruct`
 - **Chi** 5.2.5 — HTTP router; **httprate** 0.15.0 — per-route rate limiting
 - **Databases** (driver selected via `DB_DRIVER` env: `sqlite` | `postgres` | `mysql`):
   - **SQLite** (modernc.org/sqlite v1.50.0) — default, embedded

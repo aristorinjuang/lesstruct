@@ -6,7 +6,7 @@
 
 > An open-source CMS powered by Go. Fast, configurable, customizable. Built for humans and AI agents, extended with WebAssembly plugins. One binary, no Docker required.
 
-[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
 [![Latest Release](https://img.shields.io/github/v/release/aristorinjuang/lesstruct)](https://github.com/aristorinjuang/lesstruct/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/aristorinjuang/lesstruct/ci.yml?branch=main)](https://github.com/aristorinjuang/lesstruct/actions)
