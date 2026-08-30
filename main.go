@@ -922,6 +922,12 @@ func main() {
 		slices.SortFunc(result, func(a, b tiptap.ImageVariant) int {
 			return cmp.Compare(a.Width, b.Width)
 		})
+		if m.URL != "" && m.Width > 0 && m.Width > result[len(result)-1].Width {
+			result = append(result, tiptap.ImageVariant{
+				URL:   m.URL,
+				Width: m.Width,
+			})
+		}
 		return result
 	})
 	userProvider := contentpage.NewUserRepoAdapter(func(ctx context.Context, username string) (*contentpage.UserBasicInfo, error) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useMediaStore, type Media } from '@/stores/domain/media'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import MediaThumbnail from '@/components/molecules/MediaThumbnail.vue'
@@ -29,6 +29,8 @@ const mediaStore = useMediaStore()
 const aiGenerationAvailable = ref(false)
 const showGenerateModal = ref(false)
 
+const searchQuery = ref('')
+
 const altTextInput = ref('')
 const fileInput = ref<HTMLInputElement>()
 const isUploading = ref(false)
@@ -43,6 +45,15 @@ const displayedMedia = computed(() => {
   return mediaStore.media
 })
 
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(searchQuery, () => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    loadMedia()
+  }, 300)
+})
+
 watch(
   () => props.isOpen,
   async (isOpen) => {
@@ -54,11 +65,17 @@ watch(
 
 async function loadMedia() {
   try {
-    await mediaStore.fetchMedia()
+    await mediaStore.fetchMedia({
+      search: searchQuery.value.trim() || undefined,
+    })
   } catch (error: unknown) {
     const err = error as { response?: { data?: { error?: { message?: string } } } }
     errorMessage.value = err.response?.data?.error?.message || 'Failed to load media'
   }
+}
+
+function clearSearch() {
+  searchQuery.value = ''
 }
 
 async function loadMore() {
@@ -182,6 +199,10 @@ onMounted(async () => {
     aiGenerationAvailable.value = false
   }
 })
+
+onUnmounted(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+})
 </script>
 
 <template>
@@ -238,6 +259,53 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Search -->
+    <div class="media-panel__search">
+      <div class="search-wrapper">
+        <svg
+          class="search-wrapper__icon"
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          width="16"
+          height="16"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+            clip-rule="evenodd"
+          />
+        </svg>
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search by filename..."
+          class="search-wrapper__input"
+        />
+        <button
+          v-if="searchQuery"
+          type="button"
+          class="search-wrapper__clear"
+          aria-label="Clear search"
+          @click="clearSearch"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            width="14"
+            height="14"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <!-- Media Grid -->
     <div v-if="displayedMedia.length > 0" class="media-panel__grid">
       <MediaThumbnail
@@ -277,8 +345,12 @@ onMounted(async () => {
           d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
         />
       </svg>
-      <p class="media-panel__empty-text">No images uploaded yet</p>
-      <p class="media-panel__empty-hint">Upload an image to get started</p>
+      <p class="media-panel__empty-text">
+        {{ searchQuery.trim() ? 'No images found' : 'No images uploaded yet' }}
+      </p>
+      <p class="media-panel__empty-hint">
+        {{ searchQuery.trim() ? 'Try a different search term' : 'Upload an image to get started' }}
+      </p>
     </div>
 
     <!-- Duplicate Media Dialog -->
@@ -310,6 +382,10 @@ onMounted(async () => {
 }
 
 .media-panel__upload {
+  margin-bottom: 1rem;
+}
+
+.media-panel__search {
   margin-bottom: 1rem;
 }
 

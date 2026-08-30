@@ -47,7 +47,10 @@ describe('EditorToolbar', () => {
 
     const select = wrapper.find('.heading-select')
     const options = select.findAll('option')
-    expect(options.length).toBe(4) // Normal + H1, H2, H3
+    expect(options.length).toBe(6) // Normal + H2, H3, H4, H5, H6
+    const values = options.map((o) => o.attributes('value'))
+    expect(values).toEqual(['paragraph', '2', '3', '4', '5', '6'])
+    expect(values).not.toContain('1')
   })
 
   it('exposes setLink, setImage, and removeLink methods', () => {

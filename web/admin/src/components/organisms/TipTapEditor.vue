@@ -74,7 +74,7 @@ const editor = useEditor({
   extensions: [
     StarterKit.configure({
       heading: {
-        levels: [1, 2, 3],
+        levels: [1, 2, 3, 4, 5, 6],
       },
       codeBlock: false,
     }),
@@ -240,6 +240,32 @@ defineExpose({
   line-height: 1.4;
   margin-top: 0.75rem;
   margin-bottom: 0.5rem;
+}
+
+.tiptap-editor-content-wrapper :deep(.tiptap-editor-content h4) {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.tiptap-editor-content-wrapper :deep(.tiptap-editor-content h5) {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.tiptap-editor-content-wrapper :deep(.tiptap-editor-content h6) {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 /* Paragraphs */

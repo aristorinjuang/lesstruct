@@ -224,8 +224,11 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   Extended VP8X/alpha WebP files are fully supported; animated WebP is
   rejected with a clear error.
 - **Configurable thumbnail variants.** Defaults ship `_thumb` (370px),
-  `_medium` (800px), `_large` (1600px); all editable in `config.toml`. The content
-  site emits a responsive `srcset` from them. Post cards also expose an
+  `_medium` (800px), `_large` (1600px); all editable in `config.toml`. Post
+  bodies emit a responsive `srcset` from the variants plus the original at its
+  intrinsic width when it is larger than the largest variant — so wide/high-DPI
+  viewports get the full-resolution image (matching the editor), while small
+  screens get appropriately sized variants. Post cards also expose an
   `ImageVariants` map (keyed by configured suffix) and an `OriginalURL` field
   for the unscaled original, enabling hero backgrounds and high-DPI layouts.
 - **SHA-256 dedup.** Identical uploads are detected and rejected (with a

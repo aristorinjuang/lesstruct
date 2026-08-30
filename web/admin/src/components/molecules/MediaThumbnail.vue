@@ -94,7 +94,7 @@ function formatDate(dateString: string): string {
   border-radius: 0.5rem;
   overflow: hidden;
   transition: all 0.2s ease-in-out;
-  background-color: white;
+  background-color: var(--color-background);
 }
 
 .media-thumbnail:hover {
