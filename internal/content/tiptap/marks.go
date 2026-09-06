@@ -5,6 +5,19 @@ import (
 	"strings"
 )
 
+const (
+	externalRel    = "noopener noreferrer"
+	externalTarget = "_blank"
+)
+
+func isExternalHref(href string) bool {
+	trimmed := strings.TrimSpace(href)
+	lower := strings.ToLower(trimmed)
+	return strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(trimmed, "//")
+}
+
 func renderMarks(text string, marks []mark) string {
 	result := escapeHTML(text)
 	for i := len(marks) - 1; i >= 0; i-- {
@@ -38,16 +51,16 @@ func renderLinkMark(content string, attrs map[string]any) string {
 		return content
 	}
 
+	title, _ := attrs["title"].(string)
+
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `<a href="%s"`, escapeAttr(href))
 
-	if target, ok := attrs["target"].(string); ok && target != "" {
-		fmt.Fprintf(&sb, ` target="%s"`, escapeAttr(target))
+	if isExternalHref(href) {
+		fmt.Fprintf(&sb, ` target="%s" rel="%s"`, externalTarget, externalRel)
 	}
-	if rel, ok := attrs["rel"].(string); ok && rel != "" {
-		fmt.Fprintf(&sb, ` rel="%s"`, escapeAttr(rel))
-	}
-	if title, ok := attrs["title"].(string); ok && title != "" {
+
+	if title != "" {
 		fmt.Fprintf(&sb, ` title="%s"`, escapeAttr(title))
 	}
 

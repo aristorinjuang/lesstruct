@@ -104,6 +104,46 @@ func TestSanitizeHTMLDocument(t *testing.T) {
 			input: `<p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd>, read <var>x</var> from <samp>output</samp> or <code>input</code>.</p>`,
 			want:  `<p>Press <kbd>Ctrl</kbd>+<kbd>C</kbd>, read <var>x</var> from <samp>output</samp> or <code>input</code>.</p>`,
 		},
+		{
+			name:  "external https link gets target and rel",
+			input: `<a href="https://example.com">Example</a>`,
+			want:  `<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>`,
+		},
+		{
+			name:  "external http link gets target and rel",
+			input: `<a href="http://example.com">Example</a>`,
+			want:  `<a href="http://example.com" target="_blank" rel="noopener noreferrer">Example</a>`,
+		},
+		{
+			name:  "protocol-relative link treated as external",
+			input: `<a href="//example.com/page">Example</a>`,
+			want:  `<a href="//example.com/page" target="_blank" rel="noopener noreferrer">Example</a>`,
+		},
+		{
+			name:  "external link replaces existing rel with exact",
+			input: `<a href="https://example.com" rel="noopener">Example</a>`,
+			want:  `<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>`,
+		},
+		{
+			name:  "external link replaces custom rel token",
+			input: `<a href="https://example.com" rel="nofollow">Example</a>`,
+			want:  `<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>`,
+		},
+		{
+			name:  "external link forces target blank",
+			input: `<a href="https://example.com" target="_self">Example</a>`,
+			want:  `<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>`,
+		},
+		{
+			name:  "internal link strips target and rel",
+			input: `<a href="/about" target="_blank" rel="noopener noreferrer">About</a>`,
+			want:  `<a href="/about">About</a>`,
+		},
+		{
+			name:  "mailto link unchanged",
+			input: `<a href="mailto:test@example.com">Email</a>`,
+			want:  `<a href="mailto:test@example.com">Email</a>`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

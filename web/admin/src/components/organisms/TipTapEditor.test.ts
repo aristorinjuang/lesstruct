@@ -203,4 +203,69 @@ describe('TipTapEditor', () => {
     // Unmount should not throw errors
     expect(() => wrapper.unmount()).not.toThrow()
   })
+
+  it('configures link extension as non-inclusive with secure rel and target', () => {
+    let extensions: any[] = []
+    useEditorMock.mockImplementation((options: any) => {
+      extensions = options.extensions || []
+      return mockEditor
+    })
+
+    mount(TipTapEditor, {
+      props: {
+        modelValue: '{"type":"doc","content":[]}',
+      },
+    })
+
+    const linkExt = extensions.find((ext: any) => ext.name === 'link')
+    expect(linkExt).toBeDefined()
+    expect(linkExt.options.HTMLAttributes.class).toBe('text-blue-600 underline hover:text-blue-800')
+    // addAttributes override nulls the rel/target defaults so stored marks
+    // carry no rel/target (the engine adds them back only for external links)
+    const addAttributes = linkExt.config?.addAttributes
+    expect(typeof addAttributes).toBe('function')
+    const attrs = addAttributes.call({ parent: () => ({ href: { default: null } }) })
+    expect(attrs.rel.default).toBeNull()
+    expect(attrs.target.default).toBeNull()
+    // inclusive() should return false so typing after a link does not extend it
+    const inclusive = linkExt.config?.inclusive
+    expect(typeof inclusive).toBe('function')
+    expect(inclusive()).toBe(false)
+    // renderHTML injects rel/target only for external hrefs
+    const renderHTML = linkExt.config?.renderHTML
+    expect(typeof renderHTML).toBe('function')
+    const external = renderHTML({
+      mark: { attrs: { href: 'https://example.com' } },
+      HTMLAttributes: { href: 'https://example.com', class: 'text-blue-600 underline hover:text-blue-800' },
+    })
+    expect(external[1].rel).toBe('noopener noreferrer')
+    expect(external[1].target).toBe('_blank')
+    const internal = renderHTML({
+      mark: { attrs: { href: '/about' } },
+      HTMLAttributes: { href: '/about', class: 'text-blue-600 underline hover:text-blue-800' },
+    })
+    expect(internal[1].rel).toBeUndefined()
+    expect(internal[1].target).toBeUndefined()
+  })
+
+  it('disables StarterKit link to avoid duplicate extension', () => {
+    let extensions: any[] = []
+    useEditorMock.mockImplementation((options: any) => {
+      extensions = options.extensions || []
+      return mockEditor
+    })
+
+    mount(TipTapEditor, {
+      props: {
+        modelValue: '{"type":"doc","content":[]}',
+      },
+    })
+
+    const starterKitExt = extensions.find((ext: any) => ext.name === 'starterKit')
+    expect(starterKitExt).toBeDefined()
+    // StarterKit's link option is disabled
+    expect(starterKitExt.options.link).toBe(false)
+    const linkExts = extensions.filter((ext: any) => ext.name === 'link')
+    expect(linkExts).toHaveLength(1)
+  })
 })

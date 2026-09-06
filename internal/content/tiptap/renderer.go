@@ -100,6 +100,27 @@ func (r Renderer) renderHeading(n node) string {
 
 func (r Renderer) renderList(tag string, n node) string {
 	content := r.renderChildren(n.Content)
+	if tag == "ol" {
+		var extra string
+		if startVal, ok := n.Attrs["start"]; ok {
+			start := 1
+			switch v := startVal.(type) {
+			case float64:
+				start = int(v)
+			case int:
+				start = v
+			}
+			if start != 1 {
+				extra += fmt.Sprintf(` start="%d"`, start)
+			}
+		}
+		if typeVal, ok := n.Attrs["type"]; ok {
+			if typeStr, ok := typeVal.(string); ok && typeStr != "" {
+				extra += fmt.Sprintf(` type="%s"`, escapeAttr(typeStr))
+			}
+		}
+		return fmt.Sprintf(`<ol class="content-wrapper"%s>%s</ol>`, extra, content)
+	}
 	return fmt.Sprintf(`<%s class="content-wrapper">%s</%s>`, tag, content, tag)
 }
 

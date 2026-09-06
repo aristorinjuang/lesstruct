@@ -159,7 +159,7 @@ func TestRender_Link(t *testing.T) {
 		"content": [{"type": "paragraph", "content": [{"type": "text", "text": "click here", "marks": [{"type": "link", "attrs": {"href": "https://example.com"}}]}]}]
 	}`)
 	require.NoError(t, err)
-	assert.Equal(t, `<p class="content-wrapper"><a href="https://example.com">click here</a></p>`, result)
+	assert.Equal(t, `<p class="content-wrapper"><a href="https://example.com" target="_blank" rel="noopener noreferrer">click here</a></p>`, result)
 }
 
 func TestRender_LinkWithTarget(t *testing.T) {
@@ -170,7 +170,80 @@ func TestRender_LinkWithTarget(t *testing.T) {
 		"content": [{"type": "paragraph", "content": [{"type": "text", "text": "link", "marks": [{"type": "link", "attrs": {"href": "https://example.com", "target": "_blank", "rel": "noopener"}}]}]}]
 	}`)
 	require.NoError(t, err)
-	assert.Equal(t, `<p class="content-wrapper"><a href="https://example.com" target="_blank" rel="noopener">link</a></p>`, result)
+	assert.Equal(t, `<p class="content-wrapper"><a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a></p>`, result)
+}
+
+func TestRender_LinkExternalHardening(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "external http gets target and rel",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"http://example.com"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="http://example.com" target="_blank" rel="noopener noreferrer">link</a></p>`,
+		},
+		{
+			name:     "external https with rel noopener merges noreferrer",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"https://example.com","rel":"noopener"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a></p>`,
+		},
+		{
+			name:     "external replaces existing rel with exact tokens",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"https://example.com","rel":"nofollow"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a></p>`,
+		},
+		{
+			name:     "protocol-relative treated as external",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"//example.com/path"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="//example.com/path" target="_blank" rel="noopener noreferrer">link</a></p>`,
+		},
+		{
+			name:     "internal relative unchanged",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"/about"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="/about">link</a></p>`,
+		},
+		{
+			name:     "relative with hash unchanged",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"#section"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="#section">link</a></p>`,
+		},
+		{
+			name:     "mailto unchanged",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"mailto:test@example.com"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="mailto:test@example.com">link</a></p>`,
+		},
+		{
+			name:     "internal with stored target and rel strips them",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"/contact","target":"_self","rel":"author"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="/contact">link</a></p>`,
+		},
+		{
+			name:     "external already has both tokens deduped",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"https://example.com","rel":"noopener noreferrer"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a></p>`,
+		},
+		{
+			name:     "external uppercase scheme",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"HTTPS://EXAMPLE.COM"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="HTTPS://EXAMPLE.COM" target="_blank" rel="noopener noreferrer">link</a></p>`,
+		},
+		{
+			name:     "external with custom target forces blank",
+			input:    `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"link","marks":[{"type":"link","attrs":{"href":"https://example.com","target":"_self"}}]}]}]}`,
+			expected: `<p class="content-wrapper"><a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a></p>`,
+		},
+	}
+
+	r := tiptap.NewRenderer(nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := r.Render(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }
 
 func TestRender_BulletList(t *testing.T) {
@@ -199,6 +272,49 @@ func TestRender_OrderedList(t *testing.T) {
 	}`)
 	require.NoError(t, err)
 	assert.Equal(t, `<ol class="content-wrapper"><li><p class="content-wrapper">First</p></li><li><p class="content-wrapper">Second</p></li></ol>`, result)
+}
+
+func TestRender_OrderedListWithAttrs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "ordered list with start 1 and null type omits attrs",
+			input:    `{"type":"doc","content":[{"type":"orderedList","attrs":{"start":1,"type":null},"content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Item"}]}]}]}]}`,
+			expected: `<ol class="content-wrapper"><li><p class="content-wrapper">Item</p></li></ol>`,
+		},
+		{
+			name:     "ordered list with custom start",
+			input:    `{"type":"doc","content":[{"type":"orderedList","attrs":{"start":5},"content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Item"}]}]}]}]}`,
+			expected: `<ol class="content-wrapper" start="5"><li><p class="content-wrapper">Item</p></li></ol>`,
+		},
+		{
+			name:     "ordered list with type a",
+			input:    `{"type":"doc","content":[{"type":"orderedList","attrs":{"type":"a"},"content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Item"}]}]}]}]}`,
+			expected: `<ol class="content-wrapper" type="a"><li><p class="content-wrapper">Item</p></li></ol>`,
+		},
+		{
+			name:     "ordered list with start and type",
+			input:    `{"type":"doc","content":[{"type":"orderedList","attrs":{"start":5,"type":"a"},"content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Item"}]}]}]}]}`,
+			expected: `<ol class="content-wrapper" start="5" type="a"><li><p class="content-wrapper">Item</p></li></ol>`,
+		},
+		{
+			name:     "ordered list with start 1 omits start but keeps type",
+			input:    `{"type":"doc","content":[{"type":"orderedList","attrs":{"start":1,"type":"I"},"content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"Item"}]}]}]}]}`,
+			expected: `<ol class="content-wrapper" type="I"><li><p class="content-wrapper">Item</p></li></ol>`,
+		},
+	}
+
+	r := tiptap.NewRenderer(nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := r.Render(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }
 
 func TestRender_Blockquote(t *testing.T) {

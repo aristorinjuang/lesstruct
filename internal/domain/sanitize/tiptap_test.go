@@ -190,6 +190,69 @@ func TestValidateTipTapDocument(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid ordered list with start and type",
+			input: `{
+				"type": "doc",
+				"content": [
+					{
+						"type": "orderedList",
+						"attrs": {"start": 5, "type": "a"},
+						"content": [
+							{
+								"type": "listItem",
+								"content": [
+									{"type": "paragraph", "content": [{"type": "text", "text": "First"}]}
+								]
+							}
+						]
+					}
+				]
+			}`,
+			wantErr: false,
+		},
+		{
+			name: "valid ordered list with default start and type",
+			input: `{
+				"type": "doc",
+				"content": [
+					{
+						"type": "orderedList",
+						"attrs": {"start": 1, "type": null},
+						"content": [
+							{
+								"type": "listItem",
+								"content": [
+									{"type": "paragraph", "content": [{"type": "text", "text": "First"}]}
+								]
+							}
+						]
+					}
+				]
+			}`,
+			wantErr: false,
+		},
+		{
+			name: "rejects ordered list with unknown attr",
+			input: `{
+				"type": "doc",
+				"content": [
+					{
+						"type": "orderedList",
+						"attrs": {"start": 1, "foo": "bar"},
+						"content": [
+							{
+								"type": "listItem",
+								"content": [
+									{"type": "paragraph", "content": [{"type": "text", "text": "First"}]}
+								]
+							}
+						]
+					}
+				]
+			}`,
+			wantErr: true,
+		},
+		{
 			name: "valid with http link",
 			input: `{
 				"type": "doc",

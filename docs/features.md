@@ -71,7 +71,11 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   them, and they are queryable. No code required.
 - **TipTap rich-text editor.** Tables, math (KaTeX), syntax-highlighted code
   blocks, emoji, YouTube embeds, links, images, and text alignment — all
-  first-class.
+  first-class. External links (`http://`, `https://`, `//`) always render
+  exactly `rel="noopener noreferrer" target="_blank"` on the published page —
+  never `nofollow` — while internal and relative links never carry `target` or
+  `rel`; pasting a link leaves the next typed character as plain text (the link
+  does not swallow following text).
 - **Draft and publish.** A two-state workflow (`draft`, `published`) with
   publish/unpublish actions exposed in the admin and the CLI.
 - **Soft-delete and restore.** Deleted content is recoverable from the admin

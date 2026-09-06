@@ -127,12 +127,71 @@ func iframeSrcRegexp(hosts []string) *regexp.Regexp {
 	))
 }
 
+const (
+	externalRel    = "noopener noreferrer"
+	externalTarget = "_blank"
+)
+
+func isExternalHref(href string) bool {
+	trimmed := strings.TrimSpace(href)
+	lower := strings.ToLower(trimmed)
+	return strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(trimmed, "//")
+}
+
+var (
+	anchorTagRe            = regexp.MustCompile(`(?i)<a\b[^>]*>`)
+	hrefAttrRe             = regexp.MustCompile(`(?i)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'` + "`" + `>]+))`)
+	targetAttrWithSpaceRe  = regexp.MustCompile(`(?i)\s+target\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'` + "`" + `>]*)`)
+	relAttrWithSpaceRe     = regexp.MustCompile(`(?i)\s+rel\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'` + "`" + `>]*)`)
+	trailingSpaceBeforeEnd = regexp.MustCompile(`\s+>`)
+)
+
+func hardenAnchorTag(tag string) string {
+	hrefMatch := hrefAttrRe.FindStringSubmatch(tag)
+	if hrefMatch == nil {
+		return tag
+	}
+	var href string
+	for i := 1; i < len(hrefMatch); i++ {
+		if hrefMatch[i] != "" {
+			href = hrefMatch[i]
+			break
+		}
+	}
+	if isExternalHref(href) {
+		// External: strip any existing target/rel, then force exact pair.
+		result := targetAttrWithSpaceRe.ReplaceAllString(tag, "")
+		result = relAttrWithSpaceRe.ReplaceAllString(result, "")
+		result = strings.Replace(result, ">", fmt.Sprintf(` target="%s" rel="%s">`, externalTarget, externalRel), 1)
+		return result
+	}
+	// Internal / relative / mailto: strip target and rel entirely.
+	result := targetAttrWithSpaceRe.ReplaceAllString(tag, "")
+	result = relAttrWithSpaceRe.ReplaceAllString(result, "")
+	result = trailingSpaceBeforeEnd.ReplaceAllString(result, ">")
+	return result
+}
+
+func hardenExternalLinks(input string) string {
+	if input == "" {
+		return input
+	}
+	lower := strings.ToLower(input)
+	if !strings.Contains(lower, "<a") {
+		return input
+	}
+	return anchorTagRe.ReplaceAllStringFunc(input, hardenAnchorTag)
+}
+
 // SanitizeHTMLDocument sanitizes an HTML document body using the permissive
 // HTML document policy. The iframeAllowlist controls which domains are allowed
 // in iframe src attributes.
 func SanitizeHTMLDocument(html string, iframeAllowlist ...string) string {
 	p := htmlDocumentPolicy(iframeAllowlist...)
-	return p.Sanitize(html)
+	sanitized := p.Sanitize(html)
+	return hardenExternalLinks(sanitized)
 }
 
 // ValidateHTMLDocument validates that the HTML document is non-empty and does

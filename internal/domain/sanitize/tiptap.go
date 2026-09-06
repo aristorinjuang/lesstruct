@@ -89,6 +89,10 @@ var (
 		"blockMath": {
 			"latex": true,
 		},
+		"orderedList": {
+			"start": true,
+			"type":  true,
+		},
 		"tableCell": {
 			"colspan":  true,
 			"rowspan":  true,

@@ -21,6 +21,32 @@ import EditorToolbar from '@/components/molecules/EditorToolbar.vue'
 
 const lowlight = createLowlight(common)
 
+const NonInclusiveLink = Link.extend({
+  inclusive() {
+    return false
+  },
+
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      rel: { default: null },
+      target: { default: null },
+    }
+  },
+
+  renderHTML({ mark, HTMLAttributes }: any) {
+    const href = String(mark.attrs.href ?? '')
+    const isExternal = /^(?:https?:)?\/\//i.test(href.trim())
+    const rest: Record<string, any> = { ...HTMLAttributes }
+    delete rest.rel
+    delete rest.target
+    if (!isExternal) {
+      return ['a', rest, 0]
+    }
+    return ['a', { ...rest, rel: 'noopener noreferrer', target: '_blank' }, 0]
+  },
+})
+
 interface Props {
   modelValue: string
   placeholder?: string
@@ -77,6 +103,7 @@ const editor = useEditor({
         levels: [1, 2, 3, 4, 5, 6],
       },
       codeBlock: false,
+      link: false,
     }),
     CodeBlockLowlight.configure({
       lowlight,
@@ -85,7 +112,7 @@ const editor = useEditor({
       },
     }),
     Underline,
-    Link.configure({
+    NonInclusiveLink.configure({
       openOnClick: false,
       HTMLAttributes: {
         class: 'text-blue-600 underline hover:text-blue-800',
