@@ -12,9 +12,18 @@ CLI_LDFLAGS := -X $(MODULE)/cmd/lesstruct-cli/cmd.version=$(VERSION)
 MODERNIZE_VERSION := v0.21.1
 MODERNIZE_PACKAGES := $(shell go list ./... | grep -v '/web/')
 
+# GOTOOLCHAIN_VERSION pins the toolchain used to BUILD and RUN the pinned lint
+# tools. Some tool modules (golangci-lint) declare a lower go directive in
+# their own go.mod (latest-1 by their policy), so module-aware commands build
+# them with whatever local toolchain satisfies that lower bar — producing
+# binaries too old to lint this module when the local Go lags go.mod. The
+# `go run pkg@version` invocations below also bypass PATH entirely, so stale
+# tool binaries elsewhere on the system cannot shadow the pinned versions.
+# Keep the version in sync with the `go` directive in go.mod.
+GOTOOLCHAIN_VERSION := go1.27.0
+
 lint: modernize
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
-	golangci-lint run
+	GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1 run
 
 # Fails (exit non-zero) when the modernize analyzer finds old Go syntax.
 modernize:
@@ -43,8 +52,7 @@ test-verbose:
 # govulncheck reports it as a module-level finding only, which does not affect
 # the exit code, so the gate stays green without suppressing it.
 vulncheck:
-	go install golang.org/x/vuln/cmd/govulncheck@latest
-	govulncheck ./...
+	GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 build-admin:
 	cd web/admin && npm ci && npm run build-only

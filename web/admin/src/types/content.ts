@@ -63,6 +63,7 @@ export interface CreateContentRequest {
 
 export interface UpdateContentRequest {
   title: string
+  slug?: string
   content: string // TipTap JSON string or raw HTML when format is 'html'
   format?: 'tiptap' | 'html'
   tags: string[]

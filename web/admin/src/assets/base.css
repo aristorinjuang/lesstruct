@@ -209,6 +209,12 @@
   --nav-active-bg: rgba(34, 211, 238, 0.22);
   --nav-active-fg: #22d3ee;
 
+  /* Muted surfaces — dark background so disabled inputs and placeholder
+  tiles stay readable with the flipped (light) text colors */
+  --color-bg-muted: var(--color-background-mute);
+  --color-text-muted: #9ca3af;
+  --color-text-secondary: #d1d5db;
+
   color-scheme: dark;
 }
 

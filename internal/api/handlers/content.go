@@ -81,6 +81,10 @@ func handleContentError(w http.ResponseWriter, err error) {
 		statusCode = http.StatusConflict
 		code = "slug_exists"
 		message = "A content item with this slug already exists"
+	case errors.Is(err, contentdomain.ErrSlugImmutable):
+		statusCode = http.StatusConflict
+		code = "slug_immutable"
+		message = err.Error()
 	case errors.Is(err, contentdomain.ErrUnauthorized):
 		statusCode = http.StatusUnauthorized
 		code = "unauthorized"
@@ -732,6 +736,7 @@ func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 
 	updateReq := contentdomain.UpdateContentRequest{
 		Title:              req.Title,
+		Slug:               req.Slug,
 		Content:            body,
 		Format:             format,
 		Tags:               req.Tags,

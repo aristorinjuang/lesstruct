@@ -1249,6 +1249,155 @@ func TestService_Update_SlugIsImmutable(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+func TestService_Update_SlugChange(t *testing.T) {
+	tests := []struct {
+		name          string
+		existing      *content.Content
+		reqSlug       string
+		slugUnique    bool
+		wantSlug      string
+		wantErr       bool
+		expectErr     error
+		expectUniqChk bool
+	}{
+		{
+			name: "draft slug change succeeds",
+			existing: &content.Content{
+				ID:       1,
+				UserID:   1,
+				Title:    "Original Title",
+				Slug:     "original-slug",
+				Content:  testTipTapJSON("Original content"),
+				Tags:     []string{},
+				Status:   content.StatusDraft,
+				Language: "en",
+			},
+			reqSlug:       "brand-new-slug",
+			slugUnique:    true,
+			wantSlug:      "brand-new-slug",
+			wantErr:       false,
+			expectUniqChk: true,
+		},
+		{
+			name: "unchanged slug is a no-op",
+			existing: &content.Content{
+				ID:       1,
+				UserID:   1,
+				Title:    "Original Title",
+				Slug:     "original-slug",
+				Content:  testTipTapJSON("Original content"),
+				Tags:     []string{},
+				Status:   content.StatusDraft,
+				Language: "en",
+			},
+			reqSlug:       "original-slug",
+			wantSlug:      "original-slug",
+			wantErr:       false,
+			expectUniqChk: false,
+		},
+		{
+			name: "empty slug is a no-op",
+			existing: &content.Content{
+				ID:       1,
+				UserID:   1,
+				Title:    "Original Title",
+				Slug:     "original-slug",
+				Content:  testTipTapJSON("Original content"),
+				Tags:     []string{},
+				Status:   content.StatusDraft,
+				Language: "en",
+			},
+			reqSlug:       "",
+			wantSlug:      "original-slug",
+			wantErr:       false,
+			expectUniqChk: false,
+		},
+		{
+			name: "published slug change is rejected",
+			existing: &content.Content{
+				ID:       1,
+				UserID:   1,
+				Title:    "Original Title",
+				Slug:     "original-slug",
+				Content:  testTipTapJSON("Original content"),
+				Tags:     []string{},
+				Status:   content.StatusPublished,
+				Language: "en",
+			},
+			reqSlug:       "brand-new-slug",
+			wantErr:       true,
+			expectErr:     content.ErrSlugImmutable,
+			expectUniqChk: false,
+		},
+		{
+			name: "draft invalid slug is rejected",
+			existing: &content.Content{
+				ID:       1,
+				UserID:   1,
+				Title:    "Original Title",
+				Slug:     "original-slug",
+				Content:  testTipTapJSON("Original content"),
+				Tags:     []string{},
+				Status:   content.StatusDraft,
+				Language: "en",
+			},
+			reqSlug:       "NOT A SLUG!!",
+			wantErr:       true,
+			expectErr:     content.ErrInvalidSlug,
+			expectUniqChk: false,
+		},
+		{
+			name: "draft conflicting slug is rejected",
+			existing: &content.Content{
+				ID:       1,
+				UserID:   1,
+				Title:    "Original Title",
+				Slug:     "original-slug",
+				Content:  testTipTapJSON("Original content"),
+				Tags:     []string{},
+				Status:   content.StatusDraft,
+				Language: "en",
+			},
+			reqSlug:       "taken-slug",
+			slugUnique:    false,
+			wantErr:       true,
+			expectErr:     content.ErrSlugAlreadyExists,
+			expectUniqChk: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &mocks.MockRepository{}
+			mockRepo.On("GetByID", mock.Anything, 1).Return(tt.existing, nil)
+			if tt.expectUniqChk {
+				mockRepo.On("CheckSlugUnique", mock.Anything, tt.reqSlug, "en").Return(tt.slugUnique, nil)
+			}
+			mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
+
+			service := content.NewService(mockRepo, nil, nil)
+			req := content.UpdateContentRequest{
+				Title:   tt.existing.Title,
+				Slug:    tt.reqSlug,
+				Content: testTipTapJSON("Updated content"),
+				Tags:    []string{},
+				Status:  tt.existing.Status,
+			}
+
+			result, err := service.Update(context.Background(), 1, 1, "", req)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tt.expectErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSlug, result.Slug, "Service.Update() Slug")
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
 func TestService_Update_SEOAutoGeneration(t *testing.T) {
 	tests := []struct {
 		name             string

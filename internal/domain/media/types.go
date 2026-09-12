@@ -26,6 +26,9 @@ var (
 	ErrUnauthorized = errors.New("unauthorized to delete this media")
 	// ErrInvalidFileContent is returned when file content does not match a supported image type
 	ErrInvalidFileContent = errors.New("file content does not match a supported image type")
+	// ErrImageReferencesNotSupported is returned when reference images are
+	// provided but the configured AI model only supports text-to-image generation
+	ErrImageReferencesNotSupported = errors.New("reference images are not supported by the configured AI model")
 )
 
 // DuplicateMediaError is returned when a media file with the same hash already exists
@@ -45,6 +48,9 @@ const (
 	MaxFileSize = 10 * 1024 * 1024
 	// MaxAltTextLength is the maximum allowed alt text length
 	MaxAltTextLength = 500
+	// MaxImageReferences is the maximum number of reference images accepted
+	// for a single AI image generation request
+	MaxImageReferences = 3
 )
 
 // SupportedMimeTypes contains all supported image mime types

@@ -17,8 +17,21 @@ type GoogleImagen4Service struct {
 	aspectRatio string
 }
 
+// SupportsImageReferences reports whether the service accepts reference images.
+// Imagen 4 is text-to-image only.
+func (s *GoogleImagen4Service) SupportsImageReferences() bool {
+	return false
+}
+
 // GenerateImage generates a single image using Google Imagen 4.
-func (s *GoogleImagen4Service) GenerateImage(ctx context.Context, prompt string) ([]byte, error) {
+func (s *GoogleImagen4Service) GenerateImage(
+	ctx context.Context,
+	prompt string,
+	references []ImageReference,
+) ([]byte, error) {
+	if len(references) > 0 {
+		return nil, fmt.Errorf("imagen 4 is text-to-image only: %w", ErrImageReferencesNotSupported)
+	}
 	if s.client == nil {
 		var err error
 		s.client, err = genai.NewClient(ctx, &genai.ClientConfig{

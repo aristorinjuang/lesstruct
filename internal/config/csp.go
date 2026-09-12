@@ -22,7 +22,7 @@ var defaultDirectives = []defaultDirective{
 	{Name: "default-src", Sources: []string{"'self'"}},
 	{Name: "script-src", Sources: []string{"'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"}},
 	{Name: "style-src", Sources: []string{"'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"}},
-	{Name: "img-src", Sources: []string{"'self'", "data:", "https:"}},
+	{Name: "img-src", Sources: []string{"'self'", "data:", "blob:", "https:"}},
 	{Name: "font-src", Sources: []string{"'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"}},
 	{Name: "connect-src", Sources: []string{"'self'"}},
 	{Name: "frame-src", Sources: []string{"'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"}},

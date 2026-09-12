@@ -1,0 +1,30 @@
+info:
+  name: Generate Image with References
+  type: http
+  seq: 6
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/media/generate"
+  body:
+    type: multipart-form
+    data:
+      - name: prompt
+        type: text
+        value: A beautiful sunset over the ocean in the style of the reference
+      - name: references
+        type: file
+        value:
+          - ./logo.png
+      - name: og
+        type: text
+        value: true
+  auth:
+    type: bearer
+    token: "{{TOKEN}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

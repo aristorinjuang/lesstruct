@@ -15,6 +15,7 @@ interface Props {
 
 interface Emits {
   (e: 'insert-image', media: Media): void
+  (e: 'insert-og-image', media: Media): void
   (e: 'show-toast', message: string, type: string): void
 }
 
@@ -27,6 +28,7 @@ const emit = defineEmits<Emits>()
 const mediaStore = useMediaStore()
 
 const aiGenerationAvailable = ref(false)
+const imageReferenceAvailable = ref(false)
 const showGenerateModal = ref(false)
 
 const searchQuery = ref('')
@@ -178,9 +180,13 @@ function handleInsert(media: Media) {
   emit('insert-image', media)
 }
 
-async function onAIImageGenerated() {
+async function onAIImageGenerated(media: Media, meta?: { og?: boolean }) {
   showGenerateModal.value = false
   await loadMedia()
+  if (meta?.og) {
+    emit('insert-og-image', media)
+    return
+  }
   emit('show-toast', 'Image generated successfully', 'success')
 }
 
@@ -193,10 +199,14 @@ onMounted(async () => {
     loadMedia()
   }
   try {
-    const health = await api.get<{ features?: { imageGeneration?: boolean } }>('/api/health')
+    const health = await api.get<{
+      features?: { imageGeneration?: boolean; imageReference?: boolean }
+    }>('/api/health')
     aiGenerationAvailable.value = health.data.features?.imageGeneration === true
+    imageReferenceAvailable.value = health.data.features?.imageReference === true
   } catch {
     aiGenerationAvailable.value = false
+    imageReferenceAvailable.value = false
   }
 })
 
@@ -366,6 +376,7 @@ onUnmounted(() => {
     <!-- Generate with AI Modal -->
     <GenerateImageModal
       :is-open="showGenerateModal"
+      :supports-references="imageReferenceAvailable"
       @close="showGenerateModal = false"
       @generated="onAIImageGenerated"
       @error="onAIError"

@@ -180,15 +180,36 @@ export const useMediaStore = defineStore('media', () => {
     }
   }
 
-  async function generateImage(prompt: string): Promise<Media> {
+  async function generateImage(
+    prompt: string,
+    references?: File[],
+    options?: { og?: boolean },
+  ): Promise<Media> {
     isLoading.value = true
     error.value = null
 
     try {
+      // Reference images ride along as multipart files; the prompt-only form
+      // stays JSON for backward compatibility.
+      let payload: Record<string, unknown> | FormData = { prompt }
+      if (options?.og) {
+        payload = { prompt, og: true }
+      }
+      if (references && references.length > 0) {
+        const formData = new FormData()
+        formData.append('prompt', prompt)
+        for (const file of references) {
+          formData.append('references', file)
+        }
+        if (options?.og) {
+          formData.append('og', 'true')
+        }
+        payload = formData
+      }
       // at least two minutes for waiting the image generation
       const response = await api.postWithTimeout<{ data: Media }>(
         '/api/v1/media/generate',
-        { prompt },
+        payload,
         130_000,
       )
       const data = response.data.data

@@ -681,3 +681,87 @@ func TestProcessor_ExtractMetadata_VP8XAlphaInput(t *testing.T) {
 	assert.Equal(t, 628, metadata.Width)
 	assert.Equal(t, 506, metadata.Height)
 }
+
+func TestProcessor_CropToOpenGraph(t *testing.T) {
+	tests := []struct {
+		name      string
+		width     int
+		height    int
+		webpInput bool
+		invalid   bool
+		wantErr   bool
+	}{
+		{
+			name:   "landscape 16:9 trims the sides",
+			width:  960,
+			height: 540,
+		},
+		{
+			name:   "square trims top and bottom",
+			width:  800,
+			height: 800,
+		},
+		{
+			name:   "portrait trims top and bottom",
+			width:  600,
+			height: 800,
+		},
+		{
+			name:   "already 1200x630 passes through the crop",
+			width:  1200,
+			height: 630,
+		},
+		{
+			name:      "webp input",
+			width:     800,
+			height:    600,
+			webpInput: true,
+		},
+		{
+			name:    "error - invalid image bytes",
+			invalid: true,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processor := media.NewProcessor()
+
+			var input []byte
+			if tt.invalid {
+				input = []byte("not an image")
+			} else if tt.webpInput {
+				input = testWebPBytes(t, tt.width, tt.height, false)
+			} else {
+				img := image.NewRGBA(image.Rect(0, 0, tt.width, tt.height))
+				c := color.RGBA{30, 120, 200, 255}
+				for y := range tt.height {
+					for x := range tt.width {
+						img.Set(x, y, c)
+					}
+				}
+				var buf bytes.Buffer
+				err := png.Encode(&buf, img)
+				require.NoError(t, err, "Failed to create test image")
+				input = buf.Bytes()
+			}
+
+			cropped, err := processor.CropToOpenGraph(input)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotEmpty(t, cropped)
+			assert.True(t, len(cropped) >= 12 && string(cropped[0:4]) == "RIFF" && string(cropped[8:12]) == "WEBP", "Output is not a WebP file")
+
+			decoded, _, err := image.Decode(bytes.NewReader(cropped))
+			require.NoError(t, err, "Output is not a valid decodable image")
+			assert.Equal(t, media.OGImageWidth, decoded.Bounds().Dx(), "Open Graph width mismatch")
+			assert.Equal(t, media.OGImageHeight, decoded.Bounds().Dy(), "Open Graph height mismatch")
+		})
+	}
+}

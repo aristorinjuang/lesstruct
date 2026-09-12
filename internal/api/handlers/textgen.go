@@ -10,6 +10,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
+	textgendomain "github.com/aristorinjuang/lesstruct/internal/domain/textgen"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -24,21 +25,33 @@ type textGenEnhanceRequest struct {
 
 // textGenTranslateRequest is the JSON body for the Translate endpoint.
 type textGenTranslateRequest struct {
-	Content    string `json:"content"`
-	SourceLang string `json:"sourceLang"`
-	TargetLang string `json:"targetLang"`
-	Format     string `json:"format"`
+	Content         string `json:"content"`
+	SourceLang      string `json:"sourceLang"`
+	TargetLang      string `json:"targetLang"`
+	Format          string `json:"format"`
+	Title           string `json:"title"`
+	MetaDescription string `json:"metaDescription"`
 }
 
 // textGenResponse is the JSON body for text generation responses.
+// Title and MetaDescription are populated for tiptap enhancement only;
+// HTML generation and translation return Content alone.
 type textGenResponse struct {
-	Content string `json:"content"`
+	Content         string `json:"content"`
+	Title           string `json:"title,omitempty"`
+	MetaDescription string `json:"metaDescription,omitempty"`
 }
 
 // TextGenerationService defines the interface for AI text generation.
 type TextGenerationService interface {
-	EnhanceText(ctx context.Context, content, format, mediaContext string) (string, error)
-	TranslateText(ctx context.Context, content, sourceLang, targetLang, format string) (string, error)
+	EnhanceText(
+		ctx context.Context,
+		content, format, mediaContext string,
+	) (textgendomain.EnhanceResult, error)
+	TranslateText(
+		ctx context.Context,
+		content, title, metaDescription, sourceLang, targetLang, format string,
+	) (textgendomain.TranslateResult, error)
 }
 
 // MediaLister provides access to media items for AI context injection.
@@ -133,7 +146,11 @@ func (h *TextGenHandler) Enhance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendSuccessResponse(w, http.StatusOK, &textGenResponse{Content: enhanced})
+	sendSuccessResponse(w, http.StatusOK, &textGenResponse{
+		Content:         enhanced.Content,
+		Title:           enhanced.Title,
+		MetaDescription: enhanced.MetaDescription,
+	})
 }
 
 // Translate handles the "Translate with AI" endpoint.
@@ -161,7 +178,12 @@ func (h *TextGenHandler) Translate(w http.ResponseWriter, r *http.Request) {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content is required", nil)
 		return
 	}
-	if utf8.RuneCountInString(content) > maxTextGenPromptLength {
+	title := strings.TrimSpace(req.Title)
+	metaDescription := strings.TrimSpace(req.MetaDescription)
+	combinedLength := utf8.RuneCountInString(content) +
+		utf8.RuneCountInString(title) +
+		utf8.RuneCountInString(metaDescription)
+	if combinedLength > maxTextGenPromptLength {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_content", "Content is too long", nil)
 		return
 	}
@@ -190,14 +212,18 @@ func (h *TextGenHandler) Translate(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
 	defer cancel()
 
-	translated, err := h.textGenService.TranslateText(ctx, content, sourceLang, targetLang, format)
+	translated, err := h.textGenService.TranslateText(ctx, content, title, metaDescription, sourceLang, targetLang, format)
 	if err != nil {
 		h.logger.Error("Failed to translate text: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "generation_failed", "Failed to translate content", nil)
 		return
 	}
 
-	sendSuccessResponse(w, http.StatusOK, &textGenResponse{Content: translated})
+	sendSuccessResponse(w, http.StatusOK, &textGenResponse{
+		Content:         translated.Content,
+		Title:           translated.Title,
+		MetaDescription: translated.MetaDescription,
+	})
 }
 
 // NewTextGenHandler creates a new TextGenHandler.

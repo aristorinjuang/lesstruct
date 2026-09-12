@@ -5,11 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	ximagewebp "golang.org/x/image/webp"
 )
 
 func createMultipartFormData(t *testing.T, fieldName, filename string, fileData []byte) (*bytes.Buffer, string) {
@@ -47,6 +52,76 @@ func createMultipartFormData(t *testing.T, fieldName, filename string, fileData 
 	require.NoError(t, err)
 
 	return &buf, writer.FormDataContentType()
+}
+
+// generateTestFile is a single reference file in a multipart generate request.
+type generateTestFile struct {
+	filename string
+	data     []byte
+}
+
+// createGenerateMultipartFormData builds a multipart generate request body with a
+// prompt field, the given files under the "references" field, and any extra
+// text fields.
+func createGenerateMultipartFormData(
+	t *testing.T,
+	prompt string,
+	files []generateTestFile,
+	extraFields map[string]string,
+) (*bytes.Buffer, string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	require.NoError(t, writer.WriteField("prompt", prompt))
+	for name, value := range extraFields {
+		require.NoError(t, writer.WriteField(name, value))
+	}
+	for _, f := range files {
+		part, err := writer.CreateFormFile("references", f.filename)
+		require.NoError(t, err)
+		_, err = part.Write(f.data)
+		require.NoError(t, err)
+	}
+	require.NoError(t, writer.Close())
+
+	return &buf, writer.FormDataContentType()
+}
+
+// oversizePNGTestFile returns a reference file just over the size limit with a
+// valid PNG header so the size check (not the content check) rejects it.
+func oversizePNGTestFile() generateTestFile {
+	data := make([]byte, media.MaxFileSize+1)
+	copy(data, []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
+	return generateTestFile{filename: "big.png", data: data}
+}
+
+// makeTestPNG builds valid PNG bytes of the given size for generate tests.
+func makeTestPNG(t *testing.T, width, height int) []byte {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			img.Set(x, y, color.RGBA{30, 120, 200, 255})
+		}
+	}
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	return buf.Bytes()
+}
+
+// isOGWebP reports whether data is a WebP image of exactly the Open Graph size.
+func isOGWebP(data []byte) bool {
+	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WEBP" {
+		return false
+	}
+	img, err := ximagewebp.Decode(bytes.NewReader(data))
+	if err != nil {
+		return false
+	}
+	return img.Bounds().Dx() == media.OGImageWidth && img.Bounds().Dy() == media.OGImageHeight
 }
 
 func TestMediaHandler_Upload_Duplicate(t *testing.T) {
@@ -610,12 +685,27 @@ func TestMediaHandler_GetMedia(t *testing.T) {
 }
 
 func TestMediaHandler_GenerateImage(t *testing.T) {
+	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+	jpegHeader := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10}
+
 	tests := []struct {
 		name              string
 		setupImageGen     bool
+		isMultipart       bool
 		requestBody       string
+		prompt            string
+		refFiles          []generateTestFile
+		extraFields       map[string]string
+		mockImageBytes    []byte
 		mockGenerateError error
 		mockSaveError     error
+		expectGenerate    bool
+		expectSave        bool
+		expectRefsCheck   bool
+		supportsRefs      bool
+		wantRefCount      int
+		wantPromptSuffix  bool
+		wantOGSize        bool
 		expectedStatus    int
 		expectedCode      string
 	}{
@@ -623,6 +713,9 @@ func TestMediaHandler_GenerateImage(t *testing.T) {
 			name:           "success - generates and saves image",
 			setupImageGen:  true,
 			requestBody:    `{"prompt":"A beautiful sunset"}`,
+			expectGenerate: true,
+			expectSave:     true,
+			wantRefCount:   0,
 			expectedStatus: http.StatusCreated,
 		},
 		{
@@ -658,15 +751,150 @@ func TestMediaHandler_GenerateImage(t *testing.T) {
 			setupImageGen:     true,
 			requestBody:       `{"prompt":"fail"}`,
 			mockGenerateError: errors.New("API error"),
+			expectGenerate:    true,
+			wantRefCount:      0,
 			expectedStatus:    http.StatusInternalServerError,
 			expectedCode:      "generation_failed",
 		},
 		{
-			name:          "error - save fails",
-			setupImageGen: true,
-			requestBody:   `{"prompt":"duplicate image"}`,
-			mockSaveError: &media.DuplicateMediaError{Existing: &media.Media{ID: 99}},
+			name:           "error - save fails",
+			setupImageGen:  true,
+			requestBody:    `{"prompt":"duplicate image"}`,
+			mockSaveError:  &media.DuplicateMediaError{Existing: &media.Media{ID: 99}},
+			expectGenerate: true,
+			expectSave:     true,
+			wantRefCount:   0,
 			expectedStatus: http.StatusOK,
+		},
+		{
+			name:          "success - multipart generates with reference images",
+			setupImageGen: true,
+			isMultipart:   true,
+			prompt:        "A sunset in the style of the references",
+			refFiles: []generateTestFile{
+				{filename: "ref1.png", data: pngHeader},
+				{filename: "ref2.jpg", data: jpegHeader},
+			},
+			expectGenerate:  true,
+			expectSave:      true,
+			expectRefsCheck: true,
+			supportsRefs:    true,
+			wantRefCount:    2,
+			expectedStatus:  http.StatusCreated,
+		},
+		{
+			name:            "success - multipart without references",
+			setupImageGen:   true,
+			isMultipart:     true,
+			prompt:          "A mountain lake",
+			expectGenerate:  true,
+			expectSave:      true,
+			wantRefCount:    0,
+			expectedStatus:  http.StatusCreated,
+		},
+		{
+			name:          "error - too many reference images",
+			setupImageGen: true,
+			isMultipart:   true,
+			prompt:        "A sunset",
+			refFiles: []generateTestFile{
+				{filename: "ref1.png", data: pngHeader},
+				{filename: "ref2.png", data: pngHeader},
+				{filename: "ref3.png", data: pngHeader},
+				{filename: "ref4.png", data: pngHeader},
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   "invalid_references",
+		},
+		{
+			name:           "error - reference image too large",
+			setupImageGen:  true,
+			isMultipart:    true,
+			prompt:         "A sunset",
+			refFiles:       []generateTestFile{oversizePNGTestFile()},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   "file_too_large",
+		},
+		{
+			name:          "error - invalid reference image content",
+			setupImageGen: true,
+			isMultipart:   true,
+			prompt:        "A sunset",
+			refFiles: []generateTestFile{
+				{filename: "ref.txt", data: []byte("not an image")},
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   "invalid_file",
+		},
+		{
+			name:          "error - references not supported by model",
+			setupImageGen: true,
+			isMultipart:   true,
+			prompt:        "A sunset",
+			refFiles: []generateTestFile{
+				{filename: "ref.png", data: pngHeader},
+			},
+			expectRefsCheck: true,
+			supportsRefs:    false,
+			expectedStatus:  http.StatusBadRequest,
+			expectedCode:    "references_not_supported",
+		},
+		{
+			name:          "error - multipart missing prompt",
+			setupImageGen: true,
+			isMultipart:   true,
+			prompt:        "",
+			refFiles: []generateTestFile{
+				{filename: "ref.png", data: pngHeader},
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   "invalid_prompt",
+		},
+		{
+			name:             "success - JSON og flag crops to 1200x630",
+			setupImageGen:    true,
+			requestBody:      `{"prompt":"A sunset","og":true}`,
+			mockImageBytes:   makeTestPNG(t, 800, 450),
+			expectGenerate:   true,
+			expectSave:       true,
+			wantRefCount:     0,
+			wantPromptSuffix: true,
+			wantOGSize:       true,
+			expectedStatus:   http.StatusCreated,
+		},
+		{
+			name:             "success - multipart og flag crops to 1200x630",
+			setupImageGen:    true,
+			isMultipart:      true,
+			prompt:           "A sunset",
+			extraFields:      map[string]string{"og": "true"},
+			mockImageBytes:   makeTestPNG(t, 600, 800),
+			expectGenerate:   true,
+			expectSave:       true,
+			wantRefCount:     0,
+			wantPromptSuffix: true,
+			wantOGSize:       true,
+			expectedStatus:   http.StatusCreated,
+		},
+		{
+			name:           "error - invalid og value",
+			setupImageGen:  true,
+			isMultipart:    true,
+			prompt:         "A sunset",
+			extraFields:    map[string]string{"og": "maybe"},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   "invalid_request",
+		},
+		{
+			name:             "error - og crop fails on invalid image",
+			setupImageGen:    true,
+			requestBody:      `{"prompt":"A sunset","og":true}`,
+			mockImageBytes:   []byte{0x89, 0x50, 0x4E, 0x47},
+			expectGenerate:   true,
+			wantRefCount:     0,
+			wantPromptSuffix: true,
+			expectedStatus:   http.StatusInternalServerError,
+			expectedCode:     "generation_failed",
 		},
 	}
 
@@ -679,36 +907,62 @@ func TestMediaHandler_GenerateImage(t *testing.T) {
 			var imageGenService media.ImageGenerationService
 			if tt.setupImageGen {
 				mockImageGen := mediamocks.NewMockImageGenerationService(t)
-				if tt.mockGenerateError != nil {
+				if tt.expectRefsCheck {
+					mockImageGen.EXPECT().SupportsImageReferences().Return(tt.supportsRefs)
+				}
+				if tt.expectGenerate {
+					var promptMatcher any = mock.Anything
+					if tt.wantPromptSuffix {
+						promptMatcher = mock.MatchedBy(func(prompt string) bool {
+							return strings.Contains(prompt, media.OpenGraphPromptSuffix)
+						})
+					}
+					mockImageBytes := tt.mockImageBytes
+					if mockImageBytes == nil {
+						mockImageBytes = []byte{0x89, 0x50, 0x4E, 0x47}
+					}
 					mockImageGen.EXPECT().GenerateImage(
 						mock.Anything,
-						mock.Anything,
-					).Return(([]byte)(nil), tt.mockGenerateError)
-				} else if tt.requestBody == `{"prompt":"A beautiful sunset"}` || tt.requestBody == `{"prompt":"duplicate image"}` {
-					mockImageGen.EXPECT().GenerateImage(
-						mock.Anything,
-						mock.Anything,
-					).Return([]byte{0x89, 0x50, 0x4E, 0x47}, nil)
-					mockService.EXPECT().GenerateFromBytes(
-						mock.Anything,
-						mock.Anything,
-						mock.Anything,
-						mock.Anything,
-						mock.Anything,
-					).Return(&media.Media{
-						ID:               100,
-						OriginalFilename: "ai-generated-20260605-120000.webp",
-						URL:              "http://localhost:8080/uploads/media/abc123.webp",
-						AltText:          "A beautiful sunset",
-					}, tt.mockSaveError)
+						promptMatcher,
+						mock.MatchedBy(func(refs []media.ImageReference) bool {
+							return len(refs) == tt.wantRefCount
+						}),
+					).Return(mockImageBytes, tt.mockGenerateError)
+					if tt.expectSave {
+						var saveMatcher any = mock.Anything
+						if tt.wantOGSize {
+							saveMatcher = mock.MatchedBy(func(data []byte) bool {
+								return isOGWebP(data)
+							})
+						}
+						mockService.EXPECT().GenerateFromBytes(
+							mock.Anything,
+							saveMatcher,
+							mock.Anything,
+							mock.Anything,
+							mock.Anything,
+						).Return(&media.Media{
+							ID:               100,
+							OriginalFilename: "ai-generated-20260605-120000.webp",
+							URL:              "http://localhost:8080/uploads/media/abc123.webp",
+							AltText:          "A beautiful sunset",
+						}, tt.mockSaveError)
+					}
 				}
 				imageGenService = mockImageGen
 			}
 
 			handler := handlers.NewMediaHandler(mockService, imageGenService, logger)
 
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/media/generate", bytes.NewBufferString(tt.requestBody))
-			req.Header.Set("Content-Type", "application/json")
+			var body *bytes.Buffer
+			contentType := "application/json"
+			if tt.isMultipart {
+				body, contentType = createGenerateMultipartFormData(t, tt.prompt, tt.refFiles, tt.extraFields)
+			} else {
+				body = bytes.NewBufferString(tt.requestBody)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/media/generate", body)
+			req.Header.Set("Content-Type", contentType)
 			req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "1"))
 
 			w := httptest.NewRecorder()

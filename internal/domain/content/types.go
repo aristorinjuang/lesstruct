@@ -33,6 +33,9 @@ var (
 	ErrInvalidSlug = errors.New("slug must be between 1 and 200 characters and contain only lowercase letters, numbers, hyphens, and dots")
 	// ErrSlugAlreadyExists is returned when slug already exists
 	ErrSlugAlreadyExists = errors.New("slug already exists")
+	// ErrSlugImmutable is returned when a slug change is rejected because the
+	// content is published (slugs stay editable only while the content is a draft)
+	ErrSlugImmutable = errors.New("slug cannot be changed after publication")
 	// ErrUnauthorized is returned when user doesn't have permission to access content
 	ErrUnauthorized = errors.New("unauthorized access to content")
 	// ErrCommentNotFound is returned when comment cannot be found

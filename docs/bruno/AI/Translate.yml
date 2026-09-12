@@ -13,7 +13,9 @@ http:
         "content": "Hello world, this is a test.",
         "sourceLang": "en",
         "targetLang": "de",
-        "format": "html"
+        "format": "html",
+        "title": "Hello world",
+        "metaDescription": "A short test summary."
       }
   auth:
     type: bearer

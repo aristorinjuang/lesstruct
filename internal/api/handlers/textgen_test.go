@@ -13,6 +13,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	textgendomain "github.com/aristorinjuang/lesstruct/internal/domain/textgen"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -61,6 +62,19 @@ func buildTranslateBodyWithFormat(content, sourceLang, targetLang, format string
 	return b
 }
 
+func buildTranslateBodyWithMeta(content, sourceLang, targetLang, format, title, metaDescription string) []byte {
+	body := map[string]string{
+		"content":         content,
+		"sourceLang":      sourceLang,
+		"targetLang":      targetLang,
+		"format":          format,
+		"title":           title,
+		"metaDescription": metaDescription,
+	}
+	b, _ := json.Marshal(body)
+	return b
+}
+
 func TestTextGenHandler_Enhance(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -78,13 +92,23 @@ func TestTextGenHandler_Enhance(t *testing.T) {
 					validTipTapContentJSON(),
 					"tiptap",
 					"",
-				).Return(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Enhanced hello world"}]}]}`, nil)
+				).Return(textgendomain.NewEnhanceResult(
+					`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Enhanced hello world"}]}]}`,
+					"Enhanced Hello World",
+					"A sharper hello to the world.",
+				), nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
 				data, ok := resp["data"].(map[string]any)
 				require.True(t, ok, "expected data field")
-				require.NotNil(t, data["content"])
+				require.Equal(
+					t,
+					`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Enhanced hello world"}]}]}`,
+					data["content"],
+				)
+				require.Equal(t, "Enhanced Hello World", data["title"])
+				require.Equal(t, "A sharper hello to the world.", data["metaDescription"])
 			},
 		},
 		{
@@ -96,13 +120,21 @@ func TestTextGenHandler_Enhance(t *testing.T) {
 					"<p>Hello</p>",
 					"html",
 					"",
-				).Return("<style>.ls-test{color:red}</style><section class='ls-test'>Hello</section>", nil)
+				).Return(textgendomain.NewEnhanceResult(
+					"<style>.ls-test{color:red}</style><section class='ls-test'>Hello</section>",
+					"",
+					"",
+				), nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
 				data, ok := resp["data"].(map[string]any)
 				require.True(t, ok, "expected data field")
 				require.NotNil(t, data["content"])
+				_, hasTitle := data["title"]
+				require.False(t, hasTitle, "html enhance must not return a title")
+				_, hasMeta := data["metaDescription"]
+				require.False(t, hasMeta, "html enhance must not return a meta description")
 			},
 		},
 		{
@@ -159,7 +191,7 @@ func TestTextGenHandler_Enhance(t *testing.T) {
 					validTipTapContentJSON(),
 					"tiptap",
 					"",
-				).Return("", context.DeadlineExceeded)
+				).Return(textgendomain.NewEnhanceResult("", "", ""), context.DeadlineExceeded)
 			},
 			expectedStatus: http.StatusInternalServerError,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -200,7 +232,11 @@ func TestTextGenHandler_Enhance(t *testing.T) {
 					"A hero section with a gradient background",
 					"html",
 					"",
-				).Return("<style>.ls-hero{background:linear-gradient(135deg,#fafafa,#f0f0f5)}</style><section class='ls-hero'>Hello</section>", nil)
+				).Return(textgendomain.NewEnhanceResult(
+					"<style>.ls-hero{background:linear-gradient(135deg,#fafafa,#f0f0f5)}</style><section class='ls-hero'>Hello</section>",
+					"",
+					"",
+				), nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -218,7 +254,11 @@ func TestTextGenHandler_Enhance(t *testing.T) {
 					"User instruction:\nMake the colors warmer\n\nExisting HTML to refine (treat it as authoritative structure — modify it according to the instruction, keep what already works, reuse its existing CSS custom properties and class names, and output the COMPLETE updated fragment):\n<section class='ls-test'>Hello</section>",
 					"html",
 					"",
-				).Return("<style>.ls-test{color:orange}</style><section class='ls-test'>Hello</section>", nil)
+				).Return(textgendomain.NewEnhanceResult(
+					"<style>.ls-test{color:orange}</style><section class='ls-test'>Hello</section>",
+					"",
+					"",
+				), nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -297,16 +337,55 @@ func TestTextGenHandler_Translate(t *testing.T) {
 				s.EXPECT().TranslateText(
 					mock.Anything,
 					validTipTapContentJSON(),
+					"",
+					"",
 					"en",
 					"fr",
 					"tiptap",
-				).Return(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Bonjour le monde"}]}]}`, nil)
+				).Return(textgendomain.NewTranslateResult(
+					`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Bonjour le monde"}]}]}`,
+					"Bonjour le monde",
+					"Un résumé plus net.",
+				), nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				data, ok := resp["data"].(map[string]any)
+				require.True(t, ok, "expected data field")
+				require.Equal(
+					t,
+					`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Bonjour le monde"}]}]}`,
+					data["content"],
+				)
+				require.Equal(t, "Bonjour le monde", data["title"])
+				require.Equal(t, "Un résumé plus net.", data["metaDescription"])
+			},
+		},
+		{
+			name:        "successful translate tiptap with title and meta description",
+			requestBody: buildTranslateBodyWithMeta(validTipTapContentJSON(), "en", "fr", "tiptap", "Hello world", "A short summary."),
+			setupService: func(s *handlersmocks.MockTextGenerationService) {
+				s.EXPECT().TranslateText(
+					mock.Anything,
+					validTipTapContentJSON(),
+					"Hello world",
+					"A short summary.",
+					"en",
+					"fr",
+					"tiptap",
+				).Return(textgendomain.NewTranslateResult(
+					`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Bonjour le monde"}]}]}`,
+					"Bonjour le monde",
+					"Un court résumé.",
+				), nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
 				data, ok := resp["data"].(map[string]any)
 				require.True(t, ok, "expected data field")
 				require.NotNil(t, data["content"])
+				require.Equal(t, "Bonjour le monde", data["title"])
+				require.Equal(t, "Un court résumé.", data["metaDescription"])
 			},
 		},
 		{
@@ -316,16 +395,22 @@ func TestTextGenHandler_Translate(t *testing.T) {
 				s.EXPECT().TranslateText(
 					mock.Anything,
 					"<section>Hello world</section>",
+					"",
+					"",
 					"en",
 					"fr",
 					"html",
-				).Return("<section>Bonjour le monde</section>", nil)
+				).Return(textgendomain.NewTranslateResult("<section>Bonjour le monde</section>", "", ""), nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {
 				data, ok := resp["data"].(map[string]any)
 				require.True(t, ok, "expected data field")
 				require.NotNil(t, data["content"])
+				_, hasTitle := data["title"]
+				require.False(t, hasTitle, "html translate without seo must not return a title")
+				_, hasMeta := data["metaDescription"]
+				require.False(t, hasMeta, "html translate without seo must not return a meta description")
 			},
 		},
 		{
@@ -379,10 +464,12 @@ func TestTextGenHandler_Translate(t *testing.T) {
 				s.EXPECT().TranslateText(
 					mock.Anything,
 					validTipTapContentJSON(),
+					"",
+					"",
 					"en",
 					"fr",
 					"tiptap",
-				).Return("", context.DeadlineExceeded)
+				).Return(textgendomain.NewTranslateResult("", "", ""), context.DeadlineExceeded)
 			},
 			expectedStatus: http.StatusInternalServerError,
 			validateResp: func(t *testing.T, resp map[string]any) {
@@ -421,10 +508,12 @@ func TestTextGenHandler_Translate(t *testing.T) {
 				s.EXPECT().TranslateText(
 					mock.Anything,
 					"<section>Hello world</section>",
+					"",
+					"",
 					"en",
 					"fr",
 					"html",
-				).Return("<section>Bonjour le monde</section>", nil)
+				).Return(textgendomain.NewTranslateResult("<section>Bonjour le monde</section>", "", ""), nil)
 			},
 			expectedStatus: http.StatusOK,
 			validateResp: func(t *testing.T, resp map[string]any) {

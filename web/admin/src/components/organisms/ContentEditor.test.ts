@@ -7,6 +7,7 @@ import { useContentStore } from '@/stores/domain/content'
 import type { Content } from '@/types/content'
 import type { PostType } from '@/types/posttype'
 import type { MeCapabilities } from '@/types/role'
+import type { Media } from '@/stores/domain/media'
 
 const mockUserRole = ref<string | null>(null)
 
@@ -2734,6 +2735,406 @@ describe('ContentEditor', () => {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((wrapper.vm as any).form.postType).toBe('post')
+    })
+  })
+
+  describe('AI Enhancement', () => {
+    const enhanceStubs = {
+      InputText: true,
+      Button: {
+        template: '<button type="button" class="button-stub"><slot /></button>',
+      },
+      Select: true,
+      FormField: { template: '<div><slot /></div>' },
+      TipTapEditor: true,
+      HtmlCodeEditor: true,
+      MediaPanel: true,
+      HtmlAiPromptModal: {
+        template: '<div class="html-ai-modal"><slot /></div>',
+        props: ['isLoading', 'hasExistingContent', 'initialPrompt'],
+      },
+    }
+
+    it('populates content, title, ogTitle, and metaDescription from the enhance result', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: enhanceStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.form.title = 'Old title'
+      vm.form.ogTitle = 'Old og title'
+      vm.form.metaDescription = 'Old description'
+
+      const store = useContentStore()
+      vi.spyOn(store, 'enhanceContent').mockResolvedValue({
+        content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+        title: 'New AI Title',
+        metaDescription: 'New AI description.',
+      })
+
+      await vm.handleEnhance()
+      await wrapper.vm.$nextTick()
+
+      expect(store.enhanceContent).toHaveBeenCalledWith(vm.form.content, 'tiptap')
+      expect(vm.form.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+      expect(vm.form.title).toBe('New AI Title')
+      expect(vm.form.ogTitle).toBe('New AI Title')
+      expect(vm.form.metaDescription).toBe('New AI description.')
+
+      wrapper.unmount()
+    })
+
+    it('keeps existing title and description when the AI returns none', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: enhanceStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.form.title = 'My Title'
+      vm.form.ogTitle = 'My OG Title'
+      vm.form.metaDescription = 'My description'
+
+      const store = useContentStore()
+      vi.spyOn(store, 'enhanceContent').mockResolvedValue({
+        content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+      })
+
+      await vm.handleEnhance()
+      await wrapper.vm.$nextTick()
+
+      expect(vm.form.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+      expect(vm.form.title).toBe('My Title')
+      expect(vm.form.ogTitle).toBe('My OG Title')
+      expect(vm.form.metaDescription).toBe('My description')
+
+      wrapper.unmount()
+    })
+  })
+
+  describe('AI Translation', () => {
+    const translateStubs = {
+      InputText: true,
+      Button: {
+        template: '<button type="button" class="button-stub"><slot /></button>',
+      },
+      Select: true,
+      FormField: { template: '<div><slot /></div>' },
+      TipTapEditor: true,
+      HtmlCodeEditor: true,
+      MediaPanel: true,
+      HtmlAiPromptModal: {
+        template: '<div class="html-ai-modal"><slot /></div>',
+        props: ['isLoading', 'hasExistingContent', 'initialPrompt'],
+      },
+    }
+
+    it('populates content, title, ogTitle, and metaDescription from the translation', async () => {
+      mockLanguages.value = ['en', 'fr']
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: translateStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.primaryContentId = 10
+      vm.activeLanguage = 'fr'
+
+      const store = useContentStore()
+      vi.spyOn(store, 'getById').mockResolvedValue({
+        id: 10,
+        userId: 1,
+        title: 'Hello world',
+        slug: 'hello-world',
+        content: '{"type":"doc"}',
+        tags: [],
+        status: 'published',
+        postType: 'post',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+        metaDescription: 'A summary.',
+      } as Content)
+      vi.spyOn(store, 'translateContent').mockResolvedValue({
+        content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+        title: 'Bonjour le monde',
+        metaDescription: 'Un résumé.',
+      })
+
+      await vm.handleTranslate()
+      await wrapper.vm.$nextTick()
+
+      expect(store.translateContent).toHaveBeenCalledWith(
+        '{"type":"doc"}',
+        'Hello world',
+        'A summary.',
+        'en',
+        'fr',
+        'tiptap',
+      )
+      expect(vm.form.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+      expect(vm.form.title).toBe('Bonjour le monde')
+      expect(vm.form.ogTitle).toBe('Bonjour le monde')
+      expect(vm.form.metaDescription).toBe('Un résumé.')
+
+      wrapper.unmount()
+    })
+
+    it('keeps existing title and description when the AI returns none', async () => {
+      mockLanguages.value = ['en', 'fr']
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: translateStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      vm.primaryContentId = 10
+      vm.activeLanguage = 'fr'
+      vm.form.title = 'Mon titre'
+      vm.form.ogTitle = 'Mon titre OG'
+      vm.form.metaDescription = 'Ma description'
+
+      const store = useContentStore()
+      vi.spyOn(store, 'getById').mockResolvedValue({
+        id: 10,
+        userId: 1,
+        title: 'Hello world',
+        slug: 'hello-world',
+        content: '{"type":"doc"}',
+        tags: [],
+        status: 'published',
+        postType: 'post',
+        language: 'en',
+        createdAt: '2026-04-08T00:00:00Z',
+        updatedAt: '2026-04-08T00:00:00Z',
+      } as Content)
+      vi.spyOn(store, 'translateContent').mockResolvedValue({
+        content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+      })
+
+      await vm.handleTranslate()
+      await wrapper.vm.$nextTick()
+
+      expect(vm.form.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+      expect(vm.form.title).toBe('Mon titre')
+      expect(vm.form.ogTitle).toBe('Mon titre OG')
+      expect(vm.form.metaDescription).toBe('Ma description')
+
+      wrapper.unmount()
+    })
+  })
+
+  describe('OG Image Insert', () => {
+    const ogStubs = {
+      InputText: true,
+      Button: true,
+      Select: true,
+      FormField: true,
+      TipTapEditor: true,
+      HtmlCodeEditor: true,
+      MediaPanel: true,
+    }
+
+    const mockMedia: Media = {
+      id: 100,
+      userId: 1,
+      filename: 'abc123.webp',
+      originalFilename: 'ai-generated-og-20260605-120000.webp',
+      mimeType: 'image/webp',
+      fileSize: 102400,
+      width: 1200,
+      height: 630,
+      altText: 'A sunset over the ocean',
+      isWebp: true,
+      filePath: '/uploads/media/abc123.webp',
+      url: 'http://localhost:8080/uploads/media/abc123.webp',
+      hash: 'sha256hash',
+      uploadedBy: 'admin',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    }
+
+    it('inserts the OG image at the top of the document', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: ogStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      const run = vi.fn()
+      const insertContentAt = vi.fn(() => ({ run }))
+      const focus = vi.fn(() => ({ insertContentAt }))
+      const chain = vi.fn(() => ({ focus }))
+      vm.editorRef = { editor: { chain } }
+
+      const panel = wrapper.findComponent({ name: 'MediaPanel' })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (panel.vm as any).$emit('insert-og-image', mockMedia)
+
+      expect(chain).toHaveBeenCalled()
+      expect(insertContentAt).toHaveBeenCalledWith(0, {
+        type: 'image',
+        attrs: { src: mockMedia.url, alt: mockMedia.altText },
+      })
+      expect(run).toHaveBeenCalled()
+      expect(vm.toastMessage).toContain('inserted at the top')
+      expect(vm.toastVisible).toBe(true)
+
+      wrapper.unmount()
+    })
+
+    it('falls back to a library hint when no rich-text editor is present', async () => {
+      const wrapper = mount(ContentEditor, {
+        props: { userId: 1 },
+        global: { stubs: ogStubs },
+      })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      expect(vm.editorRef).toBeNull()
+
+      const panel = wrapper.findComponent({ name: 'MediaPanel' })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (panel.vm as any).$emit('insert-og-image', mockMedia)
+
+      expect(vm.toastMessage).toContain('saved to your library')
+      expect(vm.toastType).toBe('error')
+      expect(vm.toastVisible).toBe(true)
+
+      wrapper.unmount()
+    })
+  })
+
+  describe('Slug Editing', () => {
+    const slugStubs = {
+      InputText: true,
+      Button: true,
+      Select: true,
+      FormField: { template: '<div><slot /></div>' },
+      TipTapEditor: true,
+      HtmlCodeEditor: true,
+      MediaPanel: true,
+    }
+
+    const draftContent: Content = {
+      id: 1,
+      userId: 1,
+      title: 'Old Title',
+      slug: 'old-slug',
+      content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+      tags: [],
+      status: 'draft',
+      postType: 'post',
+      language: 'en',
+      createdAt: '2026-04-08T00:00:00Z',
+      updatedAt: '2026-04-08T00:00:00Z',
+    }
+
+    function mountWithContent(content: Content) {
+      return mount(ContentEditor, {
+        props: { userId: 1, contentId: 1, initialContent: content },
+        global: { stubs: slugStubs },
+      })
+    }
+
+    it('keeps the slug editable on drafts', () => {
+      const wrapper = mountWithContent(draftContent)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      expect(vm.slugEditable).toBe(true)
+      expect(vm.slugManuallyEdited).toBe(false)
+      const slugInput = wrapper
+        .findAllComponents({ name: 'InputText' })
+        .find((c) => c.props('modelValue') === 'old-slug')
+      expect(slugInput?.props('disabled')).toBe(false)
+      expect(wrapper.find('.content-editor__slug-hint').text()).toContain('Editable while the content is a draft')
+
+      wrapper.unmount()
+    })
+
+    it('locks the slug on published content', () => {
+      const wrapper = mountWithContent({ ...draftContent, status: 'published' })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      expect(vm.slugEditable).toBe(false)
+      expect(vm.slugManuallyEdited).toBe(true)
+      const slugInput = wrapper
+        .findAllComponents({ name: 'InputText' })
+        .find((c) => c.props('modelValue') === 'old-slug')
+      expect(slugInput?.props('disabled')).toBe(true)
+      expect(wrapper.find('.content-editor__slug-hint').text()).toContain('fixed once published')
+
+      wrapper.unmount()
+    })
+
+    it('regenerates the draft slug when the title changes', async () => {
+      vi.useFakeTimers()
+      try {
+        const wrapper = mountWithContent(draftContent)
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vm = wrapper.vm as any
+        const store = useContentStore()
+        const spy = vi.spyOn(store, 'generateSlug').mockResolvedValue({ slug: 'enhanced-title' })
+
+        vm.form.title = 'Enhanced Title'
+        await wrapper.vm.$nextTick()
+        await vi.advanceTimersByTimeAsync(500)
+
+        expect(spy).toHaveBeenCalledWith('Enhanced Title')
+        expect(vm.slug).toBe('enhanced-title')
+
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('leaves the published slug alone when the title changes', async () => {
+      vi.useFakeTimers()
+      try {
+        const wrapper = mountWithContent({ ...draftContent, status: 'published' })
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vm = wrapper.vm as any
+        const store = useContentStore()
+        const spy = vi.spyOn(store, 'generateSlug').mockResolvedValue({ slug: 'enhanced-title' })
+
+        vm.form.title = 'Enhanced Title'
+        await wrapper.vm.$nextTick()
+        await vi.advanceTimersByTimeAsync(500)
+
+        expect(spy).not.toHaveBeenCalled()
+        expect(vm.slug).toBe('old-slug')
+
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('locks the slug when a draft is published', async () => {
+      const wrapper = mountWithContent(draftContent)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vm = wrapper.vm as any
+      expect(vm.slugManuallyEdited).toBe(false)
+
+      vm.form.status = 'published'
+      await wrapper.vm.$nextTick()
+
+      expect(vm.slugManuallyEdited).toBe(true)
+      expect(vm.slugEditable).toBe(false)
+
+      wrapper.unmount()
     })
   })
 })

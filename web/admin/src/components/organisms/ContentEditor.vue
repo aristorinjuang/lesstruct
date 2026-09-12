@@ -139,6 +139,10 @@ function validateAllCustomFields(): boolean {
 const slug = ref('')
 const slugManuallyEdited = ref(false)
 
+// The slug stays editable while the content is a draft (new or saved) and
+// locks on publication, when it becomes the permanent public URL.
+const slugEditable = computed(() => isNewContent.value || form.value.status === 'draft')
+
 // When a user types a custom slug, stop the title->slug auto-suggest watcher
 // from overwriting it. Only meaningful on the create form (the field is disabled
 // otherwise); the slug is immutable once the content is saved.
@@ -321,9 +325,10 @@ function loadContentIntoForm(c: Content) {
   form.value.allowComments = c.allowComments ?? true
   customFields.value = c.customFields ?? {}
   slug.value = c.slug
-  // Editing existing content: the slug is immutable, so mark it as manually
-  // edited to keep the title->slug auto-suggest watcher from touching it.
-  slugManuallyEdited.value = true
+  // Published content keeps its permanent public URL: lock the slug against
+  // the title->slug auto-suggest watcher. Drafts stay editable so title edits
+  // and Enhance keep the slug in sync until publication.
+  slugManuallyEdited.value = c.status === 'published'
   savedContentId.value = c.id
   hasLoadedInitialContent.value = true
   activeLanguage.value = c.language || primaryLanguage()
@@ -413,6 +418,17 @@ watch(() => form.value.title, (newTitle) => {
     slug.value = ''
   }
 })
+
+// Publishing locks the slug: it becomes the permanent public URL, so later
+// title edits must not regenerate it.
+watch(
+  () => form.value.status,
+  (newStatus) => {
+    if (newStatus === 'published') {
+      slugManuallyEdited.value = true
+    }
+  },
+)
 
 let suppressContentChange = false
 
@@ -702,6 +718,20 @@ function handleInsertImage(media: Media) {
   }
 }
 
+function handleInsertOGImage(media: Media) {
+  const editor = editorRef.value?.editor
+  if (editor) {
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(0, { type: 'image', attrs: { src: media.url, alt: media.altText } })
+      .run()
+    displayToast('Open Graph image inserted at the top of your content', 'success')
+  } else {
+    displayToast('Open Graph image saved to your library — insert it as the first image', 'error')
+  }
+}
+
 async function handleEnhance() {
   if (isEnhancing.value) return
   isEnhancing.value = true
@@ -709,10 +739,19 @@ async function handleEnhance() {
     const enhanced = await contentStore.enhanceContent(form.value.content, 'tiptap')
     const editor = editorRef.value?.editor
     if (editor) {
-      editor.commands.setContent(JSON.parse(enhanced))
+      editor.commands.setContent(JSON.parse(enhanced.content))
     }
-    form.value.content = enhanced
-    displayToast('Content enhanced successfully')
+    form.value.content = enhanced.content
+    // The AI also rewrites the SEO metadata. Title and OG title share one
+    // value; empty AI values never wipe the user's existing text.
+    if (enhanced.title?.trim()) {
+      form.value.title = enhanced.title.trim()
+      form.value.ogTitle = enhanced.title.trim()
+    }
+    if (enhanced.metaDescription?.trim()) {
+      form.value.metaDescription = enhanced.metaDescription.trim()
+    }
+    displayToast('Content, title, and SEO description enhanced successfully')
   } catch (err: unknown) {
     const error = err as { message?: string; response?: { data?: { error?: { message?: string } } } }
     const msg = error.response?.data?.error?.message || error.message || 'Failed to enhance content'
@@ -737,7 +776,7 @@ async function handleGenerateHTML(promptText: string) {
       'html',
       form.value.content,
     )
-    form.value.content = generated
+    form.value.content = generated.content
     showHtmlAiModal.value = false
     displayToast('Content generated successfully')
   } catch (err: unknown) {
@@ -755,9 +794,13 @@ async function handleTranslate() {
   isTranslating.value = true
   try {
     let sourceContent: string
+    let sourceTitle = ''
+    let sourceMetaDescription = ''
     if (primaryContentId.value) {
       const primary = await contentStore.getById(primaryContentId.value)
       sourceContent = primary.content
+      sourceTitle = primary.title
+      sourceMetaDescription = primary.metaDescription ?? ''
     } else {
       displayToast('No primary content to translate from', 'error')
       return
@@ -766,18 +809,34 @@ async function handleTranslate() {
     const sourceLang = primaryLanguage()
     const targetLang = activeLanguage.value
     const format: 'tiptap' | 'html' = contentFormat.value === 'html' ? 'html' : 'tiptap'
-    const translated = await contentStore.translateContent(sourceContent, sourceLang, targetLang, format)
+    const translated = await contentStore.translateContent(
+      sourceContent,
+      sourceTitle,
+      sourceMetaDescription,
+      sourceLang,
+      targetLang,
+      format,
+    )
 
     if (format === 'html') {
-      form.value.content = translated
+      form.value.content = translated.content
     } else {
       const editor = editorRef.value?.editor
       if (editor) {
-        editor.commands.setContent(JSON.parse(translated))
+        editor.commands.setContent(JSON.parse(translated.content))
       }
-      form.value.content = translated
+      form.value.content = translated.content
     }
-    displayToast('Content translated successfully')
+    // The AI also translates the SEO metadata. Title and OG title share one
+    // value; empty AI values never wipe the user's existing text.
+    if (translated.title?.trim()) {
+      form.value.title = translated.title.trim()
+      form.value.ogTitle = translated.title.trim()
+    }
+    if (translated.metaDescription?.trim()) {
+      form.value.metaDescription = translated.metaDescription.trim()
+    }
+    displayToast('Content, title, and SEO description translated successfully')
   } catch (err: unknown) {
     const error = err as { message?: string; response?: { data?: { error?: { message?: string } } } }
     const msg = error.response?.data?.error?.message || error.message || 'Failed to translate content'
@@ -833,13 +892,22 @@ function focusValidationField(slug: string) {
     <FormField label="Slug">
       <InputText
         :model-value="slug"
-        :placeholder="isNewContent ? 'Auto-generated from title, or type a custom slug' : 'URL-friendly slug will be generated'"
-        :disabled="!isNewContent"
+        :placeholder="
+          slugEditable
+            ? 'Auto-generated from title, or type a custom slug'
+            : 'URL-friendly slug will be generated'
+        "
+        :disabled="!slugEditable"
         @update:model-value="onSlugInput"
       />
       <span class="content-editor__slug-hint">
-        <template v-if="isNewContent">Left blank, the slug is generated from the title. It cannot be changed after saving.</template>
-        <template v-else>The slug is fixed once created and cannot be changed (it is the public URL).</template>
+        <template v-if="slugEditable"
+          >Editable while the content is a draft — it locks on publish and becomes the permanent
+          URL.</template
+        >
+        <template v-else
+          >The slug is fixed once published and cannot be changed (it is the public URL).</template
+        >
       </span>
     </FormField>
 
@@ -860,11 +928,12 @@ function focusValidationField(slug: string) {
       </Button>
     </div>
 
-    <MediaPanel
-      :is-open="isMediaPanelOpen"
-      @insert-image="handleInsertImage"
-      @show-toast="(msg, type) => displayToast(msg, type === 'error' ? 'error' : 'success')"
-    />
+<MediaPanel
+  :is-open="isMediaPanelOpen"
+  @insert-image="handleInsertImage"
+  @insert-og-image="handleInsertOGImage"
+  @show-toast="(msg, type) => displayToast(msg, type === 'error' ? 'error' : 'success')"
+/>
 
     <FormField v-if="showFormatSelector" label="Content Format">
       <div class="content-editor__format-selector">

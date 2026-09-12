@@ -7,12 +7,14 @@ export interface ModalProps {
   title?: string
   closeOnOverlayClick?: boolean
   closeOnEscape?: boolean
+  size?: 'md' | 'full'
 }
 
 const props = withDefaults(defineProps<ModalProps>(), {
   isOpen: false,
   closeOnOverlayClick: true,
   closeOnEscape: true,
+  size: 'md',
 })
 
 const emit = defineEmits<{
@@ -156,7 +158,11 @@ onUnmounted(() => {
   <transition name="modal-fade">
     <div v-if="isOpen" class="modal__overlay" @click="handleOverlayClick">
       <div
-        :class="['modal__container', { 'modal__container--bottom-sheet': isBottomSheet }]"
+        :class="[
+          'modal__container',
+          { 'modal__container--bottom-sheet': isBottomSheet },
+          { 'modal__container--full': size === 'full' },
+        ]"
         :style="bottomSheetStyle"
         @click.stop
         @touchstart="handleTouchStart"
@@ -205,6 +211,13 @@ onUnmounted(() => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+}
+
+.modal__container--full {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  max-height: none;
 }
 
 .modal__container--bottom-sheet {

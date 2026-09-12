@@ -17,8 +17,18 @@ type GoogleGeminiService struct {
 	aspectRatio string
 }
 
+// SupportsImageReferences reports whether the service accepts reference images.
+// Gemini image models accept inline image parts alongside the prompt.
+func (s *GoogleGeminiService) SupportsImageReferences() bool {
+	return true
+}
+
 // GenerateImage generates a single image using Google Gemini.
-func (s *GoogleGeminiService) GenerateImage(ctx context.Context, prompt string) ([]byte, error) {
+func (s *GoogleGeminiService) GenerateImage(
+	ctx context.Context,
+	prompt string,
+	references []ImageReference,
+) ([]byte, error) {
 	if s.client == nil {
 		var err error
 		s.client, err = genai.NewClient(ctx, &genai.ClientConfig{
@@ -41,7 +51,7 @@ func (s *GoogleGeminiService) GenerateImage(ctx context.Context, prompt string) 
 		}
 	}
 
-	result, err := s.client.Models.GenerateContent(ctx, s.model, genai.Text(prompt), s.config)
+	result, err := s.client.Models.GenerateContent(ctx, s.model, buildGeminiContents(prompt, references), s.config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate image: %w", err)
 	}
@@ -57,6 +67,17 @@ func (s *GoogleGeminiService) GenerateImage(ctx context.Context, prompt string) 
 	}
 
 	return nil, fmt.Errorf("no image generated in response")
+}
+
+// buildGeminiContents builds the text prompt plus one inline image part per
+// reference image, matching how genai.Text builds a prompt-only request.
+func buildGeminiContents(prompt string, references []ImageReference) []*genai.Content {
+	parts := make([]*genai.Part, 0, len(references)+1)
+	parts = append(parts, genai.NewPartFromText(prompt))
+	for _, ref := range references {
+		parts = append(parts, genai.NewPartFromBytes(ref.Data, ref.MimeType))
+	}
+	return []*genai.Content{{Role: genai.RoleUser, Parts: parts}}
 }
 
 // NewGoogleGeminiService creates a new Google Gemini image generation service.

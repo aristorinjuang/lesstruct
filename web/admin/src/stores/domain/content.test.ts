@@ -1025,4 +1025,119 @@ describe('Content Store', () => {
       expect(store.error).not.toBeNull()
     })
   })
+
+  describe('enhanceContent', () => {
+    it('should return enhanced content with SEO title and meta description', async () => {
+      vi.mocked(api.postWithTimeout).mockResolvedValue({
+        data: {
+          data: {
+            content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+            title: 'Enhanced Title',
+            metaDescription: 'Enhanced meta description.',
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.postWithTimeout>>)
+
+      const store = useContentStore()
+      const result = await store.enhanceContent('{"type":"doc"}', 'tiptap')
+
+      expect(api.postWithTimeout).toHaveBeenCalledWith(
+        '/api/v1/text/enhance',
+        { content: '{"type":"doc"}', format: 'tiptap' },
+        130_000,
+      )
+      expect(result.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+      expect(result.title).toBe('Enhanced Title')
+      expect(result.metaDescription).toBe('Enhanced meta description.')
+      expect(store.isLoading).toBe(false)
+      expect(store.error).toBe(null)
+    })
+
+    it('should return content-only result for html generation', async () => {
+      vi.mocked(api.postWithTimeout).mockResolvedValue({
+        data: {
+          data: {
+            content: '<style>.ls-test{}</style><section>Hello</section>',
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.postWithTimeout>>)
+
+      const store = useContentStore()
+      const result = await store.enhanceContent('A hero section', 'html')
+
+      expect(result.content).toBe('<style>.ls-test{}</style><section>Hello</section>')
+      expect(result.title).toBeUndefined()
+      expect(result.metaDescription).toBeUndefined()
+    })
+
+    it('should throw when the backend returns no data', async () => {
+      vi.mocked(api.postWithTimeout).mockResolvedValue({
+        data: { data: null },
+      } as unknown as Awaited<ReturnType<typeof api.postWithTimeout>>)
+
+      const store = useContentStore()
+
+      await expect(store.enhanceContent('{"type":"doc"}', 'tiptap')).rejects.toThrow(
+        'Failed to enhance content: No data returned',
+      )
+      expect(store.error).not.toBeNull()
+      expect(store.isLoading).toBe(false)
+    })
+  })
+
+  describe('translateContent', () => {
+    it('should return translated content with title and meta description', async () => {
+      vi.mocked(api.postWithTimeout).mockResolvedValue({
+        data: {
+          data: {
+            content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+            title: 'Bonjour le monde',
+            metaDescription: 'Un résumé.',
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.postWithTimeout>>)
+
+      const store = useContentStore()
+      const result = await store.translateContent(
+        '{"type":"doc"}',
+        'Hello world',
+        'A summary.',
+        'en',
+        'fr',
+        'tiptap',
+      )
+
+      expect(api.postWithTimeout).toHaveBeenCalledWith(
+        '/api/v1/text/translate',
+        {
+          content: '{"type":"doc"}',
+          title: 'Hello world',
+          metaDescription: 'A summary.',
+          sourceLang: 'en',
+          targetLang: 'fr',
+          format: 'tiptap',
+        },
+        130_000,
+      )
+      expect(result.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+      expect(result.title).toBe('Bonjour le monde')
+      expect(result.metaDescription).toBe('Un résumé.')
+      expect(store.isLoading).toBe(false)
+      expect(store.error).toBe(null)
+    })
+
+    it('should throw when the backend returns no data', async () => {
+      vi.mocked(api.postWithTimeout).mockResolvedValue({
+        data: { data: null },
+      } as unknown as Awaited<ReturnType<typeof api.postWithTimeout>>)
+
+      const store = useContentStore()
+
+      await expect(store.translateContent('{"type":"doc"}', 'Title', '', 'en', 'fr', 'tiptap')).rejects.toThrow(
+        'Failed to translate content: No data returned',
+      )
+      expect(store.error).not.toBeNull()
+      expect(store.isLoading).toBe(false)
+    })
+  })
 })

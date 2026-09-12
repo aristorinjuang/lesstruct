@@ -628,6 +628,77 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:      "successful draft slug update",
+			contentID: "1",
+			requestBody: `{
+				"title": "Updated Title",
+				"slug": "brand-new-slug",
+				"content": "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Updated content\"}]}]}",
+				"tags": ["updated"],
+				"status": "draft"
+			}`,
+			setupService: func(s *handlersmocks.MockContentServiceInterface) {
+				s.EXPECT().Update(
+					mock.Anything,
+					1,
+					1,
+					mock.Anything,
+					mock.MatchedBy(func(req contentdomain.UpdateContentRequest) bool {
+						return req.Slug == "brand-new-slug"
+					}),
+				).Return(&contentdomain.Content{
+					ID:      1,
+					UserID:  1,
+					Title:   "Updated Title",
+					Slug:    "brand-new-slug",
+					Content: "Updated content",
+					Tags:    []string{"updated"},
+					Status:  contentdomain.StatusDraft,
+				}, nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				data, ok := resp["data"].(map[string]any)
+				if !ok {
+					t.Errorf("expected data field")
+					return
+				}
+				content, ok := data["content"].(map[string]any)
+				if !ok {
+					t.Errorf("expected content field")
+					return
+				}
+				if content["slug"] != "brand-new-slug" {
+					t.Errorf("expected slug 'brand-new-slug', got %v", content["slug"])
+				}
+			},
+		},
+		{
+			name:        "slug change on published content rejected",
+			contentID:   "1",
+			requestBody: `{"title": "Title", "slug": "brand-new-slug", "content": "{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Content\"}]}]}", "tags": [], "status": "published"}`,
+			setupService: func(s *handlersmocks.MockContentServiceInterface) {
+				s.EXPECT().Update(
+					mock.Anything,
+					1,
+					1,
+					mock.Anything,
+					mock.AnythingOfType("content.UpdateContentRequest"),
+				).Return(nil, contentdomain.ErrSlugImmutable)
+			},
+			expectedStatus: http.StatusConflict,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				err, ok := resp["error"].(map[string]any)
+				if !ok {
+					t.Errorf("expected error field")
+					return
+				}
+				if err["code"] != "slug_immutable" {
+					t.Errorf("expected code 'slug_immutable', got %v", err["code"])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -11,12 +11,13 @@ http:
     data: |-
       {
         "title": "My First Content",
+        "slug": "my-first-content",
         "content": "<p>Hello World.</p>",
         "tags": [
           "test",
           "first"
         ],
-        "status": "published",
+        "status": "draft",
         "postType": "post",
         "metaDescription": "This description is for short.",
         "ogTitle": "My First Content SEO",

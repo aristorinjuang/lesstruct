@@ -3,6 +3,8 @@ package textgen_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/textgen"
@@ -114,7 +116,7 @@ func TestOpenAITextService_TranslateText_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := svc.TranslateText(ctx, validTipTapJSON(), "en", "fr", "tiptap")
+	_, err := svc.TranslateText(ctx, validTipTapJSON(), "Hello world", "A short summary.", "en", "fr", "tiptap")
 	assert.Error(t, err, "TranslateText with cancelled context should return error")
 }
 
@@ -372,4 +374,308 @@ func TestNewOpenAITextService_HTMLSystemPromptPrecomputed(t *testing.T) {
 
 	var iface textgen.TextGenerationService = svc
 	require.NotNil(t, iface)
+}
+
+// buildEnhanceEnvelope builds an AI enhance-response envelope JSON string with
+// the given title, meta description, and raw content JSON.
+func buildEnhanceEnvelope(title, meta, contentJSON string) string {
+	titleJSON, _ := json.Marshal(title)
+	metaJSON, _ := json.Marshal(meta)
+	return fmt.Sprintf(`{"title":%s,"metaDescription":%s,"content":%s}`, titleJSON, metaJSON, contentJSON)
+}
+
+// TestNewEnhanceResult tests the EnhanceResult constructor.
+func TestNewEnhanceResult(t *testing.T) {
+	tests := []struct {
+		name            string
+		content         string
+		title           string
+		metaDescription string
+	}{
+		{
+			name:            "full tiptap result",
+			content:         validTipTapJSON(),
+			title:           "Enhanced Hello World",
+			metaDescription: "A sharper hello to the world.",
+		},
+		{
+			name:            "html result without seo metadata",
+			content:         "<style>.ls-test{}</style><section>Hello</section>",
+			title:           "",
+			metaDescription: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := textgen.NewEnhanceResult(tt.content, tt.title, tt.metaDescription)
+			assert.Equal(t, tt.content, result.Content)
+			assert.Equal(t, tt.title, result.Title)
+			assert.Equal(t, tt.metaDescription, result.MetaDescription)
+		})
+	}
+}
+
+// TestStripJSONFences tests markdown fence removal from AI JSON output.
+func TestStripJSONFences(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "plain json passes through",
+			input:    `{"title":"T"}`,
+			expected: `{"title":"T"}`,
+		},
+		{
+			name:     "json fences are stripped",
+			input:    "```json\n" + `{"title":"T"}` + "\n```",
+			expected: `{"title":"T"}`,
+		},
+		{
+			name:     "bare fences are stripped",
+			input:    "```\n" + `{"title":"T"}` + "\n```",
+			expected: `{"title":"T"}`,
+		},
+		{
+			name:     "surrounding whitespace is trimmed",
+			input:    "  \n" + `{"title":"T"}` + "  \n",
+			expected: `{"title":"T"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, textgen.StripJSONFencesForTest(tt.input))
+		})
+	}
+}
+
+// TestParseEnhanceEnvelope tests validation and splitting of the AI enhance
+// response into the enhanced document and its SEO metadata.
+func TestParseEnhanceEnvelope(t *testing.T) {
+	tests := []struct {
+		name            string
+		response        string
+		expectedContent string
+		expectedTitle   string
+		expectedMeta    string
+		wantErr         bool
+	}{
+		{
+			name:            "success - full envelope",
+			response:        buildEnhanceEnvelope("Enhanced Hello World", "A sharper hello to the world.", validTipTapJSON()),
+			expectedContent: validTipTapJSON(),
+			expectedTitle:   "Enhanced Hello World",
+			expectedMeta:    "A sharper hello to the world.",
+			wantErr:         false,
+		},
+		{
+			name:            "success - missing meta description is allowed",
+			response:        `{"title":"Enhanced Hello World","content":` + validTipTapJSON() + `}`,
+			expectedContent: validTipTapJSON(),
+			expectedTitle:   "Enhanced Hello World",
+			expectedMeta:    "",
+			wantErr:         false,
+		},
+		{
+			name:            "success - trims surrounding whitespace",
+			response:        buildEnhanceEnvelope("  Padded Title  ", "  Padded summary.  ", "  "+validTipTapJSON()+"  "),
+			expectedContent: validTipTapJSON(),
+			expectedTitle:   "Padded Title",
+			expectedMeta:    "Padded summary.",
+			wantErr:         false,
+		},
+		{
+			name:            "success - truncates long title to 60 characters",
+			response:        buildEnhanceEnvelope(strings.Repeat("a", 70), "Summary.", validTipTapJSON()),
+			expectedContent: validTipTapJSON(),
+			expectedTitle:   strings.Repeat("a", 60),
+			expectedMeta:    "Summary.",
+			wantErr:         false,
+		},
+		{
+			name:            "success - truncates long meta description to 160 characters",
+			response:        buildEnhanceEnvelope("Title", strings.Repeat("b", 200), validTipTapJSON()),
+			expectedContent: validTipTapJSON(),
+			expectedTitle:   "Title",
+			expectedMeta:    strings.Repeat("b", 160),
+			wantErr:         false,
+		},
+		{
+			name:            "success - truncation trims trailing space",
+			response:        buildEnhanceEnvelope(strings.Repeat("a", 59)+" bcdef", "Summary.", validTipTapJSON()),
+			expectedContent: validTipTapJSON(),
+			expectedTitle:   strings.Repeat("a", 59),
+			expectedMeta:    "Summary.",
+			wantErr:         false,
+		},
+		{
+			name:     "error - response is not json",
+			response: "this is not json",
+			wantErr:  true,
+		},
+		{
+			name:     "error - missing title",
+			response: `{"metaDescription":"Summary.","content":` + validTipTapJSON() + `}`,
+			wantErr:  true,
+		},
+		{
+			name:     "error - blank title",
+			response: buildEnhanceEnvelope("   ", "Summary.", validTipTapJSON()),
+			wantErr:  true,
+		},
+		{
+			name:     "error - missing content",
+			response: `{"title":"Title","metaDescription":"Summary."}`,
+			wantErr:  true,
+		},
+		{
+			name:     "error - null content",
+			response: `{"title":"Title","metaDescription":"Summary.","content":null}`,
+			wantErr:  true,
+		},
+		{
+			name:     "error - content is not a json object",
+			response: buildEnhanceEnvelope("Title", "Summary.", `"just a string"`),
+			wantErr:  true,
+		},
+		{
+			name:     "error - content is a json array",
+			response: buildEnhanceEnvelope("Title", "Summary.", `[1,2,3]`),
+			wantErr:  true,
+		},
+		{
+			name:     "error - content is not a tiptap doc",
+			response: buildEnhanceEnvelope("Title", "Summary.", `{"type":"paragraph"}`),
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := textgen.ParseEnhanceEnvelopeForTest(tt.response)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedContent, result.Content)
+			assert.Equal(t, tt.expectedTitle, result.Title)
+			assert.Equal(t, tt.expectedMeta, result.MetaDescription)
+		})
+	}
+}
+
+// TestNewTranslateResult tests the TranslateResult constructor.
+func TestNewTranslateResult(t *testing.T) {
+	tests := []struct {
+		name            string
+		content         string
+		title           string
+		metaDescription string
+	}{
+		{
+			name:            "full tiptap result",
+			content:         validTipTapJSON(),
+			title:           "Bonjour le monde",
+			metaDescription: "Un résumé plus net.",
+		},
+		{
+			name:            "html result without seo metadata",
+			content:         "<section>Bonjour le monde</section>",
+			title:           "",
+			metaDescription: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := textgen.NewTranslateResult(tt.content, tt.title, tt.metaDescription)
+			assert.Equal(t, tt.content, result.Content)
+			assert.Equal(t, tt.title, result.Title)
+			assert.Equal(t, tt.metaDescription, result.MetaDescription)
+		})
+	}
+}
+
+// TestParseMetadataEnvelope tests the shared envelope parser for both content
+// kinds: TipTap documents and HTML strings.
+func TestParseMetadataEnvelope(t *testing.T) {
+	tests := []struct {
+		name            string
+		response        string
+		format          string
+		expectedContent string
+		expectedTitle   string
+		expectedMeta    string
+		wantErr         bool
+	}{
+		{
+			name:            "success - tiptap envelope",
+			response:        buildEnhanceEnvelope("Bonjour le monde", "Un résumé.", validTipTapJSON()),
+			format:          "tiptap",
+			expectedContent: validTipTapJSON(),
+			expectedTitle:   "Bonjour le monde",
+			expectedMeta:    "Un résumé.",
+			wantErr:         false,
+		},
+		{
+			name:            "success - html envelope",
+			response:        buildEnhanceEnvelope("Bonjour le monde", "Un résumé.", `"  <section>Bonjour le monde</section>  "`),
+			format:          "html",
+			expectedContent: "<section>Bonjour le monde</section>",
+			expectedTitle:   "Bonjour le monde",
+			expectedMeta:    "Un résumé.",
+			wantErr:         false,
+		},
+		{
+			name:            "success - html envelope truncates long meta to 160 characters",
+			response:        buildEnhanceEnvelope("Titre", strings.Repeat("c", 200), `"<section>Bonjour</section>"`),
+			format:          "html",
+			expectedContent: "<section>Bonjour</section>",
+			expectedTitle:   "Titre",
+			expectedMeta:    strings.Repeat("c", 160),
+			wantErr:         false,
+		},
+		{
+			name:     "error - html content is not a string",
+			response: buildEnhanceEnvelope("Titre", "Résumé.", validTipTapJSON()),
+			format:   "html",
+			wantErr:  true,
+		},
+		{
+			name:     "error - html content is blank",
+			response: buildEnhanceEnvelope("Titre", "Résumé.", `"   "`),
+			format:   "html",
+			wantErr:  true,
+		},
+		{
+			name:     "error - html envelope missing title",
+			response: `{"metaDescription":"Résumé.","content":"<section>Bonjour</section>"}`,
+			format:   "html",
+			wantErr:  true,
+		},
+		{
+			name:     "error - response is not json",
+			response: "this is not json",
+			format:   "html",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content, title, meta, err := textgen.ParseMetadataEnvelopeForTest(tt.response, tt.format)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedContent, content)
+			assert.Equal(t, tt.expectedTitle, title)
+			assert.Equal(t, tt.expectedMeta, meta)
+		})
+	}
 }

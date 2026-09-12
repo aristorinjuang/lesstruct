@@ -93,10 +93,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Immutable URL slugs.** The slug is the public URL (`/<slug>`). Slugs may contain lowercase letters, digits, hyphens, and dots (no leading/trailing dot, no `..`); `jquery.semantic-tabs` is a valid slug, with legacy `jquery.semantic-tabs.html` served via the alias redirect.
   Any authenticated user can set a custom slug when creating content (in the
   editor or via `--slug` on `lesstruct-cli content create`); otherwise the slug
-  is auto-generated from the title. Once saved, the slug is **locked for
-  everyone** — editing the title never regenerates it, so published URLs stay
-  stable for SEO and inbound links. Uniqueness is enforced per language; a
-  collision returns a clear error rather than silently suffixing.
+  is auto-generated from the title. The slug stays editable while the content
+  is a draft (manually, via title auto-suggest, or via Enhance with AI). Once
+  **published**, the slug is **locked for everyone** — editing the title never
+  regenerates it, so published URLs stay stable for SEO and inbound links.
+  Uniqueness is enforced per language; a collision returns a clear error rather
+  than silently suffixing.
 - **HTML/CSS content authoring.** Set `format: html` on create to author raw
   HTML directly — stored and served as-is, no TipTap conversion. The admin
   editor provides a CodeMirror 6 editor with syntax highlighting and a live
@@ -238,7 +240,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **SHA-256 dedup.** Identical uploads are detected and rejected (with a
   force-upload escape hatch).
 - **AI image generation.** Generate images from the media library and the content
-  editor via Google Imagen, Gemini, or GPT-Image. Bring your own key.
+  editor via Google Imagen, Gemini, or GPT-Image. Bring your own key. Gemini and
+  GPT-Image models additionally accept up to 3 reference images (uploads or
+  media-library picks) to guide style, subject, or composition. An "Open Graph
+  image" mode generates an exact 1200x630 social preview (center-cropped) and,
+  from the editor, inserts it at the top of the content — og:image is always
+  the content's first image.
 
 ## Internationalization {#internationalization}
 
@@ -255,16 +262,21 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   `Language` field: Indonesian content renders `1 Januari 2026`, English content
   renders `January 2, 2006`. Custom-field dates localize automatically.
 - **AI translation.** Translate content between your configured languages from
-  the editor.
+  the editor — translation also covers the title and SEO meta description
+  (mirrored to the OG title).
 
 ## AI {#ai}
 
 - **Opt-in, bring-your-own-key.** Text via any OpenAI-compatible endpoint
   (`AI_TEXT_GENERATION_BASE_URL`); images via Google or OpenAI. Nothing runs
   without your keys; `/api/health` honestly reports which features are enabled.
-- **Text enhancement and translation.** Refine or translate rich-text (TipTap) post bodies from the editor.
+- **Text enhancement and translation.** Refine rich-text (TipTap) post bodies from the editor — enhancement also rewrites the title and SEO meta description (mirrored to the OG title) — or translate between languages.
 - **AI-powered HTML/CSS authoring.** Describe what you want in plain language — the AI generates production-ready HTML & CSS with semantic markup, responsive layouts, and accessible design. Output is on-brand by default: the AI reuses your active theme's design tokens (`var(--color-primary)`, spacing, radius, fonts) and component classes rather than inventing arbitrary colors and fonts. Includes 9 quick-start presets (hero, pricing, testimonials, features, CTA, FAQ, stats, contact, newsletter) and iterative refinement — the AI can modify existing HTML based on your follow-up instructions. Your media library images are automatically surfaced as context. This replaces the need for a drag-and-drop page builder: describe, generate, refine, ship.
 - **Image generation.** Generate images from the media library and the editor.
+  Gemini and GPT-Image models accept optional reference images (uploaded or
+  picked from the library) to guide the result. Open Graph mode produces an
+  exact 1200x630 preview, auto-inserted at the top of the content it was
+  generated from.
 - **Built for agents.** `lesstruct-cli` is a thin Cobra client over `/api/v1`
   designed for AI agents and terminal-first humans. Markdown ingest, cursor
   pagination, and a standard response envelope make it easy to script.

@@ -7,6 +7,7 @@ package mocks
 import (
 	"context"
 
+	"github.com/aristorinjuang/lesstruct/internal/domain/textgen"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -38,22 +39,22 @@ func (_m *MockTextGenerationService) EXPECT() *MockTextGenerationService_Expecte
 }
 
 // EnhanceText provides a mock function for the type MockTextGenerationService
-func (_mock *MockTextGenerationService) EnhanceText(ctx context.Context, content string, format string, mediaContext string) (string, error) {
+func (_mock *MockTextGenerationService) EnhanceText(ctx context.Context, content string, format string, mediaContext string) (textgen.EnhanceResult, error) {
 	ret := _mock.Called(ctx, content, format, mediaContext)
 
 	if len(ret) == 0 {
 		panic("no return value specified for EnhanceText")
 	}
 
-	var r0 string
+	var r0 textgen.EnhanceResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) (string, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) (textgen.EnhanceResult, error)); ok {
 		return returnFunc(ctx, content, format, mediaContext)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) string); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) textgen.EnhanceResult); ok {
 		r0 = returnFunc(ctx, content, format, mediaContext)
 	} else {
-		r0 = ret.Get(0).(string)
+		r0 = ret.Get(0).(textgen.EnhanceResult)
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string) error); ok {
 		r1 = returnFunc(ctx, content, format, mediaContext)
@@ -105,36 +106,36 @@ func (_c *MockTextGenerationService_EnhanceText_Call) Run(run func(ctx context.C
 	return _c
 }
 
-func (_c *MockTextGenerationService_EnhanceText_Call) Return(s string, err error) *MockTextGenerationService_EnhanceText_Call {
-	_c.Call.Return(s, err)
+func (_c *MockTextGenerationService_EnhanceText_Call) Return(enhanceResult textgen.EnhanceResult, err error) *MockTextGenerationService_EnhanceText_Call {
+	_c.Call.Return(enhanceResult, err)
 	return _c
 }
 
-func (_c *MockTextGenerationService_EnhanceText_Call) RunAndReturn(run func(ctx context.Context, content string, format string, mediaContext string) (string, error)) *MockTextGenerationService_EnhanceText_Call {
+func (_c *MockTextGenerationService_EnhanceText_Call) RunAndReturn(run func(ctx context.Context, content string, format string, mediaContext string) (textgen.EnhanceResult, error)) *MockTextGenerationService_EnhanceText_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // TranslateText provides a mock function for the type MockTextGenerationService
-func (_mock *MockTextGenerationService) TranslateText(ctx context.Context, content string, sourceLang string, targetLang string, format string) (string, error) {
-	ret := _mock.Called(ctx, content, sourceLang, targetLang, format)
+func (_mock *MockTextGenerationService) TranslateText(ctx context.Context, content string, title string, metaDescription string, sourceLang string, targetLang string, format string) (textgen.TranslateResult, error) {
+	ret := _mock.Called(ctx, content, title, metaDescription, sourceLang, targetLang, format)
 
 	if len(ret) == 0 {
 		panic("no return value specified for TranslateText")
 	}
 
-	var r0 string
+	var r0 textgen.TranslateResult
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) (string, error)); ok {
-		return returnFunc(ctx, content, sourceLang, targetLang, format)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string, string, string) (textgen.TranslateResult, error)); ok {
+		return returnFunc(ctx, content, title, metaDescription, sourceLang, targetLang, format)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string) string); ok {
-		r0 = returnFunc(ctx, content, sourceLang, targetLang, format)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, string, string, string) textgen.TranslateResult); ok {
+		r0 = returnFunc(ctx, content, title, metaDescription, sourceLang, targetLang, format)
 	} else {
-		r0 = ret.Get(0).(string)
+		r0 = ret.Get(0).(textgen.TranslateResult)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, string) error); ok {
-		r1 = returnFunc(ctx, content, sourceLang, targetLang, format)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, string, string, string) error); ok {
+		r1 = returnFunc(ctx, content, title, metaDescription, sourceLang, targetLang, format)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -149,14 +150,16 @@ type MockTextGenerationService_TranslateText_Call struct {
 // TranslateText is a helper method to define mock.On call
 //   - ctx context.Context
 //   - content string
+//   - title string
+//   - metaDescription string
 //   - sourceLang string
 //   - targetLang string
 //   - format string
-func (_e *MockTextGenerationService_Expecter) TranslateText(ctx any, content any, sourceLang any, targetLang any, format any) *MockTextGenerationService_TranslateText_Call {
-	return &MockTextGenerationService_TranslateText_Call{Call: _e.mock.On("TranslateText", ctx, content, sourceLang, targetLang, format)}
+func (_e *MockTextGenerationService_Expecter) TranslateText(ctx any, content any, title any, metaDescription any, sourceLang any, targetLang any, format any) *MockTextGenerationService_TranslateText_Call {
+	return &MockTextGenerationService_TranslateText_Call{Call: _e.mock.On("TranslateText", ctx, content, title, metaDescription, sourceLang, targetLang, format)}
 }
 
-func (_c *MockTextGenerationService_TranslateText_Call) Run(run func(ctx context.Context, content string, sourceLang string, targetLang string, format string)) *MockTextGenerationService_TranslateText_Call {
+func (_c *MockTextGenerationService_TranslateText_Call) Run(run func(ctx context.Context, content string, title string, metaDescription string, sourceLang string, targetLang string, format string)) *MockTextGenerationService_TranslateText_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -178,23 +181,33 @@ func (_c *MockTextGenerationService_TranslateText_Call) Run(run func(ctx context
 		if args[4] != nil {
 			arg4 = args[4].(string)
 		}
+		var arg5 string
+		if args[5] != nil {
+			arg5 = args[5].(string)
+		}
+		var arg6 string
+		if args[6] != nil {
+			arg6 = args[6].(string)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
 			arg4,
+			arg5,
+			arg6,
 		)
 	})
 	return _c
 }
 
-func (_c *MockTextGenerationService_TranslateText_Call) Return(s string, err error) *MockTextGenerationService_TranslateText_Call {
-	_c.Call.Return(s, err)
+func (_c *MockTextGenerationService_TranslateText_Call) Return(translateResult textgen.TranslateResult, err error) *MockTextGenerationService_TranslateText_Call {
+	_c.Call.Return(translateResult, err)
 	return _c
 }
 
-func (_c *MockTextGenerationService_TranslateText_Call) RunAndReturn(run func(ctx context.Context, content string, sourceLang string, targetLang string, format string) (string, error)) *MockTextGenerationService_TranslateText_Call {
+func (_c *MockTextGenerationService_TranslateText_Call) RunAndReturn(run func(ctx context.Context, content string, title string, metaDescription string, sourceLang string, targetLang string, format string) (textgen.TranslateResult, error)) *MockTextGenerationService_TranslateText_Call {
 	_c.Call.Return(run)
 	return _c
 }

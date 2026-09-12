@@ -14,6 +14,7 @@ import api from '@/utils/request'
 const mediaStore = useMediaStore()
 
 const aiGenerationAvailable = ref(false)
+const imageReferenceAvailable = ref(false)
 const showGenerateModal = ref(false)
 
 const searchQuery = ref('')
@@ -256,10 +257,14 @@ function formatDate(dateString: string): string {
 onMounted(async () => {
   loadMedia()
   try {
-    const health = await api.get<{ features?: { imageGeneration?: boolean } }>('/api/health')
+    const health = await api.get<{
+      features?: { imageGeneration?: boolean; imageReference?: boolean }
+    }>('/api/health')
     aiGenerationAvailable.value = health.data.features?.imageGeneration === true
+    imageReferenceAvailable.value = health.data.features?.imageReference === true
   } catch {
     aiGenerationAvailable.value = false
+    imageReferenceAvailable.value = false
   }
 })
 
@@ -578,6 +583,7 @@ onUnmounted(() => {
     <!-- Generate with AI Modal -->
     <GenerateImageModal
       :is-open="showGenerateModal"
+      :supports-references="imageReferenceAvailable"
       @close="showGenerateModal = false"
       @generated="onAIImageGenerated"
       @error="onAIError"

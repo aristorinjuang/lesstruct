@@ -7,6 +7,7 @@ package mocks
 import (
 	"context"
 
+	"github.com/aristorinjuang/lesstruct/internal/domain/media"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -38,8 +39,8 @@ func (_m *MockImageGenerationService) EXPECT() *MockImageGenerationService_Expec
 }
 
 // GenerateImage provides a mock function for the type MockImageGenerationService
-func (_mock *MockImageGenerationService) GenerateImage(ctx context.Context, prompt string) ([]byte, error) {
-	ret := _mock.Called(ctx, prompt)
+func (_mock *MockImageGenerationService) GenerateImage(ctx context.Context, prompt string, references []media.ImageReference) ([]byte, error) {
+	ret := _mock.Called(ctx, prompt, references)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GenerateImage")
@@ -47,18 +48,18 @@ func (_mock *MockImageGenerationService) GenerateImage(ctx context.Context, prom
 
 	var r0 []byte
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]byte, error)); ok {
-		return returnFunc(ctx, prompt)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []media.ImageReference) ([]byte, error)); ok {
+		return returnFunc(ctx, prompt, references)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []byte); ok {
-		r0 = returnFunc(ctx, prompt)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []media.ImageReference) []byte); ok {
+		r0 = returnFunc(ctx, prompt, references)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]byte)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(ctx, prompt)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []media.ImageReference) error); ok {
+		r1 = returnFunc(ctx, prompt, references)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -73,11 +74,12 @@ type MockImageGenerationService_GenerateImage_Call struct {
 // GenerateImage is a helper method to define mock.On call
 //   - ctx context.Context
 //   - prompt string
-func (_e *MockImageGenerationService_Expecter) GenerateImage(ctx any, prompt any) *MockImageGenerationService_GenerateImage_Call {
-	return &MockImageGenerationService_GenerateImage_Call{Call: _e.mock.On("GenerateImage", ctx, prompt)}
+//   - references []media.ImageReference
+func (_e *MockImageGenerationService_Expecter) GenerateImage(ctx any, prompt any, references any) *MockImageGenerationService_GenerateImage_Call {
+	return &MockImageGenerationService_GenerateImage_Call{Call: _e.mock.On("GenerateImage", ctx, prompt, references)}
 }
 
-func (_c *MockImageGenerationService_GenerateImage_Call) Run(run func(ctx context.Context, prompt string)) *MockImageGenerationService_GenerateImage_Call {
+func (_c *MockImageGenerationService_GenerateImage_Call) Run(run func(ctx context.Context, prompt string, references []media.ImageReference)) *MockImageGenerationService_GenerateImage_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -87,9 +89,14 @@ func (_c *MockImageGenerationService_GenerateImage_Call) Run(run func(ctx contex
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
+		var arg2 []media.ImageReference
+		if args[2] != nil {
+			arg2 = args[2].([]media.ImageReference)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -100,7 +107,51 @@ func (_c *MockImageGenerationService_GenerateImage_Call) Return(bytes []byte, er
 	return _c
 }
 
-func (_c *MockImageGenerationService_GenerateImage_Call) RunAndReturn(run func(ctx context.Context, prompt string) ([]byte, error)) *MockImageGenerationService_GenerateImage_Call {
+func (_c *MockImageGenerationService_GenerateImage_Call) RunAndReturn(run func(ctx context.Context, prompt string, references []media.ImageReference) ([]byte, error)) *MockImageGenerationService_GenerateImage_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SupportsImageReferences provides a mock function for the type MockImageGenerationService
+func (_mock *MockImageGenerationService) SupportsImageReferences() bool {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for SupportsImageReferences")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func() bool); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockImageGenerationService_SupportsImageReferences_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SupportsImageReferences'
+type MockImageGenerationService_SupportsImageReferences_Call struct {
+	*mock.Call
+}
+
+// SupportsImageReferences is a helper method to define mock.On call
+func (_e *MockImageGenerationService_Expecter) SupportsImageReferences() *MockImageGenerationService_SupportsImageReferences_Call {
+	return &MockImageGenerationService_SupportsImageReferences_Call{Call: _e.mock.On("SupportsImageReferences")}
+}
+
+func (_c *MockImageGenerationService_SupportsImageReferences_Call) Run(run func()) *MockImageGenerationService_SupportsImageReferences_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockImageGenerationService_SupportsImageReferences_Call) Return(b bool) *MockImageGenerationService_SupportsImageReferences_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockImageGenerationService_SupportsImageReferences_Call) RunAndReturn(run func() bool) *MockImageGenerationService_SupportsImageReferences_Call {
 	_c.Call.Return(run)
 	return _c
 }

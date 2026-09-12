@@ -10,9 +10,10 @@ import (
 	"github.com/openai/openai-go/option"
 )
 
-// tiptapSchemaPrompt describes the TipTap JSON structure to the AI model so it
-// can output valid TipTap documents compatible with the editor.
-const tiptapSchemaPrompt = `You must output VALID TipTap JSON matching this exact schema:
+const (
+	// tiptapSchemaPrompt describes the TipTap JSON structure to the AI model so it
+	// can output valid TipTap documents compatible with the editor.
+	tiptapSchemaPrompt = `You must output VALID TipTap JSON matching this exact schema:
 
 {
   "type": "doc",
@@ -95,13 +96,13 @@ IMPORTANT RULES:
 8. NEVER use heading level 1 (h1) — headings must start at level 2 or higher.
 9. Always wrap text content inside a paragraph node unless it belongs in a heading, list, blockquote, or code block.`
 
-// htmlSystemPromptBase is the always-on system prompt for HTML/CSS generation.
-// It instructs the AI to produce a scoped, self-contained HTML fragment that
-// reuses the active theme's CSS custom properties and component classes, so
-// generated content stays on-brand instead of inventing arbitrary colors,
-// fonts, and spacing. The active theme's CSS is injected separately (see
-// htmlSystemPromptThemeSection) and the examples follow (htmlSystemPromptExamples).
-const htmlSystemPromptBase = `You are an expert front-end developer creating production-ready HTML and CSS for a website's content area. You write clean, semantic, accessible code that matches the site's existing brand — every color, font, spacing, and radius should come from the theme's design tokens, never invented.
+	// htmlSystemPromptBase is the always-on system prompt for HTML/CSS generation.
+	// It instructs the AI to produce a scoped, self-contained HTML fragment that
+	// reuses the active theme's CSS custom properties and component classes, so
+	// generated content stays on-brand instead of inventing arbitrary colors,
+	// fonts, and spacing. The active theme's CSS is injected separately (see
+	// htmlSystemPromptThemeSection) and the examples follow (htmlSystemPromptExamples).
+	htmlSystemPromptBase = `You are an expert front-end developer creating production-ready HTML and CSS for a website's content area. You write clean, semantic, accessible code that matches the site's existing brand — every color, font, spacing, and radius should come from the theme's design tokens, never invented.
 
 ## Output format
 
@@ -148,12 +149,12 @@ Do NOT redefine base body typography (font-family, font-size, line-height, color
 - Accessibility: WCAG AA contrast (4.5:1 body text), visible focus rings (use var(--ring) or outline: 2px solid var(--color-primary)), semantic landmarks (<section>, <article>, <nav>), at most one <h2> per block (the page owns <h1>), alt text on all images.
 - Images: only use URLs from the "Available images" list when provided. Never invent image URLs. Always add loading="lazy" and meaningful alt.`
 
-// htmlSystemPromptThemeSection is injected between the base prompt and the
-// examples when the active theme's CSS is available. Seeing the exact token
-// values and existing component patterns lets the AI match them precisely
-// instead of guessing. The two %s placeholders receive base.css (tokens) and
-// style.css (components) respectively.
-const htmlSystemPromptThemeSection = `
+	// htmlSystemPromptThemeSection is injected between the base prompt and the
+	// examples when the active theme's CSS is available. Seeing the exact token
+	// values and existing component patterns lets the AI match them precisely
+	// instead of guessing. The two %s placeholders receive base.css (tokens) and
+	// style.css (components) respectively.
+	htmlSystemPromptThemeSection = `
 
 ## Active site theme CSS (authoritative — match these tokens and patterns)
 
@@ -165,11 +166,11 @@ Below is the site's current base.css (design tokens) and style.css (component st
 ### style.css
 %s`
 
-// htmlSystemPromptExamples contains the few-shot examples. Every example uses
-// the theme's custom properties (var(--color-*), var(--space-*), var(--radius-*),
-// var(--font-sans)) rather than hardcoded hex values, so output blends with any
-// theme and demonstrates the token-reuse rule.
-const htmlSystemPromptExamples = `
+	// htmlSystemPromptExamples contains the few-shot examples. Every example uses
+	// the theme's custom properties (var(--color-*), var(--space-*), var(--radius-*),
+	// var(--font-sans)) rather than hardcoded hex values, so output blends with any
+	// theme and demonstrates the token-reuse rule.
+	htmlSystemPromptExamples = `
 
 ## Few-shot examples
 
@@ -508,6 +509,34 @@ Every example below uses theme tokens — your real output must do the same.
   </div>
 </section>`
 
+// htmlTranslateRules holds the translation rules for HTML content: translate
+// only visible text and alt attributes while preserving structure, styles,
+// and URLs.
+	htmlTranslateRules = `Rules:
+- Translate ONLY visible text inside HTML elements and alt attributes.
+- Preserve the <style> block UNCHANGED — it is code, not copy. The only exception: translate CSS content: "..." strings if they contain user-facing text.
+- Preserve all URLs (href, src, action), class names, IDs, tag structure, and attribute names.
+- Preserve all HTML tags, attributes, and structural whitespace.
+- Keep image alt text translations accurate and natural in the target language.`
+
+	// Maximum lengths for AI-generated SEO metadata. The title doubles as the
+	// social share (OG) title, so it shares the 60-character limit.
+	maxEnhanceTitleRunes           = 60
+	maxEnhanceMetaDescriptionRunes = 160
+
+	// Format constants for content types.
+	FormatTiptap = "tiptap"
+	FormatHTML   = "html"
+)
+
+// enhanceEnvelope mirrors the JSON envelope the AI returns when enhancing
+// rich-text content: the enhanced TipTap document plus SEO metadata.
+type enhanceEnvelope struct {
+	Title           string          `json:"title"`
+	MetaDescription string          `json:"metaDescription"`
+	Content         json.RawMessage `json:"content"`
+}
+
 // buildHTMLSystemPrompt assembles the full HTML system prompt from the base
 // rules, optional active-theme CSS, and the examples. It is called once at
 // construction so per-request calls just reuse the precomputed string.
@@ -520,31 +549,129 @@ func buildHTMLSystemPrompt(themeBaseCSS, themeStyleCSS string) string {
 	return prompt
 }
 
-// htmlTranslateSystemPrompt instructs the AI to translate HTML content while
-// preserving structure, styles, and URLs — translating only visible text and alt attributes.
-const htmlTranslateSystemPrompt = `You are an expert translator. Translate the provided HTML content from %s to %s.
+// truncateRunes shortens s to at most maxRunes Unicode characters, trimming
+// trailing whitespace left behind by the cut.
+func truncateRunes(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return strings.TrimSpace(string(runes[:maxRunes]))
+}
 
-Rules:
-- Translate ONLY visible text inside HTML elements and alt attributes.
-- Preserve the <style> block UNCHANGED — it is code, not copy. The only exception: translate CSS content: "..." strings if they contain user-facing text.
-- Preserve all URLs (href, src, action), class names, IDs, tag structure, and attribute names.
-- Preserve all HTML tags, attributes, and structural whitespace.
-- Keep image alt text translations accurate and natural in the target language.
-- Output ONLY the translated HTML fragment — no markdown fences, no explanation, no commentary.
+// stripJSONFences removes markdown code fences the model sometimes wraps
+// around JSON output.
+func stripJSONFences(responseText string) string {
+	stripped := strings.TrimSpace(responseText)
+	stripped = strings.TrimPrefix(stripped, "```json")
+	stripped = strings.TrimPrefix(stripped, "```")
+	stripped = strings.TrimSuffix(stripped, "```")
+	return strings.TrimSpace(stripped)
+}
 
-%s`
+// parseMetadataEnvelope validates an AI response envelope carrying generated
+// content plus SEO metadata and splits it into its parts. The title is
+// required; the meta description is optional and may be empty.
+// For FormatHTML, content must be a non-empty string; otherwise it must be a
+// valid TipTap document object.
+func parseMetadataEnvelope(responseText, format string) (content, title, metaDescription string, err error) {
+	var envelope enhanceEnvelope
+	if err := json.Unmarshal([]byte(responseText), &envelope); err != nil {
+		return "", "", "", fmt.Errorf("AI response is not valid JSON: %w", err)
+	}
+
+	title = truncateRunes(strings.TrimSpace(envelope.Title), maxEnhanceTitleRunes)
+	if title == "" {
+		return "", "", "", fmt.Errorf("AI response is missing the SEO title")
+	}
+
+	if len(envelope.Content) == 0 {
+		return "", "", "", fmt.Errorf("AI response is missing the generated content")
+	}
+	if format == FormatHTML {
+		var html string
+		if err := json.Unmarshal(envelope.Content, &html); err != nil {
+			return "", "", "", fmt.Errorf("AI response content is not valid HTML text: %w", err)
+		}
+		content = strings.TrimSpace(html)
+		if content == "" {
+			return "", "", "", fmt.Errorf("AI response is missing the generated content")
+		}
+	} else {
+		var contentDoc map[string]any
+		if err := json.Unmarshal(envelope.Content, &contentDoc); err != nil {
+			return "", "", "", fmt.Errorf("AI response content is not valid JSON: %w", err)
+		}
+		if docType, ok := contentDoc["type"].(string); !ok || docType != "doc" {
+			return "", "", "", fmt.Errorf("AI response is not a valid TipTap document: missing 'doc' type")
+		}
+		content = strings.TrimSpace(string(envelope.Content))
+	}
+
+	metaDescription = truncateRunes(strings.TrimSpace(envelope.MetaDescription), maxEnhanceMetaDescriptionRunes)
+	return content, title, metaDescription, nil
+}
+
+// parseEnhanceEnvelope validates the AI's enhance response and splits it into
+// the enhanced TipTap document and its SEO metadata. The title and the
+// document are required; the meta description is optional and may be empty.
+func parseEnhanceEnvelope(responseText string) (EnhanceResult, error) {
+	content, title, metaDescription, err := parseMetadataEnvelope(responseText, FormatTiptap)
+	if err != nil {
+		return EnhanceResult{}, err
+	}
+	return NewEnhanceResult(content, title, metaDescription), nil
+}
+
+// EnhanceResult is the outcome of enhancing rich-text content: the enhanced
+// body document plus AI-generated SEO metadata. Title and MetaDescription
+// are populated for the tiptap format only; HTML generation fills Content.
+type EnhanceResult struct {
+	Content         string
+	Title           string
+	MetaDescription string
+}
+
+func NewEnhanceResult(
+	content, title, metaDescription string,
+) EnhanceResult {
+	return EnhanceResult{
+		Content:         content,
+		Title:           title,
+		MetaDescription: metaDescription,
+	}
+}
+
+// TranslateResult is the outcome of translating content: the translated body
+// plus translated SEO metadata. Title and MetaDescription are populated for
+// both the tiptap and html formats.
+type TranslateResult struct {
+	Content         string
+	Title           string
+	MetaDescription string
+}
+
+func NewTranslateResult(
+	content, title, metaDescription string,
+) TranslateResult {
+	return TranslateResult{
+		Content:         content,
+		Title:           title,
+		MetaDescription: metaDescription,
+	}
+}
 
 // TextGenerationService defines the interface for AI text generation services.
 type TextGenerationService interface {
-	EnhanceText(ctx context.Context, content, format, mediaContext string) (string, error)
-	TranslateText(ctx context.Context, content, sourceLang, targetLang, format string) (string, error)
+	EnhanceText(
+		ctx context.Context,
+		content, format, mediaContext string,
+	) (EnhanceResult, error)
+	TranslateText(
+		ctx context.Context,
+		content, title, metaDescription, sourceLang, targetLang, format string,
+	) (TranslateResult, error)
 }
-
-// Format constants for content types.
-const (
-	FormatTiptap = "tiptap"
-	FormatHTML   = "html"
-)
 
 // OpenAITextService implements TextGenerationService using any OpenAI-compatible API.
 type OpenAITextService struct {
@@ -568,7 +695,7 @@ func (s *OpenAITextService) ensureClient() {
 	}
 }
 
-func (s *OpenAITextService) callChatCompletionTiptap(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
+func (s *OpenAITextService) completeChat(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
 	s.ensureClient()
 
 	params := openai.ChatCompletionNewParams{
@@ -590,29 +717,32 @@ func (s *OpenAITextService) callChatCompletionTiptap(ctx context.Context, system
 		return "", fmt.Errorf("no completions returned")
 	}
 
-	responseText := completion.Choices[0].Message.Content
+	return completion.Choices[0].Message.Content, nil
+}
 
-	// Strip markdown code fences if present
-	responseText = strings.TrimSpace(responseText)
-	responseText = strings.TrimPrefix(responseText, "```json")
-	responseText = strings.TrimPrefix(responseText, "```")
-	responseText = strings.TrimSuffix(responseText, "```")
-	responseText = strings.TrimSpace(responseText)
-
-	// Validate that the response is valid JSON
-	var parsed any
-	if err := json.Unmarshal([]byte(responseText), &parsed); err != nil {
-		return "", fmt.Errorf("AI response is not valid JSON: %w", err)
+func (s *OpenAITextService) callChatCompletionEnhancedTiptap(ctx context.Context, systemPrompt, userPrompt string) (EnhanceResult, error) {
+	responseText, err := s.completeChat(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		return EnhanceResult{}, err
 	}
 
-	// Ensure it has the expected TipTap doc structure
-	if doc, ok := parsed.(map[string]any); ok {
-		if docType, ok := doc["type"].(string); !ok || docType != "doc" {
-			return "", fmt.Errorf("AI response is not a valid TipTap document: missing 'doc' type")
-		}
+	return parseEnhanceEnvelope(stripJSONFences(responseText))
+}
+
+func (s *OpenAITextService) callChatCompletionTranslatedEnvelope(
+	ctx context.Context,
+	systemPrompt, userPrompt, format string,
+) (TranslateResult, error) {
+	responseText, err := s.completeChat(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		return TranslateResult{}, err
 	}
 
-	return responseText, nil
+	content, title, metaDescription, err := parseMetadataEnvelope(stripJSONFences(responseText), format)
+	if err != nil {
+		return TranslateResult{}, err
+	}
+	return NewTranslateResult(content, title, metaDescription), nil
 }
 
 func (s *OpenAITextService) callChatCompletionHTML(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
@@ -649,17 +779,25 @@ func (s *OpenAITextService) callChatCompletionHTML(ctx context.Context, systemPr
 	return responseText, nil
 }
 
-// EnhanceText takes existing content and returns an enhanced version.
+// EnhanceText takes existing content and returns an enhanced version with
+// AI-generated SEO metadata.
 // format controls the output format: "tiptap" (default) or "html".
 // mediaContext is an optional string of available images injected into the prompt for HTML generation.
-func (s *OpenAITextService) EnhanceText(ctx context.Context, content, format, mediaContext string) (string, error) {
+func (s *OpenAITextService) EnhanceText(
+	ctx context.Context,
+	content, format, mediaContext string,
+) (EnhanceResult, error) {
 	if format == FormatHTML {
 		userPrompt := "Generate HTML/CSS based on this description:\n\n" + content
 		if mediaContext != "" {
 			userPrompt += "\n\n" + mediaContext
 		}
 
-		return s.callChatCompletionHTML(ctx, s.htmlSystemPrompt, userPrompt)
+		generated, err := s.callChatCompletionHTML(ctx, s.htmlSystemPrompt, userPrompt)
+		if err != nil {
+			return EnhanceResult{}, err
+		}
+		return NewEnhanceResult(generated, "", ""), nil
 	}
 
 	// tiptap format
@@ -674,27 +812,54 @@ Understand the content's language, tone, and subject matter. Then:
 - Maintain the original language — do NOT translate
 - Preserve the original meaning and key information
 
+Also write SEO metadata for the content in its original language:
+- "title": a compelling, SEO-friendly page title, at most 60 characters. It doubles as the social share (OG) title, so keep it punchy and self-contained.
+- "metaDescription": a compelling one-to-two sentence summary, at most 160 characters, that entices a searcher to click.
+
+Output ONLY a JSON object with exactly these keys — no markdown fences, no explanation, no commentary:
+{"title": "...", "metaDescription": "...", "content": <enhanced TipTap document>}
+
 ` + tiptapSchemaPrompt
 
-	userPrompt := "Enhance this content to be more engaging. Output only the enhanced TipTap JSON:\n\n" + content
+	userPrompt := "Enhance this content to be more engaging, and write its SEO title and meta description. Output only the JSON envelope:\n\n" + content
 
-	return s.callChatCompletionTiptap(ctx, systemPrompt, userPrompt)
+	return s.callChatCompletionEnhancedTiptap(ctx, systemPrompt, userPrompt)
 }
 
-// TranslateText translates content from sourceLang to targetLang.
+// TranslateText translates content from sourceLang to targetLang, along with
+// its SEO title and meta description. An empty metaDescription asks the AI to
+// write a fresh summary for the target language instead.
 // format controls the output format: "tiptap" (default) or "html".
-func (s *OpenAITextService) TranslateText(ctx context.Context, content, sourceLang, targetLang, format string) (string, error) {
+func (s *OpenAITextService) TranslateText(
+	ctx context.Context,
+	content, title, metaDescription, sourceLang, targetLang, format string,
+) (TranslateResult, error) {
+	sourceLangName := strings.ToUpper(sourceLang)
+	targetLangName := strings.ToUpper(targetLang)
+
 	if format == FormatHTML {
-		systemPrompt := fmt.Sprintf(htmlTranslateSystemPrompt,
-			strings.ToUpper(sourceLang),
-			strings.ToUpper(targetLang),
-			"", // no schema prompt for HTML — the rules above are sufficient
+		systemPrompt := fmt.Sprintf(
+			`You are an expert translator. Translate the provided HTML content from %s to %s.
+
+%s
+
+- Translate the "title" into %s (at most 60 characters — it doubles as the social share title).
+- Translate the "metaDescription" into %s; if it is empty, write a fresh one-to-two sentence summary of the translated content in %s, at most 160 characters, that entices a searcher to click.
+- Output ONLY a JSON object with exactly these keys — no markdown fences, no explanation, no commentary:
+{"title": "...", "metaDescription": "...", "content": "<translated HTML fragment>"}`,
+			sourceLangName,
+			targetLangName,
+			htmlTranslateRules,
+			targetLangName,
+			targetLangName,
+			targetLangName,
 		)
 
-		userPrompt := fmt.Sprintf("Translate this HTML content from %s to %s. Output only the translated HTML:\n\n%s",
-			strings.ToUpper(sourceLang), strings.ToUpper(targetLang), content)
+		userPrompt := fmt.Sprintf(
+			"Translate this HTML content from %s to %s, including its SEO title and meta description. Output only the JSON envelope:\n\nTitle:\n%s\n\nMeta description:\n%s\n\nContent:\n%s",
+			sourceLangName, targetLangName, title, metaDescription, content)
 
-		return s.callChatCompletionHTML(ctx, systemPrompt, userPrompt)
+		return s.callChatCompletionTranslatedEnvelope(ctx, systemPrompt, userPrompt, FormatHTML)
 	}
 
 	// tiptap format
@@ -705,18 +870,25 @@ func (s *OpenAITextService) TranslateText(ctx context.Context, content, sourceLa
 - Maintain all formatting: bold, italic, underline, links, headings, lists, etc.
 - Keep code blocks, image URLs, YouTube URLs, and math formulas unchanged
 - Preserve all node types, attributes, and marks — only change text values and alt text
-- Output ONLY the translated TipTap JSON with no additional commentary
+- Translate the "title" into %s (at most 60 characters — it doubles as the social share title)
+- Translate the "metaDescription" into %s; if it is empty, write a fresh one-to-two sentence summary of the translated content in %s, at most 160 characters, that entices a searcher to click
+- Output ONLY a JSON object with exactly these keys — no markdown fences, no explanation, no commentary:
+{"title": "...", "metaDescription": "...", "content": <translated TipTap document>}
 
 %s`,
-		strings.ToUpper(sourceLang),
-		strings.ToUpper(targetLang),
+		sourceLangName,
+		targetLangName,
+		targetLangName,
+		targetLangName,
+		targetLangName,
 		tiptapSchemaPrompt,
 	)
 
-	userPrompt := fmt.Sprintf("Translate this content from %s to %s. Output only the translated TipTap JSON:\n\n%s",
-		strings.ToUpper(sourceLang), strings.ToUpper(targetLang), content)
+	userPrompt := fmt.Sprintf(
+		"Translate this content from %s to %s, including its SEO title and meta description. Output only the JSON envelope:\n\nTitle:\n%s\n\nMeta description:\n%s\n\nContent:\n%s",
+		sourceLangName, targetLangName, title, metaDescription, content)
 
-	return s.callChatCompletionTiptap(ctx, systemPrompt, userPrompt)
+	return s.callChatCompletionTranslatedEnvelope(ctx, systemPrompt, userPrompt, FormatTiptap)
 }
 
 // NewOpenAITextService creates a new OpenAI-compatible text generation service.

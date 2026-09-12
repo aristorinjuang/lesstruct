@@ -159,6 +159,21 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 
 When `AI_IMAGE_GENERATION_API_KEY` is set, the admin panel shows a "Generate with AI" button in the media library and content editor.
 
+Reference images (optional uploads or media-library picks shown as thumbnails in
+the generate dialog, up to 3 images of 10 MB each) are supported by the
+`gemini-*` and `gpt-image-*` models only — the default Imagen models are
+text-to-image, so the reference section is hidden when one of them is
+configured. Picking a library image as a reference fetches its bytes in the
+browser: with the S3 storage driver the bucket must allow cross-origin GET
+(`Access-Control-Allow-Origin`) for this to work.
+
+The "Open Graph image" checkbox generates an exact 1200x630 social preview:
+the prompt gains composition guidance and the output is center-cropped and
+resized server-side, so it works with every model. Set
+`AI_IMAGE_GENERATION_ASPECT_RATIO=16:9` to minimize the crop. Generated from
+the content editor, the image is inserted at the top of the content —
+`og:image` is always the content's first image.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AI_IMAGE_GENERATION_API_KEY` | empty | API key for the image provider. |
@@ -365,7 +380,7 @@ Optional Content-Security-Policy configuration. When the section is absent, Less
 
 The default CSP (structured as an ordered directive table in the binary) is:
 ```
-default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
 ```
 
 Each `_src` list **appends** to the directive's built-in sources — the policy can only become more permissive; nothing existing is replaced. The exceptions are `frame_ancestors` (dedicated replace knob for that directive — appending to the default `'none'` is meaningless per the CSP spec) and `policy` (complete override, documented as "advanced" — the operator takes ownership). Use `extra_directives` to add wholly new directives (e.g. `worker-src`, `report-uri`).

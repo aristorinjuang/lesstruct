@@ -100,6 +100,7 @@ func Setup(
 	staticServer *static.StaticServer,
 	staticHandler http.Handler,
 	imageGenEnabled bool,
+	imageReferenceEnabled bool,
 	textGenEnabled bool,
 	textGenHandler *handlers.TextGenHandler,
 	languages []string,
@@ -141,8 +142,9 @@ func Setup(
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		imageGenEnabled := imageGenEnabled
+		imageReferenceEnabled := imageReferenceEnabled
 		textGenEnabled := textGenEnabled
-		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"textGeneration":%v}}`, imageGenEnabled, textGenEnabled); err != nil {
+		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v}}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled); err != nil {
 			log.Printf("Failed to write response: %v", err)
 		}
 	})
@@ -417,7 +419,6 @@ func Setup(
 				// User field schemas route (require authentication + admin role)
 				r.With(adminMiddleware.AdminOnly).Get("/user_fields", postTypeHandler.GetUserFieldsEndpoint)
 
-				r.Post("/media/generate", mediaHandler.GenerateImage)
 				// GET /media (list) and GET /media/{id} are served by the shared dual-auth
 				// dispatch at the root (above) — the agent and browser admin co-own these paths.
 				r.Delete("/media/{id}", mediaHandler.DeleteMedia)
@@ -448,6 +449,10 @@ func Setup(
 
 			// Media upload — 10MB (Story 2.3).
 			r.With(maxBodySizeMiddleware(10<<20)).Post("/media/upload", mediaHandler.Upload)
+
+			// AI image generation — 32MB. The JSON prompt-only form is tiny, but the
+			// multipart form may carry up to three 10MB reference images.
+			r.With(maxBodySizeMiddleware(32<<20)).Post("/media/generate", mediaHandler.GenerateImage)
 		})
 	})
 

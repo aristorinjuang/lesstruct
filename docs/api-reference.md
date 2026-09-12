@@ -187,7 +187,7 @@ The Content resource lets you publish posts, pages, and other content types over
 |---|---|---|
 | `id` | int | Stable identifier. |
 | `title` | string | 1–200 chars. |
-| `slug` | string | URL slug. **Immutable**: on create, any authenticated user may supply a custom slug (validated, unique per language); otherwise it is auto-generated from the title. The slug can never be changed via update — editing the title does not regenerate it (it is the public URL). |
+| `slug` | string | URL slug. **Immutable via the agent API**: on create, any authenticated user may supply a custom slug (validated, unique per language); otherwise it is auto-generated from the title. The slug can never be changed via agent update — editing the title does not regenerate it (it is the public URL). The browser admin surface (`PUT /api/v1/content_items/{id}`) accepts a slug change while the item is a draft (409 `slug_immutable` once published). |
 | `body` | string | The canonical content — a Tiptap JSON document string. |
 | `status` | string | `"draft"` or `"published"`. |
 | `postType` | string | Content type (e.g. `post`, `page`), from your configured post types. |
@@ -224,7 +224,7 @@ POST /api/v1/content
 | `postType` | no | Content type. |
 | `tags` | no | Array of tag strings. Server normalizes (trim, lowercase, dedupe, length-bound) via `ValidateTags`; an invalid tag returns 400 `VALIDATION_ERROR`. |
 | `language` | no | Language code (e.g. `"en"`, `"id"`). Must be in the server's configured languages list (`config.toml` `[languages]`); an unknown code returns 400 `VALIDATION_ERROR` (`ErrInvalidLanguage`). |
-| `slug` | no | A custom slug (lowercase letters, digits, hyphens, and dots; 1–200 chars; must not start or end with a dot and must not contain `..`; unique per language, else 400 `ErrSlugAlreadyExists`). Omit to auto-generate from the title. The slug is **immutable after creation** — see [Update content](#update-content). |
+| `slug` | no | A custom slug (lowercase letters, digits, hyphens, and dots; 1–200 chars; must not start or end with a dot and must not contain `..`; unique per language, else 400 `ErrSlugAlreadyExists`). Omit to auto-generate from the title. The slug is **immutable once the item is published** — see [Update content](#update-content). |
 | `customFields` | no | Custom-field values, validated through the same path the admin uses. Admin-managed **system fields** (declared per post type) are rejected here with `400 VALIDATION_ERROR` — set them via [Set system fields](#set-system-fields). |
 | `translationGroupId` | no | ID of an existing content item whose translation group this item joins. The server validates the ID exists; a miss returns 400 `ErrTranslationGroupNotFound`. |
 | `isPublished` | no | `true` → `"published"`; `false`/omitted → `"draft"`. |
@@ -287,7 +287,7 @@ Query parameters:
 PUT /api/v1/content/{id}
 ```
 
-Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, and `language`. SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. The `slug` is **immutable** and never changes on update (editing the title does not regenerate it — it is the public URL); any `slug` you send here is ignored. `format: markdown` converts the body to Tiptap before storing. `format: html` stores raw HTML directly.
+Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, and `language`. SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. The `slug` is **immutable via this endpoint** and never changes on update (editing the title does not regenerate it — it is the public URL); any `slug` you send here is ignored. `format: markdown` converts the body to Tiptap before storing. `format: html` stores raw HTML directly.
 
 **Response** `200 OK`: `{"data":{"content":{…}}}` with the updated item.
 
@@ -705,10 +705,10 @@ Enhance existing rich-text content or generate HTML/CSS from a natural-language 
 | `format` | string | no | `"tiptap"` (default) or `"html"`. |
 | `existingHtml` | string | no | Existing HTML to refine (HTML format only). Sent alongside the prompt for iterative refinement. |
 
-**Response:** `200 OK` with `{ "data": { "content": "..." } }`.
+**Response:** `200 OK` with `{ "data": { "content": "...", "title": "...", "metaDescription": "..." } }`.
 
-- `format=tiptap` → returns enhanced TipTap JSON.
-- `format=html` → returns an HTML fragment with `<style>` block first. The AI surfaces the user's media library images as context.
+- `format=tiptap` → returns enhanced TipTap JSON in `content`, plus an AI-generated SEO `title` (max 60 characters, also suitable as the OG title) and `metaDescription` (max 160 characters).
+- `format=html` → returns an HTML fragment with `<style>` block first. The AI surfaces the user's media library images as context. `title` and `metaDescription` are omitted.
 
 ### Translate
 
@@ -716,7 +716,7 @@ Enhance existing rich-text content or generate HTML/CSS from a natural-language 
 POST /api/v1/text/translate
 ```
 
-Translate content between languages.
+Translate content between languages, along with its SEO title and meta description.
 
 **Request body:**
 
@@ -726,11 +726,13 @@ Translate content between languages.
 | `sourceLang` | string | yes | Source language code (e.g. `"en"`). |
 | `targetLang` | string | yes | Target language code (e.g. `"fr"`). |
 | `format` | string | no | `"tiptap"` (default) or `"html"`. |
+| `title` | string | no | Page title to translate (max 60 characters in the response). |
+| `metaDescription` | string | no | Meta description to translate. When empty, the AI writes a fresh summary in the target language (max 160 characters). |
 
-**Response:** `200 OK` with `{ "data": { "content": "..." } }`.
+**Response:** `200 OK` with `{ "data": { "content": "...", "title": "...", "metaDescription": "..." } }`.
 
-- `format=tiptap` → returns translated TipTap JSON preserving structure.
-- `format=html` → returns translated HTML preserving tags, styles, and URLs — only visible text and `alt` attributes are translated.
+- `format=tiptap` → returns translated TipTap JSON in `content` preserving structure, plus translated `title` and `metaDescription`.
+- `format=html` → returns translated HTML in `content` preserving tags, styles, and URLs — only visible text and `alt` attributes are translated — plus translated `title` and `metaDescription`.
 
 ## OpenAPI snippet
 

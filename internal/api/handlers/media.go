@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,11 +24,22 @@ const (
 	mediaSearchParam     = "search"
 	mediaDateFilterParam = "date_filter"
 	maxAIPromptLength    = 1000
+	// maxGenerateMultipartBytes caps AI image generation requests carrying
+	// reference images (3 x 10MB references plus form overhead).
+	maxGenerateMultipartBytes = 32 << 20
 )
 
 // generateImageRequest is the JSON body for the GenerateImage endpoint.
 type generateImageRequest struct {
 	Prompt string `json:"prompt"`
+	OG     bool   `json:"og"`
+}
+
+// generateImageParams carries a decoded GenerateImage request.
+type generateImageParams struct {
+	prompt     string
+	references []media.ImageReference
+	og         bool
 }
 
 func handleMediaError(w http.ResponseWriter, err error) {
@@ -317,13 +330,12 @@ func (h *MediaHandler) GenerateImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req generateImageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "invalid_request", "Invalid request body", nil)
+	params, ok := h.parseGenerateImageRequest(w, r)
+	if !ok {
 		return
 	}
 
-	prompt := strings.TrimSpace(req.Prompt)
+	prompt := strings.TrimSpace(params.prompt)
 	if prompt == "" {
 		sendErrorResponse(w, http.StatusBadRequest, "invalid_prompt", "Prompt is required", nil)
 		return
@@ -333,16 +345,40 @@ func (h *MediaHandler) GenerateImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(params.references) > 0 && !h.imageGenService.SupportsImageReferences() {
+		sendErrorResponse(w, http.StatusBadRequest, "references_not_supported", "The configured AI model does not support reference images", nil)
+		return
+	}
+
+	prompt = media.BuildGenerationPrompt(prompt, params.og)
+
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Minute)
 	defer cancel()
-	imageBytes, err := h.imageGenService.GenerateImage(ctx, prompt)
+	imageBytes, err := h.imageGenService.GenerateImage(ctx, prompt, params.references)
 	if err != nil {
 		h.logger.Error("Failed to generate image: %v", err)
+		if errors.Is(err, media.ErrImageReferencesNotSupported) {
+			sendErrorResponse(w, http.StatusBadRequest, "references_not_supported", "The configured AI model does not support reference images", nil)
+			return
+		}
 		sendErrorResponse(w, http.StatusInternalServerError, "generation_failed", "Failed to generate image", nil)
 		return
 	}
 
-	originalFilename := fmt.Sprintf("ai-generated-%s.webp", time.Now().Format("20060102-150405"))
+	if params.og {
+		imageBytes, err = media.NewProcessor().CropToOpenGraph(imageBytes)
+		if err != nil {
+			h.logger.Error("Failed to crop generated image to Open Graph size: %v", err)
+			sendErrorResponse(w, http.StatusInternalServerError, "generation_failed", "Failed to generate image", nil)
+			return
+		}
+	}
+
+	stamp := time.Now().Format("20060102-150405")
+	originalFilename := fmt.Sprintf("ai-generated-%s.webp", stamp)
+	if params.og {
+		originalFilename = fmt.Sprintf("ai-generated-og-%s.webp", stamp)
+	}
 
 	generatedMedia, err := h.mediaService.GenerateFromBytes(ctx, imageBytes, userID, prompt, originalFilename)
 	if err != nil {
@@ -352,6 +388,113 @@ func (h *MediaHandler) GenerateImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sendSuccessResponse(w, http.StatusCreated, generatedMedia)
+}
+
+// parseGenerateImageRequest decodes the prompt, optional reference images, and
+// the Open Graph flag from a GenerateImage request. Reference images and the
+// flag require multipart/form-data with a "prompt" field, repeated "references"
+// files, and an optional "og" field; the legacy JSON body carries a prompt and
+// an optional og flag only. It reports whether parsing succeeded, writing the
+// error response itself on failure.
+func (h *MediaHandler) parseGenerateImageRequest(
+	w http.ResponseWriter,
+	r *http.Request,
+) (generateImageParams, bool) {
+	contentType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+	if strings.TrimSpace(contentType) == "multipart/form-data" {
+		return h.parseGenerateMultipartRequest(w, r)
+	}
+
+	var req generateImageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_request", "Invalid request body", nil)
+		return generateImageParams{}, false
+	}
+	return generateImageParams{prompt: req.Prompt, og: req.OG}, true
+}
+
+// parseGenerateMultipartRequest decodes the prompt, reference images, and Open
+// Graph flag from a multipart GenerateImage request.
+func (h *MediaHandler) parseGenerateMultipartRequest(
+	w http.ResponseWriter,
+	r *http.Request,
+) (generateImageParams, bool) {
+	if err := r.ParseMultipartForm(maxGenerateMultipartBytes); err != nil {
+		h.logger.Error("Failed to parse multipart form: %v", err)
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_request", "Failed to parse form data", nil)
+		return generateImageParams{}, false
+	}
+
+	var formFiles []*multipart.FileHeader
+	if r.MultipartForm != nil {
+		formFiles = r.MultipartForm.File["references"]
+	}
+	if len(formFiles) > media.MaxImageReferences {
+		sendErrorResponse(
+			w,
+			http.StatusBadRequest,
+			"invalid_references",
+			fmt.Sprintf("Up to %d reference images are allowed", media.MaxImageReferences),
+			nil,
+		)
+		return generateImageParams{}, false
+	}
+
+	references := make([]media.ImageReference, 0, len(formFiles))
+	for _, header := range formFiles {
+		reference, ok := h.readImageReference(w, header)
+		if !ok {
+			return generateImageParams{}, false
+		}
+		references = append(references, reference)
+	}
+
+	og := false
+	if raw := r.FormValue("og"); raw != "" {
+		var err error
+		og, err = strconv.ParseBool(raw)
+		if err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, "invalid_request", "Invalid og value. Use true or false", nil)
+			return generateImageParams{}, false
+		}
+	}
+
+	return generateImageParams{prompt: r.FormValue("prompt"), references: references, og: og}, true
+}
+
+// readImageReference reads and validates a single reference image upload,
+// reporting success and writing the error response itself on failure.
+func (h *MediaHandler) readImageReference(
+	w http.ResponseWriter,
+	header *multipart.FileHeader,
+) (media.ImageReference, bool) {
+	file, err := header.Open()
+	if err != nil {
+		h.logger.Error("Failed to open reference image: %v", err)
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_request", "Failed to read reference image", nil)
+		return media.ImageReference{}, false
+	}
+	defer func() { _ = file.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(file, media.MaxFileSize+1))
+	if err != nil {
+		h.logger.Error("Failed to read reference image: %v", err)
+		sendErrorResponse(w, http.StatusBadRequest, "invalid_request", "Failed to read reference image", nil)
+		return media.ImageReference{}, false
+	}
+
+	reference, err := media.NewImageReference(data)
+	if err != nil {
+		h.logger.Error("Invalid reference image: %v", err)
+		if errors.Is(err, media.ErrFileTooLarge) {
+			sendErrorResponse(w, http.StatusBadRequest, "file_too_large", "Reference image exceeds 10MB limit. Please use a smaller image", nil)
+		} else {
+			sendErrorResponse(w, http.StatusBadRequest, "invalid_file", "Invalid reference image. Please use an image file (JPG, PNG, WebP)", nil)
+		}
+		return media.ImageReference{}, false
+	}
+
+	return reference, true
 }
 
 func NewMediaHandler(

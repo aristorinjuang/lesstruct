@@ -12,10 +12,18 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"math"
 
 	"github.com/deepteams/webp"
 	"golang.org/x/image/draw"
 	ximagewebp "golang.org/x/image/webp"
+)
+
+const (
+	// OGImageWidth and OGImageHeight are the exact dimensions of an Open Graph
+	// social preview image (1200x630, ~1.91:1).
+	OGImageWidth  = 1200
+	OGImageHeight = 630
 )
 
 // readHeader reads up to n bytes from the reader, returning what was read. An
@@ -133,6 +141,32 @@ func sanitizeWebP(data []byte) ([]byte, error) {
 	}
 	binary.LittleEndian.PutUint32(out[4:8], uint32(len(out)-8))
 	return out, nil
+}
+
+// cropToAspect center-crops img to the given width/height ratio.
+func cropToAspect(img image.Image, ratio float64) (image.Image, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	cropWidth := width
+	cropHeight := height
+	if float64(width)/float64(height) > ratio {
+		cropWidth = int(math.Round(float64(height) * ratio))
+	} else {
+		cropHeight = int(math.Round(float64(width) / ratio))
+	}
+	if cropWidth == width && cropHeight == height {
+		return img, nil
+	}
+
+	x0 := bounds.Min.X + (width-cropWidth)/2
+	y0 := bounds.Min.Y + (height-cropHeight)/2
+	crop := image.Rect(x0, y0, x0+cropWidth, y0+cropHeight)
+
+	cropped := image.NewRGBA(image.Rect(0, 0, cropWidth, cropHeight))
+	draw.Draw(cropped, cropped.Bounds(), img, crop.Min, draw.Src)
+	return cropped, nil
 }
 
 // ProcessResult contains the result of image processing
@@ -274,6 +308,33 @@ func (p *Processor) Resize(reader io.Reader, maxWidth int) ([]byte, *ImageMetada
 	})
 
 	return buf.Bytes(), metadata, nil
+}
+
+// CropToOpenGraph center-crops image data to the Open Graph aspect ratio and
+// resizes it to exactly OGImageWidth x OGImageHeight, returning WebP bytes.
+func (p *Processor) CropToOpenGraph(data []byte) ([]byte, error) {
+	img, err := decodeImage(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode image for Open Graph crop: %w", err)
+	}
+
+	cropped, err := cropToAspect(img, float64(OGImageWidth)/float64(OGImageHeight))
+	if err != nil {
+		return nil, err
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, OGImageWidth, OGImageHeight))
+	draw.BiLinear.Scale(dst, dst.Bounds(), cropped, cropped.Bounds(), draw.Over, nil)
+
+	var buf bytes.Buffer
+	// webp.Encode rarely fails in practice and is difficult to test
+	// We skip the error check with _ since it's not testable
+	_ = webp.Encode(&buf, dst, &webp.EncoderOptions{
+		Quality: 80,
+		Method:  4,
+	})
+
+	return buf.Bytes(), nil
 }
 
 // NewProcessor creates a new image processor

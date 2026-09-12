@@ -167,6 +167,7 @@ type CreateContentRequest struct {
 // UpdateContentRequest represents a request to update content
 type UpdateContentRequest struct {
 	Title              string         `json:"title"`
+	Slug               string         `json:"slug,omitempty"`
 	Content            string         `json:"content"`
 	Tags               []string       `json:"tags"`
 	Status             Status         `json:"status"`
@@ -883,6 +884,29 @@ func (s *Service) GenerateSlug(title string) string {
 	return slug
 }
 
+// updateSlug applies a requested slug change to a draft item. Published items
+// keep their permanent public URL; an empty or unchanged slug is a no-op.
+func (s *Service) updateSlug(ctx context.Context, existing *Content, slug string) error {
+	if slug == "" || slug == existing.Slug {
+		return nil
+	}
+	if existing.Status == StatusPublished {
+		return ErrSlugImmutable
+	}
+	if err := ValidateSlug(slug); err != nil {
+		return fmt.Errorf("slug validation failed: %w", err)
+	}
+	unique, err := s.repo.CheckSlugUnique(ctx, slug, existing.Language)
+	if err != nil {
+		return fmt.Errorf("failed to check slug uniqueness: %w", err)
+	}
+	if !unique {
+		return fmt.Errorf("%w: %s", ErrSlugAlreadyExists, slug)
+	}
+	existing.Slug = slug
+	return nil
+}
+
 func (s *Service) GetBySlug(ctx context.Context, slug string) (*Content, error) {
 	if err := ValidateSlug(slug); err != nil {
 		return nil, fmt.Errorf("slug validation failed: %w", err)
@@ -1334,10 +1358,14 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 		return nil, fmt.Errorf("%w: %w", ErrCustomFieldValidation, err)
 	}
 
-	// The slug is immutable after creation (changing it would break the public
-	// URL and harm SEO), so a title edit never regenerates the slug.
+	// The slug is editable only while the content is a draft: it becomes the
+	// permanent public URL on publication, so a title edit never regenerates
+	// the slug of published content.
 	newTitle := strings.TrimSpace(req.Title)
 	existing.Title = newTitle
+	if err := s.updateSlug(ctx, existing, strings.TrimSpace(req.Slug)); err != nil {
+		return nil, err
+	}
 	existing.Content = req.Content
 	existing.Tags = tags
 	existing.Format = format

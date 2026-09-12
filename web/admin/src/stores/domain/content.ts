@@ -11,6 +11,18 @@ export interface ContentFiltersOptions {
   status?: string
 }
 
+export interface EnhanceResult {
+  content: string
+  title?: string
+  metaDescription?: string
+}
+
+export interface TranslateResult {
+  content: string
+  title?: string
+  metaDescription?: string
+}
+
 interface ContentListResponse {
   data: Content[]
   error: null
@@ -318,7 +330,7 @@ export const useContentStore = defineStore('content', () => {
     content: string,
     format: 'tiptap' | 'html' = 'tiptap',
     existingHtml: string = '',
-  ): Promise<string> {
+  ): Promise<EnhanceResult> {
     isLoading.value = true
     error.value = null
 
@@ -327,12 +339,12 @@ export const useContentStore = defineStore('content', () => {
       if (format === 'html' && existingHtml) {
         body.existingHtml = existingHtml
       }
-      const response = await api.postWithTimeout<{ data: { content: string } }>('/api/v1/text/enhance', body, 130_000)
+      const response = await api.postWithTimeout<{ data: EnhanceResult }>('/api/v1/text/enhance', body, 130_000)
       const data = response.data.data
       if (!data || !data.content) {
         throw new Error('Failed to enhance content: No data returned')
       }
-      return data.content
+      return data
     } catch (err) {
       error.value = err as Error
       throw err
@@ -343,24 +355,26 @@ export const useContentStore = defineStore('content', () => {
 
   async function translateContent(
     content: string,
+    title: string,
+    metaDescription: string,
     sourceLang: string,
     targetLang: string,
     format: 'tiptap' | 'html' = 'tiptap',
-  ): Promise<string> {
+  ): Promise<TranslateResult> {
     isLoading.value = true
     error.value = null
 
     try {
-      const response = await api.postWithTimeout<{ data: { content: string } }>(
+      const response = await api.postWithTimeout<{ data: TranslateResult }>(
         '/api/v1/text/translate',
-        { content, sourceLang, targetLang, format },
+        { content, title, metaDescription, sourceLang, targetLang, format },
         130_000,
       )
       const data = response.data.data
       if (!data || !data.content) {
         throw new Error('Failed to translate content: No data returned')
       }
-      return data.content
+      return data
     } catch (err) {
       error.value = err as Error
       throw err

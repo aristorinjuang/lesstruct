@@ -308,6 +308,7 @@ func startServer(
 	staticServer *static.StaticServer,
 	staticHandler http.Handler,
 	imageGenEnabled bool,
+	imageReferenceEnabled bool,
 	textGenEnabled bool,
 	textGenHandler *handlers.TextGenHandler,
 	languages []string,
@@ -349,6 +350,7 @@ func startServer(
 		staticServer,
 		staticHandler,
 		imageGenEnabled,
+		imageReferenceEnabled,
 		textGenEnabled,
 		textGenHandler,
 		languages,
@@ -731,6 +733,11 @@ func main() {
 
 	mediaHandler := handlers.NewMediaHandler(mediaService, imageGenService, utilLogger, handlers.WithMediaRoleService(roleService))
 
+	// Reference images are advertised to the admin panel only when the
+	// configured AI model accepts them (Gemini and GPT Image models do;
+	// the default Imagen models are text-to-image only).
+	imageReferenceEnabled := imageGenService != nil && imageGenService.SupportsImageReferences()
+
 	// Initialize theme for content site (templates and static files).
 	// Done early so AI text generation can read the active theme's styles.
 	var theme *template.Theme
@@ -1077,6 +1084,7 @@ func main() {
 		staticServer,
 		staticHandler,
 		cfg.IsImageGenerationEnabled(),
+		imageReferenceEnabled,
 		cfg.IsTextGenerationEnabled(),
 		textGenHandler,
 		languages,

@@ -79,6 +79,20 @@ describe('Modal', () => {
     })
   })
 
+  describe('size', () => {
+    it('should not apply the fullscreen class by default', () => {
+      const wrapper = mountModal()
+
+      expect(wrapper.find('.modal__container').classes()).not.toContain('modal__container--full')
+    })
+
+    it('should apply the fullscreen class when size is full', () => {
+      const wrapper = mountModal({ size: 'full' })
+
+      expect(wrapper.find('.modal__container').classes()).toContain('modal__container--full')
+    })
+  })
+
   describe('closing behavior', () => {
     it('should emit close event when overlay is clicked', async () => {
       const wrapper = mountModal({ closeOnOverlayClick: true })
