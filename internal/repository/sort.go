@@ -1,7 +1,7 @@
 package repository
 
 import (
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 )
 
 // SortDirectionSQL returns the SQL keyword ("ASC" or "DESC") for the given

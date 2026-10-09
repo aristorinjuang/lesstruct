@@ -10,6 +10,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/aristorinjuang/lesstruct/internal/constants"
+	"github.com/aristorinjuang/lesstruct/kernel"
 )
 
 const (
@@ -37,11 +38,21 @@ var (
 // context keys. Both the JWT AuthMiddleware and the API-key APIKeyAuthMiddleware
 // route through this so downstream ctxUser lookups and RBAC are auth-agnostic
 // (architecture Important Gap #1). Values are strings (UserID is the decimal id).
+// A kernel.Principal is attached alongside for the v1 identity seam; the string
+// keys stay until Phase 3 removes them per module.
 func newUserContext(ctx context.Context, userID, username, role string) context.Context {
 	ctx = context.WithValue(ctx, UserIDKey, userID)
 	ctx = context.WithValue(ctx, UsernameKey, username)
 	ctx = context.WithValue(ctx, RoleKey, role)
-	return ctx
+	roles := make([]string, 0, 1)
+	if role != "" {
+		roles = append(roles, role)
+	}
+	return kernel.ContextWithPrincipal(ctx, kernel.Principal{
+		ID:       userID,
+		Username: username,
+		Roles:    roles,
+	})
 }
 
 // UserContext represents user information stored in request context
@@ -212,4 +223,11 @@ func GetUsername(r *http.Request) (string, bool) {
 func GetRole(r *http.Request) (string, bool) {
 	role, ok := r.Context().Value(RoleKey).(string)
 	return role, ok
+}
+
+// Principal retrieves the kernel identity from the request context.
+// It is populated by both auth realms via newUserContext; ok is false on
+// anonymous requests where no auth middleware ran.
+func Principal(r *http.Request) (kernel.Principal, bool) {
+	return kernel.PrincipalFromContext(r.Context())
 }

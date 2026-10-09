@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,23 +39,23 @@ func (_m *MockUserLookup) EXPECT() *MockUserLookup_Expecter {
 }
 
 // GetUserByID provides a mock function for the type MockUserLookup
-func (_mock *MockUserLookup) GetUserByID(ctx context.Context, userID int) (*repository.User, error) {
+func (_mock *MockUserLookup) GetUserByID(ctx context.Context, userID int) (*userdomain.User, error) {
 	ret := _mock.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetUserByID")
 	}
 
-	var r0 *repository.User
+	var r0 *userdomain.User
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*repository.User, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*userdomain.User, error)); ok {
 		return returnFunc(ctx, userID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *repository.User); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *userdomain.User); ok {
 		r0 = returnFunc(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*repository.User)
+			r0 = ret.Get(0).(*userdomain.User)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -96,12 +96,12 @@ func (_c *MockUserLookup_GetUserByID_Call) Run(run func(ctx context.Context, use
 	return _c
 }
 
-func (_c *MockUserLookup_GetUserByID_Call) Return(user *repository.User, err error) *MockUserLookup_GetUserByID_Call {
+func (_c *MockUserLookup_GetUserByID_Call) Return(user *userdomain.User, err error) *MockUserLookup_GetUserByID_Call {
 	_c.Call.Return(user, err)
 	return _c
 }
 
-func (_c *MockUserLookup_GetUserByID_Call) RunAndReturn(run func(ctx context.Context, userID int) (*repository.User, error)) *MockUserLookup_GetUserByID_Call {
+func (_c *MockUserLookup_GetUserByID_Call) RunAndReturn(run func(ctx context.Context, userID int) (*userdomain.User, error)) *MockUserLookup_GetUserByID_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/media"
+	media "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 

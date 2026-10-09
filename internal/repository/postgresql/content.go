@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 )
 

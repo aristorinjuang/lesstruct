@@ -2,14 +2,16 @@ package content
 
 import (
 	"context"
+
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 )
 
 // Repository defines the interface for content repository operations
 type Repository interface {
-	Create(ctx context.Context, content *Content) error
-	GetBySlug(ctx context.Context, slug string, language string) (*Content, error)
-	GetByUser(ctx context.Context, userID int, limit int, offset int) ([]*Content, error)
-	GetAll(ctx context.Context, limit int, offset int) ([]*Content, error)
+	Create(ctx context.Context, content *contentdomain.Content) error
+	GetBySlug(ctx context.Context, slug string, language string) (*contentdomain.Content, error)
+	GetByUser(ctx context.Context, userID int, limit int, offset int) ([]*contentdomain.Content, error)
+	GetAll(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	// ListByCursor returns the caller's content in newest-first (id DESC) order using
 	// keyset pagination. beforeID <= 0 means "first page"; otherwise only rows with a
 	// strictly smaller id are returned. The optional filters restrict which rows
@@ -19,28 +21,28 @@ type Repository interface {
 	// It is additive — the offset-based GetAll / GetByUser / ListByFilters methods are
 	// untouched (the agent v1 list contract is cursor-only; offset is unstable under
 	// concurrent inserts/deletes).
-	ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters ContentFilters) ([]*Content, error)
+	ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	CheckSlugUnique(ctx context.Context, slug string, language string) (bool, error)
-	GetByID(ctx context.Context, id int) (*Content, error)
-	Update(ctx context.Context, content *Content) error
-	GetPublished(ctx context.Context, limit int, offset int) ([]*Content, error)
-	GetPublishedBySlug(ctx context.Context, slug string, language string) (*Content, error)
+	GetByID(ctx context.Context, id int) (*contentdomain.Content, error)
+	Update(ctx context.Context, content *contentdomain.Content) error
+	GetPublished(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
+	GetPublishedBySlug(ctx context.Context, slug string, language string) (*contentdomain.Content, error)
 	// GetPublishedByAuthorUsername returns published content by the given author
 	// username, filtered by languages as described in GetPublishedByPostType
 	// (used by the paginated public author page so the fetch-limit+1 HasMore
 	// probe stays accurate).
-	GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*Content, error)
+	GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*contentdomain.Content, error)
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	Delete(ctx context.Context, id int, userID int) error
 	DeleteByID(ctx context.Context, id int) error
-	ListByFilters(ctx context.Context, userID int, filters ContentFilters) ([]*Content, error)
+	ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	// Count returns the number of content items matching the given filters, ignoring
 	// Limit/Offset. userID <= 0 counts across all users (admin scope); otherwise the
 	// count is restricted to that user's content. It shares the exact WHERE clause
 	// with ListByFilters so a list response's total always matches what the list
 	// returned.
-	Count(ctx context.Context, userID int, filters ContentFilters) (int, error)
-	GetPublishedPages(ctx context.Context) ([]*Content, error)
+	Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error)
+	GetPublishedPages(ctx context.Context) ([]*contentdomain.Content, error)
 	GetPublishedCustomPostTypes(ctx context.Context) ([]string, error)
 	// GetPublishedByPostType returns published content of the given post type,
 	// filtered by languages. The languages slice is priority-ordered:
@@ -55,12 +57,12 @@ type Repository interface {
 	// The filter is applied before LIMIT/OFFSET so pagination and counts stay
 	// exact under deduplication. When year and month are both non-zero, results
 	// are restricted to that calendar month.
-	GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*Content, error)
+	GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
 	// GetPublishedByTag returns published content carrying the given tag,
 	// filtered by languages as described in GetPublishedByPostType. When year
 	// and month are both non-zero, results are restricted to that calendar
 	// month.
-	GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*Content, error)
+	GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
 	// GetPublishedTags returns the distinct set of tags used by any published
 	// content item, ordered for stable display. An empty (non-nil) slice is
 	// returned when no published content carries tags.
@@ -80,31 +82,31 @@ type Repository interface {
 	// projects only [[public_field]] allowlisted slugs into the public DTO.
 	// Email, role, and status are never populated — those stay behind
 	// authentication.
-	GetPublishedAuthors(ctx context.Context, filters PublishedAuthorFilters) ([]*PublishedAuthor, error)
+	GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error)
 	// GetPublishedAuthor returns a single published author by username, or nil
 	// if no published content exists for that user. The returned PublishedAuthor
 	// follows the same shape as GetPublishedAuthors and carries the raw
 	// custom_fields map.
-	GetPublishedAuthor(ctx context.Context, username string) (*PublishedAuthor, error)
+	GetPublishedAuthor(ctx context.Context, username string) (*contentdomain.PublishedAuthor, error)
 	// GetPublishedArchive returns published-content counts grouped by year and
 	// month, ordered newest-first, filtered by languages as described in
 	// GetPublishedByPostType. When postType is non-empty, results are
 	// restricted to that post type. An empty postType aggregates across all
 	// types.
-	GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*ArchiveMonth, error)
-	SearchPublished(ctx context.Context, query string, limit int) ([]*Content, error)
+	GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error)
+	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
 	// GetTranslations returns all content items in the same translation group, excluding the given content ID.
-	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*Content, error)
+	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
 	// TranslationGroupExists checks whether a content item with the given ID exists.
 	TranslationGroupExists(ctx context.Context, id int) (bool, error)
 	// GetPublishedBySlugAny finds published content by slug regardless of language.
-	GetPublishedBySlugAny(ctx context.Context, slug string) (*Content, error)
+	GetPublishedBySlugAny(ctx context.Context, slug string) (*contentdomain.Content, error)
 	// GetRelatedByTags returns published content of the same post type and language
 	// that shares at least one tag with the given tags, excluding excludeID. Results
 	// are ranked by the number of shared tags (descending) then by created_at
 	// (descending). An empty tags slice yields no rows.
-	GetRelatedByTags(ctx context.Context, excludeID int, tags []string, postType string, language string, limit int) ([]*Content, error)
+	GetRelatedByTags(ctx context.Context, excludeID int, tags []string, postType string, language string, limit int) ([]*contentdomain.Content, error)
 	// GetLatestByPostType returns the most recently created published content of the
 	// given post type and language, excluding excludeID, ordered by created_at desc.
-	GetLatestByPostType(ctx context.Context, excludeID int, postType string, language string, limit int) ([]*Content, error)
+	GetLatestByPostType(ctx context.Context, excludeID int, postType string, language string, limit int) ([]*contentdomain.Content, error)
 }

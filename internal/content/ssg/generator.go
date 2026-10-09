@@ -17,12 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/internal/api/contentpage"
-	tpl "github.com/aristorinjuang/lesstruct/internal/api/template"
+	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
 
-	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	"github.com/aristorinjuang/lesstruct/internal/seo"
+	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
+	"github.com/aristorinjuang/lesstruct/kernel/seo"
 )
 
 const (
@@ -101,7 +99,7 @@ func xmlEscape(s string) string {
 	return b.String()
 }
 
-func feedExcerpt(c *contentdomain.Content) string {
+func feedExcerpt(c sitessr.ContentRef) string {
 	if c.MetaDescription != "" {
 		return c.MetaDescription
 	}
@@ -109,7 +107,7 @@ func feedExcerpt(c *contentdomain.Content) string {
 		return c.OGDescription
 	}
 	var text string
-	if c.Format == contentdomain.FormatHTML {
+	if c.Format == sitessr.FormatHTML {
 		text = seo.ExtractPlainTextFromHTML(c.Content)
 	} else {
 		text = seo.ExtractPlainText(c.Content)
@@ -203,15 +201,15 @@ type renderTask struct {
 }
 
 type Generator struct {
-	assembler  *contentpage.DataAssembler
-	templates  *tpl.Templates
-	contentSvc contentpage.ContentService
+	assembler  *sitessr.DataAssembler
+	templates  *sitessr.Templates
+	contentSvc sitessr.ContentReader
 	aliasSvc   *aliasdomain.Service
 	siteURL    string
 	languages  []string
 	perPage    int
 	mediaDir   string
-	theme      *tpl.Theme
+	theme      *sitessr.Theme
 }
 
 func (g *Generator) pageURL(taskPath string) string {
@@ -459,8 +457,8 @@ func (g *Generator) enumerate(ctx context.Context) ([]renderTask, error) {
 	return tasks, nil
 }
 
-func (g *Generator) enumerateAllContent(ctx context.Context) ([]*contentdomain.Content, error) {
-	var all []*contentdomain.Content
+func (g *Generator) enumerateAllContent(ctx context.Context) ([]sitessr.ContentRef, error) {
+	var all []sitessr.ContentRef
 	offset := 0
 	for {
 		contents, err := g.contentSvc.GetPublished(ctx, ssgPageSize, offset)
@@ -522,17 +520,17 @@ func (g *Generator) writeStaticFiles(ctx context.Context, publicDir string, refe
 		return err
 	}
 
-	if err := copyEmbeddedAssets(tpl.EmbeddedStaticFS(), staticDir, referencedAssets); err != nil {
+	if err := copyEmbeddedAssets(sitessr.EmbeddedStaticFS(), staticDir, referencedAssets); err != nil {
 		return fmt.Errorf("copy embedded static assets: %w", err)
 	}
 
-	if themeFS := tpl.ThemeStaticFS(g.theme); themeFS != nil {
+	if themeFS := sitessr.ThemeStaticFS(g.theme); themeFS != nil {
 		if err := copyFS(themeFS, staticDir); err != nil {
 			return fmt.Errorf("copy theme static assets: %w", err)
 		}
 	}
 
-	baseCSS, styleCSS := tpl.ReadThemeStyles(g.theme)
+	baseCSS, styleCSS := sitessr.ReadThemeStyles(g.theme)
 	if baseCSS != "" {
 		if err := os.WriteFile(filepath.Join(staticDir, "base.css"), []byte(baseCSS), 0644); err != nil {
 			return err
@@ -571,7 +569,7 @@ func (g *Generator) writeStaticFiles(ctx context.Context, publicDir string, refe
 	// Theme root files (theme's root/ directory, e.g. webpushr-sw.js) land at
 	// the archive root so service workers and other fixed-scope files keep the
 	// URLs they are registered under.
-	if rootFS := tpl.RootFilesFS(g.theme); rootFS != nil {
+	if rootFS := sitessr.RootFilesFS(g.theme); rootFS != nil {
 		if err := copyFS(rootFS, publicDir); err != nil {
 			return fmt.Errorf("copy theme root files: %w", err)
 		}
@@ -827,11 +825,11 @@ func (g *Generator) WithAliases(aliasSvc *aliasdomain.Service) *Generator {
 }
 
 func NewGenerator(
-	assembler *contentpage.DataAssembler,
-	templates *tpl.Templates,
-	contentSvc contentpage.ContentService,
+	assembler *sitessr.DataAssembler,
+	templates *sitessr.Templates,
+	contentSvc sitessr.ContentReader,
 	mediaDir string,
-	theme *tpl.Theme,
+	theme *sitessr.Theme,
 	siteURL string,
 ) *Generator {
 	return &Generator{

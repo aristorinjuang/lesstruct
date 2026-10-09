@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
-type UserContentItem = repository.UserContentItem
-type UserCommentItem = repository.UserCommentItem
-type UserMediaItem = repository.UserMediaItem
-type UserDataExport = repository.UserDataExport
+type UserContentItem = userdomain.UserContentItem
+type UserCommentItem = userdomain.UserCommentItem
+type UserMediaItem = userdomain.UserMediaItem
+type UserDataExport = userdomain.UserDataExport
 
 // UserDataExportRepository handles user data export operations
 type UserDataExportRepository struct {
@@ -138,7 +138,7 @@ func (r *UserDataExportRepository) GetUserDataForExport(ctx context.Context, use
 		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 	}
-	var usr repository.User
+	var usr userdomain.User
 	var email, name, profilePicture sql.NullString
 	var customFieldsRaw *string
 	var lastLoginAt *string

@@ -11,7 +11,9 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
 )
 
 // CreateAPIKeyRequest is the payload for POST /api/admin/api-keys.
@@ -53,10 +55,10 @@ type RevokeAPIKeyResponse struct {
 // hard-coupling to *apikey.Service; mirrors the dashboard ServiceInterface pattern).
 type APIKeyService interface {
 	// Existing (Story 1.1):
-	Create(ctx context.Context, userID int, name string) (string, *apikey.APIKey, error)
+	Create(ctx context.Context, principal kernel.Principal, name string) (string, *apikey.APIKey, error)
 	// New (Story 1.2):
-	List(ctx context.Context, userID int) ([]*apikey.APIKey, error)
-	Revoke(ctx context.Context, id, userID int) (*apikey.APIKey, error)
+	List(ctx context.Context, principal kernel.Principal) ([]*apikey.APIKey, error)
+	Revoke(ctx context.Context, id int, principal kernel.Principal) (*apikey.APIKey, error)
 }
 
 // APIKeyHandler handles browser-realm API key lifecycle endpoints.
@@ -67,17 +69,17 @@ type APIKeyHandler struct {
 
 // CreateAPIKey handles POST /api/admin/api-keys.
 func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	userIDStr, ok := middleware.GetUserID(r)
+	principal, ok := middleware.Principal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
 
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := identity.IntID(principal)
 	if err != nil {
 		// A non-numeric userID in the auth context is a server-side invariant
 		// violation (the auth middleware only stores numeric IDs).
-		h.logger.Error("Non-numeric userID %q in auth context: %v", userIDStr, err)
+		h.logger.Error("Non-numeric userID %q in auth context: %v", principal.ID, err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Invalid authenticated session", nil)
 		return
 	}
@@ -88,7 +90,7 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keyString, key, err := h.apiKeyService.Create(r.Context(), userID, req.Name)
+	keyString, key, err := h.apiKeyService.Create(r.Context(), principal, req.Name)
 	if err != nil {
 		if errors.Is(err, apikey.ErrInvalidKeyName) {
 			response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), nil)
@@ -129,22 +131,22 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 // masked list entries (prefix + metadata only). The secret, key_hash, and
 // last_used_ip are NEVER included in the response.
 func (h *APIKeyHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	userIDStr, ok := middleware.GetUserID(r)
+	principal, ok := middleware.Principal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
 
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := identity.IntID(principal)
 	if err != nil {
 		// A non-numeric userID in the auth context is a server-side invariant
 		// violation (the auth middleware only stores numeric IDs).
-		h.logger.Error("Non-numeric userID %q in auth context: %v", userIDStr, err)
+		h.logger.Error("Non-numeric userID %q in auth context: %v", principal.ID, err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Invalid authenticated session", nil)
 		return
 	}
 
-	keys, err := h.apiKeyService.List(r.Context(), userID)
+	keys, err := h.apiKeyService.List(r.Context(), principal)
 	if err != nil {
 		h.logger.Error("Failed to list API keys for user %d: %v", userID, err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to list API keys", nil)
@@ -171,15 +173,15 @@ func (h *APIKeyHandler) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 // Cross-user or nonexistent ids return 404 NOT_FOUND (identical response — no
 // cross-user disclosure).
 func (h *APIKeyHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
-	userIDStr, ok := middleware.GetUserID(r)
+	principal, ok := middleware.Principal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
 
-	userID, err := strconv.Atoi(userIDStr)
+	userID, err := identity.IntID(principal)
 	if err != nil {
-		h.logger.Error("Non-numeric userID %q in auth context: %v", userIDStr, err)
+		h.logger.Error("Non-numeric userID %q in auth context: %v", principal.ID, err)
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Invalid authenticated session", nil)
 		return
 	}
@@ -191,7 +193,7 @@ func (h *APIKeyHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := h.apiKeyService.Revoke(r.Context(), id, userID)
+	key, err := h.apiKeyService.Revoke(r.Context(), id, principal)
 	if err != nil {
 		if errors.Is(err, apikey.ErrKeyNotFound) {
 			response.Error(w, http.StatusNotFound, "NOT_FOUND", "API key not found", nil)

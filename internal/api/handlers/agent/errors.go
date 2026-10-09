@@ -5,7 +5,9 @@ import (
 	"net/http"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
+	commentdomain "github.com/aristorinjuang/lesstruct/modules/comments/domain"
 )
 
 // handleError maps a content-domain error to the agent API envelope using
@@ -18,8 +20,8 @@ import (
 //
 // Mapping (see story Dev Notes §Domain-error → envelope mapping):
 //   - ErrContentNotFound         → 404 NOT_FOUND
-//   - ErrCommentNotFound         → 404 NOT_FOUND
-//   - ErrUnauthorized (ownership / comments-disabled) → 403 FORBIDDEN
+//   - comments.ErrCommentNotFound → 404 NOT_FOUND
+//   - ErrUnauthorized (ownership) / comments.ErrCommentsDisabled → 403 FORBIDDEN
 //   - ErrForbiddenPostType / ErrForbiddenPublish (role gates) → 403 FORBIDDEN
 //   - the validation sentinels   → 400 VALIDATION_ERROR
 //   - anything else              → 500 INTERNAL_ERROR
@@ -32,9 +34,10 @@ func handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, contentdomain.ErrContentNotFound):
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Content not found", nil)
-	case errors.Is(err, contentdomain.ErrCommentNotFound):
+	case errors.Is(err, commentdomain.ErrCommentNotFound):
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Comment not found", nil)
-	case errors.Is(err, contentdomain.ErrUnauthorized):
+	case errors.Is(err, contentdomain.ErrUnauthorized),
+		errors.Is(err, commentdomain.ErrCommentsDisabled):
 		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have permission to access this content", nil)
 	case errors.Is(err, contentdomain.ErrForbiddenPostType),
 		errors.Is(err, contentdomain.ErrForbiddenPublish):
@@ -57,8 +60,9 @@ func handleError(w http.ResponseWriter, err error) {
 		errors.Is(err, contentdomain.ErrInvalidLanguage),
 		errors.Is(err, contentdomain.ErrTranslationGroupNotFound),
 		errors.Is(err, contentdomain.ErrTranslationAlreadyExists),
-		errors.Is(err, contentdomain.ErrInvalidCommentText),
-		errors.Is(err, contentdomain.ErrInvalidCommentStatus):
+		errors.Is(err, commentdomain.ErrInvalidCommentText),
+		errors.Is(err, commentdomain.ErrInvalidCommentStatus),
+		errors.Is(err, identity.ErrInvalidUserID):
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), nil)
 	default:
 		response.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "An internal error occurred", nil)

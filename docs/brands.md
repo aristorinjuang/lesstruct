@@ -34,13 +34,40 @@ busy imagery.
 
 ## Logo variants
 
-Only one mark exists. There is no separate "dark" or "mono" variant — the
-gradient mark is used as-is on both light and dark surfaces.
+### Gradient (primary)
+
+The gradient mark is the primary logo, used as-is on both light and dark
+surfaces.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="/brand/lesstruct.webp">
   <img src="/brand/lesstruct.webp" width="96" height="96" alt="Lesstruct logo on a light surface">
 </picture>
+
+### Mono (single-color)
+
+Two single-color variants exist for monochrome contexts — print, favicons,
+watermarks, UI chrome, and anywhere the gradient would clash or lose contrast:
+
+| Variant   | Mark color | Background        | Files                      |
+|---|---|---|---|
+| Ink       | `#111827`  | light (`#ffffff`) | `/brand/lesstruct-dark.*`  |
+| Porcelain | `#f9fafb`  | dark (`#111827`)  | `/brand/lesstruct-white.*` |
+
+The background is part of the artwork on the porcelain variant (the mark
+itself is near-white and needs the dark surface for contrast) — use them as
+framed tiles rather than transparent overlays.
+
+<p>
+  <img src="/brand/lesstruct-dark.webp" width="96" height="96" alt="Ink variant: dark mark on a light surface" style="border-radius:12px">
+  &nbsp;&nbsp;
+  <img src="/brand/lesstruct-white.webp" width="96" height="96" alt="Porcelain variant: light mark on a dark surface" style="border-radius:12px">
+</p>
+
+Each variant ships in two formats: **WebP** for display (≈15 KB) and **PNG**
+as the lossless master — both 1024×1024, alongside the gradient mark in the
+[`site/static/brand/`](https://github.com/aristorinjuang/lesstruct/tree/main/site/static/brand)
+directory.
 
 ## Clear space & minimum size
 

@@ -167,6 +167,41 @@ type Config struct {
 	HugoImportTimeout time.Duration
 }
 
+// ImportMaxSize returns the importer upload ceiling in bytes.
+func (c *Config) ImportMaxSize() int64 {
+	return int64(c.ImportMaxSizeMB) << 20
+}
+
+// IsImageGenerationEnabled returns true if the Google Imagen API key is configured
+func (c *Config) IsImageGenerationEnabled() bool {
+	return c.AIImageGenerationAPIKey != ""
+}
+
+// IsTextGenerationEnabled returns true if the AI text generation API key is configured
+func (c *Config) IsTextGenerationEnabled() bool {
+	return c.AITextGenerationAPIKey != ""
+}
+
+// ParseCORSOrigins parses the comma-separated CORS origins string into a slice
+// It handles whitespace trimming and validates that each origin has a valid http/https scheme
+func (c *Config) ParseCORSOrigins() []string {
+	if c.CORSAllowedOrigins == "" {
+		return []string{}
+	}
+
+	origins := strings.Split(c.CORSAllowedOrigins, ",")
+	result := make([]string, 0, len(origins))
+
+	for _, origin := range origins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed != "" && isValidOrigin(trimmed) {
+			result = append(result, trimmed)
+		}
+	}
+
+	return result
+}
+
 // Load loads configuration from environment variables
 // It tries to load .env file first, then reads from actual environment
 func Load() (*Config, error) {
@@ -323,39 +358,4 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
-}
-
-// ImportMaxSize returns the importer upload ceiling in bytes.
-func (c *Config) ImportMaxSize() int64 {
-	return int64(c.ImportMaxSizeMB) << 20
-}
-
-// IsImageGenerationEnabled returns true if the Google Imagen API key is configured
-func (c *Config) IsImageGenerationEnabled() bool {
-	return c.AIImageGenerationAPIKey != ""
-}
-
-// IsTextGenerationEnabled returns true if the AI text generation API key is configured
-func (c *Config) IsTextGenerationEnabled() bool {
-	return c.AITextGenerationAPIKey != ""
-}
-
-// ParseCORSOrigins parses the comma-separated CORS origins string into a slice
-// It handles whitespace trimming and validates that each origin has a valid http/https scheme
-func (c *Config) ParseCORSOrigins() []string {
-	if c.CORSAllowedOrigins == "" {
-		return []string{}
-	}
-
-	origins := strings.Split(c.CORSAllowedOrigins, ",")
-	result := make([]string, 0, len(origins))
-
-	for _, origin := range origins {
-		trimmed := strings.TrimSpace(origin)
-		if trimmed != "" && isValidOrigin(trimmed) {
-			result = append(result, trimmed)
-		}
-	}
-
-	return result
 }

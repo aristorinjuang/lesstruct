@@ -15,8 +15,10 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentservice "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -42,7 +44,6 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().Create(
 					mock.Anything,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.CreateContentRequest"),
 				).Return(&contentdomain.Content{
@@ -99,7 +100,6 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().Create(
 					mock.Anything,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.CreateContentRequest"),
 				).Return(nil, contentdomain.ErrInvalidTitle)
@@ -127,7 +127,6 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().Create(
 					mock.Anything,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.CreateContentRequest"),
 				).Return(nil, contentdomain.ErrSlugAlreadyExists)
@@ -157,6 +156,7 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+			ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 			req = req.WithContext(ctx)
 
 			w := httptest.NewRecorder()
@@ -206,10 +206,9 @@ func TestContentHandler_CreateContent_SlugForwarding(t *testing.T) {
 			var captured contentdomain.CreateContentRequest
 			mockService.EXPECT().Create(
 				mock.Anything,
-				1,
 				mock.Anything,
 				mock.AnythingOfType("content.CreateContentRequest"),
-			).Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+			).Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 				captured = req
 			}).Return(&contentdomain.Content{ID: 1, Title: "Hello"}, nil)
 
@@ -222,9 +221,12 @@ func TestContentHandler_CreateContent_SlugForwarding(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/content_items", bytes.NewReader([]byte(body)))
 			req.Header.Set("Content-Type", "application/json")
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+			roles := make([]string, 0, 1)
 			if tt.role != "" {
 				ctx = context.WithValue(ctx, middleware.RoleKey, tt.role)
+				roles = append(roles, tt.role)
 			}
+			ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser", Roles: roles})
 			req = req.WithContext(ctx)
 
 			w := httptest.NewRecorder()
@@ -350,7 +352,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				s.EXPECT().Update(
 					mock.Anything,
 					1,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
 				).Return(&contentdomain.Content{
@@ -396,7 +397,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				s.EXPECT().Update(
 					mock.Anything,
 					1,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
 				).Return(&contentdomain.Content{
@@ -438,7 +438,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().Update(
 					mock.Anything,
-					1,
 					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
@@ -511,7 +510,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				s.EXPECT().Update(
 					mock.Anything,
 					1,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
 				).Return(nil, contentdomain.ErrUnauthorized)
@@ -535,7 +533,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().Update(
 					mock.Anything,
-					1,
 					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
@@ -561,7 +558,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				s.EXPECT().Update(
 					mock.Anything,
 					1,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
 				).Return(nil, contentdomain.ErrForbiddenPublish)
@@ -586,7 +582,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				s.EXPECT().Update(
 					mock.Anything,
 					999,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
 				).Return(nil, contentdomain.ErrContentNotFound)
@@ -610,7 +605,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().Update(
 					mock.Anything,
-					1,
 					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
@@ -642,9 +636,8 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				s.EXPECT().Update(
 					mock.Anything,
 					1,
-					1,
 					mock.Anything,
-					mock.MatchedBy(func(req contentdomain.UpdateContentRequest) bool {
+					mock.MatchedBy(func(req contentservice.UpdateContentRequest) bool {
 						return req.Slug == "brand-new-slug"
 					}),
 				).Return(&contentdomain.Content{
@@ -682,7 +675,6 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				s.EXPECT().Update(
 					mock.Anything,
 					1,
-					1,
 					mock.Anything,
 					mock.AnythingOfType("content.UpdateContentRequest"),
 				).Return(nil, contentdomain.ErrSlugImmutable)
@@ -711,6 +703,7 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 			r := chi.NewRouter()
 			r.Put("/api/v1/content_items/{id}", func(w http.ResponseWriter, r *http.Request) {
 				ctx := context.WithValue(r.Context(), middleware.UserIDKey, "1")
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 				handler.UpdateContent(w, r.WithContext(ctx))
 			})
 
@@ -1234,7 +1227,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 				s.EXPECT().SetSystemFields(
 					mock.Anything,
 					1,
-					1,
+					mock.Anything,
 					map[string]any{"featured": true, "priority": float64(5)},
 				).Return(&contentdomain.Content{
 					ID:      1,
@@ -1310,7 +1303,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 				s.EXPECT().SetSystemFields(
 					mock.Anything,
 					999,
-					1,
+					mock.Anything,
 					map[string]any{"featured": true},
 				).Return(nil, contentdomain.ErrContentNotFound)
 			},
@@ -1334,7 +1327,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 				s.EXPECT().SetSystemFields(
 					mock.Anything,
 					1,
-					1,
+					mock.Anything,
 					map[string]any{"nonexistent": "value"},
 				).Return(nil, fmt.Errorf("%w: nonexistent", contentdomain.ErrUnknownSystemFieldKey))
 			},
@@ -1358,7 +1351,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 				s.EXPECT().SetSystemFields(
 					mock.Anything,
 					1,
-					1,
+					mock.Anything,
 					map[string]any{"priority": "not_a_number"},
 				).Return(nil, fmt.Errorf("%w: Priority: invalid field value", contentdomain.ErrSystemFieldValidation))
 			},
@@ -1409,6 +1402,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 
 			if tt.name != "no authentication" {
 				ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 				req = req.WithContext(ctx)
 			}
 

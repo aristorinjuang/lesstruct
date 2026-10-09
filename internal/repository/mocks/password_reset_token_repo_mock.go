@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,7 +39,7 @@ func (_m *MockPasswordResetTokenRepo) EXPECT() *MockPasswordResetTokenRepo_Expec
 }
 
 // CreateToken provides a mock function for the type MockPasswordResetTokenRepo
-func (_mock *MockPasswordResetTokenRepo) CreateToken(ctx context.Context, token *repository.PasswordResetToken) error {
+func (_mock *MockPasswordResetTokenRepo) CreateToken(ctx context.Context, token *authdomain.PasswordResetToken) error {
 	ret := _mock.Called(ctx, token)
 
 	if len(ret) == 0 {
@@ -47,7 +47,7 @@ func (_mock *MockPasswordResetTokenRepo) CreateToken(ctx context.Context, token 
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *repository.PasswordResetToken) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *authdomain.PasswordResetToken) error); ok {
 		r0 = returnFunc(ctx, token)
 	} else {
 		r0 = ret.Error(0)
@@ -62,20 +62,20 @@ type MockPasswordResetTokenRepo_CreateToken_Call struct {
 
 // CreateToken is a helper method to define mock.On call
 //   - ctx context.Context
-//   - token *repository.PasswordResetToken
+//   - token *authdomain.PasswordResetToken
 func (_e *MockPasswordResetTokenRepo_Expecter) CreateToken(ctx any, token any) *MockPasswordResetTokenRepo_CreateToken_Call {
 	return &MockPasswordResetTokenRepo_CreateToken_Call{Call: _e.mock.On("CreateToken", ctx, token)}
 }
 
-func (_c *MockPasswordResetTokenRepo_CreateToken_Call) Run(run func(ctx context.Context, token *repository.PasswordResetToken)) *MockPasswordResetTokenRepo_CreateToken_Call {
+func (_c *MockPasswordResetTokenRepo_CreateToken_Call) Run(run func(ctx context.Context, token *authdomain.PasswordResetToken)) *MockPasswordResetTokenRepo_CreateToken_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 *repository.PasswordResetToken
+		var arg1 *authdomain.PasswordResetToken
 		if args[1] != nil {
-			arg1 = args[1].(*repository.PasswordResetToken)
+			arg1 = args[1].(*authdomain.PasswordResetToken)
 		}
 		run(
 			arg0,
@@ -90,7 +90,7 @@ func (_c *MockPasswordResetTokenRepo_CreateToken_Call) Return(err error) *MockPa
 	return _c
 }
 
-func (_c *MockPasswordResetTokenRepo_CreateToken_Call) RunAndReturn(run func(ctx context.Context, token *repository.PasswordResetToken) error) *MockPasswordResetTokenRepo_CreateToken_Call {
+func (_c *MockPasswordResetTokenRepo_CreateToken_Call) RunAndReturn(run func(ctx context.Context, token *authdomain.PasswordResetToken) error) *MockPasswordResetTokenRepo_CreateToken_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -153,23 +153,23 @@ func (_c *MockPasswordResetTokenRepo_DeleteUserTokens_Call) RunAndReturn(run fun
 }
 
 // FindValidToken provides a mock function for the type MockPasswordResetTokenRepo
-func (_mock *MockPasswordResetTokenRepo) FindValidToken(ctx context.Context, tokenHash string) (*repository.PasswordResetToken, error) {
+func (_mock *MockPasswordResetTokenRepo) FindValidToken(ctx context.Context, tokenHash string) (*authdomain.PasswordResetToken, error) {
 	ret := _mock.Called(ctx, tokenHash)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FindValidToken")
 	}
 
-	var r0 *repository.PasswordResetToken
+	var r0 *authdomain.PasswordResetToken
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*repository.PasswordResetToken, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*authdomain.PasswordResetToken, error)); ok {
 		return returnFunc(ctx, tokenHash)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *repository.PasswordResetToken); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *authdomain.PasswordResetToken); ok {
 		r0 = returnFunc(ctx, tokenHash)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*repository.PasswordResetToken)
+			r0 = ret.Get(0).(*authdomain.PasswordResetToken)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
@@ -210,12 +210,12 @@ func (_c *MockPasswordResetTokenRepo_FindValidToken_Call) Run(run func(ctx conte
 	return _c
 }
 
-func (_c *MockPasswordResetTokenRepo_FindValidToken_Call) Return(passwordResetToken *repository.PasswordResetToken, err error) *MockPasswordResetTokenRepo_FindValidToken_Call {
+func (_c *MockPasswordResetTokenRepo_FindValidToken_Call) Return(passwordResetToken *authdomain.PasswordResetToken, err error) *MockPasswordResetTokenRepo_FindValidToken_Call {
 	_c.Call.Return(passwordResetToken, err)
 	return _c
 }
 
-func (_c *MockPasswordResetTokenRepo_FindValidToken_Call) RunAndReturn(run func(ctx context.Context, tokenHash string) (*repository.PasswordResetToken, error)) *MockPasswordResetTokenRepo_FindValidToken_Call {
+func (_c *MockPasswordResetTokenRepo_FindValidToken_Call) RunAndReturn(run func(ctx context.Context, tokenHash string) (*authdomain.PasswordResetToken, error)) *MockPasswordResetTokenRepo_FindValidToken_Call {
 	_c.Call.Return(run)
 	return _c
 }

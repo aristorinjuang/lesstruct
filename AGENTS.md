@@ -237,6 +237,9 @@ The docs under `docs/` are contracts, not afterthoughts. When you change code th
 | `internal/api/template/`, `internal/api/contentpage/`, theme CSS/JS contracts | `docs/theme-development.md` AND `skills/lesstruct-theme-development/references/theme-development.md` (user-facing snapshot) |
 | `internal/api/template/pages/*.gohtml` (formatting/whitespace) | `docs/coding-standards/html.md` |
 | `internal/plugin/` (SDK/hooks/capabilities), `pkg/sdk/` | `docs/plugin-development.md`, `docs/plugin-capabilities.md` AND the matching snapshots under `skills/lesstruct-plugin-development/references/` |
+| `modules/<name>/` (new/changed module layout, seams, gating, wiring) | `docs/module-development.md` |
+| `modules/<name>/` (module added/removed, `Requires()` changed, admin manifest entries changed) | `docs/built-in-modules.md` |
+| A new development phase / work narrative (repo history) | `HISTORY.md` at the repo root — repo-only, never published to the docs site |
 | `internal/api/handlers/agent/`, `internal/api/middleware/apikey.go`, `/api/v1` route shape, response envelope | `docs/api-reference.md` |
 | `internal/api/routes/routes.go`, `internal/api/handlers/` (new/removed/renamed endpoints, method changes, query/body param changes, auth-realm changes) | `docs/bruno/` — one `.yml` request per route; add new requests in the matching resource folder and update existing requests' body/query/path/auth in lockstep |
 | A user-facing feature added, removed, or behavior-changed (UI, CLI, or config) | `docs/features.md` (canonical catalog) AND, if it is in the homepage's curated subset, the card copy in `site/layouts/landing.html` |

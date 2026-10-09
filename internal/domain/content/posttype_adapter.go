@@ -3,8 +3,8 @@ package content
 import (
 	"fmt"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
-	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
+	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 )
 
 // PostTypeAdapter wraps posttype.Service to implement content.PostTypeServiceInterface

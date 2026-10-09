@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,8 +40,8 @@ func (_m *MockAPIKeyService) EXPECT() *MockAPIKeyService_Expecter {
 }
 
 // Create provides a mock function for the type MockAPIKeyService
-func (_mock *MockAPIKeyService) Create(ctx context.Context, userID int, name string) (string, *apikey.APIKey, error) {
-	ret := _mock.Called(ctx, userID, name)
+func (_mock *MockAPIKeyService) Create(ctx context.Context, principal kernel.Principal, name string) (string, *apikey.APIKey, error) {
+	ret := _mock.Called(ctx, principal, name)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Create")
@@ -49,23 +50,23 @@ func (_mock *MockAPIKeyService) Create(ctx context.Context, userID int, name str
 	var r0 string
 	var r1 *apikey.APIKey
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string) (string, *apikey.APIKey, error)); ok {
-		return returnFunc(ctx, userID, name)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, string) (string, *apikey.APIKey, error)); ok {
+		return returnFunc(ctx, principal, name)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string) string); ok {
-		r0 = returnFunc(ctx, userID, name)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, string) string); ok {
+		r0 = returnFunc(ctx, principal, name)
 	} else {
 		r0 = ret.Get(0).(string)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, string) *apikey.APIKey); ok {
-		r1 = returnFunc(ctx, userID, name)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, kernel.Principal, string) *apikey.APIKey); ok {
+		r1 = returnFunc(ctx, principal, name)
 	} else {
 		if ret.Get(1) != nil {
 			r1 = ret.Get(1).(*apikey.APIKey)
 		}
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, int, string) error); ok {
-		r2 = returnFunc(ctx, userID, name)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, kernel.Principal, string) error); ok {
+		r2 = returnFunc(ctx, principal, name)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -79,21 +80,21 @@ type MockAPIKeyService_Create_Call struct {
 
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
-//   - userID int
+//   - principal kernel.Principal
 //   - name string
-func (_e *MockAPIKeyService_Expecter) Create(ctx any, userID any, name any) *MockAPIKeyService_Create_Call {
-	return &MockAPIKeyService_Create_Call{Call: _e.mock.On("Create", ctx, userID, name)}
+func (_e *MockAPIKeyService_Expecter) Create(ctx any, principal any, name any) *MockAPIKeyService_Create_Call {
+	return &MockAPIKeyService_Create_Call{Call: _e.mock.On("Create", ctx, principal, name)}
 }
 
-func (_c *MockAPIKeyService_Create_Call) Run(run func(ctx context.Context, userID int, name string)) *MockAPIKeyService_Create_Call {
+func (_c *MockAPIKeyService_Create_Call) Run(run func(ctx context.Context, principal kernel.Principal, name string)) *MockAPIKeyService_Create_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 int
+		var arg1 kernel.Principal
 		if args[1] != nil {
-			arg1 = args[1].(int)
+			arg1 = args[1].(kernel.Principal)
 		}
 		var arg2 string
 		if args[2] != nil {
@@ -113,14 +114,14 @@ func (_c *MockAPIKeyService_Create_Call) Return(s string, aPIKey *apikey.APIKey,
 	return _c
 }
 
-func (_c *MockAPIKeyService_Create_Call) RunAndReturn(run func(ctx context.Context, userID int, name string) (string, *apikey.APIKey, error)) *MockAPIKeyService_Create_Call {
+func (_c *MockAPIKeyService_Create_Call) RunAndReturn(run func(ctx context.Context, principal kernel.Principal, name string) (string, *apikey.APIKey, error)) *MockAPIKeyService_Create_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // List provides a mock function for the type MockAPIKeyService
-func (_mock *MockAPIKeyService) List(ctx context.Context, userID int) ([]*apikey.APIKey, error) {
-	ret := _mock.Called(ctx, userID)
+func (_mock *MockAPIKeyService) List(ctx context.Context, principal kernel.Principal) ([]*apikey.APIKey, error) {
+	ret := _mock.Called(ctx, principal)
 
 	if len(ret) == 0 {
 		panic("no return value specified for List")
@@ -128,18 +129,18 @@ func (_mock *MockAPIKeyService) List(ctx context.Context, userID int) ([]*apikey
 
 	var r0 []*apikey.APIKey
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*apikey.APIKey, error)); ok {
-		return returnFunc(ctx, userID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal) ([]*apikey.APIKey, error)); ok {
+		return returnFunc(ctx, principal)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*apikey.APIKey); ok {
-		r0 = returnFunc(ctx, userID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal) []*apikey.APIKey); ok {
+		r0 = returnFunc(ctx, principal)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*apikey.APIKey)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
-		r1 = returnFunc(ctx, userID)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, kernel.Principal) error); ok {
+		r1 = returnFunc(ctx, principal)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -153,20 +154,20 @@ type MockAPIKeyService_List_Call struct {
 
 // List is a helper method to define mock.On call
 //   - ctx context.Context
-//   - userID int
-func (_e *MockAPIKeyService_Expecter) List(ctx any, userID any) *MockAPIKeyService_List_Call {
-	return &MockAPIKeyService_List_Call{Call: _e.mock.On("List", ctx, userID)}
+//   - principal kernel.Principal
+func (_e *MockAPIKeyService_Expecter) List(ctx any, principal any) *MockAPIKeyService_List_Call {
+	return &MockAPIKeyService_List_Call{Call: _e.mock.On("List", ctx, principal)}
 }
 
-func (_c *MockAPIKeyService_List_Call) Run(run func(ctx context.Context, userID int)) *MockAPIKeyService_List_Call {
+func (_c *MockAPIKeyService_List_Call) Run(run func(ctx context.Context, principal kernel.Principal)) *MockAPIKeyService_List_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 int
+		var arg1 kernel.Principal
 		if args[1] != nil {
-			arg1 = args[1].(int)
+			arg1 = args[1].(kernel.Principal)
 		}
 		run(
 			arg0,
@@ -181,14 +182,14 @@ func (_c *MockAPIKeyService_List_Call) Return(aPIKeys []*apikey.APIKey, err erro
 	return _c
 }
 
-func (_c *MockAPIKeyService_List_Call) RunAndReturn(run func(ctx context.Context, userID int) ([]*apikey.APIKey, error)) *MockAPIKeyService_List_Call {
+func (_c *MockAPIKeyService_List_Call) RunAndReturn(run func(ctx context.Context, principal kernel.Principal) ([]*apikey.APIKey, error)) *MockAPIKeyService_List_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Revoke provides a mock function for the type MockAPIKeyService
-func (_mock *MockAPIKeyService) Revoke(ctx context.Context, id int, userID int) (*apikey.APIKey, error) {
-	ret := _mock.Called(ctx, id, userID)
+func (_mock *MockAPIKeyService) Revoke(ctx context.Context, id int, principal kernel.Principal) (*apikey.APIKey, error) {
+	ret := _mock.Called(ctx, id, principal)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Revoke")
@@ -196,18 +197,18 @@ func (_mock *MockAPIKeyService) Revoke(ctx context.Context, id int, userID int) 
 
 	var r0 *apikey.APIKey
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) (*apikey.APIKey, error)); ok {
-		return returnFunc(ctx, id, userID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) (*apikey.APIKey, error)); ok {
+		return returnFunc(ctx, id, principal)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) *apikey.APIKey); ok {
-		r0 = returnFunc(ctx, id, userID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) *apikey.APIKey); ok {
+		r0 = returnFunc(ctx, id, principal)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*apikey.APIKey)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
-		r1 = returnFunc(ctx, id, userID)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, kernel.Principal) error); ok {
+		r1 = returnFunc(ctx, id, principal)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -222,12 +223,12 @@ type MockAPIKeyService_Revoke_Call struct {
 // Revoke is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id int
-//   - userID int
-func (_e *MockAPIKeyService_Expecter) Revoke(ctx any, id any, userID any) *MockAPIKeyService_Revoke_Call {
-	return &MockAPIKeyService_Revoke_Call{Call: _e.mock.On("Revoke", ctx, id, userID)}
+//   - principal kernel.Principal
+func (_e *MockAPIKeyService_Expecter) Revoke(ctx any, id any, principal any) *MockAPIKeyService_Revoke_Call {
+	return &MockAPIKeyService_Revoke_Call{Call: _e.mock.On("Revoke", ctx, id, principal)}
 }
 
-func (_c *MockAPIKeyService_Revoke_Call) Run(run func(ctx context.Context, id int, userID int)) *MockAPIKeyService_Revoke_Call {
+func (_c *MockAPIKeyService_Revoke_Call) Run(run func(ctx context.Context, id int, principal kernel.Principal)) *MockAPIKeyService_Revoke_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -237,9 +238,9 @@ func (_c *MockAPIKeyService_Revoke_Call) Run(run func(ctx context.Context, id in
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 int
+		var arg2 kernel.Principal
 		if args[2] != nil {
-			arg2 = args[2].(int)
+			arg2 = args[2].(kernel.Principal)
 		}
 		run(
 			arg0,
@@ -255,7 +256,7 @@ func (_c *MockAPIKeyService_Revoke_Call) Return(aPIKey *apikey.APIKey, err error
 	return _c
 }
 
-func (_c *MockAPIKeyService_Revoke_Call) RunAndReturn(run func(ctx context.Context, id int, userID int) (*apikey.APIKey, error)) *MockAPIKeyService_Revoke_Call {
+func (_c *MockAPIKeyService_Revoke_Call) RunAndReturn(run func(ctx context.Context, id int, principal kernel.Principal) (*apikey.APIKey, error)) *MockAPIKeyService_Revoke_Call {
 	_c.Call.Return(run)
 	return _c
 }

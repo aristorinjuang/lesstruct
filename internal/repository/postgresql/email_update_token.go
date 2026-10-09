@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
-type EmailUpdateToken = repository.EmailUpdateToken
+type EmailUpdateToken = userdomain.EmailUpdateToken
 
 // EmailUpdateTokenRepository handles email update token data operations
 type EmailUpdateTokenRepository struct {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -61,7 +62,7 @@ func TestUserRepository_GetUserByEmailTimestamps(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	before := time.Now().Add(-time.Second)
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "timestampuser",
 		PasswordHash: "$2a$12$testHash",
 		Email:        "timestamp@example.com",
@@ -108,7 +109,7 @@ func TestUserRepository_GetUserByUsernameTimestamps(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	before := time.Now().Add(-time.Second)
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "timestampuser2",
 		PasswordHash: "$2a$12$testHash",
 		Email:        "timestamp2@example.com",
@@ -206,19 +207,19 @@ func TestUserRepository_GetAllUsersNullCreatedAt(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		get     func(ctx context.Context, r *repository.UserRepository) ([]*repository.User, error)
+		get     func(ctx context.Context, r *repository.UserRepository) ([]*userdomain.User, error)
 		wantErr bool
 	}{
 		{
 			name: "success - GetAllUsers tolerates NULL created_at",
-			get: func(ctx context.Context, r *repository.UserRepository) ([]*repository.User, error) {
+			get: func(ctx context.Context, r *repository.UserRepository) ([]*userdomain.User, error) {
 				return r.GetAllUsers(ctx, "", 10, 0)
 			},
 			wantErr: false,
 		},
 		{
 			name: "success - GetPendingUsers tolerates NULL created_at",
-			get: func(ctx context.Context, r *repository.UserRepository) ([]*repository.User, error) {
+			get: func(ctx context.Context, r *repository.UserRepository) ([]*userdomain.User, error) {
 				return r.GetPendingUsers(ctx, 10, 0)
 			},
 			wantErr: false,
@@ -235,7 +236,7 @@ func TestUserRepository_GetAllUsersNullCreatedAt(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, users)
 
-			var found *repository.User
+			var found *userdomain.User
 			for _, u := range users {
 				if u.Username == "nulllistuser" {
 					found = u

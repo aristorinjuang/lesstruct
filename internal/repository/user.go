@@ -4,36 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/constants"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
-var (
-	ErrAdminNotFound         = errors.New("admin user not found")
-	ErrSetupAlreadyCompleted = errors.New("first-login setup has already been completed")
-)
-
-// User represents a user in the system
-type User struct {
-	ID             int            `json:"id"`
-	Username       string         `json:"username"`
-	PasswordHash   string         `json:"-"`
-	Email          string         `json:"email"`
-	Name           string         `json:"name,omitempty"`
-	Role           string         `json:"role"`
-	Status         string         `json:"-"`
-	EmailVerified  bool           `json:"-"`
-	ProfilePicture string         `json:"profilePicture,omitempty"`
-	LastLoginAt    *string        `json:"lastLoginAt,omitempty"`
-	CustomFields   map[string]any `json:"customFields,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
-}
-
+// UserRepo interface defines user repository operations
 func unmarshalCustomFields(raw *string) map[string]any {
 	if raw == nil || *raw == "" {
 		return nil
@@ -57,22 +36,22 @@ func marshalCustomFields(fields map[string]any) (any, error) {
 // UserRepo defines the interface for user repository operations
 type UserRepo interface {
 	UpdateAdminPasswordAndEmail(ctx context.Context, passwordHash, email, currentPasswordHash string) error
-	GetAdminUser(ctx context.Context) (*User, error)
-	CreateUser(ctx context.Context, user *User) error
+	GetAdminUser(ctx context.Context) (*userdomain.User, error)
+	CreateUser(ctx context.Context, user *userdomain.User) error
 	CheckUsernameExists(ctx context.Context, username string) (bool, error)
 	CheckEmailExists(ctx context.Context, email string) (bool, error)
 	UpdateUserStatus(ctx context.Context, userID int, status string) error
 	UpdateUserStatusIfCurrentStatus(ctx context.Context, userID int, currentStatus string, newStatus string) error
 	SetEmailVerified(ctx context.Context, userID int, emailVerified bool) error
-	GetUserByID(ctx context.Context, userID int) (*User, error)
-	GetUserByEmail(ctx context.Context, email string) (*User, error)
-	GetUserByUsername(ctx context.Context, username string) (*User, error)
-	GetPendingUsers(ctx context.Context, limit int, offset int) ([]*User, error)
+	GetUserByID(ctx context.Context, userID int) (*userdomain.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*userdomain.User, error)
+	GetUserByUsername(ctx context.Context, username string) (*userdomain.User, error)
+	GetPendingUsers(ctx context.Context, limit int, offset int) ([]*userdomain.User, error)
 	DeleteUser(ctx context.Context, userID int) error
 	SuspendUser(ctx context.Context, userID int) error
 	UnsuspendUser(ctx context.Context, userID int) error
 	SoftDeleteUser(ctx context.Context, userID int) error
-	GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*User, error)
+	GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*userdomain.User, error)
 	// CountUsers returns the total number of users, optionally filtered by status — mirrors
 	// GetAllUsers' WHERE clause so a list's total always matches its rows.
 	CountUsers(ctx context.Context, status string) (int, error)
@@ -132,14 +111,14 @@ func (r *UserRepository) UpdateAdminPasswordAndEmail(ctx context.Context, passwo
 	}
 
 	if rows == 0 {
-		return ErrSetupAlreadyCompleted
+		return userdomain.ErrSetupAlreadyCompleted
 	}
 
 	return nil
 }
 
 // GetAdminUser retrieves the admin user from the database
-func (r *UserRepository) GetAdminUser(ctx context.Context) (*User, error) {
+func (r *UserRepository) GetAdminUser(ctx context.Context) (*userdomain.User, error) {
 	// Add timeout context if not provided (#16)
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -147,7 +126,7 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*User, error) {
 		defer cancel()
 	}
 
-	var user User
+	var user userdomain.User
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -175,7 +154,7 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*User, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, ErrAdminNotFound
+		return nil, userdomain.ErrAdminNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -202,7 +181,7 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*User, error) {
 }
 
 // CreateUser creates a new user in the database
-func (r *UserRepository) CreateUser(ctx context.Context, user *User) error {
+func (r *UserRepository) CreateUser(ctx context.Context, user *userdomain.User) error {
 	// Verify database connection is alive
 	if err := r.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database connection lost: %w", err)
@@ -416,7 +395,7 @@ func (r *UserRepository) SetEmailVerified(ctx context.Context, userID int, email
 }
 
 // GetUserByID retrieves a user by ID
-func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, error) {
+func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*userdomain.User, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -424,7 +403,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, er
 		defer cancel()
 	}
 
-	var user User
+	var user userdomain.User
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -479,7 +458,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, er
 }
 
 // GetUserByEmail retrieves a user by email
-func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*userdomain.User, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -491,7 +470,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 	email = strings.TrimSpace(email)
 	email = strings.ToLower(email)
 
-	var user User
+	var user userdomain.User
 	var userEmail sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -546,7 +525,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 }
 
 // GetUserByUsername retrieves a user by username (case-insensitive)
-func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*User, error) {
+func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*userdomain.User, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -554,7 +533,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 		defer cancel()
 	}
 
-	var user User
+	var user userdomain.User
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -609,7 +588,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 }
 
 // GetPendingUsers retrieves all users with pending status
-func (r *UserRepository) GetPendingUsers(ctx context.Context, limit int, offset int) ([]*User, error) {
+func (r *UserRepository) GetPendingUsers(ctx context.Context, limit int, offset int) ([]*userdomain.User, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -643,9 +622,9 @@ func (r *UserRepository) GetPendingUsers(ctx context.Context, limit int, offset 
 	}
 	defer func() { _ = rows.Close() }()
 
-	var users []*User
+	var users []*userdomain.User
 	for rows.Next() {
-		var user User
+		var user userdomain.User
 		var email sql.NullString
 		var name sql.NullString
 		var profilePicture sql.NullString
@@ -816,7 +795,7 @@ func (r *UserRepository) SoftDeleteUser(ctx context.Context, userID int) error {
 }
 
 // GetAllUsers retrieves all users with optional status filtering and pagination
-func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*User, error) {
+func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*userdomain.User, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -864,9 +843,9 @@ func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit i
 	}
 	defer func() { _ = rows.Close() }()
 
-	var users []*User
+	var users []*userdomain.User
 	for rows.Next() {
-		var user User
+		var user userdomain.User
 		var email sql.NullString
 		var name sql.NullString
 		var profilePicture sql.NullString

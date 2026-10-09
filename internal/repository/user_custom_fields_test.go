@@ -7,6 +7,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/database"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	_ "modernc.org/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -247,12 +248,12 @@ func TestUserCustomFields_JSONRoundtrip(t *testing.T) {
 }
 
 func TestUserCustomFields_OmitemptyInJSON(t *testing.T) {
-	userWithout := repository.User{ID: 1, Username: "test", Role: "Author"}
+	userWithout := userdomain.User{ID: 1, Username: "test", Role: "Author"}
 	data, err := json.Marshal(userWithout)
 	require.NoError(t, err)
 	assert.NotContains(t, string(data), "customFields")
 
-	userWith := repository.User{ID: 1, Username: "test", Role: "Author", CustomFields: map[string]any{"key": "val"}}
+	userWith := userdomain.User{ID: 1, Username: "test", Role: "Author", CustomFields: map[string]any{"key": "val"}}
 	data, err = json.Marshal(userWith)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "customFields")

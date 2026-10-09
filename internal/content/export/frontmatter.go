@@ -5,7 +5,7 @@ import (
 	"maps"
 	"strings"
 
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"gopkg.in/yaml.v3"
 )
 

@@ -14,10 +14,14 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
-	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
+	contentservice "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
+	"github.com/aristorinjuang/lesstruct/kernel/httpx"
+	"github.com/aristorinjuang/lesstruct/kernel/sanitize"
 )
 
 // Supported content formats for the agent create surface.
@@ -31,7 +35,71 @@ const (
 	// formatHTML stores the body as raw HTML with inline styles. The body is
 	// sanitized before storage.
 	formatHTML = "html"
+
+	// minListSearchLength is the minimum run length of the ?search= query param; shorter
+	// values are dropped to the empty filter (no search applied). Mirrors the admin
+	// ListContents handler's behavior in content.go.
+	minListSearchLength = 2
 )
+
+// parseListFilters reads the agent list's filter query params into a contentdomain
+// ContentFilters. Empty values (after trim) are dropped, so a zero ContentFilters is
+// returned when the caller passes no filter params. status is validated via
+// Status.IsValid — an unknown value returns an empty string AND the validation error
+// so the caller can map it to 400 VALIDATION_ERROR. The minListSearchLength rule
+// applies to search only (so a single-character search is silently dropped, mirroring
+// the admin surface). The author filter is NOT enforced here — the agent List handler
+// rejects non-admin callers with 403 before calling this helper, so the Author field
+// is only ever set for admins.
+func parseListFilters(r *http.Request) (contentdomain.ContentFilters, error) {
+	q := r.URL.Query()
+
+	postType := strings.TrimSpace(q.Get("post_type"))
+	language := strings.TrimSpace(q.Get("language"))
+	status := strings.TrimSpace(q.Get("status"))
+	author := strings.TrimSpace(q.Get("author"))
+	search := strings.TrimSpace(q.Get("search"))
+	if len(search) < minListSearchLength {
+		search = ""
+	}
+
+	// Repeated ?tag=foo&tag=bar → AND-of-tags. Trim each entry, drop empties (the
+	// caller might pass ?tag= with a trailing empty value), preserve first-occurrence
+	// order. nil/empty input yields nil (no filter clause emitted).
+	tags := make([]string, 0)
+	for _, raw := range q["tag"] {
+		t := strings.TrimSpace(raw)
+		if t == "" {
+			continue
+		}
+		tags = append(tags, t)
+	}
+	if len(tags) == 0 {
+		tags = nil
+	}
+
+	if status != "" && !contentdomain.Status(status).IsValid() {
+		return contentdomain.ContentFilters{}, fmt.Errorf("invalid status: %q (want draft or published)", status)
+	}
+
+	return contentdomain.ContentFilters{
+		PostType: postType,
+		Language: language,
+		Status:   status,
+		Author:   author,
+		Search:   search,
+		Tags:     tags,
+	}, nil
+}
+
+// authenticatedPrincipal reads the kernel identity from request context.
+// Returns ok=false when no auth middleware ran — the same defensive case
+// authenticatedUserID guards. Service-calling sites derive the int ID and
+// role from it via the identity bridge so acting identity travels as one
+// value; a parse failure answers exactly like authenticatedUserID did.
+func authenticatedPrincipal(r *http.Request) (kernel.Principal, bool) {
+	return middleware.Principal(r)
+}
 
 // authenticatedUserID reads the injected owning user id from request context using
 // the shared, auth-agnostic identity accessor (works for JWT and API key). Returns
@@ -101,21 +169,21 @@ func convertContentBody(req ContentRequest, normalized string, iframeHosts []str
 }
 
 // ContentService is the narrow slice of the content domain service the agent
-// handlers depend on. *contentdomain.Service satisfies it. Declaring it locally —
+// handlers depend on. *contentservice.Service satisfies it. Declaring it locally —
 // instead of depending on the admin handler's wider ContentServiceInterface — keeps
 // the agent surface independent and makes the dependency explicit. It is exported
 // so mockery can generate an exported constructor callable from the package's
 // *_test files (CLAUDE.md mandates *_test packages, which cannot reach an
 // unexported mock).
 type ContentService interface {
-	Create(ctx context.Context, userID int, role string, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
+	Create(ctx context.Context, principal kernel.Principal, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
 	GetByID(ctx context.Context, id int) (*contentdomain.Content, error)
 	ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
-	Update(ctx context.Context, id int, userID int, role string, req contentdomain.UpdateContentRequest) (*contentdomain.Content, error)
-	DeleteContent(ctx context.Context, id int, userID int, role string) error
-	Publish(ctx context.Context, id int, userID int, role string) (*contentdomain.Content, error)
-	Unpublish(ctx context.Context, id int, userID int, role string) (*contentdomain.Content, error)
-	SetSystemFields(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*contentdomain.Content, error)
+	Update(ctx context.Context, id int, principal kernel.Principal, req contentservice.UpdateContentRequest) (*contentdomain.Content, error)
+	DeleteContent(ctx context.Context, id int, principal kernel.Principal) error
+	Publish(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error)
+	Unpublish(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error)
+	SetSystemFields(ctx context.Context, contentID int, principal kernel.Principal, systemFields map[string]any) (*contentdomain.Content, error)
 }
 
 // SystemFieldResolver resolves the admin-managed system field schemas for a post
@@ -196,8 +264,13 @@ func (h *ContentHandler) rejectSystemFields(postTypeSlug string, customFields ma
 // contentdomain.CreateContentRequest (reusing the same validation + plugin hook
 // path as the admin surface) and returns the created content in the envelope.
 func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, ok := authenticatedUserID(r)
+	principal, ok := authenticatedPrincipal(r)
 	if !ok {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+	userID, err := identity.IntID(principal)
+	if err != nil {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
@@ -260,7 +333,7 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		TranslationGroupID: req.TranslationGroupID,
 	}
 
-	created, err := h.contentService.Create(r.Context(), userID, authenticatedRole(r), domainReq)
+	created, err := h.contentService.Create(r.Context(), principal, domainReq)
 	if err != nil {
 		h.logger.Error("agent create content failed: userID=%d err=%v", userID, err)
 		handleError(w, err)
@@ -308,61 +381,6 @@ func (h *ContentHandler) Get(w http.ResponseWriter, r *http.Request) {
 	response.Success(w, NewContentResponse(content))
 }
 
-// minListSearchLength is the minimum run length of the ?search= query param; shorter
-// values are dropped to the empty filter (no search applied). Mirrors the admin
-// ListContents handler's behavior in content.go.
-const minListSearchLength = 2
-
-// parseListFilters reads the agent list's filter query params into a contentdomain
-// ContentFilters. Empty values (after trim) are dropped, so a zero ContentFilters is
-// returned when the caller passes no filter params. status is validated via
-// Status.IsValid — an unknown value returns an empty string AND the validation error
-// so the caller can map it to 400 VALIDATION_ERROR. The minListSearchLength rule
-// applies to search only (so a single-character search is silently dropped, mirroring
-// the admin surface). The author filter is NOT enforced here — the agent List handler
-// rejects non-admin callers with 403 before calling this helper, so the Author field
-// is only ever set for admins.
-func parseListFilters(r *http.Request) (contentdomain.ContentFilters, error) {
-	q := r.URL.Query()
-
-	postType := strings.TrimSpace(q.Get("post_type"))
-	language := strings.TrimSpace(q.Get("language"))
-	status := strings.TrimSpace(q.Get("status"))
-	author := strings.TrimSpace(q.Get("author"))
-	search := strings.TrimSpace(q.Get("search"))
-	if len(search) < minListSearchLength {
-		search = ""
-	}
-
-	// Repeated ?tag=foo&tag=bar → AND-of-tags. Trim each entry, drop empties (the
-	// caller might pass ?tag= with a trailing empty value), preserve first-occurrence
-	// order. nil/empty input yields nil (no filter clause emitted).
-	tags := make([]string, 0)
-	for _, raw := range q["tag"] {
-		t := strings.TrimSpace(raw)
-		if t == "" {
-			continue
-		}
-		tags = append(tags, t)
-	}
-	if len(tags) == 0 {
-		tags = nil
-	}
-
-	if status != "" && !contentdomain.Status(status).IsValid() {
-		return contentdomain.ContentFilters{}, fmt.Errorf("invalid status: %q (want draft or published)", status)
-	}
-
-	return contentdomain.ContentFilters{
-		PostType: postType,
-		Language: language,
-		Status:   status,
-		Author:   author,
-		Search:   search,
-		Tags:     tags,
-	}, nil
-}
-
 // List handles GET /api/v1/content. It returns the caller's own content (any status —
 // drafts + published) in newest-first order using opaque keyset (cursor) pagination,
 // each item projected via the ContentProjection whitelist. hasMore/nextCursor are
@@ -382,8 +400,8 @@ func (h *ContentHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := response.ParseListLimit(r)
-	beforeID, err := response.DecodeCursor(r.URL.Query().Get("cursor"))
+	limit := httpx.ParseListLimit(r)
+	beforeID, err := httpx.DecodeCursor(r.URL.Query().Get("cursor"))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid cursor", nil)
 		return
@@ -416,7 +434,7 @@ func (h *ContentHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	nextCursor := ""
 	if hasMore && len(items) > 0 {
-		nextCursor = response.EncodeCursor(items[len(items)-1].ID)
+		nextCursor = httpx.EncodeCursor(items[len(items)-1].ID)
 	}
 
 	projections := make([]ContentProjection, 0, len(items))
@@ -441,12 +459,17 @@ func (h *ContentHandler) List(w http.ResponseWriter, r *http.Request) {
 // tags, language. Server-managed (preserved from the existing item): SEO metadata
 // (metaDescription, ogTitle, ogDescription), allowComments, translationGroupId.
 func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, ok := authenticatedUserID(r)
+	principal, ok := authenticatedPrincipal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
-	role := authenticatedRole(r)
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+	role := identity.PrimaryRole(principal)
 
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -516,7 +539,7 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// service normalizes Tags via contentdomain.ValidateTags and rejects an
 	// unknown Language with ErrInvalidLanguage (mapped to VALIDATION_ERROR by
 	// handleError).
-	domainReq := contentdomain.UpdateContentRequest{
+	domainReq := contentservice.UpdateContentRequest{
 		Title:              req.Title,
 		Content:            body,
 		Status:             status,
@@ -532,7 +555,7 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		TranslationGroupID: existing.TranslationGroupID,
 	}
 
-	updated, err := h.contentService.Update(r.Context(), id, userID, role, domainReq)
+	updated, err := h.contentService.Update(r.Context(), id, principal, domainReq)
 	if err != nil {
 		h.logger.Error("agent update content failed: id=%d err=%v", id, err)
 		handleError(w, err)
@@ -547,12 +570,17 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 // ContentService.DeleteContent. A successful delete returns 204 No Content; a subsequent
 // GET returns 404 (the service hard-deletes for Admins and scoped-deletes otherwise).
 func (h *ContentHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, ok := authenticatedUserID(r)
+	principal, ok := authenticatedPrincipal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
-	role := authenticatedRole(r)
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+	role := identity.PrimaryRole(principal)
 
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -573,7 +601,7 @@ func (h *ContentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.contentService.DeleteContent(r.Context(), id, userID, role); err != nil {
+	if err := h.contentService.DeleteContent(r.Context(), id, principal); err != nil {
 		h.logger.Error("agent delete content failed: id=%d err=%v", id, err)
 		handleError(w, err)
 		return
@@ -594,12 +622,11 @@ func (h *ContentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // Validation and persistence errors map to the same error envelope the
 // other endpoints use.
 func (h *ContentHandler) Publish(w http.ResponseWriter, r *http.Request) {
-	userID, ok := authenticatedUserID(r)
+	principal, ok := authenticatedPrincipal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
-	role := authenticatedRole(r)
 
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -608,7 +635,7 @@ func (h *ContentHandler) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.contentService.Publish(r.Context(), id, userID, role)
+	updated, err := h.contentService.Publish(r.Context(), id, principal)
 	if err != nil {
 		// The service's ownership check returns ErrUnauthorized on a
 		// not-owned-by-non-admin case; surface that as 404 (no disclosure),
@@ -635,12 +662,11 @@ func (h *ContentHandler) Publish(w http.ResponseWriter, r *http.Request) {
 // Same ownership/role contract as Publish: 404 (not 403) for non-admin
 // non-owners; admins can unpublish anyone's content.
 func (h *ContentHandler) Unpublish(w http.ResponseWriter, r *http.Request) {
-	userID, ok := authenticatedUserID(r)
+	principal, ok := authenticatedPrincipal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
 		return
 	}
-	role := authenticatedRole(r)
 
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
@@ -649,7 +675,7 @@ func (h *ContentHandler) Unpublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.contentService.Unpublish(r.Context(), id, userID, role)
+	updated, err := h.contentService.Unpublish(r.Context(), id, principal)
 	if err != nil {
 		if errors.Is(err, contentdomain.ErrUnauthorized) {
 			response.Error(w, http.StatusNotFound, "NOT_FOUND", "Content not found", nil)
@@ -672,15 +698,14 @@ func (h *ContentHandler) Unpublish(w http.ResponseWriter, r *http.Request) {
 // type — an unknown key returns ErrUnknownSystemFieldKey and a bad value returns
 // ErrSystemFieldValidation (both → 400 VALIDATION_ERROR via handleError).
 func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request) {
-	role := authenticatedRole(r)
-	if role != contentdomain.RoleAdmin {
-		response.Error(w, http.StatusForbidden, "FORBIDDEN", "system fields are admin-only", nil)
-		return
-	}
-
-	userID, ok := authenticatedUserID(r)
+	principal, ok := authenticatedPrincipal(r)
 	if !ok {
 		response.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+	role := identity.PrimaryRole(principal)
+	if role != contentdomain.RoleAdmin {
+		response.Error(w, http.StatusForbidden, "FORBIDDEN", "system fields are admin-only", nil)
 		return
 	}
 
@@ -699,7 +724,7 @@ func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	updated, err := h.contentService.SetSystemFields(r.Context(), id, userID, req.SystemFields)
+	updated, err := h.contentService.SetSystemFields(r.Context(), id, principal, req.SystemFields)
 	if err != nil {
 		h.logger.Error("agent set system fields failed: id=%d err=%v", id, err)
 		handleError(w, err)

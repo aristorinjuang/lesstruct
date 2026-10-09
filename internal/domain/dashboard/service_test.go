@@ -11,6 +11,8 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
 	"github.com/aristorinjuang/lesstruct/internal/domain/dashboard/mocks"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
+	"github.com/aristorinjuang/lesstruct/kernel"
 )
 
 func TestService_GetStats(t *testing.T) {
@@ -103,7 +105,7 @@ func TestService_GetStats(t *testing.T) {
 			tt.mockFn(mockRepo)
 
 			service := dashboard.NewService(mockRepo)
-			got, err := service.GetStats(context.Background(), tt.userID)
+			got, err := service.GetStats(context.Background(), identity.New(tt.userID, "testuser", ""))
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -124,4 +126,36 @@ func TestNewService(t *testing.T) {
 	service := dashboard.NewService(mockRepo)
 
 	assert.NotNil(t, service)
+}
+
+func TestService_InvalidPrincipal(t *testing.T) {
+	service := dashboard.NewService(nil)
+	bad := kernel.Principal{ID: "not-a-number", Username: "ghost"}
+
+	tests := []struct {
+		name    string
+		call    func() error
+		wantErr bool
+	}{
+		{
+			name: "get stats rejects non-decimal id",
+			call: func() error {
+				_, err := service.GetStats(context.Background(), bad)
+				return err
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.ErrorIs(t, err, identity.ErrInvalidUserID)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
 }

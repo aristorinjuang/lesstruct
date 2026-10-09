@@ -30,7 +30,9 @@ jobs:
       - name: Build Admin Panel
         run: make build-admin
 
-      - name: Build Binaries
+      - name: Build Binaries (default edition; the sqlite-free server
+          edition from `make build-server` is not shipped as a release
+          asset yet)
         run: |
           mkdir -p dist
           for GOOS in linux darwin windows; do

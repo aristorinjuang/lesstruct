@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
-	"github.com/aristorinjuang/lesstruct/internal/domain/alias"
-	"github.com/aristorinjuang/lesstruct/internal/domain/alias/mocks"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/modules/seo/alias"
+	"github.com/aristorinjuang/lesstruct/modules/seo/alias/mocks"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/stretchr/testify/assert"
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

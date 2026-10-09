@@ -5,55 +5,16 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
 // UserDataExportRepo defines the interface for user data export repository operations
 type UserDataExportRepo interface {
-	GetUserContent(ctx context.Context, userID int) ([]*UserContentItem, error)
-	GetUserComments(ctx context.Context, userID int) ([]*UserCommentItem, error)
-	GetUserMedia(ctx context.Context, userID int) ([]*UserMediaItem, error)
-	GetUserDataForExport(ctx context.Context, userID int) (*UserDataExport, error)
-}
-
-// UserContentItem represents a content item (post/page) created by a user
-type UserContentItem struct {
-	ID        int       `json:"id"`
-	Type      string    `json:"type"`
-	Title     string    `json:"title"`
-	Slug      string    `json:"slug"`
-	Content   string    `json:"content"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// UserCommentItem represents a comment posted by a user
-type UserCommentItem struct {
-	ID            int       `json:"id"`
-	ContentItemID int       `json:"contentItemId"`
-	Content       string    `json:"content"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-}
-
-// UserMediaItem represents a media file uploaded by a user
-type UserMediaItem struct {
-	ID               int       `json:"id"`
-	Filename         string    `json:"filename"`
-	OriginalFilename string    `json:"originalFilename"`
-	FilePath         string    `json:"filePath"`
-	FileSize         int       `json:"fileSize"`
-	MimeType         string    `json:"mimeType"`
-	CreatedAt        time.Time `json:"createdAt"`
-}
-
-// UserDataExport represents all user data for export
-type UserDataExport struct {
-	ExportDate time.Time          `json:"exportDate"`
-	User       *User              `json:"user"`
-	Content    []*UserContentItem `json:"content"`
-	Comments   []*UserCommentItem `json:"comments"`
-	Media      []*UserMediaItem   `json:"media"`
+	GetUserContent(ctx context.Context, userID int) ([]*userdomain.UserContentItem, error)
+	GetUserComments(ctx context.Context, userID int) ([]*userdomain.UserCommentItem, error)
+	GetUserMedia(ctx context.Context, userID int) ([]*userdomain.UserMediaItem, error)
+	GetUserDataForExport(ctx context.Context, userID int) (*userdomain.UserDataExport, error)
 }
 
 // UserDataExportRepository handles user data export operations
@@ -61,8 +22,34 @@ type UserDataExportRepository struct {
 	db *sql.DB
 }
 
+// getUserForExport retrieves user information for export
+func (r *UserDataExportRepository) getUserForExport(ctx context.Context, userID int) (*userdomain.User, error) {
+	var user userdomain.User
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, username, email, role, created_at, last_login_at
+		FROM users
+		WHERE id = ?
+	`, userID).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.Role,
+		&user.CreatedAt,
+		&user.LastLoginAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("user not found with ID %d", userID)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
 // GetUserContent retrieves all content items (posts/pages) created by a user
-func (r *UserDataExportRepository) GetUserContent(ctx context.Context, userID int) ([]*UserContentItem, error) {
+func (r *UserDataExportRepository) GetUserContent(ctx context.Context, userID int) ([]*userdomain.UserContentItem, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -78,15 +65,15 @@ func (r *UserDataExportRepository) GetUserContent(ctx context.Context, userID in
 	`, userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return []*UserContentItem{}, nil
+			return []*userdomain.UserContentItem{}, nil
 		}
 		return nil, fmt.Errorf("failed to get user content: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var contentItems []*UserContentItem
+	var contentItems []*userdomain.UserContentItem
 	for rows.Next() {
-		var item UserContentItem
+		var item userdomain.UserContentItem
 		err := rows.Scan(
 			&item.ID,
 			&item.Title,
@@ -106,7 +93,7 @@ func (r *UserDataExportRepository) GetUserContent(ctx context.Context, userID in
 }
 
 // GetUserComments retrieves all comments posted by a user
-func (r *UserDataExportRepository) GetUserComments(ctx context.Context, userID int) ([]*UserCommentItem, error) {
+func (r *UserDataExportRepository) GetUserComments(ctx context.Context, userID int) ([]*userdomain.UserCommentItem, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -122,15 +109,15 @@ func (r *UserDataExportRepository) GetUserComments(ctx context.Context, userID i
 	`, userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return []*UserCommentItem{}, nil
+			return []*userdomain.UserCommentItem{}, nil
 		}
 		return nil, fmt.Errorf("failed to get user comments: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var commentItems []*UserCommentItem
+	var commentItems []*userdomain.UserCommentItem
 	for rows.Next() {
-		var item UserCommentItem
+		var item userdomain.UserCommentItem
 		err := rows.Scan(
 			&item.ID,
 			&item.ContentItemID,
@@ -148,7 +135,7 @@ func (r *UserDataExportRepository) GetUserComments(ctx context.Context, userID i
 }
 
 // GetUserMedia retrieves all media files uploaded by a user
-func (r *UserDataExportRepository) GetUserMedia(ctx context.Context, userID int) ([]*UserMediaItem, error) {
+func (r *UserDataExportRepository) GetUserMedia(ctx context.Context, userID int) ([]*userdomain.UserMediaItem, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -164,15 +151,15 @@ func (r *UserDataExportRepository) GetUserMedia(ctx context.Context, userID int)
 	`, userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return []*UserMediaItem{}, nil
+			return []*userdomain.UserMediaItem{}, nil
 		}
 		return nil, fmt.Errorf("failed to get user media: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var mediaItems []*UserMediaItem
+	var mediaItems []*userdomain.UserMediaItem
 	for rows.Next() {
-		var item UserMediaItem
+		var item userdomain.UserMediaItem
 		err := rows.Scan(
 			&item.ID,
 			&item.Filename,
@@ -192,7 +179,7 @@ func (r *UserDataExportRepository) GetUserMedia(ctx context.Context, userID int)
 }
 
 // GetUserDataForExport aggregates all user data for export
-func (r *UserDataExportRepository) GetUserDataForExport(ctx context.Context, userID int) (*UserDataExport, error) {
+func (r *UserDataExportRepository) GetUserDataForExport(ctx context.Context, userID int) (*userdomain.UserDataExport, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -224,39 +211,13 @@ func (r *UserDataExportRepository) GetUserDataForExport(ctx context.Context, use
 		return nil, fmt.Errorf("failed to get user media: %w", err)
 	}
 
-	return &UserDataExport{
+	return &userdomain.UserDataExport{
 		User:       user,
 		Content:    content,
 		Comments:   comments,
 		Media:      media,
 		ExportDate: time.Now().UTC(),
 	}, nil
-}
-
-// getUserForExport retrieves user information for export
-func (r *UserDataExportRepository) getUserForExport(ctx context.Context, userID int) (*User, error) {
-	var user User
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, email, role, created_at, last_login_at
-		FROM users
-		WHERE id = ?
-	`, userID).Scan(
-		&user.ID,
-		&user.Username,
-		&user.Email,
-		&user.Role,
-		&user.CreatedAt,
-		&user.LastLoginAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found with ID %d", userID)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &user, nil
 }
 
 // NewUserDataExportRepository creates a new user data export repository

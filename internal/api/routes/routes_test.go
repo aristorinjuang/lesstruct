@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,19 +17,33 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	mwmocks "github.com/aristorinjuang/lesstruct/internal/api/middleware/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/routes"
-	"github.com/aristorinjuang/lesstruct/internal/api/static"
+	"github.com/aristorinjuang/lesstruct/modules/adminpanel"
 	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
-	authdomain "github.com/aristorinjuang/lesstruct/internal/domain/auth"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	authapi "github.com/aristorinjuang/lesstruct/modules/auth/api"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	commentdomain "github.com/aristorinjuang/lesstruct/modules/comments/domain"
 	contentmocks "github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
-	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
-	"github.com/aristorinjuang/lesstruct/internal/domain/user"
+	"github.com/aristorinjuang/lesstruct/internal/domain/role"
+	"github.com/aristorinjuang/lesstruct/internal/modules"
+	"github.com/aristorinjuang/lesstruct/modules/users/domain"
+	usersapi "github.com/aristorinjuang/lesstruct/modules/users/api"
 	emailmocks "github.com/aristorinjuang/lesstruct/internal/email/mocks"
-	"github.com/aristorinjuang/lesstruct/internal/repository"
 	repomocks "github.com/aristorinjuang/lesstruct/internal/repository/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	commentapi "github.com/aristorinjuang/lesstruct/modules/comments/api"
+	commentagent "github.com/aristorinjuang/lesstruct/modules/comments/api/agent"
+	"github.com/aristorinjuang/lesstruct/modules/importers"
+	seoapi "github.com/aristorinjuang/lesstruct/modules/seo/api"
+	mediaapi "github.com/aristorinjuang/lesstruct/modules/media/api"
+	mediaapimocks "github.com/aristorinjuang/lesstruct/modules/media/api/mocks"
+	mediaagent "github.com/aristorinjuang/lesstruct/modules/media/api/agent"
+	mediaagentmocks "github.com/aristorinjuang/lesstruct/modules/media/api/agent/mocks"
+	posttypesbasic "github.com/aristorinjuang/lesstruct/modules/posttypes-basic"
+	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -53,7 +68,7 @@ type bearerDeps struct {
 	verifier   *mwmocks.MockAPIKeyVerifier
 	user       *mwmocks.MockUserLookup
 	content    *agentmocks.MockContentService
-	media      *agentmocks.MockMediaService
+	media      *mediaagentmocks.MockMediaService
 	comment    *agentmocks.MockCommentService
 	browser    *contentmocks.MockServiceInterface
 	jwtManager *appauth.JWTManager
@@ -70,34 +85,34 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 }
 
 // setupTestRouterWithFlags is setupTestRouterWithBearerDeps with the headless and
-// comments feature flags configurable, plus optional static server/handler stubs so
-// tests can prove what headless mode mounts (or unmounts). A nil staticServer keeps
+// comments feature flags configurable, plus optional SPA handler/handler stubs so
+// tests can prove what headless mode mounts (or unmounts). A nil spaHandler keeps
 // the behavior of the default helper (no content-site catch-all registered at all).
-func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, staticSrv *static.StaticServer, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
+func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
 	t.Helper()
 
 	// Create test auth handler
 	hash, err := appauth.HashPassword("admin")
 	require.NoError(t, err, "Failed to hash password")
 
-	authService := authdomain.NewAuthService(hash)
+	authService := authdomain.NewAuthService(hash, modules.NewUserCredentialPolicy())
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil, commentsEnabled)
+	firstLoginService := authdomain.NewFirstLoginService(modules.NewUserCredentialPolicy())
+	registrationService := authdomain.NewRegistrationService(nil, modules.NewUserCredentialPolicy(), commentsEnabled)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	mockUserRepo := repomocks.NewMockUserRepo(t)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	loginService := authdomain.NewLoginService(mockUserRepo, repomocks.NewMockFailedLoginAttemptRepo(t), nil)
+	loginService := authdomain.NewLoginService(mockUserRepo, repomocks.NewMockFailedLoginAttemptRepo(t), modules.NewUserCredentialPolicy(), nil)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
 	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
-	passwordResetService := authdomain.NewPasswordResetService(mockUserRepo, passwordResetTokenRepo, 1)
-	authHandler := handlers.NewAuthHandler(
+	passwordResetService := authdomain.NewPasswordResetService(mockUserRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
+	authHandler := authapi.NewAuthHandler(
 		authService,
 		jwtManager,
-		logger,
+		modules.NewLogger(logger),
 		firstLoginService,
 		registrationService,
 		verificationService,
@@ -105,26 +120,30 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		passwordResetService,
 		mockUserRepo,
 		failedLoginRepo,
-		notificationRepo,
+		modules.NewAuthNotificationRecorder(notificationRepo),
 		emailService,
 		blockedEmailRepo,
 	)
-	firstLoginHandler := handlers.NewFirstLoginHandler(firstLoginService, mockUserRepo, logger)
+	firstLoginHandler := authapi.NewFirstLoginHandler(firstLoginService, mockUserRepo, modules.NewUserCredentialPolicy(), modules.NewLogger(logger))
 	notificationHandler := handlers.NewNotificationHandler(logger, notificationRepo)
 
-	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo, true)
+	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo, modules.NewUserCredentialPolicy(), true)
 	softDeleteRepo := repomocks.NewMockSoftDeleteRepo(t)
-	userManagementHandler := handlers.NewUserManagementHandler(userManagementService, nil, mockUserRepo, softDeleteRepo, jwtManager, emailService, logger, nil)
+	userManagementHandler := usersapi.NewUserManagementHandler(userManagementService, nil, mockUserRepo, modules.NewSoftDeleteStore(softDeleteRepo), emailService, modules.NewLogger(logger), nil)
 
 	// Initialize profile management dependencies (Story 1.7)
 	emailUpdateTokenRepo := repomocks.NewMockEmailUpdateTokenRepo(t)
 	userDataExportRepo := repomocks.NewMockUserDataExportRepo(t)
-	profileService := user.NewProfileService(mockUserRepo, emailUpdateTokenRepo, userDataExportRepo, emailService, nil)
+	profileService := user.NewProfileService(mockUserRepo, emailUpdateTokenRepo, userDataExportRepo, emailService, modules.NewUserCredentialPolicy(), nil)
 	// Initialize account deletion service (Story 1.8)
 	userDeletionRepo := repomocks.NewMockUserDeletionRepo(t)
-	accountDeletionService := user.NewAccountDeletionService(mockUserRepo, userDeletionRepo, emailService, logger)
+	accountDeletionService := user.NewAccountDeletionService(mockUserRepo, userDeletionRepo, emailService, modules.NewLogger(logger))
 
-	profileHandler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, logger, nil, nil)
+	profileHandler := usersapi.NewProfileHandler(profileService, accountDeletionService, modules.NewLogger(logger), nil, nil)
+
+	// The picture handler mounts through the structural surface: a bare
+	// instance suffices since these tests never hit its endpoints.
+	profilePictureHandler := usersapi.NewProfilePictureHandler(nil, nil, nil)
 
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
 	adminMiddleware := middleware.NewAdminMiddleware(authMiddleware)
@@ -132,11 +151,11 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 	// Initialize content handler with mock service (Story 2.1)
 	contentHandler := handlers.NewContentHandler(mocks.NewMockContentServiceInterface(t), logger, "http://localhost:3000", nil, nil)
 
-	// Initialize media handler with mock service (Story 2.3)
-	mediaHandler := handlers.NewMediaHandler(mocks.NewMockMediaServiceInterface(t), nil, logger)
+	// Initialize media handler with mock service (Story 2.3) — the real media
+	// module handler over the mock service, exactly like production mounts
+	// the module's handlers.
+	mediaHandler := mediaapi.NewMediaHandler(mediaapimocks.NewMockMediaServiceInterface(t), nil, logger)
 
-	// Initialize post type handler (Story 2.6)
-	postTypeHandler := handlers.NewPostTypeHandler(posttype.NewService(), commentsEnabled, logger)
 	// Initialize dashboard handler (Story 2.8)
 	dashboardHandler := handlers.NewDashboardHandler(mocks.NewMockDashboardServiceInterface(t), nil, logger)
 
@@ -146,12 +165,37 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 	rateLimitMiddleware := middleware.NewRateLimitMiddleware(false, 5, 100, 60)
 	secHeaderMW := defaultSecurityHeadersMiddleware(t)
 
-	// Initialize SEO handler (Story 4.2)
-	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", headlessEnabled, logger)
+	// Initialize SEO handler (Story 4.2) — the real seo module handler over
+	// an empty published set, exactly like production mounts the module's
+	// handler. Route tests never serve SEO leaves through it.
+	seoHandler := seoapi.NewSEOHandler(
+		seoapi.PublishedPages(func(ctx context.Context, limit, offset int) ([]seoapi.PageRef, error) {
+			return nil, nil
+		}),
+		"http://localhost:3000",
+		headlessEnabled,
+		logger,
+	)
 
-	// Initialize comment handler (Story 4.7)
+	// Initialize comment handler (Story 4.7) — the real comments module
+	// handlers over the mock services, exactly like production mounts the
+	// module's handlers. Content lookups resolve test fixtures inline.
 	browserContentMock := contentmocks.NewMockServiceInterface(t)
-	commentHandler := handlers.NewCommentHandler(browserContentMock)
+	commentContentResolver := commentapi.ContentResolver(
+		func(ctx context.Context, slug, language string) (commentapi.ContentRef, error) {
+			if slug == "my-post" {
+				return commentapi.ContentRef{ID: 5, AllowComments: true}, nil
+			}
+			return commentapi.ContentRef{}, commentapi.ErrContentNotFound
+		},
+	)
+	commentHandler := commentapi.NewCommentHandler(browserContentMock, commentContentResolver)
+
+	// Real importers module with no adopted services. Route tests only
+	// register handler method values (import endpoints are never invoked),
+	// so bare handlers suffice — mirroring how media/seo/comments mount
+	// their real module handlers.
+	importersModule := importers.New()
 
 	// Initialize Bearer-group dependencies (Story 2.1): real middleware + handler
 	// wired to mock interfaces so Bearer route tests can configure them per-case.
@@ -160,10 +204,15 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 	apiKeyAuthMiddleware := middleware.NewAPIKeyAuthMiddleware(verifier, userLookup, logger)
 	contentSvc := agentmocks.NewMockContentService(t)
 	agentContentHandler := agent.NewContentHandler(contentSvc, nil, logger)
-	mediaSvc := agentmocks.NewMockMediaService(t)
-	agentMediaHandler := agent.NewMediaHandler(mediaSvc, logger)
+	mediaSvc := mediaagentmocks.NewMockMediaService(t)
+	agentMediaHandler := mediaagent.NewMediaHandler(mediaSvc, logger)
 	commentSvc := agentmocks.NewMockCommentService(t)
-	agentCommentHandler := agent.NewCommentHandler(commentSvc, logger)
+	agentCommentLookup := commentagent.ContentLookup(
+		func(ctx context.Context, id int) (commentagent.ContentDetail, error) {
+			return commentagent.ContentDetail{ID: id, UserID: 1, Published: true, AllowComments: true}, nil
+		},
+	)
+	agentCommentHandler := commentagent.NewCommentHandler(commentSvc, agentCommentLookup, logger)
 
 	deps := bearerDeps{
 		verifier:   verifier,
@@ -175,6 +224,16 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		jwtManager: jwtManager,
 	}
 
+	// First-party modules mount exactly like production: the real
+	// posttypes-basic module (default registry, no resolver) serves the
+	// post-type surface, so route tests exercise the module mount.
+	postTypesModule := posttypesbasic.New(
+		posttypesbasic.WithService(posttype.NewService()),
+		posttypesbasic.WithCommentsEnabled(commentsEnabled),
+	)
+	moduleRegistry := kernel.NewRegistry()
+	require.NoError(t, moduleRegistry.Register(postTypesModule))
+
 	r := routes.Setup(
 		authHandler,
 		firstLoginHandler,
@@ -183,14 +242,13 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		profileHandler,
 		contentHandler,
 		mediaHandler,
-		postTypeHandler,
 		dashboardHandler,
 		seoHandler,
 		commentHandler,
+		profilePictureHandler,
+		importersModule.WordPressHandler(),
 		nil,
-		nil,
-		nil,
-		nil,
+		importersModule.HugoHandler(),
 		nil,
 		nil,
 		apiKeyAuthMiddleware,
@@ -204,7 +262,7 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		rateLimitMiddleware,
 		secHeaderMW,
 		jwtManager,
-		staticSrv,
+		spaHandler,
 		staticHnd,
 		false,
 		false,
@@ -215,6 +273,8 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		headlessEnabled,
 		commentsEnabled,
 		"local",
+		middleware.NewCapabilityResolver(role.NewService()),
+		moduleRegistry,
 	)
 	return r, deps
 }
@@ -223,37 +283,41 @@ func TestSetup(t *testing.T) {
 	hash, err := appauth.HashPassword("admin")
 	require.NoError(t, err, "Failed to hash password")
 
-	authService := authdomain.NewAuthService(hash)
+	authService := authdomain.NewAuthService(hash, modules.NewUserCredentialPolicy())
 	jwtManager := appauth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
-	firstLoginService := authdomain.NewFirstLoginService()
-	registrationService := authdomain.NewRegistrationService(nil, true)
+	firstLoginService := authdomain.NewFirstLoginService(modules.NewUserCredentialPolicy())
+	registrationService := authdomain.NewRegistrationService(nil, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 	mockUserRepo := repomocks.NewMockUserRepo(t)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	loginService := authdomain.NewLoginService(mockUserRepo, repomocks.NewMockFailedLoginAttemptRepo(t), nil)
+	loginService := authdomain.NewLoginService(mockUserRepo, repomocks.NewMockFailedLoginAttemptRepo(t), modules.NewUserCredentialPolicy(), nil)
 	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
 	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
-	passwordResetService := authdomain.NewPasswordResetService(mockUserRepo, passwordResetTokenRepo, 1)
-	authHandler := handlers.NewAuthHandler(authService, jwtManager, logger, firstLoginService, registrationService, verificationService, loginService, passwordResetService, mockUserRepo, failedLoginRepo, notificationRepo, emailService, blockedEmailRepo)
-	firstLoginHandler := handlers.NewFirstLoginHandler(firstLoginService, mockUserRepo, logger)
+	passwordResetService := authdomain.NewPasswordResetService(mockUserRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
+	authHandler := authapi.NewAuthHandler(authService, jwtManager, modules.NewLogger(logger), firstLoginService, registrationService, verificationService, loginService, passwordResetService, mockUserRepo, failedLoginRepo, modules.NewAuthNotificationRecorder(notificationRepo), emailService, blockedEmailRepo)
+	firstLoginHandler := authapi.NewFirstLoginHandler(firstLoginService, mockUserRepo, modules.NewUserCredentialPolicy(), modules.NewLogger(logger))
 	notificationHandler := handlers.NewNotificationHandler(logger, notificationRepo)
 
-	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo, true)
+	userManagementService := user.NewUserManagementService(mockUserRepo, blockedEmailRepo, modules.NewUserCredentialPolicy(), true)
 	softDeleteRepo := repomocks.NewMockSoftDeleteRepo(t)
-	userManagementHandler := handlers.NewUserManagementHandler(userManagementService, nil, mockUserRepo, softDeleteRepo, jwtManager, emailService, logger, nil)
+	userManagementHandler := usersapi.NewUserManagementHandler(userManagementService, nil, mockUserRepo, modules.NewSoftDeleteStore(softDeleteRepo), emailService, modules.NewLogger(logger), nil)
 
 	// Initialize profile management dependencies (Story 1.7)
 	emailUpdateTokenRepo := repomocks.NewMockEmailUpdateTokenRepo(t)
 	userDataExportRepo := repomocks.NewMockUserDataExportRepo(t)
-	profileService := user.NewProfileService(mockUserRepo, emailUpdateTokenRepo, userDataExportRepo, emailService, nil)
+	profileService := user.NewProfileService(mockUserRepo, emailUpdateTokenRepo, userDataExportRepo, emailService, modules.NewUserCredentialPolicy(), nil)
 	// Initialize account deletion service (Story 1.8)
 	userDeletionRepo := repomocks.NewMockUserDeletionRepo(t)
-	accountDeletionService := user.NewAccountDeletionService(mockUserRepo, userDeletionRepo, emailService, logger)
+	accountDeletionService := user.NewAccountDeletionService(mockUserRepo, userDeletionRepo, emailService, modules.NewLogger(logger))
 
-	profileHandler := handlers.NewProfileHandler(profileService, accountDeletionService, jwtManager, logger, nil, nil)
+	profileHandler := usersapi.NewProfileHandler(profileService, accountDeletionService, modules.NewLogger(logger), nil, nil)
+
+	// The picture handler mounts through the structural surface: a bare
+	// instance suffices since these tests never hit its endpoints.
+	profilePictureHandler := usersapi.NewProfilePictureHandler(nil, nil, nil)
 
 	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
 	adminMiddleware := middleware.NewAdminMiddleware(authMiddleware)
@@ -263,11 +327,11 @@ func TestSetup(t *testing.T) {
 	// Initialize content handler with mock service (Story 2.1)
 	contentHandler := handlers.NewContentHandler(mocks.NewMockContentServiceInterface(t), logger, "http://localhost:3000", nil, nil)
 
-	// Initialize media handler with mock service (Story 2.3)
-	mediaHandler := handlers.NewMediaHandler(mocks.NewMockMediaServiceInterface(t), nil, logger)
+	// Initialize media handler with mock service (Story 2.3) — the real media
+	// module handler over the mock service, exactly like production mounts
+	// the module's handlers.
+	mediaHandler := mediaapi.NewMediaHandler(mediaapimocks.NewMockMediaServiceInterface(t), nil, logger)
 
-	// Initialize post type handler (Story 2.6)
-	postTypeHandler := handlers.NewPostTypeHandler(posttype.NewService(), true, logger)
 	// Initialize dashboard handler (Story 2.8)
 	dashboardHandler := handlers.NewDashboardHandler(mocks.NewMockDashboardServiceInterface(t), nil, logger)
 
@@ -275,10 +339,28 @@ func TestSetup(t *testing.T) {
 	secHeaderMW := defaultSecurityHeadersMiddleware(t)
 
 	// Initialize SEO handler (Story 4.2)
-	seoHandler := handlers.NewSEOHandler(mocks.NewMockContentServiceInterface(t), "http://localhost:3000", false, logger)
+	seoHandler := seoapi.NewSEOHandler(
+		seoapi.PublishedPages(func(ctx context.Context, limit, offset int) ([]seoapi.PageRef, error) {
+			return nil, nil
+		}),
+		"http://localhost:3000",
+		false,
+		logger,
+	)
 
 	// Initialize comment handler (Story 4.7)
-	commentHandler := handlers.NewCommentHandler(contentmocks.NewMockServiceInterface(t))
+	commentHandler := commentapi.NewCommentHandler(
+		contentmocks.NewMockServiceInterface(t),
+		commentapi.ContentResolver(
+			func(ctx context.Context, slug, language string) (commentapi.ContentRef, error) {
+				return commentapi.ContentRef{}, commentapi.ErrContentNotFound
+			},
+		),
+	)
+
+	// Real importers module with no adopted services (registration only —
+	// import endpoints are never invoked in route tests).
+	importersModule := importers.New()
 
 	// Initialize Bearer-group dependencies (Story 2.1)
 	apiKeyAuthMiddleware := middleware.NewAPIKeyAuthMiddleware(
@@ -287,8 +369,16 @@ func TestSetup(t *testing.T) {
 		logger,
 	)
 	agentContentHandler := agent.NewContentHandler(agentmocks.NewMockContentService(t), nil, logger)
-	agentMediaHandler := agent.NewMediaHandler(agentmocks.NewMockMediaService(t), logger)
-	agentCommentHandler := agent.NewCommentHandler(agentmocks.NewMockCommentService(t), logger)
+	agentMediaHandler := mediaagent.NewMediaHandler(mediaagentmocks.NewMockMediaService(t), logger)
+	agentCommentHandler := commentagent.NewCommentHandler(
+		agentmocks.NewMockCommentService(t),
+		commentagent.ContentLookup(
+			func(ctx context.Context, id int) (commentagent.ContentDetail, error) {
+				return commentagent.ContentDetail{ID: id, UserID: 1, Published: true, AllowComments: true}, nil
+			},
+		),
+		logger,
+	)
 
 	r := routes.Setup(
 		authHandler,
@@ -298,14 +388,13 @@ func TestSetup(t *testing.T) {
 		profileHandler,
 		contentHandler,
 		mediaHandler,
-		postTypeHandler,
 		dashboardHandler,
 		seoHandler,
 		commentHandler,
+		profilePictureHandler,
+		importersModule.WordPressHandler(),
 		nil,
-		nil,
-		nil,
-		nil,
+		importersModule.HugoHandler(),
 		nil,
 		nil,
 		apiKeyAuthMiddleware,
@@ -330,9 +419,138 @@ func TestSetup(t *testing.T) {
 		false,
 		true,
 		"local",
+		middleware.NewCapabilityResolver(role.NewService()),
+		nil,
 	)
 
 	assert.NotNil(t, r, "Setup() returned nil router")
+}
+
+// TestModulePostTypesMounted proves the posttypes-basic module serves its
+// endpoints through the real middleware chain: the protected list requires a
+// JWT and returns the registry types, the public list is anonymous, and the
+// roles endpoint fails closed without a role registry.
+func TestModulePostTypesMounted(t *testing.T) {
+	r, deps := setupTestRouterWithBearerDeps(t)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		target     string
+		withAuth   bool
+		wantStatus int
+		wantErr    bool
+	}{
+		{
+			name:       "success - protected list serves registry types",
+			target:     "/api/v1/post_types",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantErr:    false,
+		},
+		{
+			name:       "error - protected list without token is unauthorized",
+			target:     "/api/v1/post_types",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+		{
+			name:       "success - public list is anonymous",
+			target:     "/api/v1/public/post_types",
+			withAuth:   false,
+			wantStatus: http.StatusOK,
+			wantErr:    false,
+		},
+		{
+			name:       "error - roles without registry fails closed",
+			target:     "/api/v1/roles",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			var envelope map[string]any
+			require.NoError(t, json.NewDecoder(w.Body).Decode(&envelope))
+			data, ok := envelope["data"].([]any)
+			require.True(t, ok, "data must be an array")
+			require.NotEmpty(t, data, "registry must serve types")
+		})
+	}
+}
+
+// TestAdminExtensionsMounted proves the manifest endpoint aggregates the
+// test registry's modules behind the admin chain: an admin JWT serves the
+// versioned payload, anonymous callers are rejected.
+func TestAdminExtensionsMounted(t *testing.T) {
+	r, deps := setupTestRouterWithBearerDeps(t)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		withAuth   bool
+		wantStatus int
+	}{
+		{
+			name:       "success - admin token serves versioned payload",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "error - anonymous caller is unauthorized",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/admin/extensions", nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+
+			var envelope map[string]any
+			require.NoError(t, json.NewDecoder(w.Body).Decode(&envelope))
+			assert.Nil(t, envelope["error"])
+			data, ok := envelope["data"].(map[string]any)
+			require.True(t, ok, "data must be an object")
+			assert.Equal(t, float64(1), data["version"])
+			modules, ok := data["modules"].([]any)
+			require.True(t, ok, "modules must be an array")
+			require.Len(t, modules, 1, "test registry holds only posttypes-basic")
+			entry, ok := modules[0].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "posttypes-basic", entry["name"])
+		})
+	}
 }
 
 func TestHealthRoute(t *testing.T) {
@@ -505,7 +723,7 @@ func TestBearerAPIRoutes_ValidKeyReachesAgentHandler(t *testing.T) {
 	r, deps := setupTestRouterWithBearerDeps(t)
 
 	verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
-	owningUser := &repository.User{ID: testBearerUserID, Username: "alice", Role: "Editor"}
+	owningUser := &user.User{ID: testBearerUserID, Username: "alice", Role: "Editor"}
 
 	deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
 	deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
@@ -827,16 +1045,16 @@ func TestBearerAPIRoutes_InvalidKeysAreThrottled(t *testing.T) {
 	assert.Equal(t, "RATE_LIMITED", e3)
 }
 
-// headlessRouter builds a router in headless mode with a real (embedded admin FS)
-// static server and a stub content-site static handler, so tests can prove what
-// headless mode mounts and unmounts.
+// headlessRouter builds a router in headless mode with the real module SPA
+// handler (embedded admin FS) and a stub content-site static handler, so
+// tests can prove what headless mode mounts and unmounts.
 func headlessRouter(t *testing.T) *chi.Mux {
 	t.Helper()
-	staticSrv := static.NewStaticServer(false, "", http.NotFoundHandler())
+	spaHandler := adminpanel.New().SPAHandler()
 	staticHnd := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	r, _ := setupTestRouterWithFlags(t, true, true, staticSrv, staticHnd)
+	r, _ := setupTestRouterWithFlags(t, true, true, spaHandler, staticHnd)
 	return r
 }
 
@@ -870,11 +1088,11 @@ func TestHeadlessMode_UnmountsContentSite(t *testing.T) {
 func TestHeadlessMode_MountsContentSite(t *testing.T) {
 	// Non-headless mode must keep serving /static/* — the control case for
 	// TestHeadlessMode_UnmountsContentSite.
-	staticSrv := static.NewStaticServer(false, "", http.NotFoundHandler())
+	spaHandler := adminpanel.New().SPAHandler()
 	staticHnd := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	r, _ := setupTestRouterWithFlags(t, false, true, staticSrv, staticHnd)
+	r, _ := setupTestRouterWithFlags(t, false, true, spaHandler, staticHnd)
 
 	req := httptest.NewRequest(http.MethodGet, "/static/app.css", nil)
 	w := httptest.NewRecorder()
@@ -938,11 +1156,11 @@ func TestCommentsEnabled_MountsCommentRoutes(t *testing.T) {
 	verifiedKey := &apikey.APIKey{ID: 7, UserID: 1, KeyID: "aaaaaaaaaaaa"}
 	deps.verifier.EXPECT().Verify(mock.Anything, "lesstruct_aaaaaaaaaaaa_bb").Return(verifiedKey, nil)
 	deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
-	deps.user.EXPECT().GetUserByID(mock.Anything, 1).Return(&repository.User{ID: 1, Username: "alice", Role: "Admin"}, nil)
-	deps.comment.EXPECT().GetByID(mock.Anything, 123).
-		Return(&contentdomain.Content{ID: 123, AllowComments: true, PostType: "post", Status: contentdomain.StatusPublished}, nil)
+	deps.user.EXPECT().GetUserByID(mock.Anything, 1).Return(&user.User{ID: 1, Username: "alice", Role: "Admin"}, nil)
+	// Content resolution now runs through the module lookup stub wired in
+	// setupTestRouterWithFlags — only the comment operation is mocked here.
 	deps.comment.EXPECT().SubmitComment(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-		Return(&contentdomain.Comment{ID: 1, ContentID: 123, Comment: "hello"}, nil)
+		Return(&commentdomain.Comment{ID: 1, ContentID: 123, Comment: "hello"}, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/content/123/comments", strings.NewReader(`{"comment":"hello"}`))
 	req.Header.Set("Authorization", "Bearer lesstruct_aaaaaaaaaaaa_bb")
@@ -950,11 +1168,10 @@ func TestCommentsEnabled_MountsCommentRoutes(t *testing.T) {
 	assert.Equal(t, http.StatusOK, code, "agent comment create must be mounted when comments are enabled")
 
 	// Public comment list route stays mounted and reachable without auth —
-	// the handler's service lookups resolve via the router's content mock.
-	deps.browser.EXPECT().GetPublishedBySlug(mock.Anything, "my-post", "en").
-		Return(&contentdomain.Content{ID: 5, Slug: "my-post", AllowComments: true, PostType: "post", Status: contentdomain.StatusPublished}, nil)
+	// the content lookup resolves via the router's resolver stub, the comment
+	// list via the router's content mock.
 	deps.browser.EXPECT().GetCommentsForContent(mock.Anything, 5).
-		Return([]*contentdomain.Comment{}, nil)
+		Return([]*commentdomain.Comment{}, nil)
 
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/public/content_items/my-post/comments", nil)
 	w := httptest.NewRecorder()
@@ -982,4 +1199,50 @@ func TestConfigEndpoint_ExposesFeatureFlags(t *testing.T) {
 	body2 := w2.Body.String()
 	assert.Contains(t, body2, `"commentsEnabled":true`, "config must report commentsEnabled=true")
 	assert.Contains(t, body2, `"headless":false`, "config must report headless=false")
+}
+
+func TestModuleDisabledComments_MatchesLegacyToggle(t *testing.T) {
+	// Route-mount parity: disabling the comments module must unmount exactly
+	// the same leaves as the legacy [comments] toggle. Drive the flag through
+	// the production mapping (legacy on + module disabled) and probe the same
+	// leaves TestCommentsDisabled_UnmountsCommentRoutes covers.
+	kept := map[string]bool{"users": true, "auth": true, "media": true}
+	commentsEnabled := modules.EffectiveCommentsEnabled(true, []string{"comments"}, kept)
+	require.False(t, commentsEnabled, "mapping must fold module disable to false")
+
+	r, _ := setupTestRouterWithFlags(t, false, commentsEnabled, nil, nil)
+
+	jwtManager := appauth.NewJWTManager("test-secret")
+	token, err := jwtManager.GenerateToken("1", "admin", "Admin")
+	require.NoError(t, err, "Failed to generate test token")
+
+	probes := []struct {
+		name   string
+		method string
+		path   string
+		auth   bool
+	}{
+		{"agent comment create", http.MethodPost, "/api/v1/content/123/comments", true},
+		{"public comment list", http.MethodGet, "/api/v1/public/content_items/my-post/comments", false},
+		{"my-comments", http.MethodGet, "/api/v1/my-comments", true},
+		{"comment moderation", http.MethodGet, "/api/v1/comments/pending", true},
+	}
+
+	for _, probe := range probes {
+		t.Run(probe.name, func(t *testing.T) {
+			req := httptest.NewRequest(probe.method, probe.path, nil)
+			if probe.auth {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusNotFound, w.Code, "%s must be unmounted", probe.name)
+		})
+	}
+
+	// Non-comment routes must be unaffected.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusUnauthorized, w.Code, "content_items must stay mounted")
 }

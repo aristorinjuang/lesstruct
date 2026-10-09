@@ -2,11 +2,10 @@ package database
 
 import "embed"
 
-//go:embed migrations/sqlite/*
-var sqliteMigrationsFS embed.FS
+var (
+	//go:embed migrations/postgresql/*
+	postgresqlMigrationsFS embed.FS
 
-//go:embed migrations/postgresql/*
-var postgresqlMigrationsFS embed.FS
-
-//go:embed migrations/mysql/*
-var mysqlMigrationsFS embed.FS
+	//go:embed migrations/mysql/*
+	mysqlMigrationsFS embed.FS
+)

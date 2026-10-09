@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 

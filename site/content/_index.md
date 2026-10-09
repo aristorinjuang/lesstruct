@@ -1,6 +1,6 @@
 ---
 title: "Lesstruct"
-description: "An open-source CMS powered by Go. Fast, configurable, customizable. Built for humans and AI agents, extended with WebAssembly plugins. One binary, no Docker required."
+description: "Everything is a module. The Go CMS you can shrink, extend, and ship as one binary — for humans and AI agents."
 layout: landing
 ---
 

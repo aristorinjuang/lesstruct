@@ -3,9 +3,10 @@
 
    Inherited block structure from the theme's landing.html: the sidebar
    (menu-container), TOC, and footer are blanked; the header carries the home
-   nav. Only `main` is redefined, to render a hero + a curated Features grid
-   above the page's markdown content (the Quick start / CLI / Where to go next
-   sections that live in site/content/_index.md).
+   nav. `main` renders the v1 landing: release band, hero, the "v1 is here"
+   spotlight, the curated Features grid (auto-fit — balanced at any count),
+   and the page's markdown content (Quick start / CLI / Where to go next in
+   site/content/_index.md).
 
    The Features grid is a curated subset of docs/features.md (the canonical
    catalog). Each card links to the matching features.md section. When feature
@@ -29,10 +30,14 @@
 {{ end }}
 
 {{ define "main" }}
+<section class="landing-release">
+  <a href="/docs/built-in-modules/"><span class="landing-release-chip">v1</span> The modular release is here — everything is a module now.&nbsp;&rarr;</a>
+</section>
+
 <section class="landing-hero">
   <div class="landing-hero-inner">
     <img class="landing-logo" src="/brand/lesstruct.webp" width="96" height="96" alt="Lesstruct logo">
-    <p class="landing-eyebrow">Open-source CMS powered by Go</p>
+    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/built-in-modules/">v1</a></p>
     <h1>{{ .Title | default .Site.Title }}</h1>
     <p class="landing-tagline">{{ .Description | default .Site.Params.description }}</p>
     <div class="landing-cta">
@@ -41,6 +46,31 @@
       <a class="landing-btn" href="/tour/">See it in action</a>
     </div>
     {{ partial "screenshot.html" (dict "src" "admin-hero" "alt" "The Lesstruct admin panel: rich-text editor with custom fields and an SEO panel." "class" "hero" "Page" .) }}
+  </div>
+</section>
+
+<section class="landing-spotlight" id="whats-new">
+  <h2>What&rsquo;s new in v1</h2>
+  <p class="landing-section-lede">
+    The 1.0 rewrite turned every feature into a first-class module with a frozen,
+    versioned contract at its center.
+  </p>
+  <div class="landing-spotlight-grid">
+    <a class="spotlight-tile" href="/docs/built-in-modules/">
+      <span class="spotlight-kicker">Modular architecture</span>
+      <h3>Everything is a module</h3>
+      <p>Eleven first-party modules with a declared dependency graph. Disable what you don't need — dependents cascade with a logged warning.</p>
+    </a>
+    <a class="spotlight-tile" href="/docs/kernel/">
+      <span class="spotlight-kicker">The kernel</span>
+      <h3>A frozen, versioned contract</h3>
+      <p>One small Go module every feature compiles against: lifecycle, identity, envelope, discovery — semver-tagged and adversarially reviewed.</p>
+    </a>
+    <a class="spotlight-tile" href="/docs/features/#api-automation">
+      <span class="spotlight-kicker">Lesstruct CLI</span>
+      <h3>Built for AI agents</h3>
+      <p>Agents live on command lines. The Lesstruct CLI drives content, media, and exports over the versioned API — no browser needed.</p>
+    </a>
   </div>
 </section>
 
@@ -53,53 +83,98 @@
   </p>
   <div class="landing-feature-grid">
     <a class="feature-card" href="/docs/features/#deploy-run">
+      <span class="feature-glyph" aria-hidden="true">🚀</span>
       <h3>One binary, no Docker</h3>
       <p>A static Go binary plus embedded SQLite. No runtime, no container, no <code>node_modules</code> in production.</p>
     </a>
+    <a class="feature-card" href="/docs/built-in-modules/">
+      <span class="feature-glyph" aria-hidden="true">🧩</span>
+      <h3>Modular &amp; lean</h3>
+      <p>Eleven built-in modules with a declared graph — disable what you don't need and the binary stays one lean whole.</p>
+    </a>
     <a class="feature-card" href="/docs/features/#deploy-run">
+      <span class="feature-glyph" aria-hidden="true">🔌</span>
       <h3>Headless mode</h3>
       <p>Flip <code>[headless] enabled = true</code> to serve only the admin panel and REST API — a pure headless CMS.</p>
     </a>
+    <a class="feature-card" href="/docs/features/#deploy-run">
+      <span class="feature-glyph" aria-hidden="true">🗃️</span>
+      <h3>Two-layer configuration</h3>
+      <p><code>config.toml</code> holds your content schema; <code>.env</code> holds deployment state. Only <code>JWT_SECRET</code> is required.</p>
+    </a>
     <a class="feature-card" href="/docs/features/#content-authoring">
+      <span class="feature-glyph" aria-hidden="true">📝</span>
       <h3>Custom post types &amp; fields</h3>
       <p>Define post types and fields in <code>config.toml</code>. The admin form, storage, and queries all read from it.</p>
     </a>
     <a class="feature-card" href="/docs/features/#content-authoring">
+      <span class="feature-glyph" aria-hidden="true">📦</span>
       <h3>Importers &amp; Exporters</h3>
       <p>Migrate from WordPress (WXR) or Hugo — posts, custom fields, media, authors — via async jobs. Export everything as a Hugo-compatible archive and HTML static files.</p>
     </a>
     <a class="feature-card" href="/docs/features/#extensibility">
+      <span class="feature-glyph" aria-hidden="true">🪄</span>
       <h3>WebAssembly plugins</h3>
       <p>Drop a <code>.wasm</code> into <code>plugins/</code> to hook <code>before_save</code>, <code>after_create</code>, <code>after_publish</code>.</p>
     </a>
     <a class="feature-card" href="/docs/features/#media-images">
+      <span class="feature-glyph" aria-hidden="true">🖼️</span>
       <h3>Media &amp; WebP</h3>
       <p>A media library with automatic WebP conversion, configurable thumbnail variants, and dedup.</p>
     </a>
     <a class="feature-card" href="/docs/features/#ai">
+      <span class="feature-glyph" aria-hidden="true">🤖</span>
       <h3>AI built in</h3>
       <p>Generate images, enhance &amp; translate text, and author on-brand HTML/CSS from a prompt — reusing your theme's design tokens. Bring your own key.</p>
     </a>
     <a class="feature-card" href="/docs/features/#internationalization">
+      <span class="feature-glyph" aria-hidden="true">🌍</span>
       <h3>i18n by default</h3>
       <p>Multilingual content with translation groups and <code>hreflang</code> in the sitemap.</p>
     </a>
     <a class="feature-card" href="/docs/features/#themes-rendering">
+      <span class="feature-glyph" aria-hidden="true">⚡</span>
       <h3>SSR, SSG &amp; AMP</h3>
       <p>Server-rendered and SEO-friendly. Generate a static site with AMP variants via the admin or <code>lesstruct-cli ssg</code>.</p>
     </a>
     <a class="feature-card" href="/docs/features/#api-automation">
+      <span class="feature-glyph" aria-hidden="true">🔗</span>
       <h3>REST API &amp; CLI</h3>
       <p>A versioned <code>/api/v1</code> with API keys, plus <code>lesstruct-cli</code> for agents and terminals.</p>
     </a>
     <a class="feature-card" href="/docs/features/#users-roles-security">
+      <span class="feature-glyph" aria-hidden="true">🔐</span>
       <h3>Roles &amp; security</h3>
       <p>JWT auth, failed-login lockout, Argon2id, rate limits, and security headers.</p>
     </a>
     <a class="feature-card" href="/docs/features/#users-roles-security">
+      <span class="feature-glyph" aria-hidden="true">🎛️</span>
       <h3>Custom roles</h3>
       <p>Add custom roles or override the built-ins with <code>[[role]]</code> entries in <code>config.toml</code> — per-post-type manage, publish, media, and comment capabilities.</p>
     </a>
+    <a class="feature-card" href="/docs/features/#users-roles-security">
+      <span class="feature-glyph" aria-hidden="true">🛡️</span>
+      <h3>Safe by default</h3>
+      <p>HTML sanitized on write <em>and</em> read, a configurable CSP, and safe-link policies — secure without a security degree.</p>
+    </a>
+  </div>
+</section>
+
+<section class="landing-products" id="cli">
+  <h2>One server, one CLI</h2>
+  <p class="landing-section-lede">
+    One product, one companion tool. SQLite is built in by default; PostgreSQL and MySQL are a configuration away.
+    <a href="/docs/features/#api-automation">The API and CLI in the docs&nbsp;&rarr;</a>
+  </p>
+  <div class="landing-products-grid">
+    <div class="product-tile">
+      <h3>lesstruct <span class="product-badge">server</span></h3>
+      <p>The whole CMS as one static binary: admin panel, REST API, and the rendered content site. SQLite by default; PostgreSQL and MySQL via <code>DB_DRIVER</code>.</p>
+    </div>
+    <div class="product-tile">
+      <h3>lesstruct-cli <span class="product-badge">cli</span></h3>
+      <p>The companion command line for AI agents: content, media, and export operations straight from the terminal.</p>
+    </div>
   </div>
 </section>
 

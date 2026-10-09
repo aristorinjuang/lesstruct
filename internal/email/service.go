@@ -10,6 +10,34 @@ import (
 	"time"
 )
 
+// emailBody holds both plain text and HTML versions of an email
+type emailBody struct {
+	text string
+	html string
+}
+
+func htmlWrap(body string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.6; margin: 0; padding: 0; }
+.container { max-width: 600px; margin: 40px auto; padding: 20px; }
+.button { display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: #fff !important; text-decoration: none; border-radius: 6px; font-weight: 600; }
+.button:hover { background-color: #4338CA; }
+.footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #E5E7EB; font-size: 14px; color: #6B7280; }
+</style>
+</head>
+<body>
+<div class="container">
+%s
+<div class="footer">Best regards,<br>The Lesstruct Team</div>
+</div>
+</body>
+</html>`, body)
+}
+
 // EmailService defines the interface for email operations
 type EmailService interface {
 	SendVerificationEmail(ctx context.Context, to, username, token string) error
@@ -42,12 +70,6 @@ type Service struct {
 	enabled bool
 	logger  *slog.Logger
 	baseURL string // Base URL for site links (e.g., "http://localhost:8080")
-}
-
-// emailBody holds both plain text and HTML versions of an email
-type emailBody struct {
-	text string
-	html string
 }
 
 // sendEmail sends an email using SMTP
@@ -168,28 +190,6 @@ func (s *Service) buildEmailMessage(from, to, subject string, body emailBody) []
 	fmt.Fprintf(&msg, "--%s--\r\n", boundary)
 
 	return []byte(msg.String())
-}
-
-func htmlWrap(body string) string {
-	return fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.6; margin: 0; padding: 0; }
-.container { max-width: 600px; margin: 40px auto; padding: 20px; }
-.button { display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: #fff !important; text-decoration: none; border-radius: 6px; font-weight: 600; }
-.button:hover { background-color: #4338CA; }
-.footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #E5E7EB; font-size: 14px; color: #6B7280; }
-</style>
-</head>
-<body>
-<div class="container">
-%s
-<div class="footer">Best regards,<br>The Lesstruct Team</div>
-</div>
-</body>
-</html>`, body)
 }
 
 // generateVerificationEmailBody generates the email body for verification
@@ -511,6 +511,38 @@ The Lesstruct Team`, username, username, plainPassword, loginURL)
 <p>Please change your password after your first login.</p>
 
 <p>You can log in at: <a href="%s">%s</a></p>`, username, username, plainPassword, loginURL, loginURL))
+
+	return emailBody{text: text, html: html}
+}
+
+// generatePasswordResetEmailBody generates the email body for password reset
+func (s *Service) generatePasswordResetEmailBody(username, resetURL string) emailBody {
+	text := fmt.Sprintf(`Hello %s,
+
+You requested a password reset for your Lesstruct account.
+
+Please click the link below to set a new password:
+%s
+
+This link will expire in 1 hour.
+
+If you did not request this password reset, please ignore this email.
+
+Best regards,
+The Lesstruct Team`, username, resetURL)
+
+	html := htmlWrap(fmt.Sprintf(`
+<p>Hello %s,</p>
+
+<p>You requested a password reset for your Lesstruct account.</p>
+
+<p>Please click the button below to set a new password:</p>
+
+<p><a href="%s" class="button">Reset Password</a></p>
+
+<p>This link will expire in 1 hour.</p>
+
+<p>If you did not request this password reset, please ignore this email.</p>`, username, resetURL))
 
 	return emailBody{text: text, html: html}
 }
@@ -863,38 +895,6 @@ func (s *Service) SendAccountCreatedEmail(ctx context.Context, to, username, pla
 		"username", username)
 
 	return nil
-}
-
-// generatePasswordResetEmailBody generates the email body for password reset
-func (s *Service) generatePasswordResetEmailBody(username, resetURL string) emailBody {
-	text := fmt.Sprintf(`Hello %s,
-
-You requested a password reset for your Lesstruct account.
-
-Please click the link below to set a new password:
-%s
-
-This link will expire in 1 hour.
-
-If you did not request this password reset, please ignore this email.
-
-Best regards,
-The Lesstruct Team`, username, resetURL)
-
-	html := htmlWrap(fmt.Sprintf(`
-<p>Hello %s,</p>
-
-<p>You requested a password reset for your Lesstruct account.</p>
-
-<p>Please click the button below to set a new password:</p>
-
-<p><a href="%s" class="button">Reset Password</a></p>
-
-<p>This link will expire in 1 hour.</p>
-
-<p>If you did not request this password reset, please ignore this email.</p>`, username, resetURL))
-
-	return emailBody{text: text, html: html}
 }
 
 // SendPasswordResetEmail sends a password reset email to a user

@@ -5,23 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/golang-migrate/migrate/v4"
 	migratedb "github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/mysql"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	iofs "github.com/golang-migrate/migrate/v4/source/iofs"
-	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "modernc.org/sqlite"
+
+	kerneldatabase "github.com/aristorinjuang/lesstruct/kernel/database"
 )
 
 var (
-	ErrDatabaseNotFound = errors.New("database file not found")
+	ErrDatabaseNotFound  = errors.New("database file not found")
 	ErrUnsupportedDriver = errors.New("unsupported database driver")
 )
 
@@ -29,6 +26,9 @@ var (
 type Database struct {
 	db *sql.DB
 }
+
+// detectOldSchemaMigrations lives in sqlite.go: the pragma probe only runs
+// against sqlite databases.
 
 // Close closes the database connection
 func (d *Database) Close() error {
@@ -44,12 +44,10 @@ func (d *Database) DB() *sql.DB {
 }
 
 // RunMigrations runs all pending database migrations from the embedded filesystem
-// for the specified driver ("sqlite" or "postgres").
+// for the specified driver ("sqlite", "postgres", or "mysql").
 func (d *Database) RunMigrations(driver string) error {
 	if driver == "sqlite" {
-		if err := d.detectOldSchemaMigrations(); err != nil {
-			return err
-		}
+		return d.runSQLiteMigrations()
 	}
 
 	var srcFS fs.FS
@@ -60,11 +58,6 @@ func (d *Database) RunMigrations(driver string) error {
 	var srcPath string
 
 	switch driver {
-	case "sqlite":
-		srcFS = sqliteMigrationsFS
-		srcPath = "migrations/sqlite"
-		dbName = "sqlite"
-		dbDriver, err = sqlite.WithInstance(d.db, &sqlite.Config{})
 	case "postgres":
 		srcFS = postgresqlMigrationsFS
 		srcPath = "migrations/postgresql"
@@ -82,6 +75,13 @@ func (d *Database) RunMigrations(driver string) error {
 		return fmt.Errorf("failed to create database driver: %w", err)
 	}
 
+	return d.runWithInstance(srcFS, srcPath, dbName, dbDriver)
+}
+
+// runWithInstance runs the migration source against a database driver
+// instance. The per-driver RunMigrations branches converge here so the
+// migrate boilerplate lives in one place.
+func (d *Database) runWithInstance(srcFS fs.FS, srcPath, dbName string, dbDriver migratedb.Driver) error {
 	srcDriver, err := iofs.New(srcFS, srcPath)
 	if err != nil {
 		return fmt.Errorf("failed to create migration source: %w", err)
@@ -104,81 +104,26 @@ func (d *Database) RunMigrations(driver string) error {
 	return nil
 }
 
-// detectOldSchemaMigrations checks for the old-style schema_migrations table
-// (with applied_at column) and returns an error if found, directing the user
-// to delete the database file.
-func (d *Database) detectOldSchemaMigrations() error {
-	var hasAppliedAt bool
-	err := d.db.QueryRow(`
-		SELECT COUNT(*) > 0 FROM pragma_table_info('schema_migrations')
-		WHERE name = 'applied_at'
-	`).Scan(&hasAppliedAt)
-	if err == nil && hasAppliedAt {
-		return fmt.Errorf("old schema_migrations table detected: delete the database file and restart")
-	}
-	return nil
-}
-
-// normalizeMySQLDSN ensures the MySQL DSN includes clientFoundRows=true so that
-// RowsAffected() returns the number of rows matched by the WHERE clause
-// rather than the number of rows whose values were actually changed.
-func normalizeMySQLDSN(dsn string) string {
-	if strings.Contains(dsn, "clientFoundRows=true") || strings.Contains(dsn, "clientFoundRows=1") {
-		return dsn
-	}
-	if strings.Contains(dsn, "?") {
-		return dsn + "&clientFoundRows=true"
-	}
-	return dsn + "?clientFoundRows=true"
-}
-
 // Open opens a database connection for the specified driver and DSN.
 // For SQLite, the DSN is a file path (parent directories are created).
 // For PostgreSQL, the DSN is a connection string.
 // poolMaxConns is used only for PostgreSQL to set the connection pool size.
+//
+// Driver selection resolves through the kernel driver registry: an unknown
+// driver fails with both the legacy ErrUnsupportedDriver (back-compat) and a
+// kernel UnknownDriverError listing installed drivers.
 func Open(driver, dsn string, poolMaxConns int) (*Database, error) {
-	var driverName string
-
-	switch driver {
-	case "sqlite":
-		// Ensure parent directory exists for SQLite
-		dir := filepath.Dir(dsn)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create database directory: %w", err)
-		}
-		driverName = "sqlite"
-	case "postgres":
-		driverName = "pgx"
-	case "mysql":
-		driverName = "mysql"
-	default:
-		return nil, fmt.Errorf("%w: %s", ErrUnsupportedDriver, driver)
-	}
-
-	// For MySQL, inject clientFoundRows=true so RowsAffected() returns the number of
-	// rows matched by the WHERE clause (not just rows whose values actually
-	// changed). Without this flag, an UPDATE that writes identical data within
-	// the same second reports 0 rows affected, which the repository layer
-	// incorrectly interprets as "row not found" and returns ErrContentNotFound.
-	if driver == "mysql" {
-		dsn = normalizeMySQLDSN(dsn)
-	}
-
-	// Open database connection
-	db, err := sql.Open(driverName, dsn)
+	registry, err := Drivers()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, err
 	}
-
-	// Configure connection pool via database/sql (not DSN params)
-	if (driver == "postgres" || driver == "mysql") && poolMaxConns > 0 {
-		db.SetMaxOpenConns(poolMaxConns)
+	drv, err := registry.Get(driver)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnsupportedDriver, err)
 	}
-
-	// Test connection
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+	db, err := drv.Open(dsn, kerneldatabase.OpenOptions{MaxOpenConns: poolMaxConns})
+	if err != nil {
+		return nil, err
 	}
-
 	return &Database{db: db}, nil
 }

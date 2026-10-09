@@ -9,6 +9,10 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+type siteConfigFile struct {
+	SiteConfig SiteConfig `toml:"site_config"`
+}
+
 // SiteConfig is the optional [site_config] block from config.toml. It carries
 // the site's text and visual identity — the values that appear on every public
 // page and that the handler otherwise bakes into the binary (notably the
@@ -18,10 +22,6 @@ import (
 type SiteConfig struct {
 	Name string `toml:"name"`
 	Logo string `toml:"logo"`
-}
-
-type siteConfigFile struct {
-	SiteConfig SiteConfig `toml:"site_config"`
 }
 
 // LoadSiteConfig reads the optional [site_config] block from the same

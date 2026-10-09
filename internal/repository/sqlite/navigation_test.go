@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/repository/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

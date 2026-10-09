@@ -5,6 +5,15 @@ import (
 	"errors"
 )
 
+var wasmHookMapping = map[string]HookName{
+	"before_save":      HookBeforeSave,
+	"after_publish":    HookAfterPublish,
+	"before_delete":    HookBeforeDelete,
+	"after_create":     HookAfterCreate,
+	"after_unpublish":  HookAfterUnpublish,
+	"on_plugin_loaded": HookOnPluginLoaded,
+}
+
 type HookName string
 
 func (h HookName) String() string {
@@ -18,9 +27,9 @@ const (
 	HookAfterCreate    HookName = "AfterCreateContent"
 	HookAfterUnpublish HookName = "AfterUnpublishContent"
 	HookOnPluginLoaded HookName = "OnPluginLoaded"
-)
 
-const DefaultPriority = 100
+	DefaultPriority = 100
+)
 
 type FailureMode int
 
@@ -28,9 +37,9 @@ const (
 	FailFast FailureMode = iota
 	LogAndContinue
 	Fallback
-)
 
-const DefaultFailureMode FailureMode = FailFast
+	DefaultFailureMode FailureMode = FailFast
+)
 
 func (f FailureMode) String() string {
 	switch f {
@@ -52,15 +61,6 @@ func ParseFailureMode(s string) FailureMode {
 	default:
 		return FailFast
 	}
-}
-
-var wasmHookMapping = map[string]HookName{
-	"before_save":      HookBeforeSave,
-	"after_publish":    HookAfterPublish,
-	"before_delete":    HookBeforeDelete,
-	"after_create":     HookAfterCreate,
-	"after_unpublish":  HookAfterUnpublish,
-	"on_plugin_loaded": HookOnPluginLoaded,
 }
 
 type HookHandler func(ctx context.Context, data []byte) ([]byte, error)

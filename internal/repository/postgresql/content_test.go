@@ -6,9 +6,13 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/auth"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	mediadomain "github.com/aristorinjuang/lesstruct/internal/domain/media"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	postgresqlrepo "github.com/aristorinjuang/lesstruct/internal/repository/postgresql"
+	kerneldatabase "github.com/aristorinjuang/lesstruct/kernel/database"
+	commentstore "github.com/aristorinjuang/lesstruct/modules/comments/store"
+	commentdomain "github.com/aristorinjuang/lesstruct/modules/comments/domain"
+	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
+	mediastore "github.com/aristorinjuang/lesstruct/modules/media/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,12 +71,12 @@ func TestCommentRepo_PostgreSQL(t *testing.T) {
 	userRepo := postgresqlrepo.NewUserRepository(rawDB)
 	userID := seedPostgresUser(t, rawDB, userRepo, "commentauthor", "Author")
 
-	repo := postgresqlrepo.NewCommentRepository(rawDB)
-	comment := &contentdomain.Comment{
+	repo := commentstore.New(rawDB, kerneldatabase.PostgresDialect())
+	comment := &commentdomain.Comment{
 		ContentID: 1,
 		UserID:    userID,
 		Comment:   "Test comment",
-		Status:    contentdomain.CommentStatusPending,
+		Status:    commentdomain.CommentStatusPending,
 	}
 
 	err := repo.Create(context.Background(), comment)
@@ -88,7 +92,7 @@ func TestMediaRepo_PostgreSQL(t *testing.T) {
 	userRepo := postgresqlrepo.NewUserRepository(rawDB)
 	userID := seedPostgresUser(t, rawDB, userRepo, "mediaauthor", "Author")
 
-	repo := postgresqlrepo.NewMediaRepository(rawDB)
+	repo := mediastore.New(rawDB, kerneldatabase.PostgresDialect())
 	media := &mediadomain.Media{
 		UserID:           userID,
 		Filename:         "test.webp",

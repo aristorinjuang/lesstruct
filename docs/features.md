@@ -53,6 +53,12 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   `default_role`, and `admin_approval` are configurable, so a site can let the
   public register into any role.
   See [configuration.md](configuration.md).
+- **Modular under the hood.** Every first-party feature (users, auth, media,
+  comments, SEO, AI, importers, …) is an independent kernel module with a
+  declared dependency graph. Operators can shrink the running system with
+  `[modules] disabled = [...]` — dropping `comments` equals the comments
+  toggle, and dependents cascade with a logged warning.
+  See [configuration.md](configuration.md).
 
 ## Content & authoring {#content-authoring}
 

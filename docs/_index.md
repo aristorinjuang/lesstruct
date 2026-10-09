@@ -19,6 +19,9 @@ section — each doc states its scope at the top._
 | Architecture, layers, stack versions, conventions, **where new code goes** | [project-context.md](project-context.md) |
 | The `/api/v1` REST API (auth, envelope, error catalog) | [api-reference.md](api-reference.md) |
 | `config.toml` schema or environment variables | [configuration.md](configuration.md) |
+| Writing a Go module (Tier 1: layout, seams, gating, wiring) | [module-development.md](module-development.md) |
+| What a built-in module owns / what disabling it does | [built-in-modules.md](built-in-modules.md) |
+| Understanding or evolving the kernel | [kernel.md](kernel.md) |
 | Writing a WASM plugin (hooks, lifecycle, build) | [plugin-development.md](plugin-development.md) |
 | Plugin capabilities / host functions | [plugin-capabilities.md](plugin-capabilities.md) |
 | Building or overriding a theme (CSS, templates, JS) | [theme-development.md](theme-development.md) |

@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,8 +40,8 @@ func (_m *MockDashboardServiceInterface) EXPECT() *MockDashboardServiceInterface
 }
 
 // GetStats provides a mock function for the type MockDashboardServiceInterface
-func (_mock *MockDashboardServiceInterface) GetStats(ctx context.Context, userID int) (*dashboard.Stats, error) {
-	ret := _mock.Called(ctx, userID)
+func (_mock *MockDashboardServiceInterface) GetStats(ctx context.Context, principal kernel.Principal) (*dashboard.Stats, error) {
+	ret := _mock.Called(ctx, principal)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetStats")
@@ -48,18 +49,18 @@ func (_mock *MockDashboardServiceInterface) GetStats(ctx context.Context, userID
 
 	var r0 *dashboard.Stats
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*dashboard.Stats, error)); ok {
-		return returnFunc(ctx, userID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal) (*dashboard.Stats, error)); ok {
+		return returnFunc(ctx, principal)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *dashboard.Stats); ok {
-		r0 = returnFunc(ctx, userID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal) *dashboard.Stats); ok {
+		r0 = returnFunc(ctx, principal)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*dashboard.Stats)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
-		r1 = returnFunc(ctx, userID)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, kernel.Principal) error); ok {
+		r1 = returnFunc(ctx, principal)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -73,20 +74,20 @@ type MockDashboardServiceInterface_GetStats_Call struct {
 
 // GetStats is a helper method to define mock.On call
 //   - ctx context.Context
-//   - userID int
-func (_e *MockDashboardServiceInterface_Expecter) GetStats(ctx any, userID any) *MockDashboardServiceInterface_GetStats_Call {
-	return &MockDashboardServiceInterface_GetStats_Call{Call: _e.mock.On("GetStats", ctx, userID)}
+//   - principal kernel.Principal
+func (_e *MockDashboardServiceInterface_Expecter) GetStats(ctx any, principal any) *MockDashboardServiceInterface_GetStats_Call {
+	return &MockDashboardServiceInterface_GetStats_Call{Call: _e.mock.On("GetStats", ctx, principal)}
 }
 
-func (_c *MockDashboardServiceInterface_GetStats_Call) Run(run func(ctx context.Context, userID int)) *MockDashboardServiceInterface_GetStats_Call {
+func (_c *MockDashboardServiceInterface_GetStats_Call) Run(run func(ctx context.Context, principal kernel.Principal)) *MockDashboardServiceInterface_GetStats_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 int
+		var arg1 kernel.Principal
 		if args[1] != nil {
-			arg1 = args[1].(int)
+			arg1 = args[1].(kernel.Principal)
 		}
 		run(
 			arg0,
@@ -101,7 +102,7 @@ func (_c *MockDashboardServiceInterface_GetStats_Call) Return(stats *dashboard.S
 	return _c
 }
 
-func (_c *MockDashboardServiceInterface_GetStats_Call) RunAndReturn(run func(ctx context.Context, userID int) (*dashboard.Stats, error)) *MockDashboardServiceInterface_GetStats_Call {
+func (_c *MockDashboardServiceInterface_GetStats_Call) RunAndReturn(run func(ctx context.Context, principal kernel.Principal) (*dashboard.Stats, error)) *MockDashboardServiceInterface_GetStats_Call {
 	_c.Call.Return(run)
 	return _c
 }

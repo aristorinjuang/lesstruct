@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

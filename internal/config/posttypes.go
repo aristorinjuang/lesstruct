@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
+	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 )
 
 // LoadPostTypes loads custom post types from the config directory

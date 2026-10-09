@@ -12,7 +12,7 @@ import (
 	appmiddleware "github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -41,7 +41,7 @@ func TestAPIKeyAuthMiddleware_Handler(t *testing.T) {
 		Name:   "CI Key",
 		KeyID:  validKeyID,
 	}
-	owningUser := &repository.User{
+	owningUser := &userdomain.User{
 		ID:       userID,
 		Username: "alice",
 		Role:     "Editor",
@@ -221,6 +221,11 @@ func TestAPIKeyAuthMiddleware_Handler(t *testing.T) {
 				gotRole, _ := appmiddleware.GetRole(r)
 				assert.Equal(t, "alice", gotUsername)
 				assert.Equal(t, "Editor", gotRole)
+				gotPrincipal, gotPrincipalOK := appmiddleware.Principal(r)
+				assert.True(t, gotPrincipalOK, "Expected principal in context")
+				assert.Equal(t, strconv.Itoa(userID), gotPrincipal.ID)
+				assert.Equal(t, "alice", gotPrincipal.Username)
+				assert.Equal(t, []string{"Editor"}, gotPrincipal.Roles)
 				w.WriteHeader(http.StatusOK)
 			})
 

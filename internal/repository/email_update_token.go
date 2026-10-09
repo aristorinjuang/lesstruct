@@ -5,22 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
-)
 
-// EmailUpdateToken represents an email update token in the system
-type EmailUpdateToken struct {
-	ID        int
-	Token     string
-	UserID    int
-	NewEmail  string
-	ExpiresAt string
-	CreatedAt time.Time
-}
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
+)
 
 // EmailUpdateTokenRepo defines the interface for email update token repository operations
 type EmailUpdateTokenRepo interface {
 	CreateToken(ctx context.Context, token string, userID int, newEmail string) error
-	GetToken(ctx context.Context, token string) (*EmailUpdateToken, error)
+	GetToken(ctx context.Context, token string) (*userdomain.EmailUpdateToken, error)
 	DeleteToken(ctx context.Context, tokenID int) error
 	CleanUpExpiredTokens(ctx context.Context) error
 }
@@ -51,7 +43,7 @@ func (r *EmailUpdateTokenRepository) CreateToken(ctx context.Context, token stri
 }
 
 // GetToken retrieves an email update token by token value
-func (r *EmailUpdateTokenRepository) GetToken(ctx context.Context, token string) (*EmailUpdateToken, error) {
+func (r *EmailUpdateTokenRepository) GetToken(ctx context.Context, token string) (*userdomain.EmailUpdateToken, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -59,7 +51,7 @@ func (r *EmailUpdateTokenRepository) GetToken(ctx context.Context, token string)
 		defer cancel()
 	}
 
-	var emailUpdateToken EmailUpdateToken
+	var emailUpdateToken userdomain.EmailUpdateToken
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, token, user_id, new_email, expires_at, created_at
 		FROM email_update_tokens

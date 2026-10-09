@@ -1,0 +1,30 @@
+{{- /* 404 — inherits the landing shell: full-width main, no sidebar/TOC. */ -}}
+
+{{ define "menu-container" }}
+<!-- -->
+{{ end }}
+{{ define "toc-container" }}
+<!-- -->
+{{ end }}
+{{ define "footer" }}
+<!-- -->
+{{ end }}
+
+{{ define "header" }}
+<nav class="landing-nav">
+  {{ partial "docs/menu-hugo" (dict "Page" .Page "Menu" .Site.Menus.home) }}
+</nav>
+{{ end }}
+
+{{ define "main" }}
+<div class="landing-404">
+  <p class="landing-404-code">404</p>
+  <h1>This page could not be found.</h1>
+  <p>It may have moved in the v1 reorganization — everything is a module now.</p>
+  <div class="landing-cta">
+    <a class="landing-btn landing-btn--primary" href="/">Home</a>
+    <a class="landing-btn" href="/docs/">Documentation</a>
+    <a class="landing-btn" href="/docs/built-in-modules/">Built-in modules</a>
+  </div>
+</div>
+{{ end }}

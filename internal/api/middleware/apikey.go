@@ -11,7 +11,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
@@ -51,7 +51,7 @@ type APIKeyVerifier interface {
 // UserLookup is the narrow interface for resolving the owning user. The
 // middleware needs only GetUserByID. repository.UserRepo satisfies it.
 type UserLookup interface {
-	GetUserByID(ctx context.Context, userID int) (*repository.User, error)
+	GetUserByID(ctx context.Context, userID int) (*userdomain.User, error)
 }
 
 // APIKeyAuthMiddleware authenticates Bearer API-key tokens and injects the

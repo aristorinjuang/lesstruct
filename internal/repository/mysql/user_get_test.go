@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/database"
-	"github.com/aristorinjuang/lesstruct/internal/repository"
 	mysqlrepo "github.com/aristorinjuang/lesstruct/internal/repository/mysql"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -31,10 +31,10 @@ func setupUserGetTestDB(t *testing.T) *database.Database {
 	return db
 }
 
-func createTimestampTestUser(t *testing.T, repo *mysqlrepo.UserRepository, username string) *repository.User {
+func createTimestampTestUser(t *testing.T, repo *mysqlrepo.UserRepository, username string) *userdomain.User {
 	t.Helper()
 
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     username,
 		PasswordHash: "$2a$12$testHash",
 		Email:        username + "@example.com",
@@ -58,13 +58,13 @@ func TestUserRepository_GetUserTimestamps(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		get     func(ctx context.Context, repo *mysqlrepo.UserRepository, input string) (*repository.User, error)
+		get     func(ctx context.Context, repo *mysqlrepo.UserRepository, input string) (*userdomain.User, error)
 		wantErr bool
 	}{
 		{
 			name:  "success - get by id returns populated timestamps",
 			input: strconv.Itoa(user.ID),
-			get: func(ctx context.Context, r *mysqlrepo.UserRepository, input string) (*repository.User, error) {
+			get: func(ctx context.Context, r *mysqlrepo.UserRepository, input string) (*userdomain.User, error) {
 				id, err := strconv.Atoi(input)
 				if err != nil {
 					return nil, err
@@ -76,7 +76,7 @@ func TestUserRepository_GetUserTimestamps(t *testing.T) {
 		{
 			name:  "success - get by email returns populated timestamps",
 			input: "TIMESTAMPUSER@example.com",
-			get: func(ctx context.Context, r *mysqlrepo.UserRepository, input string) (*repository.User, error) {
+			get: func(ctx context.Context, r *mysqlrepo.UserRepository, input string) (*userdomain.User, error) {
 				return r.GetUserByEmail(ctx, input)
 			},
 			wantErr: false,
@@ -84,7 +84,7 @@ func TestUserRepository_GetUserTimestamps(t *testing.T) {
 		{
 			name:  "success - get by username returns populated timestamps",
 			input: "timestampuser",
-			get: func(ctx context.Context, r *mysqlrepo.UserRepository, input string) (*repository.User, error) {
+			get: func(ctx context.Context, r *mysqlrepo.UserRepository, input string) (*userdomain.User, error) {
 				return r.GetUserByUsername(ctx, input)
 			},
 			wantErr: false,
@@ -189,7 +189,7 @@ func TestUserRepository_GetAdminUserTimestamps(t *testing.T) {
 	repo := mysqlrepo.NewUserRepository(db.DB())
 
 	before := time.Now().Add(-time.Second)
-	admin := &repository.User{
+	admin := &userdomain.User{
 		Username:     "admin",
 		PasswordHash: "$2a$12$testHash",
 		Email:        "admin@example.com",
@@ -244,19 +244,19 @@ func TestUserRepository_GetAllUsers_NullCreatedAt(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		get     func(ctx context.Context, repo *mysqlrepo.UserRepository) ([]*repository.User, error)
+		get     func(ctx context.Context, repo *mysqlrepo.UserRepository) ([]*userdomain.User, error)
 		wantErr bool
 	}{
 		{
 			name: "success - GetAllUsers tolerates NULL created_at",
-			get: func(ctx context.Context, r *mysqlrepo.UserRepository) ([]*repository.User, error) {
+			get: func(ctx context.Context, r *mysqlrepo.UserRepository) ([]*userdomain.User, error) {
 				return r.GetAllUsers(ctx, "", 10, 0)
 			},
 			wantErr: false,
 		},
 		{
 			name: "success - GetPendingUsers tolerates NULL created_at",
-			get: func(ctx context.Context, r *mysqlrepo.UserRepository) ([]*repository.User, error) {
+			get: func(ctx context.Context, r *mysqlrepo.UserRepository) ([]*userdomain.User, error) {
 				return r.GetPendingUsers(ctx, 10, 0)
 			},
 			wantErr: false,
@@ -273,7 +273,7 @@ func TestUserRepository_GetAllUsers_NullCreatedAt(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, users)
 
-			var found *repository.User
+			var found *userdomain.User
 			for _, u := range users {
 				if u.Username == "nulllistuser" {
 					found = u

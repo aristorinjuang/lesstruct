@@ -9,18 +9,18 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/util"
 )
 
-type CSRFMiddleware struct {
-	logger     *util.Logger
-	cop        *http.CrossOriginProtection
-	jwtManager *auth.JWTManager
-}
-
 func extractBearerToken(r *http.Request) string {
 	authHeader := r.Header.Get("Authorization")
 	if len(authHeader) > 7 && strings.HasPrefix(authHeader, "Bearer ") {
 		return authHeader[7:]
 	}
 	return ""
+}
+
+type CSRFMiddleware struct {
+	logger     *util.Logger
+	cop        *http.CrossOriginProtection
+	jwtManager *auth.JWTManager
 }
 
 func (m *CSRFMiddleware) Handler(next http.Handler) http.Handler {

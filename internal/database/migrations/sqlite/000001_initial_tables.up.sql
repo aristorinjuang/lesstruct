@@ -59,51 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_content_items_language ON content_items(language)
 CREATE INDEX IF NOT EXISTS idx_content_items_translation_group ON content_items(translation_group_id);
 
 -- ---------------------------------------------------------------------------
--- 3. comments
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS comments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    content_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
-    comment TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (content_id) REFERENCES content_items(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_comments_content_id ON comments(content_id);
-CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id);
-
--- ---------------------------------------------------------------------------
--- 4. media_files
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS media_files (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    filename TEXT NOT NULL,
-    original_filename TEXT NOT NULL,
-    mime_type TEXT NOT NULL,
-    file_size INTEGER NOT NULL,
-    width INTEGER,
-    height INTEGER,
-    alt_text TEXT,
-    is_webp BOOLEAN DEFAULT TRUE,
-    file_path TEXT NOT NULL,
-    url TEXT NOT NULL,
-    hash TEXT UNIQUE NOT NULL,
-    variants TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_media_files_user_id ON media_files(user_id);
-CREATE INDEX IF NOT EXISTS idx_media_files_hash ON media_files(hash);
-
--- ---------------------------------------------------------------------------
--- 5. blocked_emails
+-- 3. blocked_emails
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS blocked_emails (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +71,7 @@ CREATE TABLE IF NOT EXISTS blocked_emails (
 CREATE INDEX IF NOT EXISTS idx_blocked_emails_email ON blocked_emails(email);
 
 -- ---------------------------------------------------------------------------
--- 6. failed_login_attempts
+-- 4. failed_login_attempts
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS failed_login_attempts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -132,7 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_failed_login_attempts_user_id ON failed_login_att
 CREATE INDEX IF NOT EXISTS idx_failed_login_attempts_locked_until ON failed_login_attempts(locked_until);
 
 -- ---------------------------------------------------------------------------
--- 7. verification_tokens
+-- 5. verification_tokens
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS verification_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,7 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_verification_tokens_token_hash ON verification_to
 CREATE INDEX IF NOT EXISTS idx_verification_tokens_expires_at ON verification_tokens(expires_at);
 
 -- ---------------------------------------------------------------------------
--- 8. password_reset_tokens
+-- 6. password_reset_tokens
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,7 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token_hash ON password_rese
 CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at);
 
 -- ---------------------------------------------------------------------------
--- 9. email_update_tokens
+-- 7. email_update_tokens
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS email_update_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,7 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_email_update_tokens_token ON email_update_tokens(
 CREATE INDEX IF NOT EXISTS idx_email_update_tokens_user ON email_update_tokens(user_id);
 
 -- ---------------------------------------------------------------------------
--- 10. soft_deleted_content
+-- 8. soft_deleted_content
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS soft_deleted_content (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

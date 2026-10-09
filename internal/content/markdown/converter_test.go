@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
-	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
+	"github.com/aristorinjuang/lesstruct/kernel/sanitize"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +28,7 @@ type tMark struct {
 
 // mustValidate ensures the converter output is accepted by the same TipTap
 // sanitizer used when content is created through the normal API — copied from
-// internal/content/wordpress/converter_test.go so no test can ship output the
+// modules/importers/wordpress/converter_test.go so no test can ship output the
 // domain layer would reject.
 func mustValidate(t *testing.T, doc string) {
 	t.Helper()

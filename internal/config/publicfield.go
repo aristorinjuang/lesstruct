@@ -10,6 +10,21 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+const (
+	// PublicFieldResourceUser and PublicFieldResourceContent are the two supported
+	// values for PublicField.Resource. They map to the two public query endpoints:
+	// the authors endpoint (users) and the content_items endpoint (content).
+	PublicFieldResourceUser    = "user"
+	PublicFieldResourceContent = "content"
+
+	// PublicFieldOperationSort, PublicFieldOperationFilter, and
+	// PublicFieldOperationExpose are the supported values for PublicField.Operations.
+	// A field can be allowlisted for any combination.
+	PublicFieldOperationSort   = "sort"
+	PublicFieldOperationFilter = "filter"
+	PublicFieldOperationExpose = "expose"
+)
+
 type publicFieldConfig struct {
 	PublicFields []PublicField `toml:"public_field"`
 }
@@ -66,23 +81,6 @@ func normalisePublicField(pf PublicField) (PublicField, error) {
 		Operations: ops,
 	}, nil
 }
-
-// PublicFieldResourceUser and PublicFieldResourceContent are the two supported
-// values for PublicField.Resource. They map to the two public query endpoints:
-// the authors endpoint (users) and the content_items endpoint (content).
-const (
-	PublicFieldResourceUser    = "user"
-	PublicFieldResourceContent = "content"
-)
-
-// PublicFieldOperationSort, PublicFieldOperationFilter, and
-// PublicFieldOperationExpose are the supported values for PublicField.Operations.
-// A field can be allowlisted for any combination.
-const (
-	PublicFieldOperationSort   = "sort"
-	PublicFieldOperationFilter = "filter"
-	PublicFieldOperationExpose = "expose"
-)
 
 // PublicField is one [[public_field]] block from config.toml. It declares that
 // a specific custom-field or system-field slug may be used in a public query

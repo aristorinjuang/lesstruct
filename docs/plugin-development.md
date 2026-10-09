@@ -22,7 +22,7 @@ Lesstruct supports WebAssembly (WASM) plugins that extend functionality through 
 
 > **See also:** [Plugin Capabilities](plugin-capabilities.md) — host functions for HTTP, database, and logging. If your plugin needs to call external APIs or query the database, add a capability manifest.
 
-The `plugins/` directory is the relative path `plugins/` from the Lesstruct working directory (`main.go:382`). It is not configurable via env or flag.
+The `plugins/` directory is the relative path `plugins/` from the Lesstruct working directory (composition root, `internal/app`). It is not configurable via env or flag.
 
 ## Plugin Capabilities (Host Functions)
 

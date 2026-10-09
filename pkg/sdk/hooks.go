@@ -1,8 +1,12 @@
 package sdk
 
-// Hook name constants matching the canonical WASM export suffixes.
-// Plugin .wasm files MUST export functions named "hook_" + these values.
 const (
+	// DefaultPriority is the default execution priority for hooks.
+	// Lower values run earlier. Default is 100.
+	DefaultPriority = 100
+
+	// Hook name constants matching the canonical WASM export suffixes.
+	// Plugin .wasm files MUST export functions named "hook_" + these values.
 	HookBeforeSave     = "before_save"
 	HookAfterPublish   = "after_publish"
 	HookBeforeDelete   = "before_delete"
@@ -10,10 +14,6 @@ const (
 	HookAfterUnpublish = "after_unpublish"
 	HookOnPluginLoaded = "on_plugin_loaded"
 )
-
-// DefaultPriority is the default execution priority for hooks.
-// Lower values run earlier. Default is 100.
-const DefaultPriority = 100
 
 // FailureMode determines how the plugin system handles hook failures.
 type FailureMode int

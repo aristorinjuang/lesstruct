@@ -5,7 +5,7 @@
 package mocks
 
 import (
-	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
+	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
 )

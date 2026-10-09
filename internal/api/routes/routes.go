@@ -12,9 +12,10 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/agent"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
-	"github.com/aristorinjuang/lesstruct/internal/api/static"
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	apikey "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	adminpanelapi "github.com/aristorinjuang/lesstruct/modules/adminpanel/api"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -54,42 +55,199 @@ func dispatchByAuth(agentChain, browserChain http.Handler) http.HandlerFunc {
 }
 
 // agentAdminOnly is a middleware for the agent (Bearer API key) realm that rejects
-// non-admin users. It reads the role from request context, which is populated by the
-// APIKeyAuthMiddleware (same role key as the JWT middleware), so it is realm-agnostic.
-func agentAdminOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		role, ok := middleware.GetRole(r)
-		if !ok || role != middleware.RoleAdmin {
-			response.Error(w, http.StatusForbidden, "INSUFFICIENT_PERMISSIONS", "Only administrators can perform this action", nil)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+// non-admin users. The decision delegates to the capability resolver so the
+// meaning of "admin" stays in one place (the users module); the response is
+// byte-identical to the previous direct role comparison.
+func agentAdminOnly(resolve kernel.CapabilityResolver) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			principal, ok := middleware.Principal(r)
+			if !ok || resolve == nil || !resolve(principal, string(middleware.CapabilityAdmin)) {
+				response.Error(w, http.StatusForbidden, "INSUFFICIENT_PERMISSIONS", "Only administrators can perform this action", nil)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// MediaBrowserHandler is the browser-realm (JWT/CSRF) media surface the
+// routes mount. It is satisfied by the media module's browser handler; the
+// structural seam keeps routes.go from importing the module so the surface
+// stays removable. Method values (handler.GetMedia, ...) mount directly.
+type MediaBrowserHandler interface {
+	Upload(http.ResponseWriter, *http.Request)
+	GetMedia(http.ResponseWriter, *http.Request)
+	GetMediaByID(http.ResponseWriter, *http.Request)
+	DeleteMedia(http.ResponseWriter, *http.Request)
+	GenerateImage(http.ResponseWriter, *http.Request)
+}
+
+// MediaAgentHandler is the Bearer-realm (API key) media surface the routes
+// mount. It is satisfied by the media module's agent handler, for the same
+// removability reason as MediaBrowserHandler.
+type MediaAgentHandler interface {
+	Upload(http.ResponseWriter, *http.Request)
+	List(http.ResponseWriter, *http.Request)
+	Get(http.ResponseWriter, *http.Request)
+}
+
+// CommentBrowserHandler is the browser-realm (JWT/CSRF) comment surface the
+// routes mount. It is satisfied by the comments module's browser handler; the
+// structural seam keeps routes.go from importing the module so the surface
+// stays removable. Method values (handler.GetComments, ...) mount directly.
+type CommentBrowserHandler interface {
+	GetComments(http.ResponseWriter, *http.Request)
+	CreateComment(http.ResponseWriter, *http.Request)
+	GetCommentsForModeration(http.ResponseWriter, *http.Request)
+	GetPendingComments(http.ResponseWriter, *http.Request)
+	UpdateCommentStatus(http.ResponseWriter, *http.Request)
+	DeleteComment(http.ResponseWriter, *http.Request)
+	GetMyComments(http.ResponseWriter, *http.Request)
+	DeleteOwnComment(http.ResponseWriter, *http.Request)
+}
+
+// CommentAgentHandler is the Bearer-realm (API key) comment surface the
+// routes mount. It is satisfied by the comments module's agent handler, for
+// the same removability reason as CommentBrowserHandler.
+type CommentAgentHandler interface {
+	Create(http.ResponseWriter, *http.Request)
+	List(http.ResponseWriter, *http.Request)
+	Delete(http.ResponseWriter, *http.Request)
+	UpdateStatus(http.ResponseWriter, *http.Request)
+}
+
+// SEOSurface is the SEO discovery surface the routes mount: the crawler XML
+// sitemap, robots.txt, and the programmatic JSON sitemap. It is satisfied by
+// the seo module's handler; the structural seam keeps routes.go from
+// importing the module so the surface stays removable.
+type SEOSurface interface {
+	GetSitemapXML(http.ResponseWriter, *http.Request)
+	GetRobotsTxt(http.ResponseWriter, *http.Request)
+	GetSitemapData(http.ResponseWriter, *http.Request)
+}
+
+// TextGenSurface is the browser-realm AI text generation surface the routes
+// mount. It is satisfied by the textgen module's handler; the structural
+// seam keeps routes.go from importing the module so the surface stays
+// removable. The textGenEnabled feature flag gates mounting.
+type TextGenSurface interface {
+	Enhance(http.ResponseWriter, *http.Request)
+	Translate(http.ResponseWriter, *http.Request)
+}
+
+// WordPressSurface is the browser-and-agent WordPress import surface the
+// routes mount. It is satisfied by the importers module's handler; the
+// structural seam keeps routes.go from importing the module so the surface
+// stays removable. The same instance serves both realms, sharing one
+// in-memory job store.
+type WordPressSurface interface {
+	Import(http.ResponseWriter, *http.Request)
+	ImportStatus(http.ResponseWriter, *http.Request)
+}
+
+// HugoSurface is the browser-and-agent Hugo import surface the routes mount.
+// Same dual-realm sharing contract as the WordPress surface.
+type HugoSurface interface {
+	Import(http.ResponseWriter, *http.Request)
+	ImportStatus(http.ResponseWriter, *http.Request)
+}
+
+// AdminPanelSurface is the admin SPA surface the routes mount. It is
+// satisfied by the adminpanel module's SPA handler; the structural seam
+// keeps routes.go from importing the module so the surface stays removable.
+// A nil handler unmounts the /admin premises entirely, mirroring the
+// pre-module static-server behavior the headless tests pin.
+type AdminPanelSurface interface {
+	ServeAdmin(http.ResponseWriter, *http.Request)
+}
+
+// AuthSurface is the public auth surface the routes mount: login,
+// registration, verification, and password reset. It is satisfied by the
+// auth module's handler; the structural seam keeps routes.go from importing
+// the module so the surface stays removable.
+type AuthSurface interface {
+	Login(http.ResponseWriter, *http.Request)
+	RegisterUser(http.ResponseWriter, *http.Request)
+	VerifyEmail(http.ResponseWriter, *http.Request)
+	ResendVerificationEmail(http.ResponseWriter, *http.Request)
+	ForgotPassword(http.ResponseWriter, *http.Request)
+	ResetPassword(http.ResponseWriter, *http.Request)
+}
+
+// FirstLoginSurface is the first-login bootstrap surface the routes mount.
+// Same structural contract as the auth surface.
+type FirstLoginSurface interface {
+	GetStatus(http.ResponseWriter, *http.Request)
+	CompleteSetup(http.ResponseWriter, *http.Request)
+}
+
+// UserManagementSurface is the admin user-lifecycle surface the routes
+// mount: approval, suspension, soft delete with content restore, and admin
+// creation. It is satisfied by the users module's handler; the structural
+// seam keeps routes.go from importing the module so the surface stays
+// removable.
+type UserManagementSurface interface {
+	GetPendingUsers(http.ResponseWriter, *http.Request)
+	ApproveUser(http.ResponseWriter, *http.Request)
+	RejectUser(http.ResponseWriter, *http.Request)
+	MarkUserAsSpam(http.ResponseWriter, *http.Request)
+	GetAllUsers(http.ResponseWriter, *http.Request)
+	SuspendUser(http.ResponseWriter, *http.Request)
+	UnsuspendUser(http.ResponseWriter, *http.Request)
+	SoftDeleteUser(http.ResponseWriter, *http.Request)
+	GetSoftDeletedContent(http.ResponseWriter, *http.Request)
+	RestoreContent(http.ResponseWriter, *http.Request)
+	CreateUser(http.ResponseWriter, *http.Request)
+	UpdateUser(http.ResponseWriter, *http.Request)
+}
+
+// ProfileSurface is the self-service profile surface the routes mount.
+// Same structural contract as the management surface.
+type ProfileSurface interface {
+	GetProfile(http.ResponseWriter, *http.Request)
+	UpdateEmail(http.ResponseWriter, *http.Request)
+	ChangePassword(http.ResponseWriter, *http.Request)
+	ExportUserData(http.ResponseWriter, *http.Request)
+	VerifyEmailUpdate(http.ResponseWriter, *http.Request)
+	DeleteAccount(http.ResponseWriter, *http.Request)
+	UpdateCustomFields(http.ResponseWriter, *http.Request)
+	UpdateName(http.ResponseWriter, *http.Request)
+	GetUserFields(http.ResponseWriter, *http.Request)
+}
+
+// ProfilePictureSurface is the profile picture surface the routes mount:
+// self-service upload/delete plus the admin per-user endpoints. Same
+// structural contract as the management surface.
+type ProfilePictureSurface interface {
+	UploadProfilePicture(http.ResponseWriter, *http.Request)
+	DeleteProfilePicture(http.ResponseWriter, *http.Request)
+	AdminUploadUserPicture(http.ResponseWriter, *http.Request)
+	AdminDeleteUserPicture(http.ResponseWriter, *http.Request)
 }
 
 // Setup configures and returns the HTTP router
 func Setup(
-	authHandler *handlers.AuthHandler,
-	firstLoginHandler *handlers.FirstLoginHandler,
+	authHandler AuthSurface,
+	firstLoginHandler FirstLoginSurface,
 	notificationHandler *handlers.NotificationHandler,
-	userManagementHandler *handlers.UserManagementHandler,
-	profileHandler *handlers.ProfileHandler,
+	userManagementHandler UserManagementSurface,
+	profileHandler ProfileSurface,
 	contentHandler *handlers.ContentHandler,
-	mediaHandler *handlers.MediaHandler,
-	postTypeHandler *handlers.PostTypeHandler,
+	mediaHandler MediaBrowserHandler,
 	dashboardHandler *handlers.DashboardHandler,
-	seoHandler *handlers.SEOHandler,
-	commentHandler *handlers.CommentHandler,
-	profilePictureHandler *handlers.ProfilePictureHandler,
-	wordPressHandler *handlers.WordPressHandler,
+	seoHandler SEOSurface,
+	commentHandler CommentBrowserHandler,
+	profilePictureHandler ProfilePictureSurface,
+	wordPressHandler WordPressSurface,
 	apiKeyHandler *handlers.APIKeyHandler,
-	hugoHandler *handlers.HugoHandler,
+	hugoHandler HugoSurface,
 	exportHandler *handlers.ExportHandler,
 	ssgHandler *handlers.SSGHandler,
 	apiKeyAuthMiddleware *middleware.APIKeyAuthMiddleware,
 	agentContentHandler *agent.ContentHandler,
-	agentMediaHandler *agent.MediaHandler,
-	agentCommentHandler *agent.CommentHandler,
+	agentMediaHandler MediaAgentHandler,
+	agentCommentHandler CommentAgentHandler,
 	adminMiddleware *middleware.AdminMiddleware,
 	corsMiddleware *middleware.CORSMiddleware,
 	noCookieMiddleware *middleware.NoCookieMiddleware,
@@ -97,17 +255,19 @@ func Setup(
 	rateLimitMiddleware *middleware.RateLimitMiddleware,
 	securityHeadersMiddleware *middleware.SecurityHeadersMiddleware,
 	jwtManager *auth.JWTManager,
-	staticServer *static.StaticServer,
+	spaHandler AdminPanelSurface,
 	staticHandler http.Handler,
 	imageGenEnabled bool,
 	imageReferenceEnabled bool,
 	textGenEnabled bool,
-	textGenHandler *handlers.TextGenHandler,
+	textGenHandler TextGenSurface,
 	languages []string,
 	aliasRedirectHandler *handlers.AliasRedirectHandler,
 	headlessEnabled bool,
 	commentsEnabled bool,
 	storageDriver string,
+	authorize kernel.CapabilityResolver,
+	moduleRegistry *kernel.Registry,
 ) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -238,15 +398,15 @@ func Setup(
 		// its own MaxBytesReader at IMPORT_MAX_SIZE_MB). Admin-only (only administrators
 		// may import content via API key). Reuses the same handler and in-memory job
 		// store as the browser realm, so a CLI-started job is visible in the admin UI.
-		r.With(agentAdminOnly).Post("/api/v1/wordpress/import", wordPressHandler.Import)
-		r.With(agentAdminOnly).Get("/api/v1/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
-		r.With(agentAdminOnly).Get("/api/v1/wordpress/import/status", wordPressHandler.ImportStatus)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/wordpress/import", wordPressHandler.Import)
+		r.With(agentAdminOnly(authorize)).Get("/api/v1/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
+		r.With(agentAdminOnly(authorize)).Get("/api/v1/wordpress/import/status", wordPressHandler.ImportStatus)
 
 		// Hugo import — same contract as WordPress: admin-only, agent realm, and
 		// shares the browser realm's handler and job store.
-		r.With(agentAdminOnly).Post("/api/v1/hugo/import", hugoHandler.Import)
-		r.With(agentAdminOnly).Get("/api/v1/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
-		r.With(agentAdminOnly).Get("/api/v1/hugo/import/status", hugoHandler.ImportStatus)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/hugo/import", hugoHandler.Import)
+		r.With(agentAdminOnly(authorize)).Get("/api/v1/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
+		r.With(agentAdminOnly(authorize)).Get("/api/v1/hugo/import/status", hugoHandler.ImportStatus)
 	})
 
 	// Shared /api/v1/media GET routes — co-owned by the agent (Bearer API key) and browser
@@ -330,6 +490,12 @@ func Setup(
 			// Static site generation (admin only) — streams a tar.gz of the
 			// fully rendered static site with AMP variants.
 			r.Get("/ssg", ssgHandler.Generate)
+			// Admin manifest aggregation (admin only) — the frozen
+			// extensions contract: every registered AdminExtensionProvider
+			// in registry name order, versioned JSON. Aggregation reads
+			// the registry live, so the handler is built here rather
+			// than adopted from a module.
+			r.Get("/extensions", adminpanelapi.NewExtensionsHandler(moduleRegistry).GetExtensions)
 		})
 
 		// API key management routes (browser-realm, any authenticated role) - Story 1.1 + 1.2
@@ -382,7 +548,13 @@ func Setup(
 			if commentsEnabled {
 				r.Get("/content_items/{slug}/comments", commentHandler.GetComments)
 			}
-			r.Get("/post_types", postTypeHandler.GetPublicPostTypes)
+			// First-party modules mount their anonymous surfaces here, on the
+			// public router (rate-limited, no auth chain).
+			if moduleRegistry != nil {
+				for _, provider := range kernel.Capabilities[kernel.PublicRouteProvider](moduleRegistry) {
+					provider.RegisterPublicRoutes(r)
+				}
+			}
 			r.Get("/search", contentHandler.SearchPublished)
 			r.Get("/archive", contentHandler.ListPublishedArchive)
 		})
@@ -410,14 +582,14 @@ func Setup(
 					r.Post("/content_items/{slug}/comments", commentHandler.CreateComment)
 				}
 
-				// Post types routes (require authentication) - Story 2.6
-				r.Get("/post_types", postTypeHandler.GetPostTypes)
-
-				// Roles capability + assignable-roles endpoint (require authentication)
-				r.Get("/roles", postTypeHandler.GetRoles)
-
-				// User field schemas route (require authentication + admin role)
-				r.With(adminMiddleware.AdminOnly).Get("/user_fields", postTypeHandler.GetUserFieldsEndpoint)
+				// First-party modules mount here, on the authenticated group
+				// (CSRF + JWT + 1MB pre-chained above). The posttypes-basic module
+				// serves post types, roles, and user fields from here.
+				if moduleRegistry != nil {
+					for _, provider := range kernel.Capabilities[kernel.RouteProvider](moduleRegistry) {
+						provider.RegisterRoutes(r)
+					}
+				}
 
 				// GET /media (list) and GET /media/{id} are served by the shared dual-auth
 				// dispatch at the root (above) — the agent and browser admin co-own these paths.
@@ -481,9 +653,9 @@ func Setup(
 	}
 
 	// Admin SPA (serves embedded Vue 3 app or proxies to dev server)
-	if staticServer != nil {
-		r.Handle("/admin/*", http.StripPrefix("/admin", http.HandlerFunc(staticServer.ServeAdmin)))
-		r.HandleFunc("/admin", staticServer.ServeAdmin)
+	if spaHandler != nil {
+		r.Handle("/admin/*", http.StripPrefix("/admin", http.HandlerFunc(spaHandler.ServeAdmin)))
+		r.HandleFunc("/admin", spaHandler.ServeAdmin)
 
 		// Content site (Go template renderer or dev proxy) with alias redirect
 		// wrapping. In headless mode the catch-all is NOT mounted — the instance

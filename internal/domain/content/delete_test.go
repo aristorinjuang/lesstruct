@@ -10,6 +10,8 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -28,7 +30,7 @@ func TestService_DeleteContent(t *testing.T) {
 			id:     1,
 			userID: 1,
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:     1,
 					UserID: 1,
 					Title:  "Test Content",
@@ -42,29 +44,29 @@ func TestService_DeleteContent(t *testing.T) {
 			id:     999,
 			userID: 1,
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 999).Return((*content.Content)(nil), content.ErrContentNotFound)
+				m.On("GetByID", mock.Anything, 999).Return((*contentdomain.Content)(nil), contentdomain.ErrContentNotFound)
 			},
-			wantErr: content.ErrContentNotFound,
+			wantErr: contentdomain.ErrContentNotFound,
 		},
 		{
 			name:   "unauthorized - wrong owner",
 			id:     1,
 			userID: 2,
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:     1,
 					UserID: 1,
 					Title:  "Test Content",
 				}, nil)
 			},
-			wantErr: content.ErrUnauthorized,
+			wantErr: contentdomain.ErrUnauthorized,
 		},
 		{
 			name:   "repository delete fails",
 			id:     1,
 			userID: 1,
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:     1,
 					UserID: 1,
 					Title:  "Test Content",
@@ -81,7 +83,7 @@ func TestService_DeleteContent(t *testing.T) {
 			tt.setup(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			err := service.DeleteContent(context.Background(), tt.id, tt.userID, "")
+			err := service.DeleteContent(context.Background(), tt.id, identity.New(tt.userID, "admin", ""))
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -113,13 +115,13 @@ func TestService_DeleteContent_BeforeDeleteHook(t *testing.T) {
 			userID: 1,
 			role:   "",
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test Content",
 					Content:  testTipTapJSON("Body"),
 					Tags:     []string{"tag1"},
-					Status:   content.StatusPublished,
+					Status:   contentdomain.StatusPublished,
 					PostType: "article",
 					CustomFields: map[string]any{
 						"point": 42.0,
@@ -147,9 +149,9 @@ func TestService_DeleteContent_BeforeDeleteHook(t *testing.T) {
 			name:   "hook fires before admin delete via DeleteByID",
 			id:     1,
 			userID: 1,
-			role:   content.RoleAdmin,
+			role:   contentdomain.RoleAdmin,
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   7,
 					Title:    "Test Content",
@@ -173,7 +175,7 @@ func TestService_DeleteContent_BeforeDeleteHook(t *testing.T) {
 			userID: 1,
 			role:   "",
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test Content",
@@ -201,8 +203,8 @@ func TestService_DeleteContent_BeforeDeleteHook(t *testing.T) {
 				},
 			}
 
-			service := content.NewServiceWithHooks(mockRepo, nil, nil, nil, mockHook)
-			err := service.DeleteContent(context.Background(), tt.id, tt.userID, tt.role)
+			service := content.NewServiceWithHooks(mockRepo, nil, nil, mockHook)
+			err := service.DeleteContent(context.Background(), tt.id, identity.New(tt.userID, "admin", tt.role))
 
 			if tt.wantErr {
 				require.Error(t, err)

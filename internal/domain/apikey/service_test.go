@@ -12,6 +12,8 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey/mocks"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -136,7 +138,7 @@ func TestService_Create(t *testing.T) {
 			}
 
 			svc := apikey.NewService(mockRepo, tt.pepper)
-			keyStr, key, err := svc.Create(context.Background(), tt.userID, tt.keyName)
+			keyStr, key, err := svc.Create(context.Background(), identity.New(tt.userID, "testuser", ""), tt.keyName)
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -229,7 +231,7 @@ func TestService_Hashing_KnownAnswer(t *testing.T) {
 		Return(nil)
 
 	plainSvc := apikey.NewService(plainRepo, "")
-	_, _, err := plainSvc.Create(context.Background(), 99, "KAT")
+	_, _, err := plainSvc.Create(context.Background(), identity.New(99, "testuser", ""), "KAT")
 	require.NoError(t, err)
 
 	pepperRepo := mocks.NewMockRepository(t)
@@ -242,7 +244,7 @@ func TestService_Hashing_KnownAnswer(t *testing.T) {
 		Return(nil)
 
 	pepperSvc := apikey.NewService(pepperRepo, pepper)
-	_, _, err = pepperSvc.Create(context.Background(), 99, "KAT")
+	_, _, err = pepperSvc.Create(context.Background(), identity.New(99, "testuser", ""), "KAT")
 	require.NoError(t, err)
 
 	assert.Len(t, plainHash, 64, "plain hash must be 64 hex chars")
@@ -335,7 +337,7 @@ func TestService_Create_RandError(t *testing.T) {
 		Return(0, nil)
 
 	svc := apikey.NewService(mockRepo, "")
-	keyStr, key, err := svc.Create(context.Background(), 1, "Entropy Fail")
+	keyStr, key, err := svc.Create(context.Background(), identity.New(1, "testuser", ""), "Entropy Fail")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, apikey.ErrKeyGeneration)
@@ -367,7 +369,7 @@ func TestService_Create_ShortRead(t *testing.T) {
 		Return(0, nil)
 
 	svc := apikey.NewService(mockRepo, "")
-	keyStr, key, err := svc.Create(context.Background(), 1, "Short Read")
+	keyStr, key, err := svc.Create(context.Background(), identity.New(1, "testuser", ""), "Short Read")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, apikey.ErrKeyGeneration)
@@ -397,7 +399,7 @@ func TestService_Create_UniqueConstraint_NameRace(t *testing.T) {
 		Return(apikey.ErrUniqueConstraint).Times(1)
 
 	svc := apikey.NewService(mockRepo, "")
-	keyStr, key, err := svc.Create(context.Background(), 1, "race")
+	keyStr, key, err := svc.Create(context.Background(), identity.New(1, "testuser", ""), "race")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, apikey.ErrDuplicateKeyName)
@@ -428,7 +430,7 @@ func TestService_Create_KeyIDCollision_RetriesThenSucceeds(t *testing.T) {
 		}).Times(2)
 
 	svc := apikey.NewService(mockRepo, "")
-	keyStr, key, err := svc.Create(context.Background(), 1, "collide")
+	keyStr, key, err := svc.Create(context.Background(), identity.New(1, "testuser", ""), "collide")
 
 	require.NoError(t, err)
 	require.NotNil(t, key)
@@ -451,7 +453,7 @@ func TestService_Create_KeyIDCollision_Exhausts(t *testing.T) {
 		Return(apikey.ErrUniqueConstraint).Times(3)
 
 	svc := apikey.NewService(mockRepo, "")
-	keyStr, key, err := svc.Create(context.Background(), 1, "stuck")
+	keyStr, key, err := svc.Create(context.Background(), identity.New(1, "testuser", ""), "stuck")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, apikey.ErrKeyGeneration)
@@ -516,7 +518,7 @@ func TestService_List(t *testing.T) {
 			}
 
 			svc := apikey.NewService(mockRepo, "")
-			keys, err := svc.List(context.Background(), tt.userID)
+			keys, err := svc.List(context.Background(), identity.New(tt.userID, "testuser", ""))
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -641,7 +643,7 @@ func TestService_Revoke(t *testing.T) {
 			}
 
 			svc := apikey.NewService(mockRepo, "")
-			key, err := svc.Revoke(context.Background(), tt.id, tt.userID)
+			key, err := svc.Revoke(context.Background(), tt.id, identity.New(tt.userID, "testuser", ""))
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -685,7 +687,7 @@ func seedKey(t *testing.T, pepper string) (fullKey, keyID, keyHash string) {
 		Return(nil)
 
 	svc := apikey.NewService(seedRepo, pepper)
-	fk, key, err := svc.Create(context.Background(), 1, "verify-seed")
+	fk, key, err := svc.Create(context.Background(), identity.New(1, "testuser", ""), "verify-seed")
 	require.NoError(t, err)
 	require.NotNil(t, key)
 	return fk, key.KeyID, key.KeyHash
@@ -921,3 +923,50 @@ func TestService_UpdateLastUsed(t *testing.T) {
 	}
 }
 
+func TestService_InvalidPrincipal(t *testing.T) {
+	svc := apikey.NewService(nil, "")
+	bad := kernel.Principal{ID: "not-a-number", Username: "ghost"}
+
+	tests := []struct {
+		name    string
+		call    func() error
+		wantErr bool
+	}{
+		{
+			name: "create rejects non-decimal id",
+			call: func() error {
+				_, _, err := svc.Create(context.Background(), bad, "key")
+				return err
+			},
+			wantErr: true,
+		},
+		{
+			name: "list rejects non-decimal id",
+			call: func() error {
+				_, err := svc.List(context.Background(), bad)
+				return err
+			},
+			wantErr: true,
+		},
+		{
+			name: "revoke rejects non-decimal id",
+			call: func() error {
+				_, err := svc.Revoke(context.Background(), 1, bad)
+				return err
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, identity.ErrInvalidUserID)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}

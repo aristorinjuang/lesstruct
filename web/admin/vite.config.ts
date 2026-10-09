@@ -17,7 +17,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../../internal/api/static/admin',
+    outDir: '../../modules/adminpanel/spa/dist',
     emptyOutDir: true,
   },
 })

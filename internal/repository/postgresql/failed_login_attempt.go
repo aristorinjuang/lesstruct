@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 )
 
-// FailedLoginAttempt is a type alias for repository.FailedLoginAttempt.
-type FailedLoginAttempt = repository.FailedLoginAttempt
+// FailedLoginAttempt is a type alias for authdomain.FailedLoginAttempt.
+type FailedLoginAttempt = authdomain.FailedLoginAttempt
 
 // FailedLoginAttemptRepository handles failed login attempt data operations with PostgreSQL syntax.
 // Implements repository.FailedLoginAttemptRepo.
@@ -19,9 +19,9 @@ type FailedLoginAttemptRepository struct {
 }
 
 // GetByUserID retrieves failed login attempt record by user ID.
-func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID int) (*repository.FailedLoginAttempt, error) {
+func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID int) (*FailedLoginAttempt, error) {
 
-	var attempt repository.FailedLoginAttempt
+	var attempt FailedLoginAttempt
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, user_id, attempts, last_attempt_at, locked_until, last_email_sent_at, created_at, updated_at
 		FROM failed_login_attempts
@@ -38,7 +38,7 @@ func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID i
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, repository.ErrFailedLoginAttemptNotFound
+		return nil, authdomain.ErrFailedLoginAttemptNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID i
 }
 
 // Create creates a new failed login attempt record.
-func (r *FailedLoginAttemptRepository) Create(ctx context.Context, attempt *repository.FailedLoginAttempt) error {
+func (r *FailedLoginAttemptRepository) Create(ctx context.Context, attempt *FailedLoginAttempt) error {
 	if err := r.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database connection lost: %w", err)
 	}

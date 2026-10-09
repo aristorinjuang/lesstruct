@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 
-	tpl "github.com/aristorinjuang/lesstruct/internal/api/template"
+	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
 )
 
 const (
@@ -66,7 +66,7 @@ func appendScript(n *html.Node) {
 	n.AppendChild(scriptNode)
 }
 
-func rewriteHead(n *html.Node, theme *tpl.Theme) {
+func rewriteHead(n *html.Node, theme *sitessr.Theme) {
 	var keep []*html.Node
 	var oldChildren []*html.Node
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -117,7 +117,7 @@ func rewriteHead(n *html.Node, theme *tpl.Theme) {
 		n.AppendChild(k)
 	}
 
-	baseCSS, styleCSS := tpl.ReadThemeStyles(theme)
+	baseCSS, styleCSS := sitessr.ReadThemeStyles(theme)
 	combined := baseCSS + "\n" + styleCSS
 	combined = minifyCSS(combined)
 	if len(combined) > ampMaxCustomCSSBytes {
@@ -272,7 +272,7 @@ func minifyCSS(css string) string {
 	return strings.TrimSpace(css)
 }
 
-func TransformToAMP(htmlContent string, theme *tpl.Theme) (string, error) {
+func TransformToAMP(htmlContent string, theme *sitessr.Theme) (string, error) {
 	doc, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		return htmlContent, err

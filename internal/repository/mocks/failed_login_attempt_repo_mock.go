@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -40,7 +40,7 @@ func (_m *MockFailedLoginAttemptRepo) EXPECT() *MockFailedLoginAttemptRepo_Expec
 }
 
 // Create provides a mock function for the type MockFailedLoginAttemptRepo
-func (_mock *MockFailedLoginAttemptRepo) Create(ctx context.Context, attempt *repository.FailedLoginAttempt) error {
+func (_mock *MockFailedLoginAttemptRepo) Create(ctx context.Context, attempt *authdomain.FailedLoginAttempt) error {
 	ret := _mock.Called(ctx, attempt)
 
 	if len(ret) == 0 {
@@ -48,7 +48,7 @@ func (_mock *MockFailedLoginAttemptRepo) Create(ctx context.Context, attempt *re
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *repository.FailedLoginAttempt) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *authdomain.FailedLoginAttempt) error); ok {
 		r0 = returnFunc(ctx, attempt)
 	} else {
 		r0 = ret.Error(0)
@@ -63,20 +63,20 @@ type MockFailedLoginAttemptRepo_Create_Call struct {
 
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
-//   - attempt *repository.FailedLoginAttempt
+//   - attempt *authdomain.FailedLoginAttempt
 func (_e *MockFailedLoginAttemptRepo_Expecter) Create(ctx any, attempt any) *MockFailedLoginAttemptRepo_Create_Call {
 	return &MockFailedLoginAttemptRepo_Create_Call{Call: _e.mock.On("Create", ctx, attempt)}
 }
 
-func (_c *MockFailedLoginAttemptRepo_Create_Call) Run(run func(ctx context.Context, attempt *repository.FailedLoginAttempt)) *MockFailedLoginAttemptRepo_Create_Call {
+func (_c *MockFailedLoginAttemptRepo_Create_Call) Run(run func(ctx context.Context, attempt *authdomain.FailedLoginAttempt)) *MockFailedLoginAttemptRepo_Create_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 *repository.FailedLoginAttempt
+		var arg1 *authdomain.FailedLoginAttempt
 		if args[1] != nil {
-			arg1 = args[1].(*repository.FailedLoginAttempt)
+			arg1 = args[1].(*authdomain.FailedLoginAttempt)
 		}
 		run(
 			arg0,
@@ -91,7 +91,7 @@ func (_c *MockFailedLoginAttemptRepo_Create_Call) Return(err error) *MockFailedL
 	return _c
 }
 
-func (_c *MockFailedLoginAttemptRepo_Create_Call) RunAndReturn(run func(ctx context.Context, attempt *repository.FailedLoginAttempt) error) *MockFailedLoginAttemptRepo_Create_Call {
+func (_c *MockFailedLoginAttemptRepo_Create_Call) RunAndReturn(run func(ctx context.Context, attempt *authdomain.FailedLoginAttempt) error) *MockFailedLoginAttemptRepo_Create_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -154,23 +154,23 @@ func (_c *MockFailedLoginAttemptRepo_Delete_Call) RunAndReturn(run func(ctx cont
 }
 
 // GetByUserID provides a mock function for the type MockFailedLoginAttemptRepo
-func (_mock *MockFailedLoginAttemptRepo) GetByUserID(ctx context.Context, userID int) (*repository.FailedLoginAttempt, error) {
+func (_mock *MockFailedLoginAttemptRepo) GetByUserID(ctx context.Context, userID int) (*authdomain.FailedLoginAttempt, error) {
 	ret := _mock.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetByUserID")
 	}
 
-	var r0 *repository.FailedLoginAttempt
+	var r0 *authdomain.FailedLoginAttempt
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*repository.FailedLoginAttempt, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*authdomain.FailedLoginAttempt, error)); ok {
 		return returnFunc(ctx, userID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *repository.FailedLoginAttempt); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *authdomain.FailedLoginAttempt); ok {
 		r0 = returnFunc(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*repository.FailedLoginAttempt)
+			r0 = ret.Get(0).(*authdomain.FailedLoginAttempt)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -211,12 +211,12 @@ func (_c *MockFailedLoginAttemptRepo_GetByUserID_Call) Run(run func(ctx context.
 	return _c
 }
 
-func (_c *MockFailedLoginAttemptRepo_GetByUserID_Call) Return(failedLoginAttempt *repository.FailedLoginAttempt, err error) *MockFailedLoginAttemptRepo_GetByUserID_Call {
+func (_c *MockFailedLoginAttemptRepo_GetByUserID_Call) Return(failedLoginAttempt *authdomain.FailedLoginAttempt, err error) *MockFailedLoginAttemptRepo_GetByUserID_Call {
 	_c.Call.Return(failedLoginAttempt, err)
 	return _c
 }
 
-func (_c *MockFailedLoginAttemptRepo_GetByUserID_Call) RunAndReturn(run func(ctx context.Context, userID int) (*repository.FailedLoginAttempt, error)) *MockFailedLoginAttemptRepo_GetByUserID_Call {
+func (_c *MockFailedLoginAttemptRepo_GetByUserID_Call) RunAndReturn(run func(ctx context.Context, userID int) (*authdomain.FailedLoginAttempt, error)) *MockFailedLoginAttemptRepo_GetByUserID_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,7 +39,7 @@ func (_m *MockVerificationTokenRepo) EXPECT() *MockVerificationTokenRepo_Expecte
 }
 
 // CreateToken provides a mock function for the type MockVerificationTokenRepo
-func (_mock *MockVerificationTokenRepo) CreateToken(ctx context.Context, token *repository.VerificationToken) error {
+func (_mock *MockVerificationTokenRepo) CreateToken(ctx context.Context, token *authdomain.VerificationToken) error {
 	ret := _mock.Called(ctx, token)
 
 	if len(ret) == 0 {
@@ -47,7 +47,7 @@ func (_mock *MockVerificationTokenRepo) CreateToken(ctx context.Context, token *
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *repository.VerificationToken) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *authdomain.VerificationToken) error); ok {
 		r0 = returnFunc(ctx, token)
 	} else {
 		r0 = ret.Error(0)
@@ -62,20 +62,20 @@ type MockVerificationTokenRepo_CreateToken_Call struct {
 
 // CreateToken is a helper method to define mock.On call
 //   - ctx context.Context
-//   - token *repository.VerificationToken
+//   - token *authdomain.VerificationToken
 func (_e *MockVerificationTokenRepo_Expecter) CreateToken(ctx any, token any) *MockVerificationTokenRepo_CreateToken_Call {
 	return &MockVerificationTokenRepo_CreateToken_Call{Call: _e.mock.On("CreateToken", ctx, token)}
 }
 
-func (_c *MockVerificationTokenRepo_CreateToken_Call) Run(run func(ctx context.Context, token *repository.VerificationToken)) *MockVerificationTokenRepo_CreateToken_Call {
+func (_c *MockVerificationTokenRepo_CreateToken_Call) Run(run func(ctx context.Context, token *authdomain.VerificationToken)) *MockVerificationTokenRepo_CreateToken_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 *repository.VerificationToken
+		var arg1 *authdomain.VerificationToken
 		if args[1] != nil {
-			arg1 = args[1].(*repository.VerificationToken)
+			arg1 = args[1].(*authdomain.VerificationToken)
 		}
 		run(
 			arg0,
@@ -90,7 +90,7 @@ func (_c *MockVerificationTokenRepo_CreateToken_Call) Return(err error) *MockVer
 	return _c
 }
 
-func (_c *MockVerificationTokenRepo_CreateToken_Call) RunAndReturn(run func(ctx context.Context, token *repository.VerificationToken) error) *MockVerificationTokenRepo_CreateToken_Call {
+func (_c *MockVerificationTokenRepo_CreateToken_Call) RunAndReturn(run func(ctx context.Context, token *authdomain.VerificationToken) error) *MockVerificationTokenRepo_CreateToken_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -204,23 +204,23 @@ func (_c *MockVerificationTokenRepo_DeleteUserTokens_Call) RunAndReturn(run func
 }
 
 // FindValidToken provides a mock function for the type MockVerificationTokenRepo
-func (_mock *MockVerificationTokenRepo) FindValidToken(ctx context.Context, tokenHash string) (*repository.VerificationToken, error) {
+func (_mock *MockVerificationTokenRepo) FindValidToken(ctx context.Context, tokenHash string) (*authdomain.VerificationToken, error) {
 	ret := _mock.Called(ctx, tokenHash)
 
 	if len(ret) == 0 {
 		panic("no return value specified for FindValidToken")
 	}
 
-	var r0 *repository.VerificationToken
+	var r0 *authdomain.VerificationToken
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*repository.VerificationToken, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*authdomain.VerificationToken, error)); ok {
 		return returnFunc(ctx, tokenHash)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *repository.VerificationToken); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *authdomain.VerificationToken); ok {
 		r0 = returnFunc(ctx, tokenHash)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*repository.VerificationToken)
+			r0 = ret.Get(0).(*authdomain.VerificationToken)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
@@ -261,12 +261,12 @@ func (_c *MockVerificationTokenRepo_FindValidToken_Call) Run(run func(ctx contex
 	return _c
 }
 
-func (_c *MockVerificationTokenRepo_FindValidToken_Call) Return(verificationToken *repository.VerificationToken, err error) *MockVerificationTokenRepo_FindValidToken_Call {
+func (_c *MockVerificationTokenRepo_FindValidToken_Call) Return(verificationToken *authdomain.VerificationToken, err error) *MockVerificationTokenRepo_FindValidToken_Call {
 	_c.Call.Return(verificationToken, err)
 	return _c
 }
 
-func (_c *MockVerificationTokenRepo_FindValidToken_Call) RunAndReturn(run func(ctx context.Context, tokenHash string) (*repository.VerificationToken, error)) *MockVerificationTokenRepo_FindValidToken_Call {
+func (_c *MockVerificationTokenRepo_FindValidToken_Call) RunAndReturn(run func(ctx context.Context, tokenHash string) (*authdomain.VerificationToken, error)) *MockVerificationTokenRepo_FindValidToken_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -228,6 +228,7 @@ The first line is silently overridden by the empty second line — Lesstruct end
 | `[[thumbnail]]` | array of tables | `[{max_width=370, suffix="_thumb"}]` | Image processing variants. See below. |
 | `[headless]` | table | disabled | Headless-mode toggle. When enabled, the server-rendered content site is not served. See below. |
 | `[comments]` | table | enabled | Comment-system toggle. When disabled, the comment system is hard-disabled end to end. See below. |
+| `[modules]` | table | empty (nothing disabled) | First-party modules to skip at startup, with cascade. `disabled = ["comments"]` equals the comments toggle. See below. |
 | `[[role]]` | array of tables | three built-in roles | Custom user roles, or overrides of the built-in roles. See below. |
 | `[registration]` | table | follows comments | Self-registration toggle, default role, and admin-approval gate. See below. |
 
@@ -461,6 +462,33 @@ Effects of disabling comments:
 
 Absent block (or `enabled` omitted) → comments enabled (the default; fully backward compatible). The `comment` post type itself cannot be hidden via `hidden = true` — use this block instead.
 
+### `[modules]`
+
+Optional. Lists first-party modules the composition root must **not register**:
+
+```toml
+[modules]
+disabled = ["textgen"]
+```
+
+Effects of disabling a module:
+
+- The module is skipped at startup along with every transitive `Requires()` dependent (cascade). `disabled = ["users"]` also drops `auth`, `comments`, and `adminpanel`; `disabled = ["auth"]` also drops `adminpanel`.
+- Each drop logs a warning naming the cause (`module "auth" disabled: requires disabled module "users"`); unknown names warn and are ignored so configs stay portable across deployments.
+- Dropped modules leave the lifecycle entirely: no `Init`, no migrations, no admin-manifest entries.
+- A kept module whose hard dependency is absent (not disabled) still fails startup fast — that path is unchanged.
+
+Scope limits (read before disabling anything but `comments`):
+
+- Disable is lifecycle-level, not HTTP-level. Only `comments` unmounts routes (its routes are flag-gated). Every other module's HTTP endpoints keep serving from their handler instances even when the module is dropped from the registry — dropping `auth`, for example, removes it from init order, migrations, and the admin manifest, but `/api/auth/*` stays mounted.
+- Under cascade (e.g. `disabled = ["users"]`, which drops `comments` transitively), services constructed before the prune keep the pre-cascade flag value: Commentator self-registration and role assignment stay possible and new content may store `allowComments = true`, while all comment routes 404 — those accounts and flags are inert with the routes unmounted. Direct `disabled = ["comments"]` is fully coherent everywhere (route-mount parity is covered by tests).
+
+Back-compat mapping: `disabled = ["comments"]` is exactly equivalent to `[comments] enabled = false` — every route gate and service flag observes the same `false`, and the route-mount parity is covered by tests. Combine or mix both spellings freely. The full per-module reference — what each module owns, its dependencies, and its disable semantics — lives in [built-in-modules.md](built-in-modules.md).
+
+**Headless is not module-disable.** `[headless] enabled = true` only suppresses public-surface mounting (the content-site catch-all and `/static/*`); the `site-ssr` engine stays registered so SSG export and the CLI keep working. `disabled = ["site-ssr"]` is strictly stronger: no engine, no SSG/export either. Use `[headless]` for headless-CMS deployments; reach for `[modules] disabled` only to shrink the running system.
+
+Absent block → nothing disabled (the default; fully backward compatible).
+
 ### `[[role]]`
 
 Optional. Roles gate what a user may do: which post types they can manage (create/edit/delete), whether they can publish content directly, and whether they can upload media and post comments. Three built-in roles always exist:
@@ -544,14 +572,14 @@ These are enforced at startup by the runtime. Violations cause the server to fai
 
 ### Post type rules
 
-- `name` must be 1-200 characters (`internal/domain/posttype/types.go:93-99`).
+- `name` must be 1-200 characters (`modules/posttypes-basic/domain/types.go`).
 - `slug` must be 1-200 characters, contain only lowercase letters, digits, hyphens, and underscores; cannot start or end with a hyphen; cannot contain consecutive hyphens (`types.go:102-126`).
 - `supports` must be non-empty and each entry must be one of: `title`, `content`, `tags`, `featured_image`, `excerpt` (`types.go:26-32`, `129-146`).
 - Duplicate post-type slugs are rejected for new types (`types.go:20`). Reusing a built-in slug (`post`, `page`, `media`, `comment`) is not a duplicate — it extends the built-in type by merging `fields`/`system_fields` (`service.go:Register`).
 
 ### Field rules
 
-- `name` must be 1-200 characters (`internal/domain/customfield/types.go:98-104`).
+- `name` must be 1-200 characters (`kernel/customfield/types.go`).
 - `slug` must be 1-200 characters and match the snake-case regex (`types.go:106-115`).
 - `type` must be one of: `text`, `textarea`, `number`, `date`, `datetime`, `email`, `url`, `select`, `checkbox` (`types.go:35-44`, `118-123`).
 - `select` fields must have a non-empty `options` list (`types.go:125-128`).

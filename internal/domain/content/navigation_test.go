@@ -7,6 +7,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -15,7 +16,7 @@ import (
 func TestService_GetPublishedPages(t *testing.T) {
 	t.Run("returns published pages from repository", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("GetPublishedPages", mock.Anything).Return([]*content.Content{
+		mockRepo.On("GetPublishedPages", mock.Anything).Return([]*contentdomain.Content{
 			{ID: 1, Title: "About", Slug: "about", PostType: "page"},
 			{ID: 2, Title: "Contact", Slug: "contact", PostType: "page"},
 		}, nil)
@@ -72,7 +73,7 @@ func TestService_GetPublishedCustomPostTypes(t *testing.T) {
 func TestService_GetPublishedByPostType(t *testing.T) {
 	t.Run("returns content filtered by post type", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("GetPublishedByPostType", mock.Anything, "menu-item", []string(nil), 0, 0, 50, 0).Return([]*content.Content{
+		mockRepo.On("GetPublishedByPostType", mock.Anything, "menu-item", []string(nil), 0, 0, 50, 0).Return([]*contentdomain.Content{
 			{ID: 1, Title: "Croissant", PostType: "menu-item"},
 		}, nil)
 
@@ -139,12 +140,12 @@ func TestService_GetPublishedTags(t *testing.T) {
 func TestService_GetPublishedAuthors(t *testing.T) {
 	t.Run("returns authors ordered by the repository", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("GetPublishedAuthors", mock.Anything, content.PublishedAuthorFilters{Limit: 100, Offset: 0}).Return([]*content.PublishedAuthor{
+		mockRepo.On("GetPublishedAuthors", mock.Anything, contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0}).Return([]*contentdomain.PublishedAuthor{
 			{Username: "jane", DisplayName: "Jane Doe", ContentCount: 5, PostTypes: []string{"article"}},
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		authors, err := service.GetPublishedAuthors(context.Background(), content.PublishedAuthorFilters{Limit: 100, Offset: 0})
+		authors, err := service.GetPublishedAuthors(context.Background(), contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0})
 
 		require.NoError(t, err)
 		require.Len(t, authors, 1)
@@ -155,10 +156,10 @@ func TestService_GetPublishedAuthors(t *testing.T) {
 
 	t.Run("returns empty slice when no published authors", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("GetPublishedAuthors", mock.Anything, content.PublishedAuthorFilters{Limit: 100, Offset: 0}).Return([]*content.PublishedAuthor{}, nil)
+		mockRepo.On("GetPublishedAuthors", mock.Anything, contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0}).Return([]*contentdomain.PublishedAuthor{}, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		authors, err := service.GetPublishedAuthors(context.Background(), content.PublishedAuthorFilters{Limit: 100, Offset: 0})
+		authors, err := service.GetPublishedAuthors(context.Background(), contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0})
 
 		require.NoError(t, err)
 		assert.Empty(t, authors)
@@ -167,10 +168,10 @@ func TestService_GetPublishedAuthors(t *testing.T) {
 
 	t.Run("returns error when repository fails", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("GetPublishedAuthors", mock.Anything, content.PublishedAuthorFilters{Limit: 100, Offset: 0}).Return(nil, errors.New("database error"))
+		mockRepo.On("GetPublishedAuthors", mock.Anything, contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0}).Return(nil, errors.New("database error"))
 
 		service := content.NewService(mockRepo, nil, nil)
-		_, err := service.GetPublishedAuthors(context.Background(), content.PublishedAuthorFilters{Limit: 100, Offset: 0})
+		_, err := service.GetPublishedAuthors(context.Background(), contentdomain.PublishedAuthorFilters{Limit: 100, Offset: 0})
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get published authors")
@@ -181,14 +182,14 @@ func TestService_GetPublishedAuthors(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
 
 		service := content.NewService(mockRepo, nil, nil)
-		_, err := service.GetPublishedAuthors(context.Background(), content.PublishedAuthorFilters{
+		_, err := service.GetPublishedAuthors(context.Background(), contentdomain.PublishedAuthorFilters{
 			Limit:     100,
 			Offset:    0,
 			SortBy:    "points",
 			SortOrder: "sideways",
 		})
 
-		require.ErrorIs(t, err, content.ErrInvalidSortOrder)
+		require.ErrorIs(t, err, contentdomain.ErrInvalidSortOrder)
 		mockRepo.AssertNotCalled(t, "GetPublishedAuthors")
 	})
 
@@ -196,15 +197,15 @@ func TestService_GetPublishedAuthors(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
 
 		service := content.NewService(mockRepo, nil, nil)
-		_, err := service.GetPublishedAuthors(context.Background(), content.PublishedAuthorFilters{
+		_, err := service.GetPublishedAuthors(context.Background(), contentdomain.PublishedAuthorFilters{
 			Limit: 100,
 			Offset: 0,
-			CustomFieldFilters: []content.CustomFieldFilter{
-				{Field: "points", Operator: content.FilterOperator("bogus"), Value: "5"},
+			CustomFieldFilters: []contentdomain.CustomFieldFilter{
+				{Field: "points", Operator: contentdomain.FilterOperator("bogus"), Value: "5"},
 			},
 		})
 
-		require.ErrorIs(t, err, content.ErrInvalidFilterOperator)
+		require.ErrorIs(t, err, contentdomain.ErrInvalidFilterOperator)
 		mockRepo.AssertNotCalled(t, "GetPublishedAuthors")
 	})
 }

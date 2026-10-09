@@ -50,42 +50,6 @@ CREATE TABLE IF NOT EXISTS content_items (
     FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS comments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    content_id INT NOT NULL,
-    user_id INT NOT NULL,
-    comment TEXT NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_comments_content_id (content_id),
-    KEY idx_comments_user_id (user_id),
-    FOREIGN KEY (content_id) REFERENCES content_items(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS media_files (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    filename TEXT NOT NULL,
-    original_filename TEXT NOT NULL,
-    mime_type VARCHAR(255) NOT NULL,
-    file_size INT NOT NULL,
-    width INT NULL,
-    height INT NULL,
-    alt_text TEXT NULL,
-    is_webp TINYINT(1) DEFAULT 1,
-    file_path TEXT NOT NULL,
-    url TEXT NOT NULL,
-    hash VARCHAR(255) NOT NULL,
-    variants JSON NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY idx_media_files_hash (hash),
-    KEY idx_media_files_user_id (user_id),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS blocked_emails (
     id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(255) NOT NULL,

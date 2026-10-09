@@ -6,6 +6,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/database"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	_ "modernc.org/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,7 +78,7 @@ func TestUpdateAdminPasswordAndEmail_AdminNotFound(t *testing.T) {
 	// Don't create admin user - it doesn't exist
 	err := repo.UpdateAdminPasswordAndEmail(context.Background(), "$2a$12$newHash", "admin@example.com", "$2a$12$defaultHash")
 	assert.Error(t, err, "UpdateAdminPasswordAndEmail expected error when admin not found")
-	assert.ErrorIs(t, err, repository.ErrSetupAlreadyCompleted, "Expected ErrSetupAlreadyCompleted")
+	assert.ErrorIs(t, err, userdomain.ErrSetupAlreadyCompleted, "Expected ErrSetupAlreadyCompleted")
 }
 
 func TestGetAdminUser(t *testing.T) {
@@ -111,7 +112,7 @@ func TestGetAdminUser_NotFound(t *testing.T) {
 	// Don't create admin user
 	_, err := repo.GetAdminUser(context.Background())
 	assert.Error(t, err, "GetAdminUser expected error when admin not found")
-	assert.ErrorIs(t, err, repository.ErrAdminNotFound, "Expected ErrAdminNotFound")
+	assert.ErrorIs(t, err, userdomain.ErrAdminNotFound, "Expected ErrAdminNotFound")
 }
 
 func TestCreateUser(t *testing.T) {
@@ -121,7 +122,7 @@ func TestCreateUser(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	// Create a new user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "$2a$12$testHash",
 		Email:        "test@example.com",
@@ -203,7 +204,7 @@ func TestSuspendUser(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	// Create a test user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",
@@ -230,7 +231,7 @@ func TestUnsuspendUser(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	// Create a suspended user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",
@@ -257,7 +258,7 @@ func TestSoftDeleteUser(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	// Create a test user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",
@@ -284,7 +285,7 @@ func TestGetAllUsers(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	// Create test users with different statuses
-	users := []*repository.User{
+	users := []*userdomain.User{
 		{Username: "user1", PasswordHash: "hash", Email: "user1@example.com", Role: "Author", Status: "verified"},
 		{Username: "user2", PasswordHash: "hash", Email: "user2@example.com", Role: "Author", Status: "suspended"},
 		{Username: "user3", PasswordHash: "hash", Email: "user3@example.com", Role: "Author", Status: "verified"},
@@ -319,7 +320,7 @@ func TestCountUsers(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	// Create test users with different statuses
-	users := []*repository.User{
+	users := []*userdomain.User{
 		{Username: "countuser1", PasswordHash: "hash", Email: "count1@example.com", Role: "Author", Status: "verified"},
 		{Username: "countuser2", PasswordHash: "hash", Email: "count2@example.com", Role: "Author", Status: "suspended"},
 		{Username: "countuser3", PasswordHash: "hash", Email: "count3@example.com", Role: "Author", Status: "verified"},
@@ -379,7 +380,7 @@ func TestGetUserStatus(t *testing.T) {
 	repo := repository.NewUserRepository(db.DB())
 
 	// Create a test user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",
@@ -405,7 +406,7 @@ func TestUpdatePasswordByUserID(t *testing.T) {
 
 	repo := repository.NewUserRepository(db.DB())
 
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "$2a$12$oldHash",
 		Email:        "test@example.com",
@@ -443,7 +444,7 @@ func TestUpdateName(t *testing.T) {
 
 	repo := repository.NewUserRepository(db.DB())
 
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "$2a$12$oldHash",
 		Email:        "test@example.com",

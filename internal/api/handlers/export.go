@@ -15,6 +15,9 @@ type ExportHandler struct {
 	logger   *util.Logger
 }
 
+// exportFilenameTimestamp is the time layout used in data export filenames
+const exportFilenameTimestamp = "20060102-150405"
+
 func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 	tmpFile, err := os.CreateTemp("", "lesstruct-export-*.tar.gz")
 	if err != nil {

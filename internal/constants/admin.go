@@ -1,17 +1,15 @@
 package constants
 
-// Default admin credentials
 const (
+	// Default admin credentials
 	DefaultUsername = "admin"
 	DefaultPassword = "admin"
 	DefaultRole     = RoleAdmin
-)
 
-// DefaultAdminID is the ID for the default admin user
-const DefaultAdminID = "default-admin-001"
+	// DefaultAdminID is the ID for the default admin user
+	DefaultAdminID = "default-admin-001"
 
-// User roles
-const (
+	// User roles
 	RoleAdmin       = "Admin"
 	RoleContributor = "Contributor"
 	RoleCommentator = "Commentator"

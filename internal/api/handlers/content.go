@@ -15,10 +15,13 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
-	"github.com/aristorinjuang/lesstruct/internal/seo"
+	contentservice "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/kernel/sanitize"
+	"github.com/aristorinjuang/lesstruct/kernel/seo"
 )
 
 const (
@@ -56,6 +59,10 @@ func handleContentError(w http.ResponseWriter, err error) {
 	message := "An internal error occurred"
 
 	switch {
+	case errors.Is(err, identity.ErrInvalidUserID):
+		statusCode = http.StatusBadRequest
+		code = "invalid_user_id"
+		message = "Invalid user ID"
 	case errors.Is(err, contentdomain.ErrInvalidTitle):
 		statusCode = http.StatusBadRequest
 		code = "invalid_title"
@@ -342,6 +349,11 @@ func projectPublicFields(
 	return result
 }
 
+type publicContentItem struct {
+	*contentdomain.Content
+	FeaturedImage string `json:"featuredImage,omitempty"`
+}
+
 type SearchResult struct {
 	Slug            string `json:"slug"`
 	Title           string `json:"title"`
@@ -390,6 +402,12 @@ type CreateContentRequest struct {
 	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
 }
 
+// ResponseMeta represents metadata in API responses
+type ResponseMeta struct {
+	Count     int    `json:"count"`
+	Timestamp string `json:"timestamp"`
+}
+
 type CreateContentResponse struct {
 	Data *CreateContentData `json:"data"`
 	Meta *ResponseMeta      `json:"meta"`
@@ -413,13 +431,13 @@ type GenerateSlugData struct {
 }
 
 type ContentServiceInterface interface {
-	Create(ctx context.Context, userID int, role string, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
+	Create(ctx context.Context, principal kernel.Principal, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)
 	GetByUser(ctx context.Context, userID int, limit int, offset int) ([]*contentdomain.Content, error)
 	GetAll(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	GetByID(ctx context.Context, id int) (*contentdomain.Content, error)
 	GenerateSlugFromTitle(ctx context.Context, title string) (string, error)
-	Update(ctx context.Context, id int, userID int, role string, req contentdomain.UpdateContentRequest) (*contentdomain.Content, error)
-	DeleteContent(ctx context.Context, id int, userID int, role string) error
+	Update(ctx context.Context, id int, principal kernel.Principal, req contentservice.UpdateContentRequest) (*contentdomain.Content, error)
+	DeleteContent(ctx context.Context, id int, principal kernel.Principal) error
 	GetPublished(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error)
 	GetPublishedBySlug(ctx context.Context, slug string, language string) (*contentdomain.Content, error)
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
@@ -427,12 +445,21 @@ type ContentServiceInterface interface {
 	AuthorExists(ctx context.Context, username string) (bool, error)
 	ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)
 	Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error)
-	SetSystemFields(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*contentdomain.Content, error)
+	SetSystemFields(ctx context.Context, contentID int, principal kernel.Principal, systemFields map[string]any) (*contentdomain.Content, error)
 	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
 	GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error)
 	GetPublishedAuthor(ctx context.Context, username string) (*contentdomain.PublishedAuthor, error)
 	GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error)
 	GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error)
+}
+
+// PublicFieldLookup is the minimal subset of *config.PublicFieldRegistry that
+// ContentHandler consults to enforce the [[public_field]] allowlist. Defining
+// it locally keeps the handler package decoupled from the config package and
+// makes the handler trivially testable with a stub.
+type PublicFieldLookup interface {
+	IsQueryable(resource, postType, field, operation string) bool
+	ExposedFields(resource, postType string) []string
 }
 
 type ContentHandler struct {
@@ -443,15 +470,6 @@ type ContentHandler struct {
 	featuredImageResolver     func(string) string
 	publicFieldRegistry       PublicFieldLookup
 	iframeHosts               []string
-}
-
-// PublicFieldLookup is the minimal subset of *config.PublicFieldRegistry that
-// ContentHandler consults to enforce the [[public_field]] allowlist. Defining
-// it locally keeps the handler package decoupled from the config package and
-// makes the handler trivially testable with a stub.
-type PublicFieldLookup interface {
-	IsQueryable(resource, postType, field, operation string) bool
-	ExposedFields(resource, postType string) []string
 }
 
 // WithPublicFieldRegistry attaches a [[public_field]] registry to the handler
@@ -473,25 +491,12 @@ func (h *ContentHandler) WithIFrameHosts(hosts ...string) *ContentHandler {
 	return h
 }
 
-type publicContentItem struct {
-	*contentdomain.Content
-	FeaturedImage string `json:"featuredImage,omitempty"`
-}
-
 func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
-	userIDStr, ok := middleware.GetUserID(r)
+	principal, ok := middleware.Principal(r)
 	if !ok {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
 		return
 	}
-
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID", nil)
-		return
-	}
-
-	role, _ := middleware.GetRole(r)
 
 	var req CreateContentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -534,7 +539,7 @@ func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		TranslationGroupID: req.TranslationGroupID,
 	}
 
-	content, err := h.contentService.Create(r.Context(), userID, role, contentReq)
+	content, err := h.contentService.Create(r.Context(), principal, contentReq)
 	if err != nil {
 		h.logger.Error("Failed to create content: %v", err)
 		handleContentError(w, err)
@@ -689,15 +694,9 @@ func (h *ContentHandler) ListContents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
-	userIDStr, ok := middleware.GetUserID(r)
+	principal, ok := middleware.Principal(r)
 	if !ok {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
-		return
-	}
-
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID", nil)
 		return
 	}
 
@@ -732,9 +731,7 @@ func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role, _ := middleware.GetRole(r)
-
-	updateReq := contentdomain.UpdateContentRequest{
+	updateReq := contentservice.UpdateContentRequest{
 		Title:              req.Title,
 		Slug:               req.Slug,
 		Content:            body,
@@ -751,7 +748,7 @@ func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		TranslationGroupID: req.TranslationGroupID,
 	}
 
-	content, err := h.contentService.Update(r.Context(), contentID, userID, role, updateReq)
+	content, err := h.contentService.Update(r.Context(), contentID, principal, updateReq)
 	if err != nil {
 		h.logger.Error("Failed to update content: %v", err)
 		if errors.Is(err, contentdomain.ErrUnauthorized) {
@@ -1283,15 +1280,9 @@ func (h *ContentHandler) ListPublishedArchive(w http.ResponseWriter, r *http.Req
 }
 
 func (h *ContentHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
-	userIDStr, ok := middleware.GetUserID(r)
+	principal, ok := middleware.Principal(r)
 	if !ok {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
-		return
-	}
-
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID", nil)
 		return
 	}
 
@@ -1307,9 +1298,7 @@ func (h *ContentHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleteRole, _ := middleware.GetRole(r)
-
-	if err := h.contentService.DeleteContent(r.Context(), contentID, userID, deleteRole); err != nil {
+	if err := h.contentService.DeleteContent(r.Context(), contentID, principal); err != nil {
 		h.logger.Error("Failed to delete content: %v", err)
 		if errors.Is(err, contentdomain.ErrUnauthorized) {
 			sendErrorResponse(w, http.StatusForbidden, "forbidden", "You do not have permission to delete this content", nil)
@@ -1325,15 +1314,9 @@ func (h *ContentHandler) DeleteContent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request) {
-	userIDStr, ok := middleware.GetUserID(r)
+	principal, ok := middleware.Principal(r)
 	if !ok {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
-		return
-	}
-
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "invalid_user_id", "Invalid user ID", nil)
 		return
 	}
 
@@ -1358,7 +1341,7 @@ func (h *ContentHandler) SetSystemFields(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	content, err := h.contentService.SetSystemFields(r.Context(), contentID, userID, req.SystemFields)
+	content, err := h.contentService.SetSystemFields(r.Context(), contentID, principal, req.SystemFields)
 	if err != nil {
 		h.logger.Error("Failed to set system fields: %v", err)
 		handleContentError(w, err)

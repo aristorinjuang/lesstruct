@@ -6,6 +6,8 @@ _bmad-output/
 data/
 node_modules/
 bin/
+# Linked worktree holding the v1 branch — never commit it as an embedded repo.
+/v1/
 .env
 .env.local
 .env.*.local

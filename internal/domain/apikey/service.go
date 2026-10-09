@@ -12,6 +12,9 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/aristorinjuang/lesstruct/internal/identity"
+	"github.com/aristorinjuang/lesstruct/kernel"
 )
 
 // maxCreateAttempts bounds how many times Create regenerates key material before
@@ -83,10 +86,14 @@ func (s *Service) hashSecret(secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// Create generates a new API key for userID, persists the hash, and returns
-// the full key string (shown once) plus the persisted entity.
+// Create generates a new API key for the acting principal, persists the hash,
+// and returns the full key string (shown once) plus the persisted entity.
 // Format: "lesstruct_<keyID>_<secret>" where keyID=12 hex chars, secret=32 hex chars.
-func (s *Service) Create(ctx context.Context, userID int, name string) (string, *APIKey, error) {
+func (s *Service) Create(ctx context.Context, principal kernel.Principal, name string) (string, *APIKey, error) {
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return "", nil, err
+	}
 	name = strings.TrimSpace(name)
 	if err := ValidateKeyName(name); err != nil {
 		return "", nil, fmt.Errorf("key name validation failed: %w", err)
@@ -135,12 +142,16 @@ func (s *Service) Create(ctx context.Context, userID int, name string) (string, 
 	return "", nil, fmt.Errorf("%w: exhausted %d attempts", ErrKeyGeneration, maxCreateAttempts)
 }
 
-// List returns all API keys owned by userID, newest-first. The returned
+// List returns all API keys owned by the acting principal, newest-first. The returned
 // entities never contain the secret (it is not persisted); KeyHash is present
 // but carries json:"-" so it is excluded from serialization. Handlers must
 // still map to a dedicated list DTO to also drop LastUsedIP and apply
 // DisplayPrefix.
-func (s *Service) List(ctx context.Context, userID int) ([]*APIKey, error) {
+func (s *Service) List(ctx context.Context, principal kernel.Principal) ([]*APIKey, error) {
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return nil, err
+	}
 	keys, err := s.repo.ListByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list api keys: %w", err)
@@ -148,12 +159,16 @@ func (s *Service) List(ctx context.Context, userID int) ([]*APIKey, error) {
 	return keys, nil
 }
 
-// Revoke soft-deletes (sets revoked_at) the key (id, userID). It is
+// Revoke soft-deletes (sets revoked_at) the key (id, acting principal). It is
 // idempotent: revoking an already-revoked key returns the existing record
 // without re-writing. Returns ErrKeyNotFound if no key matches (id, userID) —
 // this covers both nonexistent and not-owned (cross-user → identical 404,
 // safe disclosure).
-func (s *Service) Revoke(ctx context.Context, id, userID int) (*APIKey, error) {
+func (s *Service) Revoke(ctx context.Context, id int, principal kernel.Principal) (*APIKey, error) {
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return nil, err
+	}
 	key, err := s.repo.FindByIDAndUserID(ctx, id, userID)
 	if err != nil {
 		if errors.Is(err, ErrKeyNotFound) {

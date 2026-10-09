@@ -13,33 +13,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/internal/api/contentpage"
-	contentpageMocks "github.com/aristorinjuang/lesstruct/internal/api/contentpage/mocks"
-	"github.com/aristorinjuang/lesstruct/internal/api/template"
-	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/content/ssg"
-	"github.com/aristorinjuang/lesstruct/internal/content/tiptap"
-	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
-	aliasMocks "github.com/aristorinjuang/lesstruct/internal/domain/alias/mocks"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
+	"github.com/aristorinjuang/lesstruct/kernel/tiptap"
+	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
+	aliasMocks "github.com/aristorinjuang/lesstruct/modules/seo/alias/mocks"
+	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
+	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGenerator_Generate(t *testing.T) {
-	mockContentSvc := contentpageMocks.NewMockContentService(t)
-	mockResolver := contentpageMocks.NewMockPostTypeResolver(t)
+	mockContentSvc := newMockContentReader(t)
+	mockResolver := &stubResolver{}
 
 	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
-	mockContent := &contentdomain.Content{
+	mockContent := sitessr.ContentRef{
 		ID:        1,
 		Slug:      "hello-world",
 		Title:     "Hello World",
 		Content:   `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`,
-		Format:    contentdomain.FormatTiptap,
-		Status:    contentdomain.StatusPublished,
+		Format:    "tiptap",
 		PostType:  "post",
 		Author:    "Alice",
 		Username:  "alice",
@@ -48,16 +43,16 @@ func TestGenerator_Generate(t *testing.T) {
 	}
 
 	mockContentSvc.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, mock.Anything, mock.Anything).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetPublished", mock.Anything, mock.Anything, mock.Anything).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedBySlugAny", mock.Anything, "hello-world").
 		Return(mockContent, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedPages", mock.Anything).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedCustomPostTypes", mock.Anything).
 		Return([]string{}, nil).Maybe()
@@ -69,19 +64,19 @@ func TestGenerator_Generate(t *testing.T) {
 		Return(true, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedByAuthorUsername", mock.Anything, "alice", []string{"en"}, 11, 0).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetRelated", mock.Anything, 1, 4).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).
 		Return(posttype.PostType{}, assert.AnError).Maybe()
 
-	templates, err := template.NewTemplates(nil, nil)
+	templates, err := sitessr.NewTemplates(nil, nil)
 	require.NoError(t, err)
 
 	renderer := tiptap.NewRenderer(nil)
-	assembler := contentpage.NewDataAssembler(
+	assembler := sitessr.NewDataAssembler(
 		mockContentSvc,
 		mockResolver,
 		nil,
@@ -90,7 +85,7 @@ func TestGenerator_Generate(t *testing.T) {
 		nil,
 		[]string{"en"},
 		nil,
-		config.SiteConfig{Name: "Test Site"},
+		sitessr.SiteConfig{Name: "Test Site"},
 		10,
 	)
 
@@ -183,20 +178,19 @@ func TestTransformToAMP(t *testing.T) {
 	assert.NotContains(t, amp, `<link rel="stylesheet"`, "should remove external CSS links")
 }
 
-func newStaticAssetsTestGenerator(t *testing.T, theme *template.Theme) *ssg.Generator {
+func newStaticAssetsTestGenerator(t *testing.T, theme *sitessr.Theme) *ssg.Generator {
 	t.Helper()
 
-	mockContentSvc := contentpageMocks.NewMockContentService(t)
-	mockResolver := contentpageMocks.NewMockPostTypeResolver(t)
+	mockContentSvc := newMockContentReader(t)
+	mockResolver := &stubResolver{}
 
 	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
-	mockContent := &contentdomain.Content{
+	mockContent := sitessr.ContentRef{
 		ID:        1,
 		Slug:      "hello-world",
 		Title:     "Hello World",
 		Content:   `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`,
-		Format:    contentdomain.FormatTiptap,
-		Status:    contentdomain.StatusPublished,
+		Format:    "tiptap",
 		PostType:  "post",
 		Author:    "Alice",
 		Username:  "alice",
@@ -205,16 +199,16 @@ func newStaticAssetsTestGenerator(t *testing.T, theme *template.Theme) *ssg.Gene
 	}
 
 	mockContentSvc.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, mock.Anything, mock.Anything).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetPublished", mock.Anything, mock.Anything, mock.Anything).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedBySlugAny", mock.Anything, "hello-world").
 		Return(mockContent, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedPages", mock.Anything).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedCustomPostTypes", mock.Anything).
 		Return([]string{}, nil).Maybe()
@@ -226,16 +220,16 @@ func newStaticAssetsTestGenerator(t *testing.T, theme *template.Theme) *ssg.Gene
 		Return(true, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedByAuthorUsername", mock.Anything, "alice", []string{"en"}, 11, 0).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetRelated", mock.Anything, 1, 4).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).
 		Return(posttype.PostType{}, assert.AnError).Maybe()
 
 	renderer := tiptap.NewRenderer(nil)
-	assembler := contentpage.NewDataAssembler(
+	assembler := sitessr.NewDataAssembler(
 		mockContentSvc,
 		mockResolver,
 		nil,
@@ -244,11 +238,11 @@ func newStaticAssetsTestGenerator(t *testing.T, theme *template.Theme) *ssg.Gene
 		nil,
 		[]string{"en"},
 		nil,
-		config.SiteConfig{Name: "Test Site"},
+		sitessr.SiteConfig{Name: "Test Site"},
 		10,
 	)
 
-	templates, err := template.NewTemplates(theme, nil)
+	templates, err := sitessr.NewTemplates(theme, nil)
 	require.NoError(t, err)
 
 	return ssg.NewGenerator(assembler, templates, mockContentSvc, "", theme, "https://example.com")
@@ -299,7 +293,7 @@ func writeThemeStaticAssets(t *testing.T) string {
 func TestGenerator_Generate_StaticAssets(t *testing.T) {
 	tests := []struct {
 		name            string
-		theme           func(t *testing.T) *template.Theme
+		theme           func(t *testing.T) *sitessr.Theme
 		wantFiles       []string
 		wantContents    map[string]string
 		wantAbsentFiles []string
@@ -307,9 +301,9 @@ func TestGenerator_Generate_StaticAssets(t *testing.T) {
 	}{
 		{
 			name: "success - theme static assets merged with embedded fallback",
-			theme: func(t *testing.T) *template.Theme {
+			theme: func(t *testing.T) *sitessr.Theme {
 				t.Helper()
-				return &template.Theme{Dir: writeThemeStaticAssets(t)}
+				return &sitessr.Theme{Dir: writeThemeStaticAssets(t)}
 			},
 			wantFiles: []string{
 				"static/base.css",
@@ -333,7 +327,7 @@ func TestGenerator_Generate_StaticAssets(t *testing.T) {
 		},
 		{
 			name: "success - embedded defaults exported without custom theme",
-			theme: func(t *testing.T) *template.Theme {
+			theme: func(t *testing.T) *sitessr.Theme {
 				t.Helper()
 				return nil
 			},
@@ -361,9 +355,9 @@ func TestGenerator_Generate_StaticAssets(t *testing.T) {
 		},
 		{
 			name: "success - theme without static directory falls back to embedded defaults",
-			theme: func(t *testing.T) *template.Theme {
+			theme: func(t *testing.T) *sitessr.Theme {
 				t.Helper()
-				return &template.Theme{Dir: t.TempDir()}
+				return &sitessr.Theme{Dir: t.TempDir()}
 			},
 			wantFiles: []string{
 				"static/base.css",
@@ -410,18 +404,17 @@ func newFeedPost(
 	id int,
 	slug string,
 	title string,
-	format contentdomain.Format,
+	format string,
 	content string,
 	metaDescription string,
 	ogDescription string,
-) *contentdomain.Content {
-	return &contentdomain.Content{
+) sitessr.ContentRef {
+	return sitessr.ContentRef{
 		ID:              id,
 		Slug:            slug,
 		Title:           title,
 		Content:         content,
 		Format:          format,
-		Status:          contentdomain.StatusPublished,
 		PostType:        "post",
 		Language:        "en",
 		MetaDescription: metaDescription,
@@ -430,20 +423,20 @@ func newFeedPost(
 	}
 }
 
-func newFeedTestGenerator(t *testing.T, posts []*contentdomain.Content, listErr error) *ssg.Generator {
+func newFeedTestGenerator(t *testing.T, posts []sitessr.ContentRef, listErr error) *ssg.Generator {
 	t.Helper()
 
-	mockContentSvc := contentpageMocks.NewMockContentService(t)
-	mockResolver := contentpageMocks.NewMockPostTypeResolver(t)
+	mockContentSvc := newMockContentReader(t)
+	mockResolver := &stubResolver{}
 
 	mockContentSvc.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, mock.Anything, mock.Anything).
 		Return(posts, listErr).Maybe()
 
 	mockContentSvc.On("GetPublished", mock.Anything, mock.Anything, mock.Anything).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedPages", mock.Anything).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedCustomPostTypes", mock.Anything).
 		Return([]string{}, nil).Maybe()
@@ -455,7 +448,7 @@ func newFeedTestGenerator(t *testing.T, posts []*contentdomain.Content, listErr 
 		Return(posttype.PostType{}, assert.AnError).Maybe()
 
 	renderer := tiptap.NewRenderer(nil)
-	assembler := contentpage.NewDataAssembler(
+	assembler := sitessr.NewDataAssembler(
 		mockContentSvc,
 		mockResolver,
 		nil,
@@ -464,11 +457,11 @@ func newFeedTestGenerator(t *testing.T, posts []*contentdomain.Content, listErr 
 		nil,
 		[]string{"en"},
 		nil,
-		config.SiteConfig{Name: "Test Site"},
+		sitessr.SiteConfig{Name: "Test Site"},
 		10,
 	)
 
-	templates, err := template.NewTemplates(nil, nil)
+	templates, err := sitessr.NewTemplates(nil, nil)
 	require.NoError(t, err)
 
 	return ssg.NewGenerator(assembler, templates, mockContentSvc, "", nil, "https://example.com")
@@ -481,7 +474,7 @@ func TestGenerator_Generate_Feed(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		posts           []*contentdomain.Content
+		posts           []sitessr.ContentRef
 		listErr         error
 		wantContains    []string
 		wantNotContains []string
@@ -489,8 +482,8 @@ func TestGenerator_Generate_Feed(t *testing.T) {
 	}{
 		{
 			name: "success - meta description preferred as item description",
-			posts: []*contentdomain.Content{
-				newFeedPost(1, "hello-meta", "Hello Meta", contentdomain.FormatTiptap, tiptapBody, "Meta summary", "OG summary"),
+			posts: []sitessr.ContentRef{
+				newFeedPost(1, "hello-meta", "Hello Meta", "tiptap", tiptapBody, "Meta summary", "OG summary"),
 			},
 			wantContains: []string{
 				"<title>Hello Meta</title>",
@@ -503,32 +496,32 @@ func TestGenerator_Generate_Feed(t *testing.T) {
 		},
 		{
 			name: "success - og description fallback when meta description empty",
-			posts: []*contentdomain.Content{
-				newFeedPost(2, "hello-og", "Hello OG", contentdomain.FormatTiptap, tiptapBody, "", "OG summary"),
+			posts: []sitessr.ContentRef{
+				newFeedPost(2, "hello-og", "Hello OG", "tiptap", tiptapBody, "", "OG summary"),
 			},
 			wantContains: []string{"<description>OG summary</description>"},
 			wantErr:      false,
 		},
 		{
 			name: "success - plain text excerpt fallback for tiptap content",
-			posts: []*contentdomain.Content{
-				newFeedPost(3, "hello-tiptap", "Hello Tiptap", contentdomain.FormatTiptap, tiptapBody, "", ""),
+			posts: []sitessr.ContentRef{
+				newFeedPost(3, "hello-tiptap", "Hello Tiptap", "tiptap", tiptapBody, "", ""),
 			},
 			wantContains: []string{"<description>Plain body text.</description>"},
 			wantErr:      false,
 		},
 		{
 			name: "success - plain text excerpt fallback for html content",
-			posts: []*contentdomain.Content{
-				newFeedPost(4, "hello-html", "Hello HTML", contentdomain.FormatHTML, "<p>HTML body text.</p>", "", ""),
+			posts: []sitessr.ContentRef{
+				newFeedPost(4, "hello-html", "Hello HTML", "html", "<p>HTML body text.</p>", "", ""),
 			},
 			wantContains: []string{"<description>HTML body text.</description>"},
 			wantErr:      false,
 		},
 		{
 			name: "success - long excerpts truncated with ellipsis",
-			posts: []*contentdomain.Content{
-				newFeedPost(5, "hello-long", "Hello Long", contentdomain.FormatTiptap, longTiptapBody, "", ""),
+			posts: []sitessr.ContentRef{
+				newFeedPost(5, "hello-long", "Hello Long", "tiptap", longTiptapBody, "", ""),
 			},
 			wantContains:    []string{"<description>" + strings.Repeat("a", 297) + "...</description>"},
 			wantNotContains: []string{longBody},
@@ -536,8 +529,8 @@ func TestGenerator_Generate_Feed(t *testing.T) {
 		},
 		{
 			name: "success - invalid slugs are skipped from items",
-			posts: []*contentdomain.Content{
-				newFeedPost(6, "..", "Bad Slug", contentdomain.FormatTiptap, tiptapBody, "", ""),
+			posts: []sitessr.ContentRef{
+				newFeedPost(6, "..", "Bad Slug", "tiptap", tiptapBody, "", ""),
 			},
 			wantContains:    []string{"</channel>"},
 			wantNotContains: []string{"<item>"},
@@ -545,7 +538,7 @@ func TestGenerator_Generate_Feed(t *testing.T) {
 		},
 		{
 			name:         "success - empty post list still writes a valid channel",
-			posts:        []*contentdomain.Content{},
+			posts:        []sitessr.ContentRef{},
 			wantContains: []string{`<rss version="2.0">`, "<language>en</language>", "</channel>"},
 			wantErr:      false,
 		},
@@ -585,19 +578,18 @@ func TestGenerator_Generate_Feed(t *testing.T) {
 	}
 }
 
-func newSinglePostContentService(t *testing.T) *contentpageMocks.MockContentService {
+func newSinglePostContentService(t *testing.T) *mockContentReader {
 	t.Helper()
 
-	mockContentSvc := contentpageMocks.NewMockContentService(t)
+	mockContentSvc := newMockContentReader(t)
 
 	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
-	mockContent := &contentdomain.Content{
+	mockContent := sitessr.ContentRef{
 		ID:        1,
 		Slug:      "hello-world",
 		Title:     "Hello World",
 		Content:   `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`,
-		Format:    contentdomain.FormatTiptap,
-		Status:    contentdomain.StatusPublished,
+		Format:    "tiptap",
 		PostType:  "post",
 		Author:    "Alice",
 		Username:  "alice",
@@ -606,16 +598,16 @@ func newSinglePostContentService(t *testing.T) *contentpageMocks.MockContentServ
 	}
 
 	mockContentSvc.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, mock.Anything, mock.Anything).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetPublished", mock.Anything, mock.Anything, mock.Anything).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedBySlugAny", mock.Anything, "hello-world").
 		Return(mockContent, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedPages", mock.Anything).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedCustomPostTypes", mock.Anything).
 		Return([]string{}, nil).Maybe()
@@ -627,27 +619,27 @@ func newSinglePostContentService(t *testing.T) *contentpageMocks.MockContentServ
 		Return(true, nil).Maybe()
 
 	mockContentSvc.On("GetPublishedByAuthorUsername", mock.Anything, "alice", []string{"en"}, 11, 0).
-		Return([]*contentdomain.Content{mockContent}, nil).Maybe()
+		Return([]sitessr.ContentRef{mockContent}, nil).Maybe()
 
 	mockContentSvc.On("GetRelated", mock.Anything, 1, 4).
-		Return([]*contentdomain.Content{}, nil).Maybe()
+		Return([]sitessr.ContentRef{}, nil).Maybe()
 
 	return mockContentSvc
 }
 
 func newAliasRedirectsTestGenerator(
 	t *testing.T,
-	mockContentSvc *contentpageMocks.MockContentService,
+	mockContentSvc *mockContentReader,
 	aliasSvc *aliasdomain.Service,
 ) *ssg.Generator {
 	t.Helper()
 
-	mockResolver := contentpageMocks.NewMockPostTypeResolver(t)
+	mockResolver := &stubResolver{}
 	mockResolver.On("GetBySlug", mock.AnythingOfType("string")).
 		Return(posttype.PostType{}, assert.AnError).Maybe()
 
 	renderer := tiptap.NewRenderer(nil)
-	assembler := contentpage.NewDataAssembler(
+	assembler := sitessr.NewDataAssembler(
 		mockContentSvc,
 		mockResolver,
 		nil,
@@ -656,11 +648,11 @@ func newAliasRedirectsTestGenerator(
 		nil,
 		[]string{"en"},
 		nil,
-		config.SiteConfig{Name: "Test Site"},
+		sitessr.SiteConfig{Name: "Test Site"},
 		10,
 	)
 
-	templates, err := template.NewTemplates(nil, nil)
+	templates, err := sitessr.NewTemplates(nil, nil)
 	require.NoError(t, err)
 
 	return ssg.NewGenerator(
@@ -674,11 +666,10 @@ func newAliasRedirectsTestGenerator(
 }
 
 func TestGenerator_Generate_AliasRedirects(t *testing.T) {
-	publishedTarget := &contentdomain.Content{
+	publishedTarget := sitessr.ContentRef{
 		ID:        5,
 		Slug:      "new-post",
 		Title:     "New Post",
-		Status:    contentdomain.StatusPublished,
 		PostType:  "post",
 		Language:  "en",
 		CreatedAt: time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC),
@@ -686,7 +677,7 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		setupAliases    func(t *testing.T) (*contentpageMocks.MockContentService, *aliasdomain.Service)
+		setupAliases    func(t *testing.T) (*mockContentReader, *aliasdomain.Service)
 		wantFiles       []string
 		wantContents    map[string]string
 		wantAbsentFiles []string
@@ -694,7 +685,7 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 	}{
 		{
 			name: "success - legacy .html alias emits meta-refresh page",
-			setupAliases: func(t *testing.T) (*contentpageMocks.MockContentService, *aliasdomain.Service) {
+			setupAliases: func(t *testing.T) (*mockContentReader, *aliasdomain.Service) {
 				contentSvc := newSinglePostContentService(t)
 				contentSvc.On("GetPublishedByID", mock.Anything, 5).
 					Return(publishedTarget, nil).Maybe()
@@ -716,7 +707,7 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 		},
 		{
 			name: "success - extensionless alias becomes directory index page",
-			setupAliases: func(t *testing.T) (*contentpageMocks.MockContentService, *aliasdomain.Service) {
+			setupAliases: func(t *testing.T) (*mockContentReader, *aliasdomain.Service) {
 				contentSvc := newSinglePostContentService(t)
 				contentSvc.On("GetPublishedByID", mock.Anything, 5).
 					Return(publishedTarget, nil).Maybe()
@@ -738,7 +729,7 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 		},
 		{
 			name: "skip - unpublished target emits nothing",
-			setupAliases: func(t *testing.T) (*contentpageMocks.MockContentService, *aliasdomain.Service) {
+			setupAliases: func(t *testing.T) (*mockContentReader, *aliasdomain.Service) {
 				contentSvc := newSinglePostContentService(t)
 				contentSvc.On("GetPublishedByID", mock.Anything, 7).
 					Return(nil, errors.New("not found")).Maybe()
@@ -758,7 +749,7 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 		},
 		{
 			name: "skip - traversal alias is rejected without target lookup",
-			setupAliases: func(t *testing.T) (*contentpageMocks.MockContentService, *aliasdomain.Service) {
+			setupAliases: func(t *testing.T) (*mockContentReader, *aliasdomain.Service) {
 				contentSvc := newSinglePostContentService(t)
 
 				repo := aliasMocks.NewMockRepository(t)
@@ -777,7 +768,7 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 		},
 		{
 			name: "skip - alias shadowing an emitted page wins nothing",
-			setupAliases: func(t *testing.T) (*contentpageMocks.MockContentService, *aliasdomain.Service) {
+			setupAliases: func(t *testing.T) (*mockContentReader, *aliasdomain.Service) {
 				contentSvc := newSinglePostContentService(t)
 				// The alias resolves to a different slug than the emitted
 				// hello-world page, so it must NOT overwrite the real page.
@@ -798,7 +789,7 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 		},
 		{
 			name: "success - aliases excluded from sitemap",
-			setupAliases: func(t *testing.T) (*contentpageMocks.MockContentService, *aliasdomain.Service) {
+			setupAliases: func(t *testing.T) (*mockContentReader, *aliasdomain.Service) {
 				contentSvc := newSinglePostContentService(t)
 				contentSvc.On("GetPublishedByID", mock.Anything, 5).
 					Return(publishedTarget, nil).Maybe()
@@ -850,11 +841,10 @@ func TestGenerator_Generate_AliasRedirects(t *testing.T) {
 }
 
 func TestGenerator_Generate_AliasRedirects_SitemapExclusion(t *testing.T) {
-	publishedTarget := &contentdomain.Content{
+	publishedTarget := sitessr.ContentRef{
 		ID:        5,
 		Slug:      "new-post",
 		Title:     "New Post",
-		Status:    contentdomain.StatusPublished,
 		PostType:  "post",
 		Language:  "en",
 		CreatedAt: time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC),
@@ -888,7 +878,7 @@ func TestGenerator_Generate_ThemeRootFiles(t *testing.T) {
 	require.NoError(t, os.MkdirAll(rootDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(rootDir, "webpushr-sw.js"), []byte("console.log('sw')"), 0644))
 
-	generator := newStaticAssetsTestGenerator(t, &template.Theme{Dir: themeDir})
+	generator := newStaticAssetsTestGenerator(t, &sitessr.Theme{Dir: themeDir})
 
 	var buf bytes.Buffer
 	require.NoError(t, generator.Generate(context.Background(), &buf))

@@ -3,7 +3,7 @@ package content
 import (
 	"errors"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 )
 
 // PostTypeServiceInterface defines the interface for post type service

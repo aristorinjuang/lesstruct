@@ -15,6 +15,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	dashboarddomain "github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ import (
 func TestDashboardHandler_GetStats_Success(t *testing.T) {
 	mockService := handlersmocks.NewMockDashboardServiceInterface(t)
 	mockService.EXPECT().
-		GetStats(mock.Anything, 1).
+		GetStats(mock.Anything, mock.Anything).
 		Return(&dashboarddomain.Stats{
 			PublishedPosts:       10,
 			DraftPosts:           5,
@@ -45,6 +46,7 @@ func TestDashboardHandler_GetStats_Success(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+	ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
@@ -72,7 +74,7 @@ func TestDashboardHandler_GetStats_Success(t *testing.T) {
 func TestDashboardHandler_GetStats_AdminUsesGlobalScope(t *testing.T) {
 	mockService := handlersmocks.NewMockDashboardServiceInterface(t)
 	mockService.EXPECT().
-		GetStats(mock.Anything, 0).
+		GetStats(mock.Anything, mock.Anything).
 		Return(&dashboarddomain.Stats{
 			PublishedPosts:       42,
 			DraftPosts:           3,
@@ -92,6 +94,7 @@ func TestDashboardHandler_GetStats_AdminUsesGlobalScope(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "7")
 	ctx = context.WithValue(ctx, middleware.RoleKey, "Admin")
+	ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "7", Username: "admin", Roles: []string{"Admin"}})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
@@ -116,7 +119,7 @@ func TestDashboardHandler_GetStats_AdminUsesGlobalScope(t *testing.T) {
 func TestDashboardHandler_GetStats_EmptyStats(t *testing.T) {
 	mockService := handlersmocks.NewMockDashboardServiceInterface(t)
 	mockService.EXPECT().
-		GetStats(mock.Anything, 1).
+		GetStats(mock.Anything, mock.Anything).
 		Return(&dashboarddomain.Stats{
 			PublishedPosts:       0,
 			DraftPosts:           0,
@@ -130,6 +133,7 @@ func TestDashboardHandler_GetStats_EmptyStats(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+	ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
@@ -181,13 +185,14 @@ func TestDashboardHandler_GetStats_Unauthorized(t *testing.T) {
 func TestDashboardHandler_GetStats_ServiceError(t *testing.T) {
 	mockService := handlersmocks.NewMockDashboardServiceInterface(t)
 	mockService.EXPECT().
-		GetStats(mock.Anything, 1).
+		GetStats(mock.Anything, mock.Anything).
 		Return(nil, errors.New("database error"))
 
 	handler := handlers.NewDashboardHandler(mockService, nil, util.NewLogger(os.Stdout))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+	ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
@@ -225,6 +230,7 @@ func TestDashboardHandler_GetStats_InvalidUserID(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/stats", nil)
 			ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
+			ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: tt.userID, Username: "testuser"})
 			req = req.WithContext(ctx)
 			w := httptest.NewRecorder()
 

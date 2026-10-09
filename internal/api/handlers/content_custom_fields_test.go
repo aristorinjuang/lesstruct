@@ -9,11 +9,13 @@ import (
 	"os"
 	"testing"
 
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentservice "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,7 +26,6 @@ func TestContentHandler_CustomFields_CreateContent(t *testing.T) {
 		mockService := handlersmocks.NewMockContentServiceInterface(t)
 		mockService.EXPECT().Create(
 			mock.Anything,
-			1,
 			mock.Anything,
 			mock.MatchedBy(func(req contentdomain.CreateContentRequest) bool {
 				return req.CustomFields != nil && req.CustomFields["price"] == "$4.50"
@@ -58,6 +59,7 @@ func TestContentHandler_CustomFields_CreateContent(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/content_items", bytes.NewReader([]byte(body)))
 		req.Header.Set("Content-Type", "application/json")
 		ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+		ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 		req = req.WithContext(ctx)
 
 		w := httptest.NewRecorder()
@@ -173,9 +175,8 @@ func TestContentHandler_CustomFields_UpdateContent(t *testing.T) {
 		mockService.EXPECT().Update(
 			mock.Anything,
 			1,
-			1,
 			mock.Anything,
-			mock.MatchedBy(func(req contentdomain.UpdateContentRequest) bool {
+			mock.MatchedBy(func(req contentservice.UpdateContentRequest) bool {
 				return req.CustomFields != nil && req.CustomFields["color"] == "red"
 			}),
 		).Return(&contentdomain.Content{
@@ -200,6 +201,7 @@ func TestContentHandler_CustomFields_UpdateContent(t *testing.T) {
 		r := chi.NewRouter()
 		r.Put("/api/v1/content_items/{id}", func(w http.ResponseWriter, r *http.Request) {
 			ctx := context.WithValue(r.Context(), middleware.UserIDKey, "1")
+			ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 			handler.UpdateContent(w, r.WithContext(ctx))
 		})
 

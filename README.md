@@ -4,7 +4,7 @@
 
 # Lesstruct
 
-> An open-source CMS powered by Go. Fast, configurable, customizable. Built for humans and AI agents, extended with WebAssembly plugins. One binary, no Docker required.
+> **Everything is a module.** The Go CMS you can shrink, extend, and ship as one binary — for humans and AI agents.
 
 [![Go Version](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](#license)
@@ -44,6 +44,7 @@
 ## Why Lesstruct?
 
 - **One binary, no Docker.** A single static Go binary runs the whole CMS. SQLite is built in. No runtime, no container, no `node_modules` in production.
+- **Everything is a module.** Eleven built-in features are independent modules with a declared dependency graph — disable what you don't need with `[modules] disabled` and dependents cascade. Per-module reference: [`docs/built-in-modules.md`](docs/built-in-modules.md).
 - **Multi-database, your choice.** SQLite by default; PostgreSQL and MySQL supported via `DB_DRIVER`. Migrations run on first start.
 - **Custom fields, no plugins needed.** Define post types, user profile fields, and validation rules in `config.toml`. The admin form, storage, and queries all read from that file.
 - **Extend with WebAssembly plugins.** Drop a compiled `.wasm` into `plugins/` and it hooks into `before_save`, `after_create`, and `after_publish`. Plugins are sandboxed, immutable, and can call host functions for HTTP, DB, and logging.
@@ -94,6 +95,12 @@ cd lesstruct
 make install   # builds the admin panel (npm), the server, and the CLI into $GOBIN
 ```
 
+Two builds of one product: `go install` / `make install` ships Lesstruct
+with every module and every database driver. `make build-server` builds the
+same binary without the embedded SQLite driver (about 6 MB leaner, for
+PostgreSQL/MySQL deployments). `make build-cli` builds the Lesstruct CLI —
+the companion tool for AI agents.
+
 ### Option D — Docker (optional)
 
 The headline is "no Docker required," but Lesstruct runs fine in a container if you prefer one. The official image is not published yet — build your own from the Dockerfile-shaped workflow in `.github/workflows/release.yml` and the static binary it produces. The binary inside the container is `CGO_ENABLED=0`, so a `FROM scratch` or `FROM gcr.io/distroless/static` works.
@@ -102,7 +109,7 @@ The headline is "no Docker required," but Lesstruct runs fine in a container if 
 
 Two layers, two responsibilities:
 
-- **`config.toml`** — your site's *content schema*: languages, custom post types, user profile fields, thumbnail variants. Hand-edited, version-controlled.
+- **`config.toml`** — your site's *content schema*: languages, custom post types, user profile fields, thumbnail variants, and the `[modules]` block that turns built-in features off. Hand-edited, version-controlled.
 - **`.env`** — your *deployment configuration*: host, port, database, secrets, SMTP, AI keys. Treated as deployment state, not committed.
 
 The only required value is `JWT_SECRET` (≥ 32 characters). Everything else has a sensible default. See [`docs/configuration.md`](docs/configuration.md) for the full reference, validation rules, and troubleshooting recipes.
@@ -134,6 +141,14 @@ Plugins are sandboxed WebAssembly modules with a WordPress-familiar hook model �
 - Full contract: [`docs/plugin-development.md`](docs/plugin-development.md)
 - Capability manifest & host functions: [`docs/plugin-capabilities.md`](docs/plugin-capabilities.md)
 - AI-assisted workflow: [`skills/lesstruct-plugin-development/`](skills/lesstruct-plugin-development/)
+
+## Module Development
+
+Every first-party feature — users, auth, media, comments, SEO, and more — is an independent Go module compiled against the kernel, a small frozen contract module (`kernel/v1.0.0`). Third parties build on the same surface: write a module, drop it into `modules/<name>/`, register it in the composition root, and build your own binary — no runtime installation, no recompile of anyone else's code. (Prefer runtime extension without recompiling? That's exactly what WASM plugins are for.)
+
+- Module development guide: [`docs/module-development.md`](docs/module-development.md)
+- The kernel: [`docs/kernel.md`](docs/kernel.md) · versioning policy: [`docs/kernel-versioning.md`](docs/kernel-versioning.md)
+- Built-in modules reference: [`docs/built-in-modules.md`](docs/built-in-modules.md)
 
 ## Theme Development
 

@@ -18,9 +18,11 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
+	contentservice "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -59,13 +61,18 @@ func newContentHandler(svc agent.ContentService) *agent.ContentHandler {
 }
 
 // newAuthenticatedRequest builds a request whose body is body, and — when withUser
-// is true — injects testUserID via the shared middleware identity key (the same key
+// is true — injects testUserID via the shared middleware identity keys (the same keys
 // the Bearer/JWT middleware writes), mirroring how the handler reads identity in
-// production.
+// production. The kernel principal is attached alongside, exactly like
+// newUserContext does: no RoleKey means no roles.
 func newAuthenticatedRequest(method, target, body string, withUser bool) *http.Request {
 	r := httptest.NewRequest(method, target, strings.NewReader(body))
 	if withUser {
 		ctx := context.WithValue(r.Context(), middleware.UserIDKey, strconv.Itoa(testUserID))
+		ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{
+			ID:       strconv.Itoa(testUserID),
+			Username: "testuser",
+		})
 		r = r.WithContext(ctx)
 	}
 	return r
@@ -106,14 +113,22 @@ func envelopeDataContentID(t *testing.T, w *httptest.ResponseRecorder) int {
 
 // newAuthenticatedRequestAs builds a request whose body is body, injecting the given
 // userID (and role, when non-empty) via the shared middleware identity keys — mirroring
-// how the Bearer middleware writes identity in production. Used for Update/Delete, which
+// how the Bearer middleware writes identity in production. The kernel principal
+// carries the same ID and roles. Used for Update/Delete, which
 // read both userID and role for the ownership check.
 func newAuthenticatedRequestAs(method, target, body string, userID int, role string) *http.Request {
 	r := httptest.NewRequest(method, target, strings.NewReader(body))
 	ctx := context.WithValue(r.Context(), middleware.UserIDKey, strconv.Itoa(userID))
+	roles := make([]string, 0, 1)
 	if role != "" {
 		ctx = context.WithValue(ctx, middleware.RoleKey, role)
+		roles = append(roles, role)
 	}
+	ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{
+		ID:       strconv.Itoa(userID),
+		Username: "testuser",
+		Roles:    roles,
+	})
 	return r.WithContext(ctx)
 }
 
@@ -212,8 +227,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 7, Title: "Hello"}, nil)
@@ -229,8 +244,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Published", "body": tiptapJSON, "isPublished": true}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 8, Title: "Published"}, nil)
@@ -246,8 +261,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Explicit", "body": tiptapJSON, "format": "tiptap"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 9, Title: "Explicit"}, nil)
@@ -263,8 +278,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Upper", "body": tiptapJSON, "format": "TIPTAP"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 10, Title: "Upper"}, nil)
@@ -280,8 +295,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": "# hi", "format": "  Markdown  "}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 11, Title: "Hello"}, nil)
@@ -297,7 +312,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrInvalidTitle)
 			},
 			wantStatus: http.StatusBadRequest,
@@ -308,7 +323,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrUnauthorized)
 			},
 			wantStatus: http.StatusForbidden,
@@ -319,7 +334,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrForbiddenPostType)
 			},
 			wantStatus: http.StatusForbidden,
@@ -330,7 +345,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrForbiddenPublish)
 			},
 			wantStatus: http.StatusForbidden,
@@ -341,7 +356,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, fmt.Errorf("%w: Price: must be a number", contentdomain.ErrCustomFieldValidation))
 			},
 			wantStatus: http.StatusBadRequest,
@@ -352,7 +367,7 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrContentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -365,7 +380,7 @@ func TestContentHandler_Create(t *testing.T) {
 			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
 				// A non-sentinel error so handleError falls through to the default
 				// INTERNAL_ERROR branch (sentinel errors are covered by other rows).
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 					Return(nil, errors.New("boom"))
 			},
 			wantStatus: http.StatusInternalServerError,
@@ -376,8 +391,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": "# hi", "format": "markdown"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 12, Title: "Hello"}, nil)
@@ -393,8 +408,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Post", "body": "**bold** and `code`", "format": "markdown", "isPublished": true}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 13, Title: "Post"}, nil)
@@ -410,8 +425,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": "<div><p>Hello</p></div>", "format": "html"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 17, Title: "Hello"}, nil)
@@ -436,8 +451,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "postType": "post", "tags": []string{"a", "b"}, "language": "en"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 14, Title: "Hello"}, nil)
@@ -456,8 +471,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "postType": "page"}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 15, Title: "Hello"}, nil)
@@ -482,8 +497,8 @@ func TestContentHandler_Create(t *testing.T) {
 			body:     marshalJSON(map[string]any{"title": "Tentang", "body": tiptapJSON, "translationGroupId": 4}),
 			withUser: true,
 			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.CreateContentRequest) {
-				svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-					Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 16, Title: "Tentang"}, nil)
@@ -588,8 +603,8 @@ func TestContentHandler_Create_SlugForwarding(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := agentmocks.NewMockContentService(t)
 			var captured contentdomain.CreateContentRequest
-			svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
-				Run(func(_ context.Context, _ int, _ string, req contentdomain.CreateContentRequest) {
+			svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+				Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
 					captured = req
 				}).
 				Return(&contentdomain.Content{ID: 1, Title: "Hello"}, nil)
@@ -1049,7 +1064,7 @@ func TestContentHandler_Update(t *testing.T) {
 		body             string
 		userID           int
 		role             string
-		setup            func(svc *agentmocks.MockContentService, captured *contentdomain.UpdateContentRequest)
+		setup            func(svc *agentmocks.MockContentService, captured *contentservice.UpdateContentRequest)
 		wantStatus       int
 		wantCode         string
 		checkReq         bool
@@ -1067,13 +1082,13 @@ func TestContentHandler_Update(t *testing.T) {
 			body:   marshalJSON(map[string]any{"title": "New Title", "body": tiptapJSON}),
 			userID: testUserID,
 			role:   "Editor",
-			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, captured *contentservice.UpdateContentRequest) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
 					ID: 5, UserID: testUserID, PostType: "page", Tags: []string{"keep"},
 					Language: "fr", AllowComments: false,
 				}, nil)
-				svc.EXPECT().Update(mock.Anything, 5, testUserID, "Editor", mock.Anything).
-					Run(func(_ context.Context, _ int, _ int, _ string, req contentdomain.UpdateContentRequest) {
+				svc.EXPECT().Update(mock.Anything, 5, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ kernel.Principal, req contentservice.UpdateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 5, UserID: testUserID, Title: "New Title"}, nil)
@@ -1098,7 +1113,7 @@ func TestContentHandler_Update(t *testing.T) {
 			}),
 			userID: testUserID,
 			role:   "Editor",
-			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, captured *contentservice.UpdateContentRequest) {
 				groupID := 7
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
 					ID: 5, UserID: testUserID, PostType: "page", Tags: []string{"old"},
@@ -1106,8 +1121,8 @@ func TestContentHandler_Update(t *testing.T) {
 					MetaDescription: "old meta", OGTitle: "old og", OGDescription: "old og desc",
 					TranslationGroupID: &groupID,
 				}, nil)
-				svc.EXPECT().Update(mock.Anything, 5, testUserID, "Editor", mock.Anything).
-					Run(func(_ context.Context, _ int, _ int, _ string, req contentdomain.UpdateContentRequest) {
+				svc.EXPECT().Update(mock.Anything, 5, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ kernel.Principal, req contentservice.UpdateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 5, UserID: testUserID, Title: "New Title"}, nil)
@@ -1138,12 +1153,12 @@ func TestContentHandler_Update(t *testing.T) {
 			}),
 			userID: testUserID,
 			role:   contentdomain.RoleAdmin,
-			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, captured *contentservice.UpdateContentRequest) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
 					ID: 5, UserID: 999, PostType: "page", Tags: []string{"old"},
 				}, nil)
-				svc.EXPECT().Update(mock.Anything, 5, testUserID, contentdomain.RoleAdmin, mock.Anything).
-					Run(func(_ context.Context, _ int, _ int, _ string, req contentdomain.UpdateContentRequest) {
+				svc.EXPECT().Update(mock.Anything, 5, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ kernel.Principal, req contentservice.UpdateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 5, UserID: 999, Title: "T"}, nil)
@@ -1167,13 +1182,13 @@ func TestContentHandler_Update(t *testing.T) {
 			}),
 			userID: testUserID,
 			role:   "Editor",
-			setup: func(svc *agentmocks.MockContentService, captured *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, captured *contentservice.UpdateContentRequest) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
 					ID: 5, UserID: testUserID, PostType: "page", Tags: []string{"old"},
 					Language: "fr", AllowComments: true,
 				}, nil)
-				svc.EXPECT().Update(mock.Anything, 5, testUserID, "Editor", mock.Anything).
-					Run(func(_ context.Context, _ int, _ int, _ string, req contentdomain.UpdateContentRequest) {
+				svc.EXPECT().Update(mock.Anything, 5, mock.Anything, mock.Anything).
+					Run(func(_ context.Context, _ int, _ kernel.Principal, req contentservice.UpdateContentRequest) {
 						*captured = req
 					}).
 					Return(&contentdomain.Content{ID: 5, UserID: testUserID, Title: "T"}, nil)
@@ -1192,7 +1207,7 @@ func TestContentHandler_Update(t *testing.T) {
 			body:   marshalJSON(map[string]any{"title": "T", "body": tiptapJSON}),
 			userID: testUserID,
 			role:   "Editor",
-			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, _ *contentservice.UpdateContentRequest) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(nil, contentdomain.ErrContentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -1204,7 +1219,7 @@ func TestContentHandler_Update(t *testing.T) {
 			body:   marshalJSON(map[string]any{"title": "T", "body": tiptapJSON}),
 			userID: testUserID,
 			role:   "Editor",
-			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, _ *contentservice.UpdateContentRequest) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{ID: 5, UserID: 999}, nil)
 				// Update must NOT be reached (no EXPECT on it).
 			},
@@ -1217,9 +1232,9 @@ func TestContentHandler_Update(t *testing.T) {
 			body:   marshalJSON(map[string]any{"title": "T", "body": tiptapJSON}),
 			userID: testUserID,
 			role:   "Editor",
-			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, _ *contentservice.UpdateContentRequest) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{ID: 5, UserID: testUserID}, nil)
-				svc.EXPECT().Update(mock.Anything, 5, testUserID, "Editor", mock.Anything).
+				svc.EXPECT().Update(mock.Anything, 5, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrUnauthorized)
 			},
 			wantStatus: http.StatusForbidden,
@@ -1231,9 +1246,9 @@ func TestContentHandler_Update(t *testing.T) {
 			body:   marshalJSON(map[string]any{"title": "T", "body": tiptapJSON}),
 			userID: testUserID,
 			role:   "Editor",
-			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.UpdateContentRequest) {
+			setup: func(svc *agentmocks.MockContentService, _ *contentservice.UpdateContentRequest) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{ID: 5, UserID: testUserID}, nil)
-				svc.EXPECT().Update(mock.Anything, 5, testUserID, "Editor", mock.Anything).
+				svc.EXPECT().Update(mock.Anything, 5, mock.Anything, mock.Anything).
 					Return(nil, fmt.Errorf("%w: Price: must be a number", contentdomain.ErrCustomFieldValidation))
 			},
 			wantStatus: http.StatusBadRequest,
@@ -1264,7 +1279,7 @@ func TestContentHandler_Update(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := agentmocks.NewMockContentService(t)
-			var captured contentdomain.UpdateContentRequest
+			var captured contentservice.UpdateContentRequest
 			if tt.setup != nil {
 				tt.setup(svc, &captured)
 			}
@@ -1335,7 +1350,7 @@ func TestContentHandler_Delete(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{ID: 5, UserID: testUserID}, nil)
-				svc.EXPECT().DeleteContent(mock.Anything, 5, testUserID, "Editor").Return(nil)
+				svc.EXPECT().DeleteContent(mock.Anything, 5, mock.Anything).Return(nil)
 			},
 			wantStatus: http.StatusNoContent,
 		},
@@ -1346,7 +1361,7 @@ func TestContentHandler_Delete(t *testing.T) {
 			role:   contentdomain.RoleAdmin,
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{ID: 5, UserID: 999}, nil)
-				svc.EXPECT().DeleteContent(mock.Anything, 5, testUserID, contentdomain.RoleAdmin).Return(nil)
+				svc.EXPECT().DeleteContent(mock.Anything, 5, mock.Anything).Return(nil)
 			},
 			wantStatus: http.StatusNoContent,
 		},
@@ -1426,7 +1441,7 @@ func TestContentHandler_Publish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Publish(mock.Anything, 5, testUserID, "Editor").
+					Publish(mock.Anything, 5, mock.Anything).
 					Return(&contentdomain.Content{
 						ID:     5,
 						UserID: testUserID,
@@ -1444,7 +1459,7 @@ func TestContentHandler_Publish(t *testing.T) {
 			role:   contentdomain.RoleAdmin,
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Publish(mock.Anything, 5, testUserID, contentdomain.RoleAdmin).
+					Publish(mock.Anything, 5, mock.Anything).
 					Return(&contentdomain.Content{
 						ID:     5,
 						UserID: 999,
@@ -1462,7 +1477,7 @@ func TestContentHandler_Publish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Publish(mock.Anything, 5, testUserID, "Editor").
+					Publish(mock.Anything, 5, mock.Anything).
 					Return(&contentdomain.Content{
 						ID:     5,
 						UserID: testUserID,
@@ -1480,7 +1495,7 @@ func TestContentHandler_Publish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Publish(mock.Anything, 5, testUserID, "Editor").
+					Publish(mock.Anything, 5, mock.Anything).
 					Return(nil, contentdomain.ErrUnauthorized)
 			},
 			wantStatus: http.StatusNotFound,
@@ -1493,7 +1508,7 @@ func TestContentHandler_Publish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Publish(mock.Anything, 5, testUserID, "Editor").
+					Publish(mock.Anything, 5, mock.Anything).
 					Return(nil, contentdomain.ErrContentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -1551,7 +1566,7 @@ func TestContentHandler_Unpublish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Unpublish(mock.Anything, 5, testUserID, "Editor").
+					Unpublish(mock.Anything, 5, mock.Anything).
 					Return(&contentdomain.Content{
 						ID:     5,
 						UserID: testUserID,
@@ -1569,7 +1584,7 @@ func TestContentHandler_Unpublish(t *testing.T) {
 			role:   contentdomain.RoleAdmin,
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Unpublish(mock.Anything, 5, testUserID, contentdomain.RoleAdmin).
+					Unpublish(mock.Anything, 5, mock.Anything).
 					Return(&contentdomain.Content{
 						ID:     5,
 						UserID: 999,
@@ -1587,7 +1602,7 @@ func TestContentHandler_Unpublish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Unpublish(mock.Anything, 5, testUserID, "Editor").
+					Unpublish(mock.Anything, 5, mock.Anything).
 					Return(&contentdomain.Content{
 						ID:     5,
 						UserID: testUserID,
@@ -1605,7 +1620,7 @@ func TestContentHandler_Unpublish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Unpublish(mock.Anything, 5, testUserID, "Editor").
+					Unpublish(mock.Anything, 5, mock.Anything).
 					Return(nil, contentdomain.ErrUnauthorized)
 			},
 			wantStatus: http.StatusNotFound,
@@ -1618,7 +1633,7 @@ func TestContentHandler_Unpublish(t *testing.T) {
 			role:   "Editor",
 			setup: func(svc *agentmocks.MockContentService) {
 				svc.EXPECT().
-					Unpublish(mock.Anything, 5, testUserID, "Editor").
+					Unpublish(mock.Anything, 5, mock.Anything).
 					Return(nil, contentdomain.ErrContentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -1676,7 +1691,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "published"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, map[string]any{"editorial_status": "published"}).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything, map[string]any{"editorial_status": "published"}).
 					Return(&contentdomain.Content{ID: 5, Title: "Post"}, nil)
 			},
 			wantStatus: http.StatusOK,
@@ -1706,7 +1721,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"bogus": "x"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, mock.Anything).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything, mock.Anything).
 					Return(nil, fmt.Errorf("%w: bogus", contentdomain.ErrUnknownSystemFieldKey))
 			},
 			wantStatus: http.StatusBadRequest,
@@ -1718,7 +1733,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "nope"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, mock.Anything).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything, mock.Anything).
 					Return(nil, fmt.Errorf("%w: Editorial Status: must be one of: draft, published", contentdomain.ErrSystemFieldValidation))
 			},
 			wantStatus: http.StatusBadRequest,
@@ -1730,7 +1745,7 @@ func TestContentHandler_SetSystemFields(t *testing.T) {
 			role: contentdomain.RoleAdmin,
 			body: marshalJSON(map[string]any{"systemFields": map[string]any{"editorial_status": "published"}}),
 			setup: func(svc *agentmocks.MockContentService) {
-				svc.EXPECT().SetSystemFields(mock.Anything, 5, testUserID, mock.Anything).
+				svc.EXPECT().SetSystemFields(mock.Anything, 5, mock.Anything, mock.Anything).
 					Return(nil, contentdomain.ErrContentNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -1814,7 +1829,7 @@ func TestContentHandler_SystemFieldRejection(t *testing.T) {
 		svc := agentmocks.NewMockContentService(t)
 		resolver := agentmocks.NewMockSystemFieldResolver(t)
 		resolver.EXPECT().GetSystemFieldsByPostType("tutorial").Return(tutorialSystemFields, nil)
-		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+		svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 			Return(&contentdomain.Content{ID: 9, Title: "T"}, nil)
 
 		handler := agent.NewContentHandler(svc, resolver, util.NewLogger(io.Discard))
@@ -1833,7 +1848,7 @@ func TestContentHandler_SystemFieldRejection(t *testing.T) {
 
 	t.Run("create - nil resolver skips the check (Create proceeds)", func(t *testing.T) {
 		svc := agentmocks.NewMockContentService(t)
-		svc.EXPECT().Create(mock.Anything, testUserID, mock.Anything, mock.Anything).
+		svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
 			Return(&contentdomain.Content{ID: 9, Title: "T"}, nil)
 
 		handler := newContentHandler(svc) // nil resolver

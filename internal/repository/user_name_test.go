@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	apprepository "github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -18,7 +19,7 @@ func TestUserNameField(t *testing.T) {
 	repo := apprepository.NewUserRepository(db.DB())
 
 	// Test creating a user with a custom name
-	userWithName := &apprepository.User{
+	userWithName := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "$2a$12$testHash",
 		Email:        "test@example.com",

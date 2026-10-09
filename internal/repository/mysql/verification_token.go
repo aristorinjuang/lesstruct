@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 )
 
-type VerificationToken = repository.VerificationToken
+type VerificationToken = authdomain.VerificationToken
 
 // VerificationTokenRepository handles verification token data operations
 type VerificationTokenRepository struct {

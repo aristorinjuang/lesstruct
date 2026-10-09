@@ -4,7 +4,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/sanitize"
+	"github.com/aristorinjuang/lesstruct/kernel/sanitize"
 	"github.com/yuin/goldmark/ast"
 )
 

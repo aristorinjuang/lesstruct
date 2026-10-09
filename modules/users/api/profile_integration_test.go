@@ -1,0 +1,926 @@
+package api_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/aristorinjuang/lesstruct/modules/users/api"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
+	"github.com/go-chi/chi/v5"
+)
+
+// pintSetupProfileTestRouter sets up a test router with profile routes
+func pintSetupProfileTestRouter(
+	profileService userdomain.ProfileServiceInterface,
+	accountDeletionService userdomain.AccountDeletionServiceInterface,
+) *chi.Mux {
+	profileHandler := api.NewProfileHandler(profileService, accountDeletionService, nil, &stubUserFields{}, nil)
+
+	r := chi.NewRouter()
+	// Profile routes with authentication (identity comes from request principal)
+	r.Route("/api/profile", func(r chi.Router) {
+		r.Get("/", profileHandler.GetProfile)
+		r.Put("/email", profileHandler.UpdateEmail)
+		r.Put("/password", profileHandler.ChangePassword)
+		r.Get("/export", profileHandler.ExportUserData)
+		r.Delete("/account", profileHandler.DeleteAccount)
+	})
+	// Email verification route (public, token-based - no authentication required)
+	r.Get("/api/profile/verify-email", profileHandler.VerifyEmailUpdate)
+
+	return r
+}
+
+// TestCompleteProfileViewFlow tests the complete profile view flow
+func TestCompleteProfileViewFlow(t *testing.T) {
+	profileService := &stubProfileService{
+		profile: &userdomain.Profile{
+			ID:        123,
+			Username:  "testuser",
+			Email:     "test@example.com",
+			Role:      "Author",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
+		},
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	// View profile
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var respWrapper struct {
+		Data struct {
+			Profile api.ProfileInfo `json:"profile"`
+			Meta    struct {
+				Timestamp string `json:"timestamp"`
+			} `json:"meta"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v. Body: %s", err, w.Body.String())
+	}
+
+	profile := respWrapper.Data.Profile
+	if profile.ID != 123 {
+		t.Errorf("Expected ID 123, got %d", profile.ID)
+	}
+	if profile.Username != "testuser" {
+		t.Errorf("Expected username 'testuser', got '%s'", profile.Username)
+	}
+	if profile.Email != "test@example.com" {
+		t.Errorf("Expected email 'test@example.com', got '%s'", profile.Email)
+	}
+	if profile.Role != "Author" {
+		t.Errorf("Expected role 'Author', got '%s'", profile.Role)
+	}
+	if respWrapper.Data.Meta.Timestamp == "" {
+		t.Error("Expected timestamp in meta")
+	}
+}
+
+// TestCompleteEmailUpdateFlow tests the complete email update flow
+func TestCompleteEmailUpdateFlow(t *testing.T) {
+	profileService := &stubProfileService{
+		verifyID:    123,
+		verifyEmail: "newemail@example.com",
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	// Step 1: Request email update
+	reqBody := api.EmailUpdateRequest{
+		NewEmail:        "newemail@example.com",
+		CurrentPassword: "CurrentPassword123!",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updateRespWrapper struct {
+		Data struct {
+			Message  string `json:"message"`
+			NewEmail string `json:"newEmail"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&updateRespWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if updateRespWrapper.Data.NewEmail != "newemail@example.com" {
+		t.Errorf("Expected new email in response 'newemail@example.com', got '%s'", updateRespWrapper.Data.NewEmail)
+	}
+
+	// Step 2: Verify email update
+	verifyReq := httptest.NewRequest(http.MethodGet, "/api/profile/verify-email?token=validtoken123", nil)
+	verifyW := httptest.NewRecorder()
+
+	r.ServeHTTP(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", verifyW.Code, verifyW.Body.String())
+	}
+
+	var verifyRespWrapper struct {
+		Data struct {
+			Message string `json:"message"`
+			Email   string `json:"email"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(verifyW.Body).Decode(&verifyRespWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if verifyRespWrapper.Data.Email != "newemail@example.com" {
+		t.Errorf("Expected email 'newemail@example.com', got '%s'", verifyRespWrapper.Data.Email)
+	}
+}
+
+// TestCompletePasswordChangeFlow tests the complete password change flow
+func TestCompletePasswordChangeFlow(t *testing.T) {
+	profileService := &stubProfileService{}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	// Change password
+	reqBody := api.PasswordUpdateRequest{
+		CurrentPassword: "OldPassword123!",
+		NewPassword:     "NewPassword456!",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/password", bytes.NewBuffer(bodyBytes))
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var respWrapper struct {
+		Data struct {
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if respWrapper.Data.Message == "" {
+		t.Error("Expected message in response")
+	}
+}
+
+// TestCompleteDataExportFlow tests the complete data export flow
+func TestCompleteDataExportFlow(t *testing.T) {
+	profileService := &stubProfileService{
+		export: &userdomain.UserDataExport{
+			ExportDate: time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC),
+			User: &userdomain.User{
+				ID:        123,
+				Username:  "testuser",
+				Email:     "test@example.com",
+				Role:      "Author",
+				CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			},
+			Content: []*userdomain.UserContentItem{
+				{
+					ID:        1,
+					Type:      "post",
+					Title:     "My First Post",
+					Slug:      "my-first-post",
+					Content:   "<p>Post content here...</p>",
+					Status:    "published",
+					CreatedAt: time.Date(2026, 3, 29, 10, 0, 0, 0, time.UTC),
+					UpdatedAt: time.Date(2026, 3, 29, 10, 30, 0, 0, time.UTC),
+				},
+			},
+			Comments: []*userdomain.UserCommentItem{
+				{
+					ID:            1,
+					ContentItemID: 1,
+					Content:       "Great post!",
+					CreatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
+					UpdatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
+				},
+			},
+			Media: []*userdomain.UserMediaItem{
+				{
+					ID:               1,
+					Filename:         "image1.webp",
+					OriginalFilename: "photo.jpg",
+					FilePath:         "/uploads/media/2026/03/29/image1.webp",
+					FileSize:         102400,
+					MimeType:         "image/webp",
+					CreatedAt:        time.Date(2026, 3, 29, 12, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	// Export user data
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/export", nil)
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+
+	contentDisposition := w.Header().Get("Content-Disposition")
+	if contentDisposition == "" {
+		t.Error("Expected Content-Disposition header")
+	}
+
+	var exportData userdomain.UserDataExport
+	if err := json.NewDecoder(w.Body).Decode(&exportData); err != nil {
+		t.Fatalf("Failed to decode export data: %v", err)
+	}
+
+	if exportData.User.ID != 123 {
+		t.Errorf("Expected user ID 123 in export, got %d", exportData.User.ID)
+	}
+	if len(exportData.Content) != 1 {
+		t.Errorf("Expected 1 content item, got %d", len(exportData.Content))
+	}
+	if len(exportData.Comments) != 1 {
+		t.Errorf("Expected 1 comment, got %d", len(exportData.Comments))
+	}
+	if len(exportData.Media) != 1 {
+		t.Errorf("Expected 1 media item, got %d", len(exportData.Media))
+	}
+}
+
+// TestUnauthenticatedCannotAccessProfile tests authorization checks
+func TestUnauthenticatedCannotAccessProfile(t *testing.T) {
+	profileService := &stubProfileService{}
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		body           []byte
+		expectedStatus int
+	}{
+		{
+			name:           "View profile",
+			method:         "GET",
+			path:           "/api/profile",
+			body:           nil,
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "Update email",
+			method:         "PUT",
+			path:           "/api/profile/email",
+			body:           []byte(`{"newEmail":"new@example.com","currentPassword":"pass"}`),
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "Change password",
+			method:         "PUT",
+			path:           "/api/profile/password",
+			body:           []byte(`{"currentPassword":"old","newPassword":"new"}`),
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "Export data",
+			method:         "GET",
+			path:           "/api/profile/export",
+			body:           nil,
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "Delete account",
+			method:         "DELETE",
+			path:           "/api/profile/account",
+			body:           []byte(`{"confirmation":"DELETE"}`),
+			expectedStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, bytes.NewBuffer(tt.body))
+			if tt.body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestEmailUpdateAlreadyInUse tests updating email to one already in use
+func TestEmailUpdateAlreadyInUse(t *testing.T) {
+	profileService := &stubProfileService{
+		updateErr: userdomain.ErrEmailAlreadyInUse,
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	reqBody := api.EmailUpdateRequest{
+		NewEmail:        "existing@example.com",
+		CurrentPassword: "CurrentPassword123!",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var respWrapper struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if respWrapper.Error.Code != "EMAIL_ALREADY_IN_USE" {
+		t.Errorf("Expected error code 'EMAIL_ALREADY_IN_USE', got '%s'", respWrapper.Error.Code)
+	}
+}
+
+// TestEmailUpdateInvalidEmail tests updating email with invalid format
+func TestEmailUpdateInvalidEmail(t *testing.T) {
+	profileService := &stubProfileService{
+		updateErr: userdomain.ErrInvalidEmail,
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	reqBody := api.EmailUpdateRequest{
+		NewEmail:        "invalid-email",
+		CurrentPassword: "CurrentPassword123!",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var respWrapper struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if respWrapper.Error.Code != "INVALID_EMAIL" {
+		t.Errorf("Expected error code 'INVALID_EMAIL', got '%s'", respWrapper.Error.Code)
+	}
+}
+
+// TestPasswordChangeWrongCurrentPassword tests changing password with wrong current password
+func TestPasswordChangeWrongCurrentPassword(t *testing.T) {
+	profileService := &stubProfileService{
+		passwordErr: userdomain.ErrInvalidPassword,
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	reqBody := api.PasswordUpdateRequest{
+		CurrentPassword: "WrongPassword123!",
+		NewPassword:     "NewPassword456!",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/password", bytes.NewBuffer(bodyBytes))
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var respWrapper struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if respWrapper.Error.Code != "INVALID_PASSWORD" {
+		t.Errorf("Expected error code 'INVALID_PASSWORD', got '%s'", respWrapper.Error.Code)
+	}
+}
+
+// TestVerifyEmailUpdateExpiredToken tests verifying email update with expired token
+func TestVerifyEmailUpdateExpiredToken(t *testing.T) {
+	profileService := &stubProfileService{
+		verifyErr: fmt.Errorf("token not found or expired"),
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/verify-email?token=expiredtoken123", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	// Expired token should return 400 with INVALID_TOKEN error code
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var respWrapper struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if respWrapper.Error.Code != "INVALID_TOKEN" {
+		t.Errorf("Expected error code 'INVALID_TOKEN', got '%s'", respWrapper.Error.Code)
+	}
+}
+
+// TestVerifyEmailUpdateInvalidToken tests verifying email update with invalid token
+func TestVerifyEmailUpdateInvalidToken(t *testing.T) {
+	profileService := &stubProfileService{
+		verifyErr: errors.New("invalid token"),
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/verify-email?token=invalidtoken123", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	// Invalid token should return 400 with INVALID_TOKEN error code
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var respWrapper struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if respWrapper.Error.Code != "INVALID_TOKEN" {
+		t.Errorf("Expected error code 'INVALID_TOKEN', got '%s'", respWrapper.Error.Code)
+	}
+}
+
+// TestExportDataForUserWithNoContent tests exporting data for user with no content
+func TestExportDataForUserWithNoContent(t *testing.T) {
+	profileService := &stubProfileService{
+		export: &userdomain.UserDataExport{
+			ExportDate: time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC),
+			User: &userdomain.User{
+				ID:        123,
+				Username:  "testuser",
+				Email:     "test@example.com",
+				Role:      "Author",
+				CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			},
+			Content:  []*userdomain.UserContentItem{},
+			Comments: []*userdomain.UserCommentItem{},
+			Media:    []*userdomain.UserMediaItem{},
+		},
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/export", nil)
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var exportData userdomain.UserDataExport
+	if err := json.NewDecoder(w.Body).Decode(&exportData); err != nil {
+		t.Fatalf("Failed to decode export data: %v", err)
+	}
+
+	if len(exportData.Content) != 0 {
+		t.Errorf("Expected 0 content items, got %d", len(exportData.Content))
+	}
+	if len(exportData.Comments) != 0 {
+		t.Errorf("Expected 0 comments, got %d", len(exportData.Comments))
+	}
+	if len(exportData.Media) != 0 {
+		t.Errorf("Expected 0 media items, got %d", len(exportData.Media))
+	}
+}
+
+// TestProfileResponseStructure tests the profile response structure
+func TestProfileResponseStructure(t *testing.T) {
+	profileService := &stubProfileService{
+		profile: &userdomain.Profile{
+			ID:        123,
+			Username:  "testuser",
+			Email:     "test@example.com",
+			Role:      "Author",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
+		},
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var respWrapper struct {
+		Data struct {
+			Profile api.ProfileInfo `json:"profile"`
+			Meta    struct {
+				Timestamp string `json:"timestamp"`
+			} `json:"meta"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&respWrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	// Verify response structure
+	if respWrapper.Data.Profile.ID == 0 {
+		t.Error("Expected profile ID to be set")
+	}
+	if respWrapper.Data.Profile.Username == "" {
+		t.Error("Expected profile username to be set")
+	}
+	if respWrapper.Data.Profile.Email == "" {
+		t.Error("Expected profile email to be set")
+	}
+	if respWrapper.Data.Profile.Role == "" {
+		t.Error("Expected profile role to be set")
+	}
+	if respWrapper.Data.Profile.CreatedAt.IsZero() {
+		t.Error("Expected profile createdAt to be set")
+	}
+	if respWrapper.Data.Meta.Timestamp == "" {
+		t.Error("Expected meta timestamp to be set")
+	}
+
+	// Verify timestamp format
+	if _, err := time.Parse(time.RFC3339, respWrapper.Data.Meta.Timestamp); err != nil {
+		t.Errorf("Expected timestamp in RFC3339 format, got error: %v", err)
+	}
+}
+
+// TestEmailUpdateVerificationTokenFormat tests the email update verification flow
+func TestEmailUpdateVerificationTokenFormat(t *testing.T) {
+	profileService := &stubProfileService{
+		verifyID:    123,
+		verifyEmail: "newemail@example.com",
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	// Step 1: Request email update
+	reqBody := api.EmailUpdateRequest{
+		NewEmail:        "newemail@example.com",
+		CurrentPassword: "CurrentPassword123!",
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(bodyBytes))
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Step 2: Verify email update with the token (no auth required)
+	verifyReq := httptest.NewRequest(http.MethodGet, "/api/profile/verify-email?token=abc123def456", nil)
+	verifyW := httptest.NewRecorder()
+
+	r.ServeHTTP(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d: %s", verifyW.Code, verifyW.Body.String())
+	}
+}
+
+// TestProfileHandlerWithMiddlewareIntegration tests profile handler with authentication middleware integration
+func TestProfileHandlerWithMiddlewareIntegration(t *testing.T) {
+	profileService := &stubProfileService{
+		profile: &userdomain.Profile{
+			ID:        123,
+			Username:  "testuser",
+			Email:     "test@example.com",
+			Role:      "Author",
+			CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+		},
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+
+	profileHandler := api.NewProfileHandler(profileService, accountDeletionService, nil, &stubUserFields{}, nil)
+
+	r := chi.NewRouter()
+	r.Handle("/api/profile", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		profileHandler.GetProfile(w, req)
+	}))
+
+	// Test with valid principal
+	req := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 with valid token, got %d", w.Code)
+	}
+
+	// Test with no principal (test routers carry no middleware so tokens are decorative)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/profile", nil)
+	w2 := httptest.NewRecorder()
+
+	r.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status 401 with invalid token, got %d", w2.Code)
+	}
+}
+
+// TestDataExportJSONStructure tests the data export JSON structure
+func TestDataExportJSONStructure(t *testing.T) {
+	profileService := &stubProfileService{
+		export: &userdomain.UserDataExport{
+			ExportDate: time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC),
+			User: &userdomain.User{
+				ID:        123,
+				Username:  "testuser",
+				Email:     "test@example.com",
+				Role:      "Author",
+				CreatedAt: time.Date(2026, 3, 28, 10, 30, 0, 0, time.UTC),
+			},
+			Content: []*userdomain.UserContentItem{
+				{
+					ID:        1,
+					Type:      "post",
+					Title:     "My First Post",
+					Slug:      "my-first-post",
+					Content:   "<p>Post content here...</p>",
+					Status:    "published",
+					CreatedAt: time.Date(2026, 3, 29, 10, 0, 0, 0, time.UTC),
+					UpdatedAt: time.Date(2026, 3, 29, 10, 30, 0, 0, time.UTC),
+				},
+			},
+			Comments: []*userdomain.UserCommentItem{
+				{
+					ID:            1,
+					ContentItemID: 1,
+					Content:       "Great post!",
+					CreatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
+					UpdatedAt:     time.Date(2026, 3, 29, 14, 0, 0, 0, time.UTC),
+				},
+			},
+			Media: []*userdomain.UserMediaItem{
+				{
+					ID:               1,
+					Filename:         "image1.webp",
+					OriginalFilename: "photo.jpg",
+					FilePath:         "/uploads/media/2026/03/29/image1.webp",
+					FileSize:         102400,
+					MimeType:         "image/webp",
+					CreatedAt:        time.Date(2026, 3, 29, 12, 0, 0, 0, time.UTC),
+				},
+			},
+		},
+	}
+
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/export", nil)
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	// Parse and verify JSON structure
+	var exportData map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&exportData); err != nil {
+		t.Fatalf("Failed to decode export data: %v", err)
+	}
+
+	// Verify required top-level fields with camelCase JSON tags
+	if _, ok := exportData["exportDate"]; !ok {
+		t.Error("Expected exportDate field in JSON")
+	}
+	if _, ok := exportData["user"]; !ok {
+		t.Error("Expected user field in JSON")
+	}
+	if _, ok := exportData["content"]; !ok {
+		t.Error("Expected content field in JSON")
+	}
+	if _, ok := exportData["comments"]; !ok {
+		t.Error("Expected comments field in JSON")
+	}
+	if _, ok := exportData["media"]; !ok {
+		t.Error("Expected media field in JSON")
+	}
+
+	// Verify user structure with camelCase JSON tags
+	userData := exportData["user"].(map[string]any)
+	if _, ok := userData["id"]; !ok {
+		t.Error("Expected user.id field in JSON")
+	}
+	if _, ok := userData["username"]; !ok {
+		t.Error("Expected user.username field in JSON")
+	}
+	if _, ok := userData["email"]; !ok {
+		t.Error("Expected user.email field in JSON")
+	}
+
+	// Verify content is an array
+	contentData := exportData["content"].([]any)
+	if len(contentData) == 0 {
+		t.Error("Expected content to be an array with at least one item")
+	}
+}
+
+// TestProfileHandlerRequestSizeLimit tests request body size limit
+func TestProfileHandlerRequestSizeLimit(t *testing.T) {
+	profileService := &stubProfileService{}
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	// Create a very large request body (simulating potential abuse)
+	largeBody := make([]byte, 2*1024*1024) // 2MB
+	for i := range largeBody {
+		largeBody[i] = 'a'
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/email", bytes.NewBuffer(largeBody))
+	req = requestWithPrincipal(req, "123", "testuser", "Author")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	// The request should be rejected due to size limit
+	// Note: This test verifies the handler doesn't crash with large input
+	// In production, you'd want to add middleware to enforce size limits
+	if w.Code == http.StatusOK {
+		t.Log("Large request was accepted - consider adding request size limit middleware")
+	}
+}
+
+// TestProfileHandlerJSONParsing tests JSON parsing edge cases
+func TestProfileHandlerJSONParsing(t *testing.T) {
+	profileService := &stubProfileService{}
+	accountDeletionService := &stubAccountDeletion{}
+	r := pintSetupProfileTestRouter(profileService, accountDeletionService)
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		body           io.Reader
+		expectedStatus int
+	}{
+		{
+			name:           "Invalid JSON",
+			method:         "PUT",
+			path:           "/api/profile/email",
+			body:           bytes.NewBufferString("{invalid json"),
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Empty request body",
+			method:         "PUT",
+			path:           "/api/profile/email",
+			body:           bytes.NewBufferString(""),
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Missing required fields",
+			method:         "PUT",
+			path:           "/api/profile/email",
+			body:           bytes.NewBufferString(`{"newEmail":"test@example.com"}`),
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, tt.body)
+			req = requestWithPrincipal(req, "123", "testuser", "Author")
+			if tt.body != nil {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d: %s", tt.expectedStatus, w.Code, w.Body.String())
+			}
+		})
+	}
+}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/constants"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
 func unmarshalCustomFields(raw *string) map[string]any {
@@ -20,8 +21,8 @@ func unmarshalCustomFields(raw *string) map[string]any {
 	return fields
 }
 
-// User is a type alias for repository.User.
-type User = repository.User
+// User is a type alias for userdomain.User.
+type User = userdomain.User
 
 // UserRepository handles user data operations with PostgreSQL syntax.
 // Implements repository.UserRepo.
@@ -58,16 +59,16 @@ func (r *UserRepository) UpdateAdminPasswordAndEmail(ctx context.Context, passwo
 	}
 
 	if rows == 0 {
-		return repository.ErrSetupAlreadyCompleted
+		return userdomain.ErrSetupAlreadyCompleted
 	}
 
 	return nil
 }
 
 // GetAdminUser retrieves the admin user from the database.
-func (r *UserRepository) GetAdminUser(ctx context.Context) (*repository.User, error) {
+func (r *UserRepository) GetAdminUser(ctx context.Context) (*User, error) {
 
-	var user repository.User
+	var user User
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -95,7 +96,7 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*repository.User, er
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, repository.ErrAdminNotFound
+		return nil, userdomain.ErrAdminNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -122,7 +123,7 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*repository.User, er
 }
 
 // CreateUser creates a new user in the database.
-func (r *UserRepository) CreateUser(ctx context.Context, user *repository.User) error {
+func (r *UserRepository) CreateUser(ctx context.Context, user *User) error {
 	if err := r.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database connection lost: %w", err)
 	}
@@ -276,9 +277,9 @@ func (r *UserRepository) SetEmailVerified(ctx context.Context, userID int, email
 }
 
 // GetUserByID retrieves a user by their ID.
-func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*repository.User, error) {
+func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, error) {
 
-	var user repository.User
+	var user User
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -324,12 +325,12 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*reposito
 }
 
 // GetUserByEmail retrieves a user by their email (case-insensitive).
-func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*repository.User, error) {
+func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 
 	email = strings.TrimSpace(email)
 	email = strings.ToLower(email)
 
-	var user repository.User
+	var user User
 	var dbEmail sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -375,9 +376,9 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*rep
 }
 
 // GetUserByUsername retrieves a user by their username (case-insensitive).
-func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*repository.User, error) {
+func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*User, error) {
 
-	var user repository.User
+	var user User
 	var email sql.NullString
 	var name sql.NullString
 	var profilePicture sql.NullString
@@ -424,7 +425,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 }
 
 // GetPendingUsers retrieves pending users with pagination.
-func (r *UserRepository) GetPendingUsers(ctx context.Context, limit int, offset int) ([]*repository.User, error) {
+func (r *UserRepository) GetPendingUsers(ctx context.Context, limit int, offset int) ([]*User, error) {
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, username, email, name, role, status, email_verified, profile_picture, created_at, custom_fields
@@ -438,9 +439,9 @@ func (r *UserRepository) GetPendingUsers(ctx context.Context, limit int, offset 
 	}
 	defer func() { _ = rows.Close() }()
 
-	var users []*repository.User
+	var users []*User
 	for rows.Next() {
-		var user repository.User
+		var user User
 		var email sql.NullString
 		var name sql.NullString
 		var profilePicture sql.NullString
@@ -572,7 +573,7 @@ func (r *UserRepository) SoftDeleteUser(ctx context.Context, userID int) error {
 }
 
 // GetAllUsers retrieves all users with optional status filtering and pagination.
-func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*repository.User, error) {
+func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*User, error) {
 
 	if limit <= 0 {
 		limit = 100
@@ -609,9 +610,9 @@ func (r *UserRepository) GetAllUsers(ctx context.Context, status string, limit i
 	}
 	defer func() { _ = rows.Close() }()
 
-	var users []*repository.User
+	var users []*User
 	for rows.Next() {
-		var user repository.User
+		var user User
 		var email sql.NullString
 		var name sql.NullString
 		var profilePicture sql.NullString

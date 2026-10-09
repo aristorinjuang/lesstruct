@@ -16,6 +16,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func TestAPIKeyHandler_CreateAPIKey(t *testing.T) {
 			body:   `{"name":"My CI Key"}`,
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Create(mock.Anything, 1, "My CI Key").
+					Create(mock.Anything, mock.Anything, "My CI Key").
 					Return(
 						"lesstruct_aabbccddeeff_0123456789abcdef0123456789abcdef",
 						&apikey.APIKey{
@@ -81,7 +82,7 @@ func TestAPIKeyHandler_CreateAPIKey(t *testing.T) {
 			wantErrCode: "VALIDATION_ERROR",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Create(mock.Anything, 1, "").
+					Create(mock.Anything, mock.Anything, "").
 					Return("", nil, apikey.ErrInvalidKeyName)
 			},
 		},
@@ -93,7 +94,7 @@ func TestAPIKeyHandler_CreateAPIKey(t *testing.T) {
 			wantErrCode: "VALIDATION_ERROR",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Create(mock.Anything, 1, strings.Repeat("x", 121)).
+					Create(mock.Anything, mock.Anything, strings.Repeat("x", 121)).
 					Return("", nil, apikey.ErrInvalidKeyName)
 			},
 		},
@@ -105,7 +106,7 @@ func TestAPIKeyHandler_CreateAPIKey(t *testing.T) {
 			wantErrCode: "VALIDATION_ERROR",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Create(mock.Anything, 2, "dupe").
+					Create(mock.Anything, mock.Anything, "dupe").
 					Return("", nil, apikey.ErrDuplicateKeyName)
 			},
 		},
@@ -117,7 +118,7 @@ func TestAPIKeyHandler_CreateAPIKey(t *testing.T) {
 			wantErrCode: "INTERNAL_ERROR",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Create(mock.Anything, 3, "boom").
+					Create(mock.Anything, mock.Anything, "boom").
 					Return("", nil, errors.New("database exploded"))
 			},
 		},
@@ -129,7 +130,7 @@ func TestAPIKeyHandler_CreateAPIKey(t *testing.T) {
 			wantErrCode: "INTERNAL_ERROR",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Create(mock.Anything, 4, "ghost").
+					Create(mock.Anything, mock.Anything, "ghost").
 					Return("lesstruct_aabbccddeeff_0123456789abcdef0123456789abcdef", nil, nil)
 			},
 		},
@@ -147,6 +148,7 @@ func TestAPIKeyHandler_CreateAPIKey(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/admin/api-keys", strings.NewReader(tt.body))
 			if tt.userID != "" {
 				ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: tt.userID, Username: "testuser"})
 				req = req.WithContext(ctx)
 			}
 			w := httptest.NewRecorder()
@@ -219,7 +221,7 @@ func TestAPIKeyHandler_ListAPIKeys(t *testing.T) {
 			userID: "1",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					List(mock.Anything, 1).
+					List(mock.Anything, mock.Anything).
 					Return(keys, nil)
 			},
 			wantStatus: http.StatusOK,
@@ -236,7 +238,7 @@ func TestAPIKeyHandler_ListAPIKeys(t *testing.T) {
 			userID: "1",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					List(mock.Anything, 1).
+					List(mock.Anything, mock.Anything).
 					Return(nil, errors.New("database exploded"))
 			},
 			wantStatus:  http.StatusInternalServerError,
@@ -256,6 +258,7 @@ func TestAPIKeyHandler_ListAPIKeys(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/admin/api-keys", nil)
 			if tt.userID != "" {
 				ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: tt.userID, Username: "testuser"})
 				req = req.WithContext(ctx)
 			}
 			w := httptest.NewRecorder()
@@ -333,7 +336,7 @@ func TestAPIKeyHandler_RevokeAPIKey(t *testing.T) {
 			idStr:  "5",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Revoke(mock.Anything, 5, 1).
+					Revoke(mock.Anything, 5, mock.Anything).
 					Return(&apikey.APIKey{
 						ID:        5,
 						UserID:    1,
@@ -351,7 +354,7 @@ func TestAPIKeyHandler_RevokeAPIKey(t *testing.T) {
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				prev := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 				m.EXPECT().
-					Revoke(mock.Anything, 6, 1).
+					Revoke(mock.Anything, 6, mock.Anything).
 					Return(&apikey.APIKey{
 						ID:        6,
 						UserID:    1,
@@ -368,7 +371,7 @@ func TestAPIKeyHandler_RevokeAPIKey(t *testing.T) {
 			idStr:  "999",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Revoke(mock.Anything, 999, 1).
+					Revoke(mock.Anything, 999, mock.Anything).
 					Return(nil, apikey.ErrKeyNotFound)
 			},
 			wantStatus:  http.StatusNotFound,
@@ -394,7 +397,7 @@ func TestAPIKeyHandler_RevokeAPIKey(t *testing.T) {
 			idStr:  "7",
 			setupMock: func(m *handlersmocks.MockAPIKeyService) {
 				m.EXPECT().
-					Revoke(mock.Anything, 7, 1).
+					Revoke(mock.Anything, 7, mock.Anything).
 					Return(nil, errors.New("database exploded"))
 			},
 			wantStatus:  http.StatusInternalServerError,
@@ -415,6 +418,7 @@ func TestAPIKeyHandler_RevokeAPIKey(t *testing.T) {
 			req.SetPathValue("id", tt.idStr)
 			if tt.userID != "" {
 				ctx := context.WithValue(req.Context(), middleware.UserIDKey, tt.userID)
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: tt.userID, Username: "testuser"})
 				req = req.WithContext(ctx)
 			}
 			w := httptest.NewRecorder()

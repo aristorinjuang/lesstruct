@@ -280,8 +280,8 @@ Also re-style form inputs (`background`, `color`, `caret-color`) and the
 |----------|---------|-------------|
 | `THEME_DIR` | `""` (empty) | Path to custom theme directory. Relative or absolute. Read at startup; restart required. |
 
-`THEME_DIR` is loaded in `internal/config/config.go:117` and passed to
-`template.NewTemplates` in `main.go:672-678`.
+`THEME_DIR` is loaded in `internal/config/config.go` and passed to
+`template.NewTemplates` in `internal/app/app.go`.
 
 ## Fallback Behavior
 

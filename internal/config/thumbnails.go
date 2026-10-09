@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/thumbnail"
+	thumbnail "github.com/aristorinjuang/lesstruct/modules/media/domain/thumbnail"
 )
 
 // LoadThumbnails loads thumbnail configurations from the config file (config.toml).

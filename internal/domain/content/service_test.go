@@ -10,9 +10,12 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
-	"github.com/aristorinjuang/lesstruct/internal/domain/seo"
+	"github.com/aristorinjuang/lesstruct/modules/seo/domain"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -21,6 +24,23 @@ import (
 type mockHookExecutor struct {
 	mock.Mock
 	transform func(plugin.HookName, []byte) ([]byte, error)
+}
+
+// stubPostTypeService satisfies content.PostTypeServiceInterface without
+// behavior. Identity parsing precedes every post-type lookup, so its methods
+// never run in the invalid-principal test.
+type stubPostTypeService struct{}
+
+func (stubPostTypeService) GetBySlug(slug string) (content.PostType, error) {
+	return content.PostType{}, nil
+}
+
+func (stubPostTypeService) GetFieldsByPostType(slug string) ([]customfield.FieldSchema, error) {
+	return nil, nil
+}
+
+func (stubPostTypeService) GetSystemFieldsByPostType(slug string) ([]customfield.FieldSchema, error) {
+	return nil, nil
 }
 
 func (m *mockHookExecutor) Execute(ctx context.Context, hookName plugin.HookName, data []byte) ([]byte, error) {
@@ -69,7 +89,7 @@ func TestService_Create(t *testing.T) {
 	tests := []struct {
 		name          string
 		userID        int
-		req           content.CreateContentRequest
+		req           contentdomain.CreateContentRequest
 		setupMock     func(*mocks.MockRepository)
 		wantErr       error
 		validateSlug  bool
@@ -79,16 +99,16 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "successful content creation with draft status",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "My Test Title",
 				Content: testTipTapJSON("This is test content"),
 				Tags:    []string{"test", "example"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "my-test-title", "en").Return(true, nil)
 				m.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-					content := args.Get(1).(*content.Content)
+					content := args.Get(1).(*contentdomain.Content)
 					content.ID = 1
 				})
 			},
@@ -99,16 +119,16 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "successful content creation with published status",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Published Title",
 				Content: testTipTapJSON("This is published content"),
 				Tags:    []string{},
-				Status:  content.StatusPublished,
+				Status:  contentdomain.StatusPublished,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "published-title", "en").Return(true, nil)
 				m.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-					content := args.Get(1).(*content.Content)
+					content := args.Get(1).(*contentdomain.Content)
 					content.ID = 2
 				})
 			},
@@ -119,16 +139,16 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "successful content creation with title that needs trimming",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "  Title With Spaces  ",
 				Content: testTipTapJSON("This is test content"),
 				Tags:    []string{"test"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "title-with-spaces", "en").Return(true, nil)
 				m.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-					content := args.Get(1).(*content.Content)
+					content := args.Get(1).(*contentdomain.Content)
 					content.ID = 3
 				})
 			},
@@ -140,63 +160,63 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "validation fails with empty title",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "",
 				Content: testTipTapJSON("Content here"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock:    func(m *mocks.MockRepository) {},
-			wantErr:      content.ErrInvalidTitle,
+			wantErr:      contentdomain.ErrInvalidTitle,
 			validateSlug: false,
 		},
 		{
 			name:   "validation fails with title too long",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   string(make([]byte, 201)),
 				Content: testTipTapJSON("Content here"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock:    func(m *mocks.MockRepository) {},
-			wantErr:      content.ErrInvalidTitle,
+			wantErr:      contentdomain.ErrInvalidTitle,
 			validateSlug: false,
 		},
 		{
 			name:   "validation fails with content too long",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Valid Title",
 				Content: string(make([]byte, 100001)),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock:    func(m *mocks.MockRepository) {},
-			wantErr:      content.ErrContentTooLong,
+			wantErr:      contentdomain.ErrContentTooLong,
 			validateSlug: false,
 		},
 		{
 			name:   "validation fails with invalid status",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Valid Title",
 				Content: testTipTapJSON("Valid content"),
 				Tags:    []string{},
-				Status:  content.Status("invalid"),
+				Status:  contentdomain.Status("invalid"),
 			},
 			setupMock:    func(m *mocks.MockRepository) {},
-			wantErr:      content.ErrInvalidStatus,
+			wantErr:      contentdomain.ErrInvalidStatus,
 			validateSlug: false,
 		},
 		{
 			name:   "validation fails with empty tag",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Valid Title",
 				Content: testTipTapJSON("Valid content"),
 				Tags:    []string{"valid", "", "another"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock:    func(m *mocks.MockRepository) {},
 			wantErr:      errors.New("tags validation failed"),
@@ -205,26 +225,26 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "fails when slug already exists",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Existing Title",
 				Content: testTipTapJSON("Content here"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "existing-title", "en").Return(false, nil)
 			},
-			wantErr:      content.ErrSlugAlreadyExists,
+			wantErr:      contentdomain.ErrSlugAlreadyExists,
 			validateSlug: false,
 		},
 		{
 			name:   "fails when repository create fails",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Valid Title",
 				Content: testTipTapJSON("Valid content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "valid-title", "en").Return(true, nil)
@@ -236,11 +256,11 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "fails when CheckSlugUnique returns error",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Valid Title",
 				Content: testTipTapJSON("Valid content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "valid-title", "en").Return(false, errors.New("database error"))
@@ -251,17 +271,17 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "successful create with caller-supplied slug",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Some Title",
 				Slug:    "custom-slug",
 				Content: testTipTapJSON("Content here"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "custom-slug", "en").Return(true, nil)
 				m.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-					content := args.Get(1).(*content.Content)
+					content := args.Get(1).(*contentdomain.Content)
 					content.ID = 4
 				})
 			},
@@ -272,17 +292,17 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "caller-supplied slug is trimmed of surrounding whitespace",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Some Title",
 				Slug:    "  custom-slug  ",
 				Content: testTipTapJSON("Content here"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "custom-slug", "en").Return(true, nil)
 				m.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-					content := args.Get(1).(*content.Content)
+					content := args.Get(1).(*contentdomain.Content)
 					content.ID = 5
 				})
 			},
@@ -293,31 +313,31 @@ func TestService_Create(t *testing.T) {
 		{
 			name:   "fails when caller-supplied slug is invalid",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Some Title",
 				Slug:    "Invalid Slug!",
 				Content: testTipTapJSON("Content here"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock:    func(m *mocks.MockRepository) {},
-			wantErr:      content.ErrInvalidSlug,
+			wantErr:      contentdomain.ErrInvalidSlug,
 			validateSlug: false,
 		},
 		{
 			name:   "fails when caller-supplied slug already exists",
 			userID: 1,
-			req: content.CreateContentRequest{
+			req: contentdomain.CreateContentRequest{
 				Title:   "Some Title",
 				Slug:    "taken-slug",
 				Content: testTipTapJSON("Content here"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("CheckSlugUnique", mock.Anything, "taken-slug", "en").Return(false, nil)
 			},
-			wantErr:      content.ErrSlugAlreadyExists,
+			wantErr:      contentdomain.ErrSlugAlreadyExists,
 			validateSlug: false,
 		},
 	}
@@ -327,7 +347,7 @@ func TestService_Create(t *testing.T) {
 			tt.setupMock(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			result, err := service.Create(context.Background(), tt.userID, content.RoleAdmin, tt.req)
+			result, err := service.Create(context.Background(), identity.New(tt.userID, "admin", contentdomain.RoleAdmin), tt.req)
 
 			if tt.wantErr != nil {
 				require.Error(t, err, "Service.Create() expected error, got nil")
@@ -384,19 +404,19 @@ func TestService_Create_PublishedAt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := &mocks.MockRepository{}
 			mockRepo.On("CheckSlugUnique", mock.Anything, "dated-title", "en").Return(true, nil)
-			var captured *content.Content
+			var captured *contentdomain.Content
 			mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-				captured = args.Get(1).(*content.Content)
+				captured = args.Get(1).(*contentdomain.Content)
 				captured.ID = 1
 			})
 
 			seoService := seo.NewService("http://localhost:8080", "Test Site")
 			service := content.NewService(mockRepo, seoService, nil)
-			result, err := service.Create(context.Background(), 1, content.RoleAdmin, content.CreateContentRequest{
+			result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
 				Title:       "Dated Title",
 				Content:     testTipTapJSON("Some content for SEO metadata generation purposes."),
 				Tags:        []string{},
-				Status:      content.StatusPublished,
+				Status:      contentdomain.StatusPublished,
 				PublishedAt: tt.publishedAt,
 			})
 
@@ -446,7 +466,7 @@ func TestService_Create_DefaultLanguage(t *testing.T) {
 			mockRepo := &mocks.MockRepository{}
 			mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", tt.wantLanguage).Return(true, nil)
 			mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-				c := args.Get(1).(*content.Content)
+				c := args.Get(1).(*contentdomain.Content)
 				c.ID = 1
 			})
 
@@ -455,11 +475,11 @@ func TestService_Create_DefaultLanguage(t *testing.T) {
 				opts = append(opts, content.WithDefaultLanguage(tt.defaultLang))
 			}
 			service := content.NewService(mockRepo, nil, nil, opts...)
-			result, err := service.Create(context.Background(), 1, content.RoleAdmin, content.CreateContentRequest{
+			result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
 				Title:    "Test Title",
 				Content:  testTipTapJSON("test"),
 				Tags:     []string{},
-				Status:   content.StatusDraft,
+				Status:   contentdomain.StatusDraft,
 				Language: tt.reqLanguage,
 			})
 
@@ -556,12 +576,12 @@ func TestService_GenerateSlugFromTitle(t *testing.T) {
 		{
 			name:        "empty title",
 			title:       "",
-			expectedErr: content.ErrInvalidTitle,
+			expectedErr: contentdomain.ErrInvalidTitle,
 		},
 		{
 			name:        "title too long",
 			title:       string(make([]byte, 201)),
-			expectedErr: content.ErrInvalidTitle,
+			expectedErr: contentdomain.ErrInvalidTitle,
 		},
 	}
 	for _, tt := range tests {
@@ -605,7 +625,7 @@ func TestService_GetBySlug(t *testing.T) {
 			name: "successful retrieval",
 			slug: "test-slug",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetBySlug", mock.Anything, "test-slug", "en").Return(&content.Content{
+				m.On("GetBySlug", mock.Anything, "test-slug", "en").Return(&contentdomain.Content{
 					ID:      1,
 					Title:   "Test Title",
 					Slug:    "test-slug",
@@ -618,15 +638,15 @@ func TestService_GetBySlug(t *testing.T) {
 			name:        "invalid slug",
 			slug:        "Invalid Slug!",
 			setupMock:   func(m *mocks.MockRepository) {},
-			expectedErr: content.ErrInvalidSlug,
+			expectedErr: contentdomain.ErrInvalidSlug,
 		},
 		{
 			name: "content not found",
 			slug: "non-existent",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetBySlug", mock.Anything, "non-existent", "en").Return(nil, content.ErrContentNotFound)
+				m.On("GetBySlug", mock.Anything, "non-existent", "en").Return(nil, contentdomain.ErrContentNotFound)
 			},
-			expectedErr: content.ErrContentNotFound,
+			expectedErr: contentdomain.ErrContentNotFound,
 		},
 	}
 	for _, tt := range tests {
@@ -666,7 +686,7 @@ func TestService_GetByUser(t *testing.T) {
 			limit:  10,
 			offset: 0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByUser", mock.Anything, 1, 10, 0).Return([]*content.Content{
+				m.On("GetByUser", mock.Anything, 1, 10, 0).Return([]*contentdomain.Content{
 					{ID: 1, Title: "Content 1"},
 					{ID: 2, Title: "Content 2"},
 				}, nil)
@@ -712,7 +732,7 @@ func TestService_ListByCursor(t *testing.T) {
 		userID      int
 		limit       int
 		beforeID    int
-		filters     content.ContentFilters
+		filters     contentdomain.ContentFilters
 		setupMock   func(*mocks.MockRepository)
 		expectedErr error
 		expectedLen int
@@ -722,9 +742,9 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 0,
-			filters:  content.ContentFilters{},
+			filters:  contentdomain.ContentFilters{},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("ListByCursor", mock.Anything, 1, 50, 0, content.ContentFilters{}).Return([]*content.Content{
+				m.On("ListByCursor", mock.Anything, 1, 50, 0, contentdomain.ContentFilters{}).Return([]*contentdomain.Content{
 					{ID: 3, Title: "Newest"},
 					{ID: 2, Title: "Middle"},
 					{ID: 1, Title: "Oldest"},
@@ -738,9 +758,9 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 2,
-			filters:  content.ContentFilters{},
+			filters:  contentdomain.ContentFilters{},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("ListByCursor", mock.Anything, 1, 50, 2, content.ContentFilters{}).Return([]*content.Content{
+				m.On("ListByCursor", mock.Anything, 1, 50, 2, contentdomain.ContentFilters{}).Return([]*contentdomain.Content{
 					{ID: 1, Title: "Oldest"},
 				}, nil)
 			},
@@ -752,9 +772,9 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 0,
-			filters:  content.ContentFilters{},
+			filters:  contentdomain.ContentFilters{},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("ListByCursor", mock.Anything, 1, 50, 0, content.ContentFilters{}).Return([]*content.Content{}, nil)
+				m.On("ListByCursor", mock.Anything, 1, 50, 0, contentdomain.ContentFilters{}).Return([]*contentdomain.Content{}, nil)
 			},
 			expectedErr: nil,
 			expectedLen: 0,
@@ -764,9 +784,9 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 0,
-			filters:  content.ContentFilters{},
+			filters:  contentdomain.ContentFilters{},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("ListByCursor", mock.Anything, 1, 50, 0, content.ContentFilters{}).Return(nil, errors.New("database error"))
+				m.On("ListByCursor", mock.Anything, 1, 50, 0, contentdomain.ContentFilters{}).Return(nil, errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to list content"),
 		},
@@ -775,7 +795,7 @@ func TestService_ListByCursor(t *testing.T) {
 			userID:   1,
 			limit:    50,
 			beforeID: 0,
-			filters: content.ContentFilters{
+			filters: contentdomain.ContentFilters{
 				Status:   "draft",
 				PostType: "post",
 				Language: "en",
@@ -784,14 +804,14 @@ func TestService_ListByCursor(t *testing.T) {
 				Search:   "golang",
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("ListByCursor", mock.Anything, 1, 50, 0, content.ContentFilters{
+				m.On("ListByCursor", mock.Anything, 1, 50, 0, contentdomain.ContentFilters{
 					Status:   "draft",
 					PostType: "post",
 					Language: "en",
 					Tags:     []string{"go", "tutorial"},
 					Author:   "alice",
 					Search:   "golang",
-				}).Return([]*content.Content{{ID: 7, Title: "Filtered"}}, nil)
+				}).Return([]*contentdomain.Content{{ID: 7, Title: "Filtered"}}, nil)
 			},
 			expectedErr: nil,
 			expectedLen: 1,
@@ -830,7 +850,7 @@ func TestService_Update(t *testing.T) {
 		wantErr        error
 		expectedID     int
 		expectedTitle  string
-		expectedStatus content.Status
+		expectedStatus contentdomain.Status
 	}{
 		{
 			name:   "successful update of draft content",
@@ -840,17 +860,17 @@ func TestService_Update(t *testing.T) {
 				Title:   "Updated Title",
 				Content: testTipTapJSON("Updated content"),
 				Tags:    []string{"updated"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Original Title",
 					Slug:      "original-title",
 					Content:   "Original content",
 					Tags:      []string{"original"},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
@@ -859,7 +879,7 @@ func TestService_Update(t *testing.T) {
 			wantErr:        nil,
 			expectedID:     1,
 			expectedTitle:  "Updated Title",
-			expectedStatus: content.StatusDraft,
+			expectedStatus: contentdomain.StatusDraft,
 		},
 		{
 			name:   "successful publish draft to published",
@@ -869,17 +889,17 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.StatusPublished,
+				Status:  contentdomain.StatusPublished,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
@@ -887,7 +907,7 @@ func TestService_Update(t *testing.T) {
 			},
 			wantErr:        nil,
 			expectedID:     1,
-			expectedStatus: content.StatusPublished,
+			expectedStatus: contentdomain.StatusPublished,
 		},
 		{
 			name:   "successful unpublish published to draft",
@@ -897,17 +917,17 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusPublished,
+					Status:    contentdomain.StatusPublished,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
@@ -915,7 +935,7 @@ func TestService_Update(t *testing.T) {
 			},
 			wantErr:        nil,
 			expectedID:     1,
-			expectedStatus: content.StatusDraft,
+			expectedStatus: contentdomain.StatusDraft,
 		},
 		{
 			name:   "successful update of published content (status remains published)",
@@ -925,17 +945,17 @@ func TestService_Update(t *testing.T) {
 				Title:   "Updated Title",
 				Content: testTipTapJSON("Updated content"),
 				Tags:    []string{},
-				Status:  content.StatusPublished,
+				Status:  contentdomain.StatusPublished,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusPublished,
+					Status:    contentdomain.StatusPublished,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
@@ -944,7 +964,7 @@ func TestService_Update(t *testing.T) {
 			wantErr:        nil,
 			expectedID:     1,
 			expectedTitle:  "Updated Title",
-			expectedStatus: content.StatusPublished,
+			expectedStatus: contentdomain.StatusPublished,
 		},
 		{
 			name:   "unauthorized update attempt (different user)",
@@ -954,22 +974,22 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
-			wantErr: content.ErrUnauthorized,
+			wantErr: contentdomain.ErrUnauthorized,
 		},
 		{
 			name:   "content not found",
@@ -979,12 +999,12 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 999).Return(nil, content.ErrContentNotFound)
+				m.On("GetByID", mock.Anything, 999).Return(nil, contentdomain.ErrContentNotFound)
 			},
-			wantErr: content.ErrContentNotFound,
+			wantErr: contentdomain.ErrContentNotFound,
 		},
 		{
 			name:   "validation fails with empty title",
@@ -994,22 +1014,22 @@ func TestService_Update(t *testing.T) {
 				Title:   "",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
-			wantErr: content.ErrInvalidTitle,
+			wantErr: contentdomain.ErrInvalidTitle,
 		},
 		{
 			name:   "validation fails with content too long",
@@ -1019,22 +1039,22 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: string(make([]byte, 100001)),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
-			wantErr: content.ErrContentTooLong,
+			wantErr: contentdomain.ErrContentTooLong,
 		},
 		{
 			name:   "validation fails with invalid status",
@@ -1044,22 +1064,22 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.Status("invalid"),
+				Status:  contentdomain.Status("invalid"),
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
 			},
-			wantErr: content.ErrInvalidStatus,
+			wantErr: contentdomain.ErrInvalidStatus,
 		},
 		{
 			name:   "fails when repository update fails",
@@ -1069,17 +1089,17 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
@@ -1095,7 +1115,7 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
 				m.On("GetByID", mock.Anything, 1).Return(nil, errors.New("database error"))
@@ -1110,17 +1130,17 @@ func TestService_Update(t *testing.T) {
 				Title:   "Title",
 				Content: testTipTapJSON("Content"),
 				Tags:    []string{"valid", "", "another"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				existingContent := &content.Content{
+				existingContent := &contentdomain.Content{
 					ID:        1,
 					UserID:    1,
 					Title:     "Title",
 					Slug:      "title",
 					Content:   "Content",
 					Tags:      []string{},
-					Status:    content.StatusDraft,
+					Status:    contentdomain.StatusDraft,
 					UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 				}
 				m.On("GetByID", mock.Anything, 1).Return(existingContent, nil)
@@ -1134,7 +1154,7 @@ func TestService_Update(t *testing.T) {
 			tt.setupMock(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			result, err := service.Update(context.Background(), tt.id, tt.userID, "", tt.req)
+			result, err := service.Update(context.Background(), tt.id, identity.New(tt.userID, "admin", ""), tt.req)
 
 			if tt.wantErr != nil {
 				require.Error(t, err, "Service.Update() expected error, got nil")
@@ -1167,17 +1187,17 @@ func TestService_Create_CommentsDisabledForcesAllowCommentsFalse(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
 	mockRepo.On("CheckSlugUnique", mock.Anything, "my-test-title", "en").Return(true, nil)
 	mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-		content := args.Get(1).(*content.Content)
+		content := args.Get(1).(*contentdomain.Content)
 		content.ID = 1
 	})
 
 	allowComments := true
 	service := content.NewService(mockRepo, nil, nil, content.WithCommentsEnabled(false))
-	result, err := service.Create(context.Background(), 1, content.RoleAdmin, content.CreateContentRequest{
+	result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
 		Title:         "My Test Title",
 		Content:       testTipTapJSON("This is test content"),
 		Tags:          []string{},
-		Status:        content.StatusDraft,
+		Status:        contentdomain.StatusDraft,
 		AllowComments: &allowComments,
 	})
 
@@ -1189,14 +1209,14 @@ func TestService_Create_CommentsDisabledForcesAllowCommentsFalse(t *testing.T) {
 
 func TestService_Update_CommentsDisabledForcesAllowCommentsFalse(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:            1,
 		UserID:        1,
 		Title:         "Original Title",
 		Slug:          "original-title",
 		Content:       "Original content",
 		Tags:          []string{},
-		Status:        content.StatusDraft,
+		Status:        contentdomain.StatusDraft,
 		AllowComments: true,
 		UpdatedAt:     time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
@@ -1204,11 +1224,11 @@ func TestService_Update_CommentsDisabledForcesAllowCommentsFalse(t *testing.T) {
 
 	allowComments := true
 	service := content.NewService(mockRepo, nil, nil, content.WithCommentsEnabled(false))
-	result, err := service.Update(context.Background(), 1, 1, "", content.UpdateContentRequest{
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), content.UpdateContentRequest{
 		Title:         "Updated Title",
 		Content:       testTipTapJSON("Updated content"),
 		Tags:          []string{},
-		Status:        content.StatusDraft,
+		Status:        contentdomain.StatusDraft,
 		AllowComments: &allowComments,
 	})
 
@@ -1220,14 +1240,14 @@ func TestService_Update_CommentsDisabledForcesAllowCommentsFalse(t *testing.T) {
 
 func TestService_Update_SlugIsImmutable(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:      1,
 		UserID:  1,
 		Title:   "Original Title",
 		Slug:    "original-slug",
 		Content: testTipTapJSON("Original content"),
 		Tags:    []string{},
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -1236,10 +1256,10 @@ func TestService_Update_SlugIsImmutable(t *testing.T) {
 		Title:   "Completely Different Title",
 		Content: testTipTapJSON("Updated content"),
 		Tags:    []string{},
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	}
 
-	result, err := service.Update(context.Background(), 1, 1, "", req)
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.NoError(t, err)
 	assert.Equal(t, "Completely Different Title", result.Title, "Service.Update() Title")
@@ -1252,7 +1272,7 @@ func TestService_Update_SlugIsImmutable(t *testing.T) {
 func TestService_Update_SlugChange(t *testing.T) {
 	tests := []struct {
 		name          string
-		existing      *content.Content
+		existing      *contentdomain.Content
 		reqSlug       string
 		slugUnique    bool
 		wantSlug      string
@@ -1262,14 +1282,14 @@ func TestService_Update_SlugChange(t *testing.T) {
 	}{
 		{
 			name: "draft slug change succeeds",
-			existing: &content.Content{
+			existing: &contentdomain.Content{
 				ID:       1,
 				UserID:   1,
 				Title:    "Original Title",
 				Slug:     "original-slug",
 				Content:  testTipTapJSON("Original content"),
 				Tags:     []string{},
-				Status:   content.StatusDraft,
+				Status:   contentdomain.StatusDraft,
 				Language: "en",
 			},
 			reqSlug:       "brand-new-slug",
@@ -1280,14 +1300,14 @@ func TestService_Update_SlugChange(t *testing.T) {
 		},
 		{
 			name: "unchanged slug is a no-op",
-			existing: &content.Content{
+			existing: &contentdomain.Content{
 				ID:       1,
 				UserID:   1,
 				Title:    "Original Title",
 				Slug:     "original-slug",
 				Content:  testTipTapJSON("Original content"),
 				Tags:     []string{},
-				Status:   content.StatusDraft,
+				Status:   contentdomain.StatusDraft,
 				Language: "en",
 			},
 			reqSlug:       "original-slug",
@@ -1297,14 +1317,14 @@ func TestService_Update_SlugChange(t *testing.T) {
 		},
 		{
 			name: "empty slug is a no-op",
-			existing: &content.Content{
+			existing: &contentdomain.Content{
 				ID:       1,
 				UserID:   1,
 				Title:    "Original Title",
 				Slug:     "original-slug",
 				Content:  testTipTapJSON("Original content"),
 				Tags:     []string{},
-				Status:   content.StatusDraft,
+				Status:   contentdomain.StatusDraft,
 				Language: "en",
 			},
 			reqSlug:       "",
@@ -1314,54 +1334,54 @@ func TestService_Update_SlugChange(t *testing.T) {
 		},
 		{
 			name: "published slug change is rejected",
-			existing: &content.Content{
+			existing: &contentdomain.Content{
 				ID:       1,
 				UserID:   1,
 				Title:    "Original Title",
 				Slug:     "original-slug",
 				Content:  testTipTapJSON("Original content"),
 				Tags:     []string{},
-				Status:   content.StatusPublished,
+				Status:   contentdomain.StatusPublished,
 				Language: "en",
 			},
 			reqSlug:       "brand-new-slug",
 			wantErr:       true,
-			expectErr:     content.ErrSlugImmutable,
+			expectErr:     contentdomain.ErrSlugImmutable,
 			expectUniqChk: false,
 		},
 		{
 			name: "draft invalid slug is rejected",
-			existing: &content.Content{
+			existing: &contentdomain.Content{
 				ID:       1,
 				UserID:   1,
 				Title:    "Original Title",
 				Slug:     "original-slug",
 				Content:  testTipTapJSON("Original content"),
 				Tags:     []string{},
-				Status:   content.StatusDraft,
+				Status:   contentdomain.StatusDraft,
 				Language: "en",
 			},
 			reqSlug:       "NOT A SLUG!!",
 			wantErr:       true,
-			expectErr:     content.ErrInvalidSlug,
+			expectErr:     contentdomain.ErrInvalidSlug,
 			expectUniqChk: false,
 		},
 		{
 			name: "draft conflicting slug is rejected",
-			existing: &content.Content{
+			existing: &contentdomain.Content{
 				ID:       1,
 				UserID:   1,
 				Title:    "Original Title",
 				Slug:     "original-slug",
 				Content:  testTipTapJSON("Original content"),
 				Tags:     []string{},
-				Status:   content.StatusDraft,
+				Status:   contentdomain.StatusDraft,
 				Language: "en",
 			},
 			reqSlug:       "taken-slug",
 			slugUnique:    false,
 			wantErr:       true,
-			expectErr:     content.ErrSlugAlreadyExists,
+			expectErr:     contentdomain.ErrSlugAlreadyExists,
 			expectUniqChk: true,
 		},
 	}
@@ -1384,7 +1404,7 @@ func TestService_Update_SlugChange(t *testing.T) {
 				Status:  tt.existing.Status,
 			}
 
-			result, err := service.Update(context.Background(), 1, 1, "", req)
+			result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1403,7 +1423,7 @@ func TestService_Update_SEOAutoGeneration(t *testing.T) {
 		name             string
 		id               int
 		userID           int
-		existingContent  *content.Content
+		existingContent  *contentdomain.Content
 		req              content.UpdateContentRequest
 		setupMock        func(*mocks.MockRepository)
 		expectedMetaDesc string
@@ -1414,33 +1434,33 @@ func TestService_Update_SEOAutoGeneration(t *testing.T) {
 			name:   "auto_generates_seo_when_publishing_draft",
 			id:     1,
 			userID: 1,
-			existingContent: &content.Content{
+			existingContent: &contentdomain.Content{
 				ID:      1,
 				UserID:  1,
 				Title:   "Test Article",
 				Slug:    "test-article",
 				Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"This is a test article with some content for SEO metadata generation purposes."}]}]}`,
 				Tags:    []string{"test", "article"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			req: content.UpdateContentRequest{
 				Title:           "Test Article",
 				Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"This is a test article with some content for SEO metadata generation purposes."}]}]}`,
 				Tags:            []string{"test", "article"},
-				Status:          content.StatusPublished,
+				Status:          contentdomain.StatusPublished,
 				MetaDescription: "",
 				OGTitle:         "",
 				OGDescription:   "",
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test Article",
 					Slug:     "test-article",
 					Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"This is a test article with some content for SEO metadata generation purposes."}]}]}`,
 					Tags:     []string{"test", "article"},
-					Status:   content.StatusDraft,
+					Status:   contentdomain.StatusDraft,
 					PostType: "post",
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -1453,36 +1473,36 @@ func TestService_Update_SEOAutoGeneration(t *testing.T) {
 			name:   "uses_custom_seo_overrides_when_provided",
 			id:     1,
 			userID: 1,
-			existingContent: &content.Content{
+			existingContent: &contentdomain.Content{
 				ID:      1,
 				UserID:  1,
 				Title:   "Test Article",
 				Slug:    "test-article",
 				Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Default content"}]}]}`,
 				Tags:    []string{"test"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			req: content.UpdateContentRequest{
 				Title:           "Test Article",
 				Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Default content"}]}]}`,
 				Tags:            []string{"test"},
-				Status:          content.StatusPublished,
+				Status:          contentdomain.StatusPublished,
 				MetaDescription: "Custom meta description",
 				OGTitle:         "Custom OG Title",
 				OGDescription:   "Custom OG description",
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Test Article",
 					Slug:    "test-article",
 					Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Default content"}]}]}`,
 					Tags:    []string{"test"},
-					Status:  content.StatusDraft,
+					Status:  contentdomain.StatusDraft,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-					content := args.Get(1).(*content.Content)
+					content := args.Get(1).(*contentdomain.Content)
 					assert.Equal(t, "Custom meta description", content.MetaDescription)
 					assert.Equal(t, "Custom OG Title", content.OGTitle)
 					assert.Equal(t, "Custom OG description", content.OGDescription)
@@ -1496,14 +1516,14 @@ func TestService_Update_SEOAutoGeneration(t *testing.T) {
 			name:   "does_not_regenerate_seo_when_updating_published_content",
 			id:     1,
 			userID: 1,
-			existingContent: &content.Content{
+			existingContent: &contentdomain.Content{
 				ID:              1,
 				UserID:          1,
 				Title:           "Test Article",
 				Slug:            "test-article",
 				Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 				Tags:            []string{"test"},
-				Status:          content.StatusPublished,
+				Status:          contentdomain.StatusPublished,
 				MetaDescription: "Existing meta description",
 				OGTitle:         "Existing OG title",
 				OGDescription:   "Existing OG description",
@@ -1512,26 +1532,26 @@ func TestService_Update_SEOAutoGeneration(t *testing.T) {
 				Title:           "Test Article",
 				Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 				Tags:            []string{"test"},
-				Status:          content.StatusPublished,
+				Status:          contentdomain.StatusPublished,
 				MetaDescription: "Updated meta description",
 				OGTitle:         "Updated OG title",
 				OGDescription:   "Updated OG description",
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:              1,
 					UserID:          1,
 					Title:           "Test Article",
 					Slug:            "test-article",
 					Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 					Tags:            []string{"test"},
-					Status:          content.StatusPublished,
+					Status:          contentdomain.StatusPublished,
 					MetaDescription: "Existing meta description",
 					OGTitle:         "Existing OG title",
 					OGDescription:   "Existing OG description",
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-					content := args.Get(1).(*content.Content)
+					content := args.Get(1).(*contentdomain.Content)
 					assert.Equal(t, "Updated meta description", content.MetaDescription)
 					assert.Equal(t, "Updated OG title", content.OGTitle)
 					assert.Equal(t, "Updated OG description", content.OGDescription)
@@ -1545,33 +1565,33 @@ func TestService_Update_SEOAutoGeneration(t *testing.T) {
 			name:   "does_not_auto_generate_seo_when_seo_service_is_nil",
 			id:     1,
 			userID: 1,
-			existingContent: &content.Content{
+			existingContent: &contentdomain.Content{
 				ID:      1,
 				UserID:  1,
 				Title:   "Test Article",
 				Slug:    "test-article",
 				Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 				Tags:    []string{"test"},
-				Status:  content.StatusDraft,
+				Status:  contentdomain.StatusDraft,
 			},
 			req: content.UpdateContentRequest{
 				Title:           "Test Article",
 				Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 				Tags:            []string{"test"},
-				Status:          content.StatusPublished,
+				Status:          contentdomain.StatusPublished,
 				MetaDescription: "",
 				OGTitle:         "",
 				OGDescription:   "",
 			},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Test Article",
 					Slug:    "test-article",
 					Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 					Tags:    []string{"test"},
-					Status:  content.StatusDraft,
+					Status:  contentdomain.StatusDraft,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
@@ -1592,7 +1612,7 @@ func TestService_Update_SEOAutoGeneration(t *testing.T) {
 			}
 
 			service := content.NewService(mockRepo, seoService, nil)
-			result, err := service.Update(context.Background(), tt.id, tt.userID, "", tt.req)
+			result, err := service.Update(context.Background(), tt.id, identity.New(tt.userID, "admin", ""), tt.req)
 
 			require.NoError(t, err, "Service.Update() unexpected error")
 			require.NotNil(t, result, "Service.Update() expected content, got nil")
@@ -1611,7 +1631,7 @@ func TestService_PostTypeValidation(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			content := args.Get(1).(*content.Content)
+			content := args.Get(1).(*contentdomain.Content)
 			content.ID = 1
 		})
 
@@ -1621,15 +1641,15 @@ func TestService_PostTypeValidation(t *testing.T) {
 
 		service := content.NewService(mockRepo, nil, mockPostType)
 
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "valid_type",
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err, "Service.Create() unexpected error")
 		assert.Equal(t, "valid_type", result.PostType, "Service.Create() PostType")
@@ -1647,15 +1667,15 @@ func TestService_PostTypeValidation(t *testing.T) {
 
 		service := content.NewService(mockRepo, nil, mockPostType)
 
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "invalid_type",
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err, "Service.Create() expected error, got nil")
 		assert.Contains(t, err.Error(), "post type validation failed", "Service.Create() error")
@@ -1668,21 +1688,21 @@ func TestService_PostTypeValidation(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			content := args.Get(1).(*content.Content)
+			content := args.Get(1).(*contentdomain.Content)
 			content.ID = 1
 		})
 
 		service := content.NewService(mockRepo, nil, nil)
 
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "any_type",
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err, "Service.Create() unexpected error")
 		assert.Equal(t, "any_type", result.PostType, "Service.Create() PostType")
@@ -1703,14 +1723,14 @@ func containsString(s, substr string) bool {
 func TestService_Update_PostTypeValidation(t *testing.T) {
 	t.Run("succeeds_with_valid_post_type", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:      1,
 			UserID:  1,
 			Title:   "Test Article",
 			Slug:    "test-article",
 			Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 			Tags:    []string{},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -1724,11 +1744,11 @@ func TestService_Update_PostTypeValidation(t *testing.T) {
 			Title:    "Test Article",
 			Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "valid_type",
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err, "Service.Update() unexpected error")
 		assert.Equal(t, "valid_type", result.PostType, "Service.Update() PostType")
@@ -1739,14 +1759,14 @@ func TestService_Update_PostTypeValidation(t *testing.T) {
 
 	t.Run("fails_with_invalid_post_type", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:      1,
 			UserID:  1,
 			Title:   "Test Article",
 			Slug:    "test-article",
 			Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 			Tags:    []string{},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -1758,11 +1778,11 @@ func TestService_Update_PostTypeValidation(t *testing.T) {
 			Title:    "Test Article",
 			Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "invalid_type",
 		}
 
-		_, err := service.Update(context.Background(), 1, 1, "", req)
+		_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.Error(t, err, "Service.Update() expected error, got nil")
 		assert.Contains(t, err.Error(), "post type validation failed", "Service.Update() error")
@@ -1774,14 +1794,14 @@ func TestService_Update_PostTypeValidation(t *testing.T) {
 
 func TestService_Update_CustomURLPrefixForNonPostType(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Test Article",
 		Slug:     "test-article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "page",
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -1793,11 +1813,11 @@ func TestService_Update_CustomURLPrefixForNonPostType(t *testing.T) {
 		Title:    "Test Article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusPublished,
+		Status:   contentdomain.StatusPublished,
 		PostType: "page",
 	}
 
-	result, err := service.Update(context.Background(), 1, 1, "", req)
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.NoError(t, err, "Service.Update() unexpected error")
 	assert.NotEmpty(t, result.MetaDescription, "Service.Update() expected meta description to be generated")
@@ -1807,14 +1827,14 @@ func TestService_Update_CustomURLPrefixForNonPostType(t *testing.T) {
 
 func TestService_Update_DefaultURLPrefixForPostType(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Test Article",
 		Slug:     "test-article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "post",
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -1826,11 +1846,11 @@ func TestService_Update_DefaultURLPrefixForPostType(t *testing.T) {
 		Title:    "Test Article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusPublished,
+		Status:   contentdomain.StatusPublished,
 		PostType: "post",
 	}
 
-	result, err := service.Update(context.Background(), 1, 1, "", req)
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.NoError(t, err, "Service.Update() unexpected error")
 	assert.NotEmpty(t, result.MetaDescription, "Service.Update() expected meta description to be generated")
@@ -1840,14 +1860,14 @@ func TestService_Update_DefaultURLPrefixForPostType(t *testing.T) {
 
 func TestService_Update_PostTypeValidationWithSEOGeneration(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Test Article",
 		Slug:     "test-article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "article",
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -1862,11 +1882,11 @@ func TestService_Update_PostTypeValidationWithSEOGeneration(t *testing.T) {
 		Title:    "Test Article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusPublished,
+		Status:   contentdomain.StatusPublished,
 		PostType: "article",
 	}
 
-	result, err := service.Update(context.Background(), 1, 1, "", req)
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.NoError(t, err, "Service.Update() unexpected error")
 	assert.NotEmpty(t, result.MetaDescription, "Service.Update() expected meta description to be generated")
@@ -1878,14 +1898,14 @@ func TestService_Update_PostTypeValidationWithSEOGeneration(t *testing.T) {
 
 func TestService_Update_EmptyPostTypeWithPostTypeService(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:      1,
 		UserID:  1,
 		Title:   "Test Article",
 		Slug:    "test-article",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:    []string{},
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -1897,11 +1917,11 @@ func TestService_Update_EmptyPostTypeWithPostTypeService(t *testing.T) {
 		Title:    "Test Article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "",
 	}
 
-	result, err := service.Update(context.Background(), 1, 1, "", req)
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.NoError(t, err, "Service.Update() unexpected error")
 	assert.Equal(t, "", result.PostType, "Service.Update() PostType should be empty")
@@ -1912,14 +1932,14 @@ func TestService_Update_EmptyPostTypeWithPostTypeService(t *testing.T) {
 
 func TestService_Update_ChangePostTypeWithSEOGeneration(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Test Article",
 		Slug:     "test-article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "page",
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -1934,11 +1954,11 @@ func TestService_Update_ChangePostTypeWithSEOGeneration(t *testing.T) {
 		Title:    "Test Article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusPublished,
+		Status:   contentdomain.StatusPublished,
 		PostType: "post",
 	}
 
-	result, err := service.Update(context.Background(), 1, 1, "", req)
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.NoError(t, err, "Service.Update() unexpected error")
 	assert.NotEmpty(t, result.MetaDescription, "Service.Update() expected meta description to be generated")
@@ -1950,14 +1970,14 @@ func TestService_Update_ChangePostTypeWithSEOGeneration(t *testing.T) {
 
 func TestService_Update_WithNilSEOService(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:      1,
 		UserID:  1,
 		Title:   "Test Article",
 		Slug:    "test-article",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:    []string{},
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -1967,13 +1987,13 @@ func TestService_Update_WithNilSEOService(t *testing.T) {
 		Title:           "Test Article",
 		Content:         `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:            []string{},
-		Status:          content.StatusPublished,
+		Status:          contentdomain.StatusPublished,
 		MetaDescription: "Custom meta description",
 		OGTitle:         "Custom OG Title",
 		OGDescription:   "Custom OG description",
 	}
 
-	result, err := service.Update(context.Background(), 1, 1, "", req)
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.NoError(t, err, "Service.Update() unexpected error")
 	assert.Equal(t, "Custom meta description", result.MetaDescription, "Service.Update() MetaDescription")
@@ -1994,7 +2014,7 @@ func TestService_GetByID(t *testing.T) {
 			name: "successful retrieval",
 			id:   1,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					Title:   "Test Title",
 					Slug:    "test-slug",
@@ -2007,9 +2027,9 @@ func TestService_GetByID(t *testing.T) {
 			name: "content not found",
 			id:   999,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 999).Return(nil, content.ErrContentNotFound)
+				m.On("GetByID", mock.Anything, 999).Return(nil, contentdomain.ErrContentNotFound)
 			},
-			expectedErr: content.ErrContentNotFound,
+			expectedErr: contentdomain.ErrContentNotFound,
 		},
 		{
 			name: "repository error",
@@ -2047,14 +2067,14 @@ func TestService_GetByID(t *testing.T) {
 
 func TestService_Update_SEOGenerationFailure(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:      1,
 		UserID:  1,
 		Title:   "Test Article",
 		Slug:    "test-article",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:    []string{},
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	}, nil)
 
 	seoService := seo.NewService("http://localhost:8080", "Test Site")
@@ -2069,11 +2089,11 @@ func TestService_Update_SEOGenerationFailure(t *testing.T) {
 		Title:   "Test Article",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:    []string{},
-		Status:  content.StatusPublished,
+		Status:  contentdomain.StatusPublished,
 		OGTitle: longOGTitle,
 	}
 
-	_, err := service.Update(context.Background(), 1, 1, "", req)
+	_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.Error(t, err, "Service.Update() expected error when OG title override is too long, got nil")
 	if !containsString(err.Error(), "failed to generate SEO metadata") {
@@ -2085,14 +2105,14 @@ func TestService_Update_SEOGenerationFailure(t *testing.T) {
 
 func TestService_Update_PostTypeValidation_Debug(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:      1,
 		UserID:  1,
 		Title:   "Test Article",
 		Slug:    "test-article",
 		Content: `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:    []string{},
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	}, nil)
 
 	mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -2104,11 +2124,11 @@ func TestService_Update_PostTypeValidation_Debug(t *testing.T) {
 		Title:    "Test Article",
 		Content:  `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Content"}]}]}`,
 		Tags:     []string{},
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "invalid_type",
 	}
 
-	_, err := service.Update(context.Background(), 1, 1, "", req)
+	_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 	require.Error(t, err, "Service.Update() expected error, got nil")
 	t.Logf("Error: %v", err)
@@ -2120,24 +2140,24 @@ func TestService_Update_PostTypeValidation_Debug(t *testing.T) {
 func TestService_ListByFilters(t *testing.T) {
 	t.Run("passes filters to repository", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		filterResults := []*content.Content{
+		filterResults := []*contentdomain.Content{
 			{ID: 1, Title: "Croissant"},
 			{ID: 2, Title: "Eclair"},
 		}
-		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f content.ContentFilters) bool {
+		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f contentdomain.ContentFilters) bool {
 			return f.Limit == 100 && f.Offset == 0 &&
 				len(f.CustomFieldFilters) == 1 &&
 				f.CustomFieldFilters[0].Field == "category" &&
-				f.CustomFieldFilters[0].Operator == content.FilterOpEqual &&
+				f.CustomFieldFilters[0].Operator == contentdomain.FilterOpEqual &&
 				f.CustomFieldFilters[0].Value == "Pastry"
 		})).Return(filterResults, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{
+		filters := contentdomain.ContentFilters{
 			Limit:  100,
 			Offset: 0,
-			CustomFieldFilters: []content.CustomFieldFilter{
-				{Field: "category", Operator: content.FilterOpEqual, Value: "Pastry"},
+			CustomFieldFilters: []contentdomain.CustomFieldFilter{
+				{Field: "category", Operator: contentdomain.FilterOpEqual, Value: "Pastry"},
 			},
 		}
 
@@ -2151,12 +2171,12 @@ func TestService_ListByFilters(t *testing.T) {
 
 	t.Run("clamps limit to default when zero", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f content.ContentFilters) bool {
+		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f contentdomain.ContentFilters) bool {
 			return f.Limit == 100
-		})).Return([]*content.Content{}, nil)
+		})).Return([]*contentdomain.Content{}, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{Limit: 0, Offset: 0}
+		filters := contentdomain.ContentFilters{Limit: 0, Offset: 0}
 
 		_, err := service.ListByFilters(context.Background(), 1, filters)
 
@@ -2166,12 +2186,12 @@ func TestService_ListByFilters(t *testing.T) {
 
 	t.Run("clamps limit to max 1000", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f content.ContentFilters) bool {
+		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f contentdomain.ContentFilters) bool {
 			return f.Limit == 1000
-		})).Return([]*content.Content{}, nil)
+		})).Return([]*contentdomain.Content{}, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{Limit: 5000, Offset: 0}
+		filters := contentdomain.ContentFilters{Limit: 5000, Offset: 0}
 
 		_, err := service.ListByFilters(context.Background(), 1, filters)
 
@@ -2181,12 +2201,12 @@ func TestService_ListByFilters(t *testing.T) {
 
 	t.Run("clamps negative offset to zero", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f content.ContentFilters) bool {
+		mockRepo.On("ListByFilters", mock.Anything, 1, mock.MatchedBy(func(f contentdomain.ContentFilters) bool {
 			return f.Offset == 0
-		})).Return([]*content.Content{}, nil)
+		})).Return([]*contentdomain.Content{}, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{Limit: 100, Offset: -10}
+		filters := contentdomain.ContentFilters{Limit: 100, Offset: -10}
 
 		_, err := service.ListByFilters(context.Background(), 1, filters)
 
@@ -2197,63 +2217,63 @@ func TestService_ListByFilters(t *testing.T) {
 	t.Run("returns error for empty filter field", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{
+		filters := contentdomain.ContentFilters{
 			Limit:  100,
 			Offset: 0,
-			CustomFieldFilters: []content.CustomFieldFilter{
-				{Field: "", Operator: content.FilterOpEqual, Value: "Pastry"},
+			CustomFieldFilters: []contentdomain.CustomFieldFilter{
+				{Field: "", Operator: contentdomain.FilterOpEqual, Value: "Pastry"},
 			},
 		}
 
 		_, err := service.ListByFilters(context.Background(), 1, filters)
 
 		require.Error(t, err)
-		assert.ErrorIs(t, err, content.ErrInvalidFilterField)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidFilterField)
 		mockRepo.AssertNotCalled(t, "ListByFilters")
 	})
 
 	t.Run("returns error for invalid filter operator", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{
+		filters := contentdomain.ContentFilters{
 			Limit:  100,
 			Offset: 0,
-			CustomFieldFilters: []content.CustomFieldFilter{
-				{Field: "category", Operator: content.FilterOperator("invalid"), Value: "Pastry"},
+			CustomFieldFilters: []contentdomain.CustomFieldFilter{
+				{Field: "category", Operator: contentdomain.FilterOperator("invalid"), Value: "Pastry"},
 			},
 		}
 
 		_, err := service.ListByFilters(context.Background(), 1, filters)
 
 		require.Error(t, err)
-		assert.ErrorIs(t, err, content.ErrInvalidFilterOperator)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidFilterOperator)
 		mockRepo.AssertNotCalled(t, "ListByFilters")
 	})
 
 	t.Run("returns error for empty filter value", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{
+		filters := contentdomain.ContentFilters{
 			Limit:  100,
 			Offset: 0,
-			CustomFieldFilters: []content.CustomFieldFilter{
-				{Field: "category", Operator: content.FilterOpEqual, Value: ""},
+			CustomFieldFilters: []contentdomain.CustomFieldFilter{
+				{Field: "category", Operator: contentdomain.FilterOpEqual, Value: ""},
 			},
 		}
 
 		_, err := service.ListByFilters(context.Background(), 1, filters)
 
 		require.Error(t, err)
-		assert.ErrorIs(t, err, content.ErrInvalidFilterValue)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidFilterValue)
 		mockRepo.AssertNotCalled(t, "ListByFilters")
 	})
 
 	t.Run("returns repository error", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("ListByFilters", mock.Anything, 1, mock.Anything).Return([]*content.Content(nil), errors.New("db error"))
+		mockRepo.On("ListByFilters", mock.Anything, 1, mock.Anything).Return([]*contentdomain.Content(nil), errors.New("db error"))
 
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{Limit: 100, Offset: 0}
+		filters := contentdomain.ContentFilters{Limit: 100, Offset: 0}
 
 		_, err := service.ListByFilters(context.Background(), 1, filters)
 
@@ -2266,12 +2286,12 @@ func TestService_ListByFilters(t *testing.T) {
 func TestService_Count(t *testing.T) {
 	t.Run("passes filters to repository", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
-		mockRepo.On("Count", mock.Anything, 1, mock.MatchedBy(func(f content.ContentFilters) bool {
+		mockRepo.On("Count", mock.Anything, 1, mock.MatchedBy(func(f contentdomain.ContentFilters) bool {
 			return f.PostType == "menu-item" && f.Search == "news"
 		})).Return(42, nil)
 
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{PostType: "menu-item", Search: "news"}
+		filters := contentdomain.ContentFilters{PostType: "menu-item", Search: "news"}
 
 		total, err := service.Count(context.Background(), 1, filters)
 
@@ -2283,28 +2303,28 @@ func TestService_Count(t *testing.T) {
 	t.Run("returns error for invalid sort order", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{SortOrder: "sideways"}
+		filters := contentdomain.ContentFilters{SortOrder: "sideways"}
 
 		_, err := service.Count(context.Background(), 1, filters)
 
 		require.Error(t, err)
-		assert.ErrorIs(t, err, content.ErrInvalidSortOrder)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidSortOrder)
 		mockRepo.AssertNotCalled(t, "Count")
 	})
 
 	t.Run("returns error for invalid custom field filter", func(t *testing.T) {
 		mockRepo := new(mocks.MockRepository)
 		service := content.NewService(mockRepo, nil, nil)
-		filters := content.ContentFilters{
-			CustomFieldFilters: []content.CustomFieldFilter{
-				{Field: "", Operator: content.FilterOpEqual, Value: "Pastry"},
+		filters := contentdomain.ContentFilters{
+			CustomFieldFilters: []contentdomain.CustomFieldFilter{
+				{Field: "", Operator: contentdomain.FilterOpEqual, Value: "Pastry"},
 			},
 		}
 
 		_, err := service.Count(context.Background(), 1, filters)
 
 		require.Error(t, err)
-		assert.ErrorIs(t, err, content.ErrInvalidFilterField)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidFilterField)
 		mockRepo.AssertNotCalled(t, "Count")
 	})
 
@@ -2314,7 +2334,7 @@ func TestService_Count(t *testing.T) {
 
 		service := content.NewService(mockRepo, nil, nil)
 
-		_, err := service.Count(context.Background(), 1, content.ContentFilters{})
+		_, err := service.Count(context.Background(), 1, contentdomain.ContentFilters{})
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to count content")
@@ -2324,234 +2344,24 @@ func TestService_Count(t *testing.T) {
 
 func TestValidateCustomFieldFilter(t *testing.T) {
 	t.Run("valid filter passes", func(t *testing.T) {
-		f := content.CustomFieldFilter{Field: "category", Operator: content.FilterOpEqual, Value: "Pastry"}
-		assert.NoError(t, content.ValidateCustomFieldFilter(f))
+		f := contentdomain.CustomFieldFilter{Field: "category", Operator: contentdomain.FilterOpEqual, Value: "Pastry"}
+		assert.NoError(t, contentdomain.ValidateCustomFieldFilter(f))
 	})
 
 	t.Run("empty field returns error", func(t *testing.T) {
-		f := content.CustomFieldFilter{Field: "", Operator: content.FilterOpEqual, Value: "Pastry"}
-		assert.ErrorIs(t, content.ValidateCustomFieldFilter(f), content.ErrInvalidFilterField)
+		f := contentdomain.CustomFieldFilter{Field: "", Operator: contentdomain.FilterOpEqual, Value: "Pastry"}
+		assert.ErrorIs(t, contentdomain.ValidateCustomFieldFilter(f), contentdomain.ErrInvalidFilterField)
 	})
 
 	t.Run("invalid operator returns error", func(t *testing.T) {
-		f := content.CustomFieldFilter{Field: "price", Operator: "unknown", Value: "5"}
-		assert.ErrorIs(t, content.ValidateCustomFieldFilter(f), content.ErrInvalidFilterOperator)
+		f := contentdomain.CustomFieldFilter{Field: "price", Operator: "unknown", Value: "5"}
+		assert.ErrorIs(t, contentdomain.ValidateCustomFieldFilter(f), contentdomain.ErrInvalidFilterOperator)
 	})
 
 	t.Run("empty value returns error", func(t *testing.T) {
-		f := content.CustomFieldFilter{Field: "price", Operator: content.FilterOpMin, Value: ""}
-		assert.ErrorIs(t, content.ValidateCustomFieldFilter(f), content.ErrInvalidFilterValue)
+		f := contentdomain.CustomFieldFilter{Field: "price", Operator: contentdomain.FilterOpMin, Value: ""}
+		assert.ErrorIs(t, contentdomain.ValidateCustomFieldFilter(f), contentdomain.ErrInvalidFilterValue)
 	})
-}
-
-func TestService_DeleteOwnComment(t *testing.T) {
-	tests := []struct {
-		name          string
-		commentID     int
-		userID        int
-		setupMock     func(*mocks.MockCommentRepository)
-		expectedErr   error
-		matchContains bool
-	}{
-		{
-			name:      "successful delete own comment",
-			commentID: 1,
-			userID:    1,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Comment{
-					ID:     1,
-					UserID: 1,
-				}, nil)
-				m.On("Delete", mock.Anything, 1).Return(nil)
-			},
-			expectedErr: nil,
-		},
-		{
-			name:      "delete comment owned by another user",
-			commentID: 2,
-			userID:    1,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("GetByID", mock.Anything, 2).Return(&content.Comment{
-					ID:     2,
-					UserID: 99,
-				}, nil)
-			},
-			expectedErr: content.ErrCommentNotFound,
-		},
-		{
-			name:      "delete non-existent comment",
-			commentID: 999,
-			userID:    1,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("GetByID", mock.Anything, 999).Return(nil, errors.New("not found"))
-			},
-			expectedErr: content.ErrCommentNotFound,
-		},
-		{
-			name:      "repository delete fails after ownership check",
-			commentID: 1,
-			userID:    1,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Comment{
-					ID:     1,
-					UserID: 1,
-				}, nil)
-				m.On("Delete", mock.Anything, 1).Return(errors.New("database error"))
-			},
-			expectedErr:   errors.New("failed to delete comment: database error"),
-			matchContains: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockCommentRepo := mocks.NewMockCommentRepository(t)
-			tt.setupMock(mockCommentRepo)
-
-			s := content.NewServiceWithComments(nil, mockCommentRepo, nil, nil)
-
-			err := s.DeleteOwnComment(context.Background(), tt.commentID, tt.userID)
-
-			if tt.expectedErr != nil {
-				if tt.matchContains {
-					assert.ErrorContains(t, err, tt.expectedErr.Error())
-				} else {
-					require.ErrorIs(t, err, tt.expectedErr)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestService_GetCommentsByStatus(t *testing.T) {
-	tests := []struct {
-		name        string
-		status      content.CommentStatus
-		setupMock   func(*mocks.MockCommentRepository)
-		expectedLen int
-		expectedErr error
-	}{
-		{
-			name:   "returns comments by status with content context",
-			status: content.CommentStatusPending,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("GetByStatus", mock.Anything, content.CommentStatusPending).Return([]*content.Comment{
-					{
-						ID:           1,
-						ContentID:    10,
-						ContentTitle: "Getting Started with Go",
-						ContentSlug:  "getting-started-with-go",
-						Comment:      "Great article!",
-						Author:       "Jane Doe",
-						Status:       content.CommentStatusPending,
-						CreatedAt:    time.Date(2026, 4, 19, 10, 30, 0, 0, time.UTC),
-					},
-				}, nil)
-			},
-			expectedLen: 1,
-			expectedErr: nil,
-		},
-		{
-			name:   "returns empty list when no comments match status",
-			status: content.CommentStatusPending,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("GetByStatus", mock.Anything, content.CommentStatusPending).Return([]*content.Comment{}, nil)
-			},
-			expectedLen: 0,
-			expectedErr: nil,
-		},
-		{
-			name:   "wraps repository error",
-			status: content.CommentStatusPending,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("GetByStatus", mock.Anything, content.CommentStatusPending).Return(nil, errors.New("database error"))
-			},
-			expectedErr: errors.New("failed to get comments by status"),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockCommentRepo := mocks.NewMockCommentRepository(t)
-			tt.setupMock(mockCommentRepo)
-
-			s := content.NewServiceWithComments(nil, mockCommentRepo, nil, nil)
-			result, err := s.GetCommentsByStatus(context.Background(), tt.status)
-
-			if tt.expectedErr != nil {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedErr.Error())
-				mockCommentRepo.AssertExpectations(t)
-				return
-			}
-
-			require.NoError(t, err)
-			require.Len(t, result, tt.expectedLen)
-			if tt.expectedLen > 0 {
-				assert.Equal(t, "Getting Started with Go", result[0].ContentTitle)
-				assert.Equal(t, "getting-started-with-go", result[0].ContentSlug)
-			}
-			mockCommentRepo.AssertExpectations(t)
-		})
-	}
-}
-
-func TestService_CountComments(t *testing.T) {
-	tests := []struct {
-		name        string
-		userID      int
-		setupMock   func(*mocks.MockCommentRepository)
-		expected    int
-		expectedErr error
-	}{
-		{
-			name:   "counts all comments for admin scope",
-			userID: 0,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("Count", mock.Anything, 0).Return(42, nil)
-			},
-			expected: 42,
-		},
-		{
-			name:   "counts comments for a specific user",
-			userID: 7,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("Count", mock.Anything, 7).Return(3, nil)
-			},
-			expected: 3,
-		},
-		{
-			name:   "wraps repository error",
-			userID: 0,
-			setupMock: func(m *mocks.MockCommentRepository) {
-				m.On("Count", mock.Anything, 0).Return(0, errors.New("database error"))
-			},
-			expectedErr: errors.New("failed to count comments"),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockCommentRepo := mocks.NewMockCommentRepository(t)
-			tt.setupMock(mockCommentRepo)
-
-			s := content.NewServiceWithComments(nil, mockCommentRepo, nil, nil)
-			total, err := s.CountComments(context.Background(), tt.userID)
-
-			if tt.expectedErr != nil {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.expectedErr.Error())
-				mockCommentRepo.AssertExpectations(t)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, total)
-			mockCommentRepo.AssertExpectations(t)
-		})
-	}
 }
 
 func TestService_GetPublishedByTag(t *testing.T) {
@@ -2571,7 +2381,7 @@ func TestService_GetPublishedByTag(t *testing.T) {
 			limit:     10,
 			offset:    0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByTag", mock.Anything, "golang", []string(nil), 0, 0, 10, 0).Return([]*content.Content{
+				m.On("GetPublishedByTag", mock.Anything, "golang", []string(nil), 0, 0, 10, 0).Return([]*contentdomain.Content{
 					{ID: 1, Title: "Go Basics", Tags: []string{"golang", "tutorial"}},
 				}, nil)
 			},
@@ -2628,7 +2438,7 @@ func TestService_GetPublishedByAuthorUsername(t *testing.T) {
 			username:  "alice",
 			languages: []string{"en", "id"},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedByAuthorUsername", mock.Anything, "alice", []string{"en", "id"}, 10, 0).Return([]*content.Content{
+				m.On("GetPublishedByAuthorUsername", mock.Anything, "alice", []string{"en", "id"}, 10, 0).Return([]*contentdomain.Content{
 					{ID: 1, Title: "Alice Post"},
 				}, nil)
 			},
@@ -2683,7 +2493,7 @@ func TestService_GetPublishedArchive(t *testing.T) {
 			postType:  "post",
 			languages: []string{"en", "id"},
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetPublishedArchive", mock.Anything, "post", []string{"en", "id"}).Return([]*content.ArchiveMonth{
+				m.On("GetPublishedArchive", mock.Anything, "post", []string{"en", "id"}).Return([]*contentdomain.ArchiveMonth{
 					{Year: 2026, Month: 3, Count: 4},
 				}, nil)
 			},
@@ -2726,7 +2536,7 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -2743,18 +2553,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -2774,18 +2584,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"other": "value",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Price is required")
@@ -2800,18 +2610,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 200.0,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be at most 100")
@@ -2824,18 +2634,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"size": "XL",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be one of")
@@ -2849,18 +2659,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"label": "this is way too long",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be at most 10 characters")
@@ -2870,7 +2680,7 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -2885,11 +2695,11 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price":        29.99,
@@ -2898,7 +2708,7 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -2918,15 +2728,15 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Nil(t, result.CustomFields)
@@ -2936,23 +2746,23 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
 		service := content.NewService(mockRepo, nil, nil)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": "not_even_a_number",
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "not_even_a_number", result.CustomFields["price"])
@@ -2965,18 +2775,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"label": "  ",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Label is required")
@@ -2992,18 +2802,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "custom field validation failed")
@@ -3016,18 +2826,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 5.0,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be at least 10")
@@ -3040,18 +2850,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": "not a number",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a number")
@@ -3064,18 +2874,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"release_date": "",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a date string")
@@ -3088,18 +2898,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"release_date": "not-a-date",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a valid date")
@@ -3112,18 +2922,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"label": nil,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cannot be null")
@@ -3136,18 +2946,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"featured": true,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, true, result.CustomFields["featured"])
@@ -3160,18 +2970,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"featured": "yes",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a boolean")
@@ -3184,18 +2994,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"release_date": "2026-05-17",
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "2026-05-17", result.CustomFields["release_date"])
@@ -3208,18 +3018,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"starts_at": "2026-05-17T14:30:00Z",
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "2026-05-17T14:30:00Z", result.CustomFields["starts_at"])
@@ -3232,18 +3042,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"starts_at": "",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a datetime string")
@@ -3256,18 +3066,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"starts_at": "not-a-datetime",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a valid datetime")
@@ -3280,18 +3090,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"contact": "hello@example.com",
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "hello@example.com", result.CustomFields["contact"])
@@ -3304,18 +3114,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"contact": "",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be an email string")
@@ -3328,18 +3138,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"contact": "not-an-email",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a valid email address")
@@ -3352,18 +3162,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"contact": "Alice <alice@example.com>",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a valid email address")
@@ -3376,18 +3186,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"website": "https://example.com",
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "https://example.com", result.CustomFields["website"])
@@ -3400,18 +3210,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"website": "",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a URL string")
@@ -3424,18 +3234,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"website": "ftp://example.com",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a valid http(s) URL")
@@ -3448,18 +3258,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"website": "not a url",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a valid http(s) URL")
@@ -3472,18 +3282,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"label": nil,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Label is required")
@@ -3497,18 +3307,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"bio": "this is too long",
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be at most 5 characters")
@@ -3521,18 +3331,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"label": 123,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a string")
@@ -3545,18 +3355,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"size": 42,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a string")
@@ -3569,18 +3379,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"date": 12345,
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must be a date string")
@@ -3593,18 +3403,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": float64(0),
 			},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Price is required")
@@ -3617,18 +3427,18 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"agreed": false,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, false, result.CustomFields["agreed"])
@@ -3638,14 +3448,14 @@ func TestService_Create_CustomFieldValidation(t *testing.T) {
 func TestService_Update_CustomFieldValidation(t *testing.T) {
 	t.Run("update with valid custom fields", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Old Title",
 			Slug:     "old-title",
 			Content:  testTipTapJSON("Old content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -3661,14 +3471,14 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			Title:    "Updated Title",
 			Content:  testTipTapJSON("Updated content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 19.99,
 			},
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 19.99, result.CustomFields["price"])
@@ -3678,14 +3488,14 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 
 	t.Run("update fails when required field missing", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Old Title",
 			Slug:     "old-title",
 			Content:  testTipTapJSON("Old content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -3700,14 +3510,14 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			Title:    "Updated Title",
 			Content:  testTipTapJSON("Updated content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"other": "value",
 			},
 		}
 
-		_, err := service.Update(context.Background(), 1, 1, "", req)
+		_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Price is required")
@@ -3715,14 +3525,14 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 
 	t.Run("update uses existing post type when PostType not provided", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Old Title",
 			Slug:     "old-title",
 			Content:  testTipTapJSON("Old content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -3737,13 +3547,13 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			Title:   "Updated Title",
 			Content: testTipTapJSON("Updated content"),
 			Tags:    []string{"test"},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 			CustomFields: map[string]any{
 				"price": 19.99,
 			},
 		}
 
-		_, err := service.Update(context.Background(), 1, 1, "", req)
+		_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		mockRepo.AssertExpectations(t)
@@ -3752,14 +3562,14 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 
 	t.Run("update without postTypeService - fields pass through unvalidated", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Old Title",
 			Slug:     "old-title",
 			Content:  testTipTapJSON("Old content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -3768,13 +3578,13 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			Title:   "Updated Title",
 			Content: testTipTapJSON("Updated content"),
 			Tags:    []string{"test"},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 			CustomFields: map[string]any{
 				"price": "invalid",
 			},
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "invalid", result.CustomFields["price"])
@@ -3782,14 +3592,14 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 
 	t.Run("update with nil custom fields preserves existing values", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:           1,
 			UserID:       1,
 			Title:        "Old Title",
 			Slug:         "old-title",
 			Content:      testTipTapJSON("Old content"),
 			PostType:     "product",
-			Status:       content.StatusDraft,
+			Status:       contentdomain.StatusDraft,
 			CustomFields: map[string]any{"price": 29.99},
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -3803,10 +3613,10 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			Title:   "Updated Title",
 			Content: testTipTapJSON("Updated content"),
 			Tags:    []string{"test"},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -3814,14 +3624,14 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 
 	t.Run("update with nil custom fields triggers required validation on post type with required fields", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Old Title",
 			Slug:     "old-title",
 			Content:  testTipTapJSON("Old content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -3835,10 +3645,10 @@ func TestService_Update_CustomFieldValidation(t *testing.T) {
 			Title:   "Updated Title",
 			Content: testTipTapJSON("Updated content"),
 			Tags:    []string{"test"},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 		}
 
-		_, err := service.Update(context.Background(), 1, 1, "", req)
+		_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "Price is required")
@@ -3850,7 +3660,7 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -3863,11 +3673,11 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"internal_sku": "SKU-001",
@@ -3875,7 +3685,7 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Empty(t, result.CustomFields, "all system fields should be stripped, leaving empty map")
@@ -3887,7 +3697,7 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -3896,15 +3706,15 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Nil(t, result.CustomFields)
@@ -3916,7 +3726,7 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -3926,16 +3736,16 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:        "Test Title",
 			Content:      testTipTapJSON("Test content"),
 			Tags:         []string{"test"},
-			Status:       content.StatusDraft,
+			Status:       contentdomain.StatusDraft,
 			PostType:     "product",
 			CustomFields: map[string]any{},
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		mockRepo.AssertExpectations(t)
@@ -3946,23 +3756,23 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
 		service := content.NewService(mockRepo, nil, nil)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"internal_sku": "SKU-001",
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "SKU-001", result.CustomFields["internal_sku"], "system field passes through when postTypeService is nil")
@@ -3973,7 +3783,7 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -3983,18 +3793,18 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"], "custom field preserved when no system fields defined")
@@ -4004,14 +3814,14 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 
 	t.Run("update strips system field keys from customFields", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Old Title",
 			Slug:     "old-title",
 			Content:  testTipTapJSON("Old content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
@@ -4026,14 +3836,14 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 			Title:   "Updated Title",
 			Content: testTipTapJSON("Updated content"),
 			Tags:    []string{"test"},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 			CustomFields: map[string]any{
 				"internal_sku": "SKU-001",
 				"price":        29.99,
 			},
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		_, hasSku := result.CustomFields["internal_sku"]
@@ -4047,7 +3857,7 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4061,11 +3871,11 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price":        29.99,
@@ -4073,7 +3883,7 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"], "custom field preserved")
@@ -4087,14 +3897,14 @@ func TestService_Create_SystemFieldStripping(t *testing.T) {
 func TestService_SetSystemFields(t *testing.T) {
 	t.Run("stores valid system field values", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:           1,
 			UserID:       1,
 			Title:        "Test",
 			Slug:         "test",
 			Content:      testTipTapJSON("Content"),
 			PostType:     "product",
-			Status:       content.StatusDraft,
+			Status:       contentdomain.StatusDraft,
 			CustomFields: map[string]any{"price": 29.99},
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -4105,7 +3915,7 @@ func TestService_SetSystemFields(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		result, err := service.SetSystemFields(context.Background(), 1, 1, map[string]any{
+		result, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"internal_sku": "SKU-001",
 		})
 
@@ -4119,14 +3929,14 @@ func TestService_SetSystemFields(t *testing.T) {
 
 	t.Run("preserves existing custom field values", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:           1,
 			UserID:       1,
 			Title:        "Test",
 			Slug:         "test",
 			Content:      testTipTapJSON("Content"),
 			PostType:     "product",
-			Status:       content.StatusDraft,
+			Status:       contentdomain.StatusDraft,
 			CustomFields: map[string]any{"price": 29.99, "category": "Pastry"},
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -4137,7 +3947,7 @@ func TestService_SetSystemFields(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		result, err := service.SetSystemFields(context.Background(), 1, 1, map[string]any{
+		result, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"internal_sku": "SKU-001",
 		})
 
@@ -4151,14 +3961,14 @@ func TestService_SetSystemFields(t *testing.T) {
 
 	t.Run("rejects keys not in system field schema", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Test",
 			Slug:     "test",
 			Content:  testTipTapJSON("Content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -4167,7 +3977,7 @@ func TestService_SetSystemFields(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		_, err := service.SetSystemFields(context.Background(), 1, 1, map[string]any{
+		_, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"internal_sku":  "SKU-001",
 			"unknown_field": "value",
 		})
@@ -4180,14 +3990,14 @@ func TestService_SetSystemFields(t *testing.T) {
 
 	t.Run("validates system field values against schema wrong type", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Test",
 			Slug:     "test",
 			Content:  testTipTapJSON("Content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -4196,7 +4006,7 @@ func TestService_SetSystemFields(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		_, err := service.SetSystemFields(context.Background(), 1, 1, map[string]any{
+		_, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"sync_status": 12345,
 		})
 
@@ -4208,14 +4018,14 @@ func TestService_SetSystemFields(t *testing.T) {
 
 	t.Run("validates select field values must be in options", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Test",
 			Slug:     "test",
 			Content:  testTipTapJSON("Content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -4224,7 +4034,7 @@ func TestService_SetSystemFields(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		_, err := service.SetSystemFields(context.Background(), 1, 1, map[string]any{
+		_, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"sync_status": "invalid_option",
 		})
 
@@ -4236,14 +4046,14 @@ func TestService_SetSystemFields(t *testing.T) {
 
 	t.Run("validates number field min/max bounds", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:       1,
 			UserID:   1,
 			Title:    "Test",
 			Slug:     "test",
 			Content:  testTipTapJSON("Content"),
 			PostType: "product",
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 		}, nil)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
@@ -4252,7 +4062,7 @@ func TestService_SetSystemFields(t *testing.T) {
 		}, nil)
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		_, err := service.SetSystemFields(context.Background(), 1, 1, map[string]any{
+		_, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"priority": 15.0,
 		})
 
@@ -4264,17 +4074,17 @@ func TestService_SetSystemFields(t *testing.T) {
 
 	t.Run("returns error for non-existent content", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 999).Return(nil, content.ErrContentNotFound)
+		mockRepo.On("GetByID", mock.Anything, 999).Return(nil, contentdomain.ErrContentNotFound)
 
 		mockPostType := &mocks.MockPostTypeServiceInterface{}
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		_, err := service.SetSystemFields(context.Background(), 999, 1, map[string]any{
+		_, err := service.SetSystemFields(context.Background(), 999, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"internal_sku": "SKU-001",
 		})
 
 		require.Error(t, err)
-		assert.ErrorIs(t, err, content.ErrContentNotFound)
+		assert.ErrorIs(t, err, contentdomain.ErrContentNotFound)
 		mockRepo.AssertExpectations(t)
 		mockPostType.AssertExpectations(t)
 	})
@@ -4283,7 +4093,7 @@ func TestService_SetSystemFields(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 
 		service := content.NewService(mockRepo, nil, nil)
-		_, err := service.SetSystemFields(context.Background(), 1, 1, map[string]any{
+		_, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), map[string]any{
 			"internal_sku": "SKU-001",
 		})
 
@@ -4308,14 +4118,14 @@ func TestService_SetSystemFields_BeforeSaveHook(t *testing.T) {
 				"internal_sku": "SKU-001",
 			},
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test",
 					Slug:     "test",
 					Content:  testTipTapJSON("Content"),
 					PostType: "product",
-					Status:   content.StatusDraft,
+					Status:   contentdomain.StatusDraft,
 					CustomFields: map[string]any{
 						"price":        29.99,
 						"internal_sku": "SKU-OLD",
@@ -4350,14 +4160,14 @@ func TestService_SetSystemFields_BeforeSaveHook(t *testing.T) {
 				"internal_sku": "SKU-001",
 			},
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test",
 					Slug:     "test",
 					Content:  testTipTapJSON("Content"),
 					PostType: "product",
-					Status:   content.StatusDraft,
+					Status:   contentdomain.StatusDraft,
 				}, nil)
 			},
 			transform: func(hookName plugin.HookName, data []byte) ([]byte, error) {
@@ -4372,14 +4182,14 @@ func TestService_SetSystemFields_BeforeSaveHook(t *testing.T) {
 				"internal_sku": "SKU-001",
 			},
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test",
 					Slug:     "test",
 					Content:  testTipTapJSON("Content"),
 					PostType: "product",
-					Status:   content.StatusDraft,
+					Status:   contentdomain.StatusDraft,
 					CustomFields: map[string]any{
 						"price": 29.99,
 					},
@@ -4406,14 +4216,14 @@ func TestService_SetSystemFields_BeforeSaveHook(t *testing.T) {
 				"internal_sku": "SKU-001",
 			},
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test",
 					Slug:     "test",
 					Content:  testTipTapJSON("Content"),
 					PostType: "product",
-					Status:   content.StatusDraft,
+					Status:   contentdomain.StatusDraft,
 				}, nil)
 			},
 			transform: func(hookName plugin.HookName, data []byte) ([]byte, error) {
@@ -4433,14 +4243,14 @@ func TestService_SetSystemFields_BeforeSaveHook(t *testing.T) {
 				"internal_sku": "SKU-001",
 			},
 			setup: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					UserID:   1,
 					Title:    "Test",
 					Slug:     "test",
 					Content:  testTipTapJSON("Content"),
 					PostType: "product",
-					Status:   content.StatusDraft,
+					Status:   contentdomain.StatusDraft,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
@@ -4474,8 +4284,8 @@ func TestService_SetSystemFields_BeforeSaveHook(t *testing.T) {
 				},
 			}
 
-			service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-			result, err := service.SetSystemFields(context.Background(), 1, 1, tt.systemFields)
+			service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+			result, err := service.SetSystemFields(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin), tt.systemFields)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -4499,7 +4309,7 @@ func TestService_Create_SystemFieldStripping_ErrorPaths(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4511,11 +4321,11 @@ func TestService_Create_SystemFieldStripping_ErrorPaths(t *testing.T) {
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return(nil, errors.New("service error"))
 
 		service := content.NewService(mockRepo, nil, mockPostType)
-		req := content.CreateContentRequest{
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price":        29.99,
@@ -4523,7 +4333,7 @@ func TestService_Create_SystemFieldStripping_ErrorPaths(t *testing.T) {
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -4538,7 +4348,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4571,19 +4381,19 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{"test"},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "SKU-001", result.CustomFields["internal_sku"])
@@ -4597,7 +4407,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4622,19 +4432,19 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 19.99, result.CustomFields["price"])
@@ -4644,7 +4454,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4672,19 +4482,19 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 15.99, result.CustomFields["price"])
@@ -4696,7 +4506,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4713,19 +4523,19 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			transform: func(plugin.HookName, []byte) ([]byte, error) { return nil, nil },
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -4755,16 +4565,16 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "plugin system field validation failed")
@@ -4774,7 +4584,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4787,19 +4597,19 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			{Name: "Internal SKU", Slug: "internal_sku", Type: customfield.FieldTypeText},
 		}, nil)
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, nil)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, nil)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -4811,7 +4621,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4820,16 +4630,16 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, nil)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, nil)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.NotNil(t, result)
@@ -4848,16 +4658,16 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 		}
 
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "before_save hook failed")
@@ -4867,7 +4677,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4886,16 +4696,16 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.NotNil(t, result)
@@ -4906,7 +4716,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4923,19 +4733,19 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -4945,7 +4755,7 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -4966,19 +4776,19 @@ func TestService_Create_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
-		req := content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
 			Title:    "Test Title",
 			Content:  testTipTapJSON("Test content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, req)
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -4988,14 +4798,14 @@ func TestService_Create_HookIntegration(t *testing.T) {
 func TestService_Update_HookIntegration(t *testing.T) {
 	t.Run("update with hook that adds system field values stores them", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "product",
-			Status:    content.StatusDraft,
+			Status:    contentdomain.StatusDraft,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5020,19 +4830,19 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:    "Test",
 			Content:  testTipTapJSON("Content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "SKU-002", result.CustomFields["internal_sku"])
@@ -5041,14 +4851,14 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 	t.Run("update with hook that modifies system fields preserves custom fields", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "product",
-			Status:    content.StatusDraft,
+			Status:    contentdomain.StatusDraft,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 			CustomFields: map[string]any{
 				"price":        10.99,
@@ -5077,19 +4887,19 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:    "Test",
 			Content:  testTipTapJSON("Content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, "SKU-NEW", result.CustomFields["internal_sku"])
@@ -5098,14 +4908,14 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 	t.Run("after_publish hook fires on status transition to published", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
-			Status:    content.StatusDraft,
+			Status:    contentdomain.StatusDraft,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5125,16 +4935,16 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:    "Test",
 			Content:  testTipTapJSON("Content"),
 			Tags:     []string{},
-			Status:   content.StatusPublished,
+			Status:   contentdomain.StatusPublished,
 			PostType: "post",
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.NotNil(t, result)
@@ -5143,14 +4953,14 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 	t.Run("after_publish hook does not fire when not transitioning to published", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
-			Status:    content.StatusDraft,
+			Status:    contentdomain.StatusDraft,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5170,16 +4980,16 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:    "Test",
 			Content:  testTipTapJSON("Content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "post",
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.NotNil(t, result)
@@ -5188,14 +4998,14 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 	t.Run("after_unpublish hook fires when transitioning from published to draft", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
-			Status:    content.StatusPublished,
+			Status:    contentdomain.StatusPublished,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5215,16 +5025,16 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:    "Test",
 			Content:  testTipTapJSON("Content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "post",
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.NotNil(t, result)
@@ -5233,14 +5043,14 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 	t.Run("after_unpublish hook does not fire for draft->draft", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
-			Status:    content.StatusDraft,
+			Status:    contentdomain.StatusDraft,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5260,16 +5070,16 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:    "Test",
 			Content:  testTipTapJSON("Content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "post",
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.NotNil(t, result)
@@ -5278,14 +5088,14 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 	t.Run("update with hook failure returns error", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "post",
-			Status:    content.StatusDraft,
+			Status:    contentdomain.StatusDraft,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 		}, nil)
 
@@ -5298,15 +5108,15 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:   "Test",
 			Content: testTipTapJSON("Content"),
 			Tags:    []string{},
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 		}
 
-		_, err := service.Update(context.Background(), 1, 1, "", req)
+		_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "before_save hook failed")
@@ -5314,14 +5124,14 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 	t.Run("update with hook returning invalid json uses original data", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
-		mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 			ID:        1,
 			UserID:    1,
 			Title:     "Test",
 			Slug:      "test",
 			Content:   testTipTapJSON("Content"),
 			PostType:  "product",
-			Status:    content.StatusDraft,
+			Status:    contentdomain.StatusDraft,
 			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 			CustomFields: map[string]any{
 				"price": 10.99,
@@ -5342,19 +5152,19 @@ func TestService_Update_HookIntegration(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockPostType, mockHook)
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
 		req := content.UpdateContentRequest{
 			Title:    "Test",
 			Content:  testTipTapJSON("Content"),
 			Tags:     []string{},
-			Status:   content.StatusDraft,
+			Status:   contentdomain.StatusDraft,
 			PostType: "product",
 			CustomFields: map[string]any{
 				"price": 29.99,
 			},
 		}
 
-		result, err := service.Update(context.Background(), 1, 1, "", req)
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
@@ -5375,8 +5185,8 @@ func TestService_SearchPublished(t *testing.T) {
 			query: "golang",
 			limit: 10,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("SearchPublished", mock.Anything, "golang", 10).Return([]*content.Content{
-					{ID: 1, Title: "Golang Tutorial", Slug: "golang-tut", Status: content.StatusPublished, PostType: "post"},
+				m.On("SearchPublished", mock.Anything, "golang", 10).Return([]*contentdomain.Content{
+					{ID: 1, Title: "Golang Tutorial", Slug: "golang-tut", Status: contentdomain.StatusPublished, PostType: "post"},
 				}, nil)
 			},
 			wantCount: 1,
@@ -5405,7 +5215,7 @@ func TestService_SearchPublished(t *testing.T) {
 			query: "  golang  ",
 			limit: 10,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("SearchPublished", mock.Anything, "golang", 10).Return([]*content.Content{}, nil)
+				m.On("SearchPublished", mock.Anything, "golang", 10).Return([]*contentdomain.Content{}, nil)
 			},
 			wantCount: 0,
 			wantErr:   false,
@@ -5424,7 +5234,7 @@ func TestService_SearchPublished(t *testing.T) {
 			query: "nonexistent",
 			limit: 10,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("SearchPublished", mock.Anything, "nonexistent", 10).Return([]*content.Content{}, nil)
+				m.On("SearchPublished", mock.Anything, "nonexistent", 10).Return([]*contentdomain.Content{}, nil)
 			},
 			wantCount: 0,
 			wantErr:   false,
@@ -5469,7 +5279,7 @@ func TestService_Publish(t *testing.T) {
 		role       string
 		setupMock  func(*mocks.MockRepository)
 		wantErr    error
-		wantStatus content.Status
+		wantStatus contentdomain.Status
 		noUpdate   bool
 	}{
 		{
@@ -5478,37 +5288,37 @@ func TestService_Publish(t *testing.T) {
 			userID: 1,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusDraft,
+					Status:  contentdomain.StatusDraft,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:    nil,
-			wantStatus: content.StatusPublished,
+			wantStatus: contentdomain.StatusPublished,
 		},
 		{
 			name:   "success - admin publishes another user's draft",
 			id:     1,
 			userID: 7,
-			role:   content.RoleAdmin,
+			role:   contentdomain.RoleAdmin,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  999,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusDraft,
+					Status:  contentdomain.StatusDraft,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:    nil,
-			wantStatus: content.StatusPublished,
+			wantStatus: contentdomain.StatusPublished,
 		},
 		{
 			name:   "idempotent - publish already-published post is a no-op (status stays published, update still persists)",
@@ -5516,19 +5326,19 @@ func TestService_Publish(t *testing.T) {
 			userID: 1,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusPublished,
+					Status:  contentdomain.StatusPublished,
 				}, nil)
 				// transitionStatus still calls Update (the row is re-saved with the same status + UpdatedBy).
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:    nil,
-			wantStatus: content.StatusPublished,
+			wantStatus: contentdomain.StatusPublished,
 		},
 		{
 			name:   "error - not owned by non-admin returns ErrUnauthorized",
@@ -5536,16 +5346,16 @@ func TestService_Publish(t *testing.T) {
 			userID: 2,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusDraft,
+					Status:  contentdomain.StatusDraft,
 				}, nil)
 			},
-			wantErr:  content.ErrUnauthorized,
+			wantErr:  contentdomain.ErrUnauthorized,
 			noUpdate: true,
 		},
 		{
@@ -5554,9 +5364,9 @@ func TestService_Publish(t *testing.T) {
 			userID: 1,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 999).Return(nil, content.ErrContentNotFound)
+				m.On("GetByID", mock.Anything, 999).Return(nil, contentdomain.ErrContentNotFound)
 			},
-			wantErr:  content.ErrContentNotFound,
+			wantErr:  contentdomain.ErrContentNotFound,
 			noUpdate: true,
 		},
 	}
@@ -5567,7 +5377,7 @@ func TestService_Publish(t *testing.T) {
 			tt.setupMock(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			result, err := service.Publish(context.Background(), tt.id, tt.userID, tt.role)
+			result, err := service.Publish(context.Background(), tt.id, identity.New(tt.userID, "admin", tt.role))
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -5590,18 +5400,18 @@ func TestService_Publish(t *testing.T) {
 
 func TestService_Publish_RepoErrorRollsBackStatus(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:      1,
 		UserID:  1,
 		Title:   "Title",
 		Slug:    "title",
 		Content: testTipTapJSON("Content"),
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(errors.New("db down"))
 
 	service := content.NewService(mockRepo, nil, nil)
-	result, err := service.Publish(context.Background(), 1, 1, "Editor")
+	result, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to update content")
@@ -5616,14 +5426,14 @@ func TestService_Publish_RepoErrorRollsBackStatus(t *testing.T) {
 
 func TestService_Publish_HookFiresOnTransition(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:        1,
 		UserID:    1,
 		Title:     "Title",
 		Slug:      "title",
 		Content:   testTipTapJSON("Content"),
 		PostType:  "post",
-		Status:    content.StatusDraft,
+		Status:    contentdomain.StatusDraft,
 		UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5638,8 +5448,8 @@ func TestService_Publish_HookFiresOnTransition(t *testing.T) {
 		},
 	}
 
-	service := content.NewServiceWithHooks(mockRepo, nil, nil, nil, mockHook)
-	_, err := service.Publish(context.Background(), 1, 1, "Editor")
+	service := content.NewServiceWithHooks(mockRepo, nil, nil, mockHook)
+	_, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.NoError(t, err)
 	assert.True(t, afterPublishFired, "after_publish hook should fire on draft->published")
@@ -5647,14 +5457,14 @@ func TestService_Publish_HookFiresOnTransition(t *testing.T) {
 
 func TestService_Publish_HookDoesNotFireOnNoOp(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:        1,
 		UserID:    1,
 		Title:     "Title",
 		Slug:      "title",
 		Content:   testTipTapJSON("Content"),
 		PostType:  "post",
-		Status:    content.StatusPublished,
+		Status:    contentdomain.StatusPublished,
 		UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5669,8 +5479,8 @@ func TestService_Publish_HookDoesNotFireOnNoOp(t *testing.T) {
 		},
 	}
 
-	service := content.NewServiceWithHooks(mockRepo, nil, nil, nil, mockHook)
-	_, err := service.Publish(context.Background(), 1, 1, "Editor")
+	service := content.NewServiceWithHooks(mockRepo, nil, nil, mockHook)
+	_, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.NoError(t, err)
 	assert.False(t, afterPublishFired, "after_publish hook should not fire when status is already published")
@@ -5678,7 +5488,7 @@ func TestService_Publish_HookDoesNotFireOnNoOp(t *testing.T) {
 
 func TestService_Publish_SEOAutoGenOnTransition(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Test Article",
@@ -5686,14 +5496,14 @@ func TestService_Publish_SEOAutoGenOnTransition(t *testing.T) {
 		Content:  testTipTapJSON("Content"),
 		Tags:     []string{},
 		PostType: "post",
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 	seoService := seo.NewService("http://localhost:8080", "Test Site")
 	service := content.NewService(mockRepo, seoService, nil)
 
-	result, err := service.Publish(context.Background(), 1, 1, "Editor")
+	result, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -5706,19 +5516,19 @@ func TestService_Publish_NilSEOServiceSkipsAutoGen(t *testing.T) {
 	// the row unchanged. MetaDescription stays empty. This mirrors the
 	// "happy path without SEO configured" case (e.g. test setups).
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Test",
 		Slug:     "test",
 		Content:  testTipTapJSON("Content"),
 		PostType: "post",
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 	service := content.NewService(mockRepo, nil, nil)
-	result, err := service.Publish(context.Background(), 1, 1, "Editor")
+	result, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -5732,7 +5542,7 @@ func TestService_Publish_CustomURLPrefixForNonPostType(t *testing.T) {
 	// The branch is shared with the Update path's TestService_Update_CustomURLPrefixForNonPostType
 	// test; mirrored here so the publish verb's coverage is honest.
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Test Article",
@@ -5740,14 +5550,14 @@ func TestService_Publish_CustomURLPrefixForNonPostType(t *testing.T) {
 		Content:  testTipTapJSON("Content"),
 		Tags:     []string{},
 		PostType: "page",
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 
 	seoService := seo.NewService("http://localhost:8080", "Test Site")
 	service := content.NewService(mockRepo, seoService, nil)
 
-	result, err := service.Publish(context.Background(), 1, 1, "Editor")
+	result, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -5763,7 +5573,7 @@ func TestService_Unpublish(t *testing.T) {
 		role       string
 		setupMock  func(*mocks.MockRepository)
 		wantErr    error
-		wantStatus content.Status
+		wantStatus contentdomain.Status
 		noUpdate   bool
 	}{
 		{
@@ -5772,37 +5582,37 @@ func TestService_Unpublish(t *testing.T) {
 			userID: 1,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusPublished,
+					Status:  contentdomain.StatusPublished,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:    nil,
-			wantStatus: content.StatusDraft,
+			wantStatus: contentdomain.StatusDraft,
 		},
 		{
 			name:   "success - admin unpublishes another user's published post",
 			id:     1,
 			userID: 7,
-			role:   content.RoleAdmin,
+			role:   contentdomain.RoleAdmin,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  999,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusPublished,
+					Status:  contentdomain.StatusPublished,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:    nil,
-			wantStatus: content.StatusDraft,
+			wantStatus: contentdomain.StatusDraft,
 		},
 		{
 			name:   "idempotent - unpublish already-draft post is a no-op (status stays draft, update still persists)",
@@ -5810,18 +5620,18 @@ func TestService_Unpublish(t *testing.T) {
 			userID: 1,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusDraft,
+					Status:  contentdomain.StatusDraft,
 				}, nil)
 				m.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
 			},
 			wantErr:    nil,
-			wantStatus: content.StatusDraft,
+			wantStatus: contentdomain.StatusDraft,
 		},
 		{
 			name:   "error - not owned by non-admin returns ErrUnauthorized",
@@ -5829,16 +5639,16 @@ func TestService_Unpublish(t *testing.T) {
 			userID: 2,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:      1,
 					UserID:  1,
 					Title:   "Title",
 					Slug:    "title",
 					Content: testTipTapJSON("Content"),
-					Status:  content.StatusPublished,
+					Status:  contentdomain.StatusPublished,
 				}, nil)
 			},
-			wantErr:  content.ErrUnauthorized,
+			wantErr:  contentdomain.ErrUnauthorized,
 			noUpdate: true,
 		},
 		{
@@ -5847,9 +5657,9 @@ func TestService_Unpublish(t *testing.T) {
 			userID: 1,
 			role:   "Editor",
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 999).Return(nil, content.ErrContentNotFound)
+				m.On("GetByID", mock.Anything, 999).Return(nil, contentdomain.ErrContentNotFound)
 			},
-			wantErr:  content.ErrContentNotFound,
+			wantErr:  contentdomain.ErrContentNotFound,
 			noUpdate: true,
 		},
 	}
@@ -5860,7 +5670,7 @@ func TestService_Unpublish(t *testing.T) {
 			tt.setupMock(mockRepo)
 
 			service := content.NewService(mockRepo, nil, nil)
-			result, err := service.Unpublish(context.Background(), tt.id, tt.userID, tt.role)
+			result, err := service.Unpublish(context.Background(), tt.id, identity.New(tt.userID, "admin", tt.role))
 
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -5883,18 +5693,18 @@ func TestService_Unpublish(t *testing.T) {
 
 func TestService_Unpublish_RepoErrorRollsBackStatus(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:      1,
 		UserID:  1,
 		Title:   "Title",
 		Slug:    "title",
 		Content: testTipTapJSON("Content"),
-		Status:  content.StatusPublished,
+		Status:  contentdomain.StatusPublished,
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(errors.New("db down"))
 
 	service := content.NewService(mockRepo, nil, nil)
-	result, err := service.Unpublish(context.Background(), 1, 1, "Editor")
+	result, err := service.Unpublish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to update content")
@@ -5904,14 +5714,14 @@ func TestService_Unpublish_RepoErrorRollsBackStatus(t *testing.T) {
 
 func TestService_Unpublish_HookFiresOnTransition(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:        1,
 		UserID:    1,
 		Title:     "Title",
 		Slug:      "title",
 		Content:   testTipTapJSON("Content"),
 		PostType:  "post",
-		Status:    content.StatusPublished,
+		Status:    contentdomain.StatusPublished,
 		UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5931,8 +5741,8 @@ func TestService_Unpublish_HookFiresOnTransition(t *testing.T) {
 		},
 	}
 
-	service := content.NewServiceWithHooks(mockRepo, nil, nil, nil, mockHook)
-	_, err := service.Unpublish(context.Background(), 1, 1, "Editor")
+	service := content.NewServiceWithHooks(mockRepo, nil, nil, mockHook)
+	_, err := service.Unpublish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.NoError(t, err)
 	assert.True(t, afterUnpublishFired, "after_unpublish hook should fire on published->draft")
@@ -5941,14 +5751,14 @@ func TestService_Unpublish_HookFiresOnTransition(t *testing.T) {
 
 func TestService_Unpublish_HookDoesNotFireOnNoOp(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:        1,
 		UserID:    1,
 		Title:     "Title",
 		Slug:      "title",
 		Content:   testTipTapJSON("Content"),
 		PostType:  "post",
-		Status:    content.StatusDraft,
+		Status:    contentdomain.StatusDraft,
 		UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
 	}, nil)
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
@@ -5961,8 +5771,8 @@ func TestService_Unpublish_HookDoesNotFireOnNoOp(t *testing.T) {
 		},
 	}
 
-	service := content.NewServiceWithHooks(mockRepo, nil, nil, nil, mockHook)
-	_, err := service.Unpublish(context.Background(), 1, 1, "Editor")
+	service := content.NewServiceWithHooks(mockRepo, nil, nil, mockHook)
+	_, err := service.Unpublish(context.Background(), 1, identity.New(1, "admin", "Editor"))
 
 	require.NoError(t, err)
 	assert.False(t, hookFired, "no hook should fire when unpublishing an already-draft post")
@@ -5979,19 +5789,19 @@ func TestService_Create_PublishedRunsPublishPipeline(t *testing.T) {
 	t.Run("published generates SEO metadata before insert", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "published-title", "en").Return(true, nil)
-		var captured *content.Content
+		var captured *contentdomain.Content
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			captured = args.Get(1).(*content.Content)
+			captured = args.Get(1).(*contentdomain.Content)
 			captured.ID = 1
 		})
 
 		seoService := seo.NewService("http://localhost:8080", "Test Site")
 		service := content.NewService(mockRepo, seoService, nil)
 
-		result, err := service.Create(context.Background(), 1, content.RoleAdmin, content.CreateContentRequest{
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
 			Title:   "Published Title",
 			Content: seoBody,
-			Status:  content.StatusPublished,
+			Status:  contentdomain.StatusPublished,
 		})
 
 		require.NoError(t, err)
@@ -6008,7 +5818,7 @@ func TestService_Create_PublishedRunsPublishPipeline(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "published-title", "en").Return(true, nil)
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			c := args.Get(1).(*content.Content)
+			c := args.Get(1).(*contentdomain.Content)
 			c.ID = 1
 		})
 
@@ -6020,11 +5830,11 @@ func TestService_Create_PublishedRunsPublishPipeline(t *testing.T) {
 			},
 		}
 
-		service := content.NewServiceWithHooks(mockRepo, nil, nil, nil, mockHook)
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, nil, nil, mockHook)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
 			Title:   "Published Title",
 			Content: seoBody,
-			Status:  content.StatusPublished,
+			Status:  contentdomain.StatusPublished,
 		})
 
 		require.NoError(t, err)
@@ -6035,9 +5845,9 @@ func TestService_Create_PublishedRunsPublishPipeline(t *testing.T) {
 	t.Run("draft does not fire AfterPublish or generate SEO", func(t *testing.T) {
 		mockRepo := &mocks.MockRepository{}
 		mockRepo.On("CheckSlugUnique", mock.Anything, "draft-title", "en").Return(true, nil)
-		var captured *content.Content
+		var captured *contentdomain.Content
 		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
-			captured = args.Get(1).(*content.Content)
+			captured = args.Get(1).(*contentdomain.Content)
 			captured.ID = 1
 		})
 
@@ -6050,11 +5860,11 @@ func TestService_Create_PublishedRunsPublishPipeline(t *testing.T) {
 		}
 
 		seoService := seo.NewService("http://localhost:8080", "Test Site")
-		service := content.NewServiceWithHooks(mockRepo, nil, seoService, nil, mockHook)
-		_, err := service.Create(context.Background(), 1, content.RoleAdmin, content.CreateContentRequest{
+		service := content.NewServiceWithHooks(mockRepo, seoService, nil, mockHook)
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
 			Title:   "Draft Title",
 			Content: seoBody,
-			Status:  content.StatusDraft,
+			Status:  contentdomain.StatusDraft,
 		})
 
 		require.NoError(t, err)
@@ -6079,14 +5889,14 @@ func TestService_GetRelated(t *testing.T) {
 			id:    1,
 			limit: 3,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					Title:    "Source",
 					Tags:     []string{"go", "tutorial"},
 					PostType: "post",
 					Language: "en",
 				}, nil)
-				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go", "tutorial"}, "post", "en", 3).Return([]*content.Content{
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go", "tutorial"}, "post", "en", 3).Return([]*contentdomain.Content{
 					{ID: 2, Title: "Related 2"},
 					{ID: 3, Title: "Related 3"},
 					{ID: 4, Title: "Related 4"},
@@ -6100,17 +5910,17 @@ func TestService_GetRelated(t *testing.T) {
 			id:    1,
 			limit: 5,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					Title:    "Source",
 					Tags:     []string{"go"},
 					PostType: "post",
 					Language: "en",
 				}, nil)
-				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*content.Content{
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*contentdomain.Content{
 					{ID: 2, Title: "Related 2"},
 				}, nil)
-				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return([]*content.Content{
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return([]*contentdomain.Content{
 					{ID: 2, Title: "Related 2"},
 					{ID: 1, Title: "Source"},
 					{ID: 3, Title: "Latest 3"},
@@ -6127,15 +5937,15 @@ func TestService_GetRelated(t *testing.T) {
 			id:    1,
 			limit: 5,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					Title:    "Source",
 					Tags:     nil,
 					PostType: "post",
 					Language: "en",
 				}, nil)
-				m.On("GetRelatedByTags", mock.Anything, 1, mock.Anything, "post", "en", 5).Return([]*content.Content{}, nil)
-				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return([]*content.Content{
+				m.On("GetRelatedByTags", mock.Anything, 1, mock.Anything, "post", "en", 5).Return([]*contentdomain.Content{}, nil)
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return([]*contentdomain.Content{
 					{ID: 2, Title: "Latest 2"},
 					{ID: 3, Title: "Latest 3"},
 					{ID: 4, Title: "Latest 4"},
@@ -6151,14 +5961,14 @@ func TestService_GetRelated(t *testing.T) {
 			id:    1,
 			limit: 0,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					Title:    "Source",
 					Tags:     []string{"go"},
 					PostType: "post",
 					Language: "en",
 				}, nil)
-				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 4).Return([]*content.Content{
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 4).Return([]*contentdomain.Content{
 					{ID: 2, Title: "Related 2"},
 					{ID: 3, Title: "Related 3"},
 					{ID: 4, Title: "Related 4"},
@@ -6173,17 +5983,17 @@ func TestService_GetRelated(t *testing.T) {
 			id:    1,
 			limit: 100,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					Title:    "Source",
 					Tags:     []string{"go"},
 					PostType: "post",
 					Language: "en",
 				}, nil)
-				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 20).Return([]*content.Content{
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 20).Return([]*contentdomain.Content{
 					{ID: 2, Title: "Related 2"},
 				}, nil)
-				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 20).Return([]*content.Content{}, nil)
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 20).Return([]*contentdomain.Content{}, nil)
 			},
 			expectedIDs: []int{2},
 			expectedErr: nil,
@@ -6193,17 +6003,17 @@ func TestService_GetRelated(t *testing.T) {
 			id:    999,
 			limit: 5,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 999).Return(nil, content.ErrContentNotFound)
+				m.On("GetByID", mock.Anything, 999).Return(nil, contentdomain.ErrContentNotFound)
 			},
 			expectedIDs: nil,
-			expectedErr: content.ErrContentNotFound,
+			expectedErr: contentdomain.ErrContentNotFound,
 		},
 		{
 			name:  "GetRelatedByTags error propagates",
 			id:    1,
 			limit: 5,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					Title:    "Source",
 					Tags:     []string{"go"},
@@ -6220,14 +6030,14 @@ func TestService_GetRelated(t *testing.T) {
 			id:    1,
 			limit: 5,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("GetByID", mock.Anything, 1).Return(&content.Content{
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 					ID:       1,
 					Title:    "Source",
 					Tags:     []string{"go"},
 					PostType: "post",
 					Language: "en",
 				}, nil)
-				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*content.Content{
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 5).Return([]*contentdomain.Content{
 					{ID: 2, Title: "Related 2"},
 				}, nil)
 				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 5).Return(nil, errors.New("db failure"))
@@ -6297,15 +6107,15 @@ func TestService_Create_RoleCannotManagePostType(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"news"}, publish: true}),
 	)
 
-	_, err := service.Create(context.Background(), 1, "Journalist", content.CreateContentRequest{
+	_, err := service.Create(context.Background(), identity.New(1, "admin", "Journalist"), contentdomain.CreateContentRequest{
 		Title:    "Article",
 		Content:  testTipTapJSON("Body"),
 		Tags:     []string{},
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "article",
 	})
 
-	require.ErrorIs(t, err, content.ErrForbiddenPostType)
+	require.ErrorIs(t, err, contentdomain.ErrForbiddenPostType)
 	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
@@ -6314,7 +6124,7 @@ func TestService_Create_RoleWithoutPublishForcesDraft(t *testing.T) {
 	mockRepo.On("CheckSlugUnique", mock.Anything, mock.Anything, "en").Return(true, nil)
 	mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).
 		Run(func(args mock.Arguments) {
-			args.Get(1).(*content.Content).ID = 1
+			args.Get(1).(*contentdomain.Content).ID = 1
 		}).
 		Return(nil)
 
@@ -6325,15 +6135,15 @@ func TestService_Create_RoleWithoutPublishForcesDraft(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"post"}, publish: false}),
 	)
 
-	result, err := service.Create(context.Background(), 1, "Writer", content.CreateContentRequest{
+	result, err := service.Create(context.Background(), identity.New(1, "admin", "Writer"), contentdomain.CreateContentRequest{
 		Title:   "Draft please",
 		Content: testTipTapJSON("Body"),
 		Tags:    []string{},
-		Status:  content.StatusPublished,
+		Status:  contentdomain.StatusPublished,
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, content.StatusDraft, result.Status)
+	assert.Equal(t, contentdomain.StatusDraft, result.Status)
 }
 
 func TestService_Create_AdminBypassesTypeAndPublishRestrictions(t *testing.T) {
@@ -6341,7 +6151,7 @@ func TestService_Create_AdminBypassesTypeAndPublishRestrictions(t *testing.T) {
 	mockRepo.On("CheckSlugUnique", mock.Anything, mock.Anything, "en").Return(true, nil)
 	mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).
 		Run(func(args mock.Arguments) {
-			args.Get(1).(*content.Content).ID = 1
+			args.Get(1).(*contentdomain.Content).ID = 1
 		}).
 		Return(nil)
 
@@ -6353,27 +6163,27 @@ func TestService_Create_AdminBypassesTypeAndPublishRestrictions(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{admin: true}),
 	)
 
-	result, err := service.Create(context.Background(), 1, content.RoleAdmin, content.CreateContentRequest{
+	result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
 		Title:    "Admin article",
 		Content:  testTipTapJSON("Body"),
 		Tags:     []string{},
-		Status:   content.StatusPublished,
+		Status:   contentdomain.StatusPublished,
 		PostType: "article",
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, content.StatusPublished, result.Status)
+	assert.Equal(t, contentdomain.StatusPublished, result.Status)
 }
 
 func TestService_Update_RoleCannotManagePostType(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Old",
 		Slug:     "old",
 		Content:  testTipTapJSON("Old body"),
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "article",
 	}, nil)
 
@@ -6384,33 +6194,33 @@ func TestService_Update_RoleCannotManagePostType(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"news"}, publish: true}),
 	)
 
-	_, err := service.Update(context.Background(), 1, 1, "Journalist", content.UpdateContentRequest{
+	_, err := service.Update(context.Background(), 1, identity.New(1, "admin", "Journalist"), content.UpdateContentRequest{
 		Title:   "New",
 		Content: testTipTapJSON("New body"),
 		Tags:    []string{},
-		Status:  content.StatusDraft,
+		Status:  contentdomain.StatusDraft,
 	})
 
-	require.ErrorIs(t, err, content.ErrForbiddenPostType)
+	require.ErrorIs(t, err, contentdomain.ErrForbiddenPostType)
 	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 func TestService_Update_RoleWithoutPublishDowngradesTransition(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Old",
 		Slug:     "old",
 		Content:  testTipTapJSON("Old body"),
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "post",
 	}, nil)
 
-	var updated *content.Content
+	var updated *contentdomain.Content
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).
 		Run(func(args mock.Arguments) {
-			updated = args.Get(1).(*content.Content)
+			updated = args.Get(1).(*contentdomain.Content)
 		}).
 		Return(nil)
 
@@ -6421,35 +6231,35 @@ func TestService_Update_RoleWithoutPublishDowngradesTransition(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"post"}, publish: false}),
 	)
 
-	result, err := service.Update(context.Background(), 1, 1, "Writer", content.UpdateContentRequest{
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", "Writer"), content.UpdateContentRequest{
 		Title:   "New",
 		Content: testTipTapJSON("New body"),
 		Tags:    []string{},
-		Status:  content.StatusPublished,
+		Status:  contentdomain.StatusPublished,
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, content.StatusDraft, result.Status)
+	assert.Equal(t, contentdomain.StatusDraft, result.Status)
 	require.NotNil(t, updated)
-	assert.Equal(t, content.StatusDraft, updated.Status)
+	assert.Equal(t, contentdomain.StatusDraft, updated.Status)
 }
 
 func TestService_Update_RoleWithoutPublishKeepsPublished(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Old",
 		Slug:     "old",
 		Content:  testTipTapJSON("Old body"),
-		Status:   content.StatusPublished,
+		Status:   contentdomain.StatusPublished,
 		PostType: "post",
 	}, nil)
 
-	var updated *content.Content
+	var updated *contentdomain.Content
 	mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).
 		Run(func(args mock.Arguments) {
-			updated = args.Get(1).(*content.Content)
+			updated = args.Get(1).(*contentdomain.Content)
 		}).
 		Return(nil)
 
@@ -6460,28 +6270,28 @@ func TestService_Update_RoleWithoutPublishKeepsPublished(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"post"}, publish: false}),
 	)
 
-	result, err := service.Update(context.Background(), 1, 1, "Writer", content.UpdateContentRequest{
+	result, err := service.Update(context.Background(), 1, identity.New(1, "admin", "Writer"), content.UpdateContentRequest{
 		Title:   "New",
 		Content: testTipTapJSON("New body"),
 		Tags:    []string{},
-		Status:  content.StatusPublished,
+		Status:  contentdomain.StatusPublished,
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, content.StatusPublished, result.Status)
+	assert.Equal(t, contentdomain.StatusPublished, result.Status)
 	require.NotNil(t, updated)
-	assert.Equal(t, content.StatusPublished, updated.Status)
+	assert.Equal(t, contentdomain.StatusPublished, updated.Status)
 }
 
 func TestService_Publish_RoleCannotManagePostType(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Title",
 		Slug:     "title",
 		Content:  testTipTapJSON("Body"),
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "article",
 	}, nil)
 
@@ -6492,21 +6302,21 @@ func TestService_Publish_RoleCannotManagePostType(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"news"}, publish: true}),
 	)
 
-	_, err := service.Publish(context.Background(), 1, 1, "Journalist")
+	_, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Journalist"))
 
-	require.ErrorIs(t, err, content.ErrForbiddenPostType)
+	require.ErrorIs(t, err, contentdomain.ErrForbiddenPostType)
 	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 func TestService_Publish_RoleWithoutPublishCapability(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Title",
 		Slug:     "title",
 		Content:  testTipTapJSON("Body"),
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "post",
 	}, nil)
 
@@ -6517,21 +6327,21 @@ func TestService_Publish_RoleWithoutPublishCapability(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"post"}, publish: false}),
 	)
 
-	_, err := service.Publish(context.Background(), 1, 1, "Writer")
+	_, err := service.Publish(context.Background(), 1, identity.New(1, "admin", "Writer"))
 
-	require.ErrorIs(t, err, content.ErrForbiddenPublish)
+	require.ErrorIs(t, err, contentdomain.ErrForbiddenPublish)
 	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 func TestService_Unpublish_RoleCannotManagePostType(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Title",
 		Slug:     "title",
 		Content:  testTipTapJSON("Body"),
-		Status:   content.StatusPublished,
+		Status:   contentdomain.StatusPublished,
 		PostType: "article",
 	}, nil)
 
@@ -6542,21 +6352,21 @@ func TestService_Unpublish_RoleCannotManagePostType(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"news"}, publish: true}),
 	)
 
-	_, err := service.Unpublish(context.Background(), 1, 1, "Journalist")
+	_, err := service.Unpublish(context.Background(), 1, identity.New(1, "admin", "Journalist"))
 
-	require.ErrorIs(t, err, content.ErrForbiddenPostType)
+	require.ErrorIs(t, err, contentdomain.ErrForbiddenPostType)
 	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 func TestService_DeleteContent_RoleCannotManagePostType(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Title",
 		Slug:     "title",
 		Content:  testTipTapJSON("Body"),
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "article",
 	}, nil)
 
@@ -6567,9 +6377,9 @@ func TestService_DeleteContent_RoleCannotManagePostType(t *testing.T) {
 		content.WithRoleChecker(fakeRoleChecker{manageTypes: []string{"news"}, publish: true}),
 	)
 
-	err := service.DeleteContent(context.Background(), 1, 1, "Journalist")
+	err := service.DeleteContent(context.Background(), 1, identity.New(1, "admin", "Journalist"))
 
-	require.ErrorIs(t, err, content.ErrForbiddenPostType)
+	require.ErrorIs(t, err, contentdomain.ErrForbiddenPostType)
 	mockRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything, mock.Anything)
 }
 
@@ -6581,7 +6391,7 @@ func TestService_DeleteContent_AliasesDeletedBeforeContent(t *testing.T) {
 	}{
 		{
 			name:   "admin path deletes aliases then content",
-			role:   content.RoleAdmin,
+			role:   contentdomain.RoleAdmin,
 			repoOp: "DeleteByID",
 		},
 		{
@@ -6595,13 +6405,13 @@ func TestService_DeleteContent_AliasesDeletedBeforeContent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var callOrder []string
 			mockRepo := mocks.NewMockRepository(t)
-			mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+			mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 				ID:       1,
 				UserID:   1,
 				Title:    "Title",
 				Slug:     "title",
 				Content:  testTipTapJSON("Body"),
-				Status:   content.StatusDraft,
+				Status:   contentdomain.StatusDraft,
 				PostType: "post",
 			}, nil)
 			if tt.repoOp == "DeleteByID" {
@@ -6626,7 +6436,7 @@ func TestService_DeleteContent_AliasesDeletedBeforeContent(t *testing.T) {
 				content.WithAliasDeleter(mockAliasDeleter),
 			)
 
-			err := service.DeleteContent(context.Background(), 1, 1, tt.role)
+			err := service.DeleteContent(context.Background(), 1, identity.New(1, "admin", tt.role))
 
 			require.NoError(t, err)
 			require.Equal(t, []string{"alias", "content"}, callOrder)
@@ -6642,13 +6452,13 @@ func TestService_DeleteContent_AliasesDeletedBeforeContent(t *testing.T) {
 
 func TestService_DeleteContent_AliasDeletionFailureAborts(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Title",
 		Slug:     "title",
 		Content:  testTipTapJSON("Body"),
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "post",
 	}, nil)
 
@@ -6662,7 +6472,7 @@ func TestService_DeleteContent_AliasDeletionFailureAborts(t *testing.T) {
 		content.WithAliasDeleter(mockAliasDeleter),
 	)
 
-	err := service.DeleteContent(context.Background(), 1, 1, content.RoleAdmin)
+	err := service.DeleteContent(context.Background(), 1, identity.New(1, "admin", contentdomain.RoleAdmin))
 
 	require.ErrorContains(t, err, "failed to delete aliases")
 	mockRepo.AssertNotCalled(t, "DeleteByID", mock.Anything, mock.Anything)
@@ -6671,13 +6481,13 @@ func TestService_DeleteContent_AliasDeletionFailureAborts(t *testing.T) {
 
 func TestService_DeleteContent_ForbiddenDoesNotDeleteAliases(t *testing.T) {
 	mockRepo := &mocks.MockRepository{}
-	mockRepo.On("GetByID", mock.Anything, 1).Return(&content.Content{
+	mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
 		ID:       1,
 		UserID:   1,
 		Title:    "Title",
 		Slug:     "title",
 		Content:  testTipTapJSON("Body"),
-		Status:   content.StatusDraft,
+		Status:   contentdomain.StatusDraft,
 		PostType: "article",
 	}, nil)
 
@@ -6691,10 +6501,81 @@ func TestService_DeleteContent_ForbiddenDoesNotDeleteAliases(t *testing.T) {
 		content.WithAliasDeleter(mockAliasDeleter),
 	)
 
-	err := service.DeleteContent(context.Background(), 1, 1, "Journalist")
+	err := service.DeleteContent(context.Background(), 1, identity.New(1, "admin", "Journalist"))
 
-	require.ErrorIs(t, err, content.ErrForbiddenPostType)
+	require.ErrorIs(t, err, contentdomain.ErrForbiddenPostType)
 	mockAliasDeleter.AssertNotCalled(t, "DeleteByContentID", mock.Anything, mock.Anything)
 	mockRepo.AssertNotCalled(t, "DeleteByID", mock.Anything, mock.Anything)
 	mockRepo.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestService_InvalidPrincipal(t *testing.T) {
+	service := content.NewService(nil, nil, stubPostTypeService{})
+	bad := kernel.Principal{ID: "not-a-number", Username: "ghost"}
+
+	tests := []struct {
+		name    string
+		call    func() error
+		wantErr bool
+	}{
+		{
+			name: "create rejects non-decimal id",
+			call: func() error {
+				_, err := service.Create(context.Background(), bad, contentdomain.CreateContentRequest{})
+				return err
+			},
+			wantErr: true,
+		},
+		{
+			name: "update rejects non-decimal id",
+			call: func() error {
+				_, err := service.Update(context.Background(), 1, bad, content.UpdateContentRequest{})
+				return err
+			},
+			wantErr: true,
+		},
+		{
+			name: "publish rejects non-decimal id",
+			call: func() error {
+				_, err := service.Publish(context.Background(), 1, bad)
+				return err
+			},
+			wantErr: true,
+		},
+		{
+			name: "unpublish rejects non-decimal id",
+			call: func() error {
+				_, err := service.Unpublish(context.Background(), 1, bad)
+				return err
+			},
+			wantErr: true,
+		},
+		{
+			name: "delete rejects non-decimal id",
+			call: func() error {
+				return service.DeleteContent(context.Background(), 1, bad)
+			},
+			wantErr: true,
+		},
+		{
+			name: "set system fields rejects non-decimal id",
+			call: func() error {
+				_, err := service.SetSystemFields(context.Background(), 1, bad, nil)
+				return err
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, identity.ErrInvalidUserID)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }

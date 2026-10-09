@@ -315,3 +315,91 @@ func TestGetRole(t *testing.T) {
 	assert.True(t, ok, "Expected ok to be true")
 	assert.Equal(t, "Admin", role, "Expected role 'Admin'")
 }
+
+// TestPrincipalInjected verifies both auth paths attach the kernel identity.
+func TestPrincipalInjected(t *testing.T) {
+	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+
+	adminToken, err := jwtManager.GenerateToken("7", "alice", "Admin")
+	require.NoError(t, err, "Failed to generate token")
+
+	tests := []struct {
+		name         string
+		handler      func(http.Handler) http.Handler
+		header       string
+		wantPresent  bool
+		wantID       string
+		wantUsername string
+		wantRoles    []string
+	}{
+		{
+			name:         "success - RequireAuth attaches principal",
+			handler:      middleware.RequireAuth,
+			header:       "Bearer " + adminToken,
+			wantPresent:  true,
+			wantID:       "7",
+			wantUsername: "alice",
+			wantRoles:    []string{"Admin"},
+		},
+		{
+			name:        "anonymous - OptionalAuth without token has no principal",
+			handler:     middleware.OptionalAuth,
+			header:      "",
+			wantPresent: false,
+		},
+		{
+			name:         "success - RequireRole attaches principal",
+			handler:      middleware.RequireRole("Admin"),
+			header:       "Bearer " + adminToken,
+			wantPresent:  true,
+			wantID:       "7",
+			wantUsername: "alice",
+			wantRoles:    []string{"Admin"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				gotID       string
+				gotUsername string
+				gotRoles    []string
+				gotPresent  bool
+			)
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				principal, ok := appmiddleware.Principal(r)
+				gotPresent = ok
+				gotID = principal.ID
+				gotUsername = principal.Username
+				gotRoles = principal.Roles
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+
+			rr := httptest.NewRecorder()
+			tt.handler(nextHandler).ServeHTTP(rr, req)
+			require.Equal(t, http.StatusOK, rr.Code)
+
+			assert.Equal(t, tt.wantPresent, gotPresent)
+			if tt.wantPresent {
+				assert.Equal(t, tt.wantID, gotID)
+				assert.Equal(t, tt.wantUsername, gotUsername)
+				assert.Equal(t, tt.wantRoles, gotRoles)
+			}
+		})
+	}
+}
+
+// TestPrincipalAbsent verifies Principal reports anonymous when no auth ran.
+func TestPrincipalAbsent(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	_, ok := appmiddleware.Principal(req)
+
+	assert.False(t, ok, "Expected no principal without auth middleware")
+}

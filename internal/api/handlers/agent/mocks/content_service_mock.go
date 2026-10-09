@@ -8,6 +8,8 @@ import (
 	"context"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -39,27 +41,27 @@ func (_m *MockContentService) EXPECT() *MockContentService_Expecter {
 }
 
 // Create provides a mock function for the type MockContentService
-func (_mock *MockContentService) Create(ctx context.Context, userID int, role string, req content.CreateContentRequest) (*content.Content, error) {
-	ret := _mock.Called(ctx, userID, role, req)
+func (_mock *MockContentService) Create(ctx context.Context, principal kernel.Principal, req contentdomain.CreateContentRequest) (*contentdomain.Content, error) {
+	ret := _mock.Called(ctx, principal, req)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Create")
 	}
 
-	var r0 *content.Content
+	var r0 *contentdomain.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, content.CreateContentRequest) (*content.Content, error)); ok {
-		return returnFunc(ctx, userID, role, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, contentdomain.CreateContentRequest) (*contentdomain.Content, error)); ok {
+		return returnFunc(ctx, principal, req)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, string, content.CreateContentRequest) *content.Content); ok {
-		r0 = returnFunc(ctx, userID, role, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, contentdomain.CreateContentRequest) *contentdomain.Content); ok {
+		r0 = returnFunc(ctx, principal, req)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*content.Content)
+			r0 = ret.Get(0).(*contentdomain.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, string, content.CreateContentRequest) error); ok {
-		r1 = returnFunc(ctx, userID, role, req)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, kernel.Principal, contentdomain.CreateContentRequest) error); ok {
+		r1 = returnFunc(ctx, principal, req)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -73,62 +75,56 @@ type MockContentService_Create_Call struct {
 
 // Create is a helper method to define mock.On call
 //   - ctx context.Context
-//   - userID int
-//   - role string
-//   - req content.CreateContentRequest
-func (_e *MockContentService_Expecter) Create(ctx any, userID any, role any, req any) *MockContentService_Create_Call {
-	return &MockContentService_Create_Call{Call: _e.mock.On("Create", ctx, userID, role, req)}
+//   - principal kernel.Principal
+//   - req contentdomain.CreateContentRequest
+func (_e *MockContentService_Expecter) Create(ctx any, principal any, req any) *MockContentService_Create_Call {
+	return &MockContentService_Create_Call{Call: _e.mock.On("Create", ctx, principal, req)}
 }
 
-func (_c *MockContentService_Create_Call) Run(run func(ctx context.Context, userID int, role string, req content.CreateContentRequest)) *MockContentService_Create_Call {
+func (_c *MockContentService_Create_Call) Run(run func(ctx context.Context, principal kernel.Principal, req contentdomain.CreateContentRequest)) *MockContentService_Create_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 int
+		var arg1 kernel.Principal
 		if args[1] != nil {
-			arg1 = args[1].(int)
+			arg1 = args[1].(kernel.Principal)
 		}
-		var arg2 string
+		var arg2 contentdomain.CreateContentRequest
 		if args[2] != nil {
-			arg2 = args[2].(string)
-		}
-		var arg3 content.CreateContentRequest
-		if args[3] != nil {
-			arg3 = args[3].(content.CreateContentRequest)
+			arg2 = args[2].(contentdomain.CreateContentRequest)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
 }
 
-func (_c *MockContentService_Create_Call) Return(content1 *content.Content, err error) *MockContentService_Create_Call {
+func (_c *MockContentService_Create_Call) Return(content1 *contentdomain.Content, err error) *MockContentService_Create_Call {
 	_c.Call.Return(content1, err)
 	return _c
 }
 
-func (_c *MockContentService_Create_Call) RunAndReturn(run func(ctx context.Context, userID int, role string, req content.CreateContentRequest) (*content.Content, error)) *MockContentService_Create_Call {
+func (_c *MockContentService_Create_Call) RunAndReturn(run func(ctx context.Context, principal kernel.Principal, req contentdomain.CreateContentRequest) (*contentdomain.Content, error)) *MockContentService_Create_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // DeleteContent provides a mock function for the type MockContentService
-func (_mock *MockContentService) DeleteContent(ctx context.Context, id int, userID int, role string) error {
-	ret := _mock.Called(ctx, id, userID, role)
+func (_mock *MockContentService) DeleteContent(ctx context.Context, id int, principal kernel.Principal) error {
+	ret := _mock.Called(ctx, id, principal)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DeleteContent")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, string) error); ok {
-		r0 = returnFunc(ctx, id, userID, role)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) error); ok {
+		r0 = returnFunc(ctx, id, principal)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -143,13 +139,12 @@ type MockContentService_DeleteContent_Call struct {
 // DeleteContent is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id int
-//   - userID int
-//   - role string
-func (_e *MockContentService_Expecter) DeleteContent(ctx any, id any, userID any, role any) *MockContentService_DeleteContent_Call {
-	return &MockContentService_DeleteContent_Call{Call: _e.mock.On("DeleteContent", ctx, id, userID, role)}
+//   - principal kernel.Principal
+func (_e *MockContentService_Expecter) DeleteContent(ctx any, id any, principal any) *MockContentService_DeleteContent_Call {
+	return &MockContentService_DeleteContent_Call{Call: _e.mock.On("DeleteContent", ctx, id, principal)}
 }
 
-func (_c *MockContentService_DeleteContent_Call) Run(run func(ctx context.Context, id int, userID int, role string)) *MockContentService_DeleteContent_Call {
+func (_c *MockContentService_DeleteContent_Call) Run(run func(ctx context.Context, id int, principal kernel.Principal)) *MockContentService_DeleteContent_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -159,19 +154,14 @@ func (_c *MockContentService_DeleteContent_Call) Run(run func(ctx context.Contex
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 int
+		var arg2 kernel.Principal
 		if args[2] != nil {
-			arg2 = args[2].(int)
-		}
-		var arg3 string
-		if args[3] != nil {
-			arg3 = args[3].(string)
+			arg2 = args[2].(kernel.Principal)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
@@ -182,29 +172,29 @@ func (_c *MockContentService_DeleteContent_Call) Return(err error) *MockContentS
 	return _c
 }
 
-func (_c *MockContentService_DeleteContent_Call) RunAndReturn(run func(ctx context.Context, id int, userID int, role string) error) *MockContentService_DeleteContent_Call {
+func (_c *MockContentService_DeleteContent_Call) RunAndReturn(run func(ctx context.Context, id int, principal kernel.Principal) error) *MockContentService_DeleteContent_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetByID provides a mock function for the type MockContentService
-func (_mock *MockContentService) GetByID(ctx context.Context, id int) (*content.Content, error) {
+func (_mock *MockContentService) GetByID(ctx context.Context, id int) (*contentdomain.Content, error) {
 	ret := _mock.Called(ctx, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetByID")
 	}
 
-	var r0 *content.Content
+	var r0 *contentdomain.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*content.Content, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*contentdomain.Content, error)); ok {
 		return returnFunc(ctx, id)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *content.Content); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *contentdomain.Content); ok {
 		r0 = returnFunc(ctx, id)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*content.Content)
+			r0 = ret.Get(0).(*contentdomain.Content)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -245,37 +235,37 @@ func (_c *MockContentService_GetByID_Call) Run(run func(ctx context.Context, id 
 	return _c
 }
 
-func (_c *MockContentService_GetByID_Call) Return(content1 *content.Content, err error) *MockContentService_GetByID_Call {
+func (_c *MockContentService_GetByID_Call) Return(content1 *contentdomain.Content, err error) *MockContentService_GetByID_Call {
 	_c.Call.Return(content1, err)
 	return _c
 }
 
-func (_c *MockContentService_GetByID_Call) RunAndReturn(run func(ctx context.Context, id int) (*content.Content, error)) *MockContentService_GetByID_Call {
+func (_c *MockContentService_GetByID_Call) RunAndReturn(run func(ctx context.Context, id int) (*contentdomain.Content, error)) *MockContentService_GetByID_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ListByCursor provides a mock function for the type MockContentService
-func (_mock *MockContentService) ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters content.ContentFilters) ([]*content.Content, error) {
+func (_mock *MockContentService) ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error) {
 	ret := _mock.Called(ctx, userID, limit, beforeID, filters)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListByCursor")
 	}
 
-	var r0 []*content.Content
+	var r0 []*contentdomain.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, int, content.ContentFilters) ([]*content.Content, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, int, contentdomain.ContentFilters) ([]*contentdomain.Content, error)); ok {
 		return returnFunc(ctx, userID, limit, beforeID, filters)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, int, content.ContentFilters) []*content.Content); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, int, contentdomain.ContentFilters) []*contentdomain.Content); ok {
 		r0 = returnFunc(ctx, userID, limit, beforeID, filters)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*content.Content)
+			r0 = ret.Get(0).([]*contentdomain.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int, int, content.ContentFilters) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int, int, contentdomain.ContentFilters) error); ok {
 		r1 = returnFunc(ctx, userID, limit, beforeID, filters)
 	} else {
 		r1 = ret.Error(1)
@@ -293,12 +283,12 @@ type MockContentService_ListByCursor_Call struct {
 //   - userID int
 //   - limit int
 //   - beforeID int
-//   - filters content.ContentFilters
+//   - filters contentdomain.ContentFilters
 func (_e *MockContentService_Expecter) ListByCursor(ctx any, userID any, limit any, beforeID any, filters any) *MockContentService_ListByCursor_Call {
 	return &MockContentService_ListByCursor_Call{Call: _e.mock.On("ListByCursor", ctx, userID, limit, beforeID, filters)}
 }
 
-func (_c *MockContentService_ListByCursor_Call) Run(run func(ctx context.Context, userID int, limit int, beforeID int, filters content.ContentFilters)) *MockContentService_ListByCursor_Call {
+func (_c *MockContentService_ListByCursor_Call) Run(run func(ctx context.Context, userID int, limit int, beforeID int, filters contentdomain.ContentFilters)) *MockContentService_ListByCursor_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -316,9 +306,9 @@ func (_c *MockContentService_ListByCursor_Call) Run(run func(ctx context.Context
 		if args[3] != nil {
 			arg3 = args[3].(int)
 		}
-		var arg4 content.ContentFilters
+		var arg4 contentdomain.ContentFilters
 		if args[4] != nil {
-			arg4 = args[4].(content.ContentFilters)
+			arg4 = args[4].(contentdomain.ContentFilters)
 		}
 		run(
 			arg0,
@@ -331,38 +321,38 @@ func (_c *MockContentService_ListByCursor_Call) Run(run func(ctx context.Context
 	return _c
 }
 
-func (_c *MockContentService_ListByCursor_Call) Return(contents []*content.Content, err error) *MockContentService_ListByCursor_Call {
+func (_c *MockContentService_ListByCursor_Call) Return(contents []*contentdomain.Content, err error) *MockContentService_ListByCursor_Call {
 	_c.Call.Return(contents, err)
 	return _c
 }
 
-func (_c *MockContentService_ListByCursor_Call) RunAndReturn(run func(ctx context.Context, userID int, limit int, beforeID int, filters content.ContentFilters) ([]*content.Content, error)) *MockContentService_ListByCursor_Call {
+func (_c *MockContentService_ListByCursor_Call) RunAndReturn(run func(ctx context.Context, userID int, limit int, beforeID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error)) *MockContentService_ListByCursor_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Publish provides a mock function for the type MockContentService
-func (_mock *MockContentService) Publish(ctx context.Context, id int, userID int, role string) (*content.Content, error) {
-	ret := _mock.Called(ctx, id, userID, role)
+func (_mock *MockContentService) Publish(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error) {
+	ret := _mock.Called(ctx, id, principal)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Publish")
 	}
 
-	var r0 *content.Content
+	var r0 *contentdomain.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, string) (*content.Content, error)); ok {
-		return returnFunc(ctx, id, userID, role)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) (*contentdomain.Content, error)); ok {
+		return returnFunc(ctx, id, principal)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, string) *content.Content); ok {
-		r0 = returnFunc(ctx, id, userID, role)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) *contentdomain.Content); ok {
+		r0 = returnFunc(ctx, id, principal)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*content.Content)
+			r0 = ret.Get(0).(*contentdomain.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int, string) error); ok {
-		r1 = returnFunc(ctx, id, userID, role)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, kernel.Principal) error); ok {
+		r1 = returnFunc(ctx, id, principal)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -377,13 +367,12 @@ type MockContentService_Publish_Call struct {
 // Publish is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id int
-//   - userID int
-//   - role string
-func (_e *MockContentService_Expecter) Publish(ctx any, id any, userID any, role any) *MockContentService_Publish_Call {
-	return &MockContentService_Publish_Call{Call: _e.mock.On("Publish", ctx, id, userID, role)}
+//   - principal kernel.Principal
+func (_e *MockContentService_Expecter) Publish(ctx any, id any, principal any) *MockContentService_Publish_Call {
+	return &MockContentService_Publish_Call{Call: _e.mock.On("Publish", ctx, id, principal)}
 }
 
-func (_c *MockContentService_Publish_Call) Run(run func(ctx context.Context, id int, userID int, role string)) *MockContentService_Publish_Call {
+func (_c *MockContentService_Publish_Call) Run(run func(ctx context.Context, id int, principal kernel.Principal)) *MockContentService_Publish_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -393,56 +382,51 @@ func (_c *MockContentService_Publish_Call) Run(run func(ctx context.Context, id 
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 int
+		var arg2 kernel.Principal
 		if args[2] != nil {
-			arg2 = args[2].(int)
-		}
-		var arg3 string
-		if args[3] != nil {
-			arg3 = args[3].(string)
+			arg2 = args[2].(kernel.Principal)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
 }
 
-func (_c *MockContentService_Publish_Call) Return(content1 *content.Content, err error) *MockContentService_Publish_Call {
+func (_c *MockContentService_Publish_Call) Return(content1 *contentdomain.Content, err error) *MockContentService_Publish_Call {
 	_c.Call.Return(content1, err)
 	return _c
 }
 
-func (_c *MockContentService_Publish_Call) RunAndReturn(run func(ctx context.Context, id int, userID int, role string) (*content.Content, error)) *MockContentService_Publish_Call {
+func (_c *MockContentService_Publish_Call) RunAndReturn(run func(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error)) *MockContentService_Publish_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // SetSystemFields provides a mock function for the type MockContentService
-func (_mock *MockContentService) SetSystemFields(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*content.Content, error) {
-	ret := _mock.Called(ctx, contentID, userID, systemFields)
+func (_mock *MockContentService) SetSystemFields(ctx context.Context, contentID int, principal kernel.Principal, systemFields map[string]any) (*contentdomain.Content, error) {
+	ret := _mock.Called(ctx, contentID, principal, systemFields)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SetSystemFields")
 	}
 
-	var r0 *content.Content
+	var r0 *contentdomain.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, map[string]any) (*content.Content, error)); ok {
-		return returnFunc(ctx, contentID, userID, systemFields)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, map[string]any) (*contentdomain.Content, error)); ok {
+		return returnFunc(ctx, contentID, principal, systemFields)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, map[string]any) *content.Content); ok {
-		r0 = returnFunc(ctx, contentID, userID, systemFields)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, map[string]any) *contentdomain.Content); ok {
+		r0 = returnFunc(ctx, contentID, principal, systemFields)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*content.Content)
+			r0 = ret.Get(0).(*contentdomain.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int, map[string]any) error); ok {
-		r1 = returnFunc(ctx, contentID, userID, systemFields)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, kernel.Principal, map[string]any) error); ok {
+		r1 = returnFunc(ctx, contentID, principal, systemFields)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -457,13 +441,13 @@ type MockContentService_SetSystemFields_Call struct {
 // SetSystemFields is a helper method to define mock.On call
 //   - ctx context.Context
 //   - contentID int
-//   - userID int
+//   - principal kernel.Principal
 //   - systemFields map[string]any
-func (_e *MockContentService_Expecter) SetSystemFields(ctx any, contentID any, userID any, systemFields any) *MockContentService_SetSystemFields_Call {
-	return &MockContentService_SetSystemFields_Call{Call: _e.mock.On("SetSystemFields", ctx, contentID, userID, systemFields)}
+func (_e *MockContentService_Expecter) SetSystemFields(ctx any, contentID any, principal any, systemFields any) *MockContentService_SetSystemFields_Call {
+	return &MockContentService_SetSystemFields_Call{Call: _e.mock.On("SetSystemFields", ctx, contentID, principal, systemFields)}
 }
 
-func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Context, contentID int, userID int, systemFields map[string]any)) *MockContentService_SetSystemFields_Call {
+func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Context, contentID int, principal kernel.Principal, systemFields map[string]any)) *MockContentService_SetSystemFields_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -473,9 +457,9 @@ func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Cont
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 int
+		var arg2 kernel.Principal
 		if args[2] != nil {
-			arg2 = args[2].(int)
+			arg2 = args[2].(kernel.Principal)
 		}
 		var arg3 map[string]any
 		if args[3] != nil {
@@ -491,38 +475,38 @@ func (_c *MockContentService_SetSystemFields_Call) Run(run func(ctx context.Cont
 	return _c
 }
 
-func (_c *MockContentService_SetSystemFields_Call) Return(content1 *content.Content, err error) *MockContentService_SetSystemFields_Call {
+func (_c *MockContentService_SetSystemFields_Call) Return(content1 *contentdomain.Content, err error) *MockContentService_SetSystemFields_Call {
 	_c.Call.Return(content1, err)
 	return _c
 }
 
-func (_c *MockContentService_SetSystemFields_Call) RunAndReturn(run func(ctx context.Context, contentID int, userID int, systemFields map[string]any) (*content.Content, error)) *MockContentService_SetSystemFields_Call {
+func (_c *MockContentService_SetSystemFields_Call) RunAndReturn(run func(ctx context.Context, contentID int, principal kernel.Principal, systemFields map[string]any) (*contentdomain.Content, error)) *MockContentService_SetSystemFields_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Unpublish provides a mock function for the type MockContentService
-func (_mock *MockContentService) Unpublish(ctx context.Context, id int, userID int, role string) (*content.Content, error) {
-	ret := _mock.Called(ctx, id, userID, role)
+func (_mock *MockContentService) Unpublish(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error) {
+	ret := _mock.Called(ctx, id, principal)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Unpublish")
 	}
 
-	var r0 *content.Content
+	var r0 *contentdomain.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, string) (*content.Content, error)); ok {
-		return returnFunc(ctx, id, userID, role)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) (*contentdomain.Content, error)); ok {
+		return returnFunc(ctx, id, principal)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, string) *content.Content); ok {
-		r0 = returnFunc(ctx, id, userID, role)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) *contentdomain.Content); ok {
+		r0 = returnFunc(ctx, id, principal)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*content.Content)
+			r0 = ret.Get(0).(*contentdomain.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int, string) error); ok {
-		r1 = returnFunc(ctx, id, userID, role)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, kernel.Principal) error); ok {
+		r1 = returnFunc(ctx, id, principal)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -537,13 +521,12 @@ type MockContentService_Unpublish_Call struct {
 // Unpublish is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id int
-//   - userID int
-//   - role string
-func (_e *MockContentService_Expecter) Unpublish(ctx any, id any, userID any, role any) *MockContentService_Unpublish_Call {
-	return &MockContentService_Unpublish_Call{Call: _e.mock.On("Unpublish", ctx, id, userID, role)}
+//   - principal kernel.Principal
+func (_e *MockContentService_Expecter) Unpublish(ctx any, id any, principal any) *MockContentService_Unpublish_Call {
+	return &MockContentService_Unpublish_Call{Call: _e.mock.On("Unpublish", ctx, id, principal)}
 }
 
-func (_c *MockContentService_Unpublish_Call) Run(run func(ctx context.Context, id int, userID int, role string)) *MockContentService_Unpublish_Call {
+func (_c *MockContentService_Unpublish_Call) Run(run func(ctx context.Context, id int, principal kernel.Principal)) *MockContentService_Unpublish_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -553,56 +536,51 @@ func (_c *MockContentService_Unpublish_Call) Run(run func(ctx context.Context, i
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 int
+		var arg2 kernel.Principal
 		if args[2] != nil {
-			arg2 = args[2].(int)
-		}
-		var arg3 string
-		if args[3] != nil {
-			arg3 = args[3].(string)
+			arg2 = args[2].(kernel.Principal)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
-			arg3,
 		)
 	})
 	return _c
 }
 
-func (_c *MockContentService_Unpublish_Call) Return(content1 *content.Content, err error) *MockContentService_Unpublish_Call {
+func (_c *MockContentService_Unpublish_Call) Return(content1 *contentdomain.Content, err error) *MockContentService_Unpublish_Call {
 	_c.Call.Return(content1, err)
 	return _c
 }
 
-func (_c *MockContentService_Unpublish_Call) RunAndReturn(run func(ctx context.Context, id int, userID int, role string) (*content.Content, error)) *MockContentService_Unpublish_Call {
+func (_c *MockContentService_Unpublish_Call) RunAndReturn(run func(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error)) *MockContentService_Unpublish_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // Update provides a mock function for the type MockContentService
-func (_mock *MockContentService) Update(ctx context.Context, id int, userID int, role string, req content.UpdateContentRequest) (*content.Content, error) {
-	ret := _mock.Called(ctx, id, userID, role, req)
+func (_mock *MockContentService) Update(ctx context.Context, id int, principal kernel.Principal, req content.UpdateContentRequest) (*contentdomain.Content, error) {
+	ret := _mock.Called(ctx, id, principal, req)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Update")
 	}
 
-	var r0 *content.Content
+	var r0 *contentdomain.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, string, content.UpdateContentRequest) (*content.Content, error)); ok {
-		return returnFunc(ctx, id, userID, role, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, content.UpdateContentRequest) (*contentdomain.Content, error)); ok {
+		return returnFunc(ctx, id, principal, req)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int, string, content.UpdateContentRequest) *content.Content); ok {
-		r0 = returnFunc(ctx, id, userID, role, req)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, content.UpdateContentRequest) *contentdomain.Content); ok {
+		r0 = returnFunc(ctx, id, principal, req)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*content.Content)
+			r0 = ret.Get(0).(*contentdomain.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int, string, content.UpdateContentRequest) error); ok {
-		r1 = returnFunc(ctx, id, userID, role, req)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, kernel.Principal, content.UpdateContentRequest) error); ok {
+		r1 = returnFunc(ctx, id, principal, req)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -617,14 +595,13 @@ type MockContentService_Update_Call struct {
 // Update is a helper method to define mock.On call
 //   - ctx context.Context
 //   - id int
-//   - userID int
-//   - role string
+//   - principal kernel.Principal
 //   - req content.UpdateContentRequest
-func (_e *MockContentService_Expecter) Update(ctx any, id any, userID any, role any, req any) *MockContentService_Update_Call {
-	return &MockContentService_Update_Call{Call: _e.mock.On("Update", ctx, id, userID, role, req)}
+func (_e *MockContentService_Expecter) Update(ctx any, id any, principal any, req any) *MockContentService_Update_Call {
+	return &MockContentService_Update_Call{Call: _e.mock.On("Update", ctx, id, principal, req)}
 }
 
-func (_c *MockContentService_Update_Call) Run(run func(ctx context.Context, id int, userID int, role string, req content.UpdateContentRequest)) *MockContentService_Update_Call {
+func (_c *MockContentService_Update_Call) Run(run func(ctx context.Context, id int, principal kernel.Principal, req content.UpdateContentRequest)) *MockContentService_Update_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -634,35 +611,30 @@ func (_c *MockContentService_Update_Call) Run(run func(ctx context.Context, id i
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 int
+		var arg2 kernel.Principal
 		if args[2] != nil {
-			arg2 = args[2].(int)
+			arg2 = args[2].(kernel.Principal)
 		}
-		var arg3 string
+		var arg3 content.UpdateContentRequest
 		if args[3] != nil {
-			arg3 = args[3].(string)
-		}
-		var arg4 content.UpdateContentRequest
-		if args[4] != nil {
-			arg4 = args[4].(content.UpdateContentRequest)
+			arg3 = args[3].(content.UpdateContentRequest)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
-			arg4,
 		)
 	})
 	return _c
 }
 
-func (_c *MockContentService_Update_Call) Return(content1 *content.Content, err error) *MockContentService_Update_Call {
+func (_c *MockContentService_Update_Call) Return(content1 *contentdomain.Content, err error) *MockContentService_Update_Call {
 	_c.Call.Return(content1, err)
 	return _c
 }
 
-func (_c *MockContentService_Update_Call) RunAndReturn(run func(ctx context.Context, id int, userID int, role string, req content.UpdateContentRequest) (*content.Content, error)) *MockContentService_Update_Call {
+func (_c *MockContentService_Update_Call) RunAndReturn(run func(ctx context.Context, id int, principal kernel.Principal, req content.UpdateContentRequest) (*contentdomain.Content, error)) *MockContentService_Update_Call {
 	_c.Call.Return(run)
 	return _c
 }

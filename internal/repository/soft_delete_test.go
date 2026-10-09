@@ -6,6 +6,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/database"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	_ "modernc.org/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func TestSoftDeleteContent(t *testing.T) {
 	userRepo := repository.NewUserRepository(db.DB())
 
 	// Create a test user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",
@@ -67,7 +68,7 @@ func TestGetSoftDeletedContentByUser(t *testing.T) {
 	userRepo := repository.NewUserRepository(db.DB())
 
 	// Create a test user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",
@@ -116,7 +117,7 @@ func TestRestoreContent(t *testing.T) {
 	userRepo := repository.NewUserRepository(db.DB())
 
 	// Create a test user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",
@@ -164,7 +165,7 @@ func TestPermanentDeleteContent(t *testing.T) {
 	userRepo := repository.NewUserRepository(db.DB())
 
 	// Create a test user
-	user := &repository.User{
+	user := &userdomain.User{
 		Username:     "testuser",
 		PasswordHash: "hash",
 		Email:        "test@example.com",

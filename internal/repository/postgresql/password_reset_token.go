@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/aristorinjuang/lesstruct/internal/repository"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 )
 
-type PasswordResetToken = repository.PasswordResetToken
+type PasswordResetToken = authdomain.PasswordResetToken
 
 // PasswordResetTokenRepository handles password reset token data operations
 type PasswordResetTokenRepository struct {

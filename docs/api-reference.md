@@ -1086,7 +1086,7 @@ See [`docs/configuration.md`](configuration.md#public_field) for the full schema
 
 | HTTP | `error.code` | When |
 |---|---|---|
-| `400` | `field_not_queryable` | The referenced field is not in the `[[public_field]]` allowlist (or the allowlist is empty / the registry was not wired in `main.go`). The message tells the operator to add an entry to `config.toml`. |
+| `400` | `field_not_queryable` | The referenced field is not in the `[[public_field]]` allowlist (or the allowlist is empty / the registry was not wired in `internal/app`). The message tells the operator to add an entry to `config.toml`. |
 | `400` | `invalid_sort` | `sort_by` is non-empty but is not of the form `cf:<field>`, or `<field>` does not match `^[a-z][a-z0-9_]*$`, or `order` is not one of `asc`/`desc`/empty. |
 | `400` | `invalid_filter_field` / `invalid_filter_operator` / `invalid_filter_value` | The cf filter failed domain-level validation (empty field, unknown operator, empty value). |
 | `500` | `internal_error` | Repository failure. |
@@ -1300,6 +1300,43 @@ index.xml                     RSS 2.0 feed of the 20 most recent posts
 ```
 
 All page URLs in the export — sitemap entries, RSS feed item links, AMP canonical links, and alias redirect targets — use the trailing-slash directory form (`/<slug>/`) matching the `<slug>/index.html` layout so they address the page rather than a flat alias stub. Hosts serving the export should resolve clean URLs to directory indexes before flat `.html` files; on hosts that prefer the flat file (e.g., AWS Amplify / S3 + CloudFront), a slash-less target resolves back to the stub itself and self-loops.
+
+## Admin extensions (`/api/admin/extensions`)
+
+Aggregates every registered feature module's admin-shell extensions (navigation entries, settings sections, editor extensions) into versioned JSON. This is the frozen manifest contract: the admin SPA renders navigation from these declarations, and any manifest change must update the conformance pin, never the shell.
+
+`GET /api/admin/extensions` — browser **admin** realm only (JWT + CSRF, Admin role).
+
+**Auth:** Admin role (non-admin callers get `403 INSUFFICIENT_PERMISSIONS`; anonymous callers get `401`).
+
+**Request**
+
+```
+GET /api/admin/extensions
+```
+
+**Response** (`200 OK`) — legacy envelope with versioned payload:
+
+```json
+{
+  "data": {
+    "version": 1,
+    "modules": [
+      {
+        "name": "media",
+        "menuEntries": [{"label": "Media", "path": "/media", "icon": "photo"}],
+        "settingsSections": [],
+        "editorExtensions": []
+      }
+    ]
+  },
+  "error": null,
+  "meta": {"timestamp": "2026-09-29T12:00:00Z"}
+}
+```
+
+- `version` — payload version. A shell must not render unknown major versions; bump on any breaking shape change.
+- `modules` — every registered `AdminExtensionProvider` in registry name order. Empty collections serialize as `[]`, never `null`.
 
 
 

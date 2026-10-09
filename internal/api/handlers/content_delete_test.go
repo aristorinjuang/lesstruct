@@ -11,8 +11,9 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
-	"github.com/aristorinjuang/lesstruct/internal/domain/content"
+	"github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/mock"
 )
@@ -31,7 +32,6 @@ func TestContentHandler_DeleteContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().DeleteContent(
 					mock.Anything,
-					1,
 					1,
 					mock.Anything,
 				).Return(nil)
@@ -55,7 +55,6 @@ func TestContentHandler_DeleteContent(t *testing.T) {
 				s.EXPECT().DeleteContent(
 					mock.Anything,
 					999,
-					1,
 					mock.Anything,
 				).Return(content.ErrContentNotFound)
 			},
@@ -77,7 +76,6 @@ func TestContentHandler_DeleteContent(t *testing.T) {
 			setupService: func(s *handlersmocks.MockContentServiceInterface) {
 				s.EXPECT().DeleteContent(
 					mock.Anything,
-					1,
 					1,
 					mock.Anything,
 				).Return(content.ErrUnauthorized)
@@ -144,6 +142,7 @@ func TestContentHandler_DeleteContent(t *testing.T) {
 
 			if tt.name != "no authentication" {
 				ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
 				req = req.WithContext(ctx)
 			}
 

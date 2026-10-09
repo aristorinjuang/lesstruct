@@ -5,7 +5,7 @@
 package mocks
 
 import (
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	mock "github.com/stretchr/testify/mock"
 )
 

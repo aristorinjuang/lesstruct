@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	aliasdomain "github.com/aristorinjuang/lesstruct/internal/domain/alias"
-	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

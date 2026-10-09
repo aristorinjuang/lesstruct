@@ -3,39 +3,11 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
+
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 )
-
-var (
-	ErrFailedLoginAttemptNotFound = errors.New("failed login attempt record not found")
-)
-
-// FailedLoginAttempt represents a failed login attempt record
-type FailedLoginAttempt struct {
-	ID                int
-	UserID            int
-	Attempts          int
-	LastAttemptAt     time.Time
-	LockedUntil       *time.Time
-	LastEmailSentAt   *time.Time
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-}
-
-// FailedLoginAttemptRepo defines the interface for failed login attempt repository operations
-type FailedLoginAttemptRepo interface {
-	GetByUserID(ctx context.Context, userID int) (*FailedLoginAttempt, error)
-	Create(ctx context.Context, attempt *FailedLoginAttempt) error
-	IncrementAttempts(ctx context.Context, userID int) error
-	LockAccount(ctx context.Context, userID int, lockoutDuration time.Duration) error
-	ResetAttempts(ctx context.Context, userID int) error
-	Delete(ctx context.Context, userID int) error
-	IsLocked(ctx context.Context, userID int) (bool, *time.Time, error)
-	UpdateLastEmailSent(ctx context.Context, userID int) error
-	ShouldSendLockoutEmail(ctx context.Context, userID int, minInterval time.Duration) (bool, error)
-}
 
 // FailedLoginAttemptRepository handles failed login attempt data operations
 type FailedLoginAttemptRepository struct {
@@ -43,7 +15,7 @@ type FailedLoginAttemptRepository struct {
 }
 
 // GetByUserID retrieves failed login attempt record by user ID
-func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID int) (*FailedLoginAttempt, error) {
+func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID int) (*authdomain.FailedLoginAttempt, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -51,7 +23,7 @@ func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID i
 		defer cancel()
 	}
 
-	var attempt FailedLoginAttempt
+	var attempt authdomain.FailedLoginAttempt
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, user_id, attempts, last_attempt_at, locked_until, last_email_sent_at, created_at, updated_at
 		FROM failed_login_attempts
@@ -68,7 +40,7 @@ func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID i
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, ErrFailedLoginAttemptNotFound
+		return nil, authdomain.ErrFailedLoginAttemptNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -78,7 +50,7 @@ func (r *FailedLoginAttemptRepository) GetByUserID(ctx context.Context, userID i
 }
 
 // Create creates a new failed login attempt record
-func (r *FailedLoginAttemptRepository) Create(ctx context.Context, attempt *FailedLoginAttempt) error {
+func (r *FailedLoginAttemptRepository) Create(ctx context.Context, attempt *authdomain.FailedLoginAttempt) error {
 	// Verify database connection is alive
 	if err := r.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database connection lost: %w", err)

@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
-	"github.com/aristorinjuang/lesstruct/internal/domain/posttype"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
+	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 )
 
 func TestPostTypeAdapter_GetBySlug(t *testing.T) {

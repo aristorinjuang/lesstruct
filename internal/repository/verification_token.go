@@ -2,45 +2,12 @@ package repository
 
 import (
 	"context"
-	cryptorand "crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"time"
+
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 )
-
-// GenerateToken generates a secure random token (32 bytes, hex encoded)
-func GenerateToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := cryptorand.Read(bytes); err != nil {
-		return "", fmt.Errorf("failed to generate secure random token: %w", err)
-	}
-	return hex.EncodeToString(bytes), nil
-}
-
-// HashToken hashes a token using SHA-256
-func HashToken(token string) string {
-	hash := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(hash[:])
-}
-
-// VerificationToken represents a verification token in the system
-type VerificationToken struct {
-	ID        int
-	UserID    int
-	TokenHash string
-	ExpiresAt time.Time
-	CreatedAt time.Time
-}
-
-// VerificationTokenRepo defines the interface for verification token repository operations
-type VerificationTokenRepo interface {
-	CreateToken(ctx context.Context, token *VerificationToken) error
-	FindValidToken(ctx context.Context, tokenHash string) (*VerificationToken, error)
-	DeleteUserTokens(ctx context.Context, userID int) error
-	DeleteExpiredTokens(ctx context.Context) error
-}
 
 // VerificationTokenRepository handles verification token data operations
 type VerificationTokenRepository struct {
@@ -48,7 +15,7 @@ type VerificationTokenRepository struct {
 }
 
 // CreateToken creates a new verification token
-func (r *VerificationTokenRepository) CreateToken(ctx context.Context, token *VerificationToken) error {
+func (r *VerificationTokenRepository) CreateToken(ctx context.Context, token *authdomain.VerificationToken) error {
 	// Verify database connection is alive
 	if err := r.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database connection lost: %w", err)
@@ -80,7 +47,7 @@ func (r *VerificationTokenRepository) CreateToken(ctx context.Context, token *Ve
 }
 
 // FindValidToken finds a valid (non-expired) verification token by hash
-func (r *VerificationTokenRepository) FindValidToken(ctx context.Context, tokenHash string) (*VerificationToken, error) {
+func (r *VerificationTokenRepository) FindValidToken(ctx context.Context, tokenHash string) (*authdomain.VerificationToken, error) {
 	// Add timeout context if not provided
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -88,7 +55,7 @@ func (r *VerificationTokenRepository) FindValidToken(ctx context.Context, tokenH
 		defer cancel()
 	}
 
-	var token VerificationToken
+	var token authdomain.VerificationToken
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, user_id, token_hash, expires_at, created_at
 		FROM verification_tokens
@@ -141,29 +108,13 @@ func (r *VerificationTokenRepository) DeleteExpiredTokens(ctx context.Context) e
 	return err
 }
 
-// PasswordResetToken represents a password reset token in the system
-type PasswordResetToken struct {
-	ID        int
-	UserID    int
-	TokenHash string
-	ExpiresAt time.Time
-	CreatedAt time.Time
-}
-
-// PasswordResetTokenRepo defines the interface for password reset token repository operations
-type PasswordResetTokenRepo interface {
-	CreateToken(ctx context.Context, token *PasswordResetToken) error
-	FindValidToken(ctx context.Context, tokenHash string) (*PasswordResetToken, error)
-	DeleteUserTokens(ctx context.Context, userID int) error
-}
-
 // PasswordResetTokenRepository handles password reset token data operations
 type PasswordResetTokenRepository struct {
 	db *sql.DB
 }
 
 // CreateToken creates a new password reset token
-func (r *PasswordResetTokenRepository) CreateToken(ctx context.Context, token *PasswordResetToken) error {
+func (r *PasswordResetTokenRepository) CreateToken(ctx context.Context, token *authdomain.PasswordResetToken) error {
 	if err := r.db.PingContext(ctx); err != nil {
 		return fmt.Errorf("database connection lost: %w", err)
 	}
@@ -192,14 +143,14 @@ func (r *PasswordResetTokenRepository) CreateToken(ctx context.Context, token *P
 }
 
 // FindValidToken finds a valid (non-expired) password reset token by hash
-func (r *PasswordResetTokenRepository) FindValidToken(ctx context.Context, tokenHash string) (*PasswordResetToken, error) {
+func (r *PasswordResetTokenRepository) FindValidToken(ctx context.Context, tokenHash string) (*authdomain.PasswordResetToken, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 	}
 
-	var token PasswordResetToken
+	var token authdomain.PasswordResetToken
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, user_id, token_hash, expires_at, created_at
 		FROM password_reset_tokens

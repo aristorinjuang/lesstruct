@@ -14,9 +14,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/customfield"
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
-	"github.com/aristorinjuang/lesstruct/internal/domain/seo"
+	"github.com/aristorinjuang/lesstruct/internal/identity"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
+	seo "github.com/aristorinjuang/lesstruct/modules/seo/domain"
 )
 
 // hookData is the JSON structure sent to and received from plugin hooks.
@@ -135,51 +138,22 @@ func isEmpty(value any) bool {
 	return false
 }
 
-// CreateCommentRequest represents a request to create a comment
-type CreateCommentRequest struct {
-	Comment string `json:"comment"`
-}
-
-// UpdateCommentStatusRequest represents a request to update comment status
-type UpdateCommentStatusRequest struct {
-	Status CommentStatus `json:"status"`
-}
-
-// CreateContentRequest represents a request to create content
-type CreateContentRequest struct {
-	Title              string         `json:"title"`
-	Slug               string         `json:"slug,omitempty"`
-	Content            string         `json:"content"`
-	Tags               []string       `json:"tags"`
-	Status             Status         `json:"status"`
-	Format             Format         `json:"format,omitempty"`
-	PostType           string         `json:"postType"`
-	MetaDescription    string         `json:"metaDescription,omitempty"`
-	OGTitle            string         `json:"ogTitle,omitempty"`
-	OGDescription      string         `json:"ogDescription,omitempty"`
-	AllowComments      *bool          `json:"allowComments,omitempty"`
-	CustomFields       map[string]any `json:"customFields,omitempty"`
-	Language           string         `json:"language,omitempty"`
-	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
-	PublishedAt        *time.Time     `json:"publishedAt,omitempty"`
-}
-
 // UpdateContentRequest represents a request to update content
 type UpdateContentRequest struct {
-	Title              string         `json:"title"`
-	Slug               string         `json:"slug,omitempty"`
-	Content            string         `json:"content"`
-	Tags               []string       `json:"tags"`
-	Status             Status         `json:"status"`
-	Format             Format         `json:"format,omitempty"`
-	PostType           string         `json:"postType"`
-	MetaDescription    string         `json:"metaDescription,omitempty"`
-	OGTitle            string         `json:"ogTitle,omitempty"`
-	OGDescription      string         `json:"ogDescription,omitempty"`
-	AllowComments      *bool          `json:"allowComments,omitempty"`
-	CustomFields       map[string]any `json:"customFields,omitempty"`
-	Language           string         `json:"language,omitempty"`
-	TranslationGroupID *int           `json:"translationGroupId,omitempty"`
+	Title              string               `json:"title"`
+	Slug               string               `json:"slug,omitempty"`
+	Content            string               `json:"content"`
+	Tags               []string             `json:"tags"`
+	Status             contentdomain.Status `json:"status"`
+	Format             contentdomain.Format `json:"format,omitempty"`
+	PostType           string               `json:"postType"`
+	MetaDescription    string               `json:"metaDescription,omitempty"`
+	OGTitle            string               `json:"ogTitle,omitempty"`
+	OGDescription      string               `json:"ogDescription,omitempty"`
+	AllowComments      *bool                `json:"allowComments,omitempty"`
+	CustomFields       map[string]any       `json:"customFields,omitempty"`
+	Language           string               `json:"language,omitempty"`
+	TranslationGroupID *int                 `json:"translationGroupId,omitempty"`
 }
 
 // HookExecutor executes plugin hooks during content lifecycle operations.
@@ -195,6 +169,14 @@ type RoleChecker interface {
 	IsAdmin(role string) bool
 	CanManageType(role string, postType string) bool
 	CanPublish(role string) bool
+}
+
+// AliasDeleter removes the alias rows that point at a content item. It is
+// wired to the alias domain service so deleting content never leaves dangling
+// aliases behind (the SQLite schema's ON DELETE CASCADE does not fire because
+// foreign keys are not enforced there).
+type AliasDeleter interface {
+	DeleteByContentID(ctx context.Context, contentID int) error
 }
 
 // Option configures a content Service at construction time.
@@ -241,7 +223,6 @@ func WithAliasDeleter(ad AliasDeleter) Option {
 // Service handles content business logic
 type Service struct {
 	repo            Repository
-	commentRepo     CommentRepository
 	seoService      *seo.Service
 	postTypeService PostTypeServiceInterface
 	hookExecutor    HookExecutor
@@ -249,14 +230,6 @@ type Service struct {
 	defaultLanguage string
 	commentsEnabled bool
 	roleChecker     RoleChecker
-}
-
-// AliasDeleter removes the alias rows that point at a content item. It is
-// wired to the alias domain service so deleting content never leaves dangling
-// aliases behind (the SQLite schema's ON DELETE CASCADE does not fire because
-// foreign keys are not enforced there).
-type AliasDeleter interface {
-	DeleteByContentID(ctx context.Context, contentID int) error
 }
 
 func (s *Service) validateCustomFields(
@@ -332,7 +305,7 @@ func (s *Service) getSystemFieldValues(postTypeSlug string, customFields map[str
 	return values
 }
 
-func (s *Service) buildHookData(userID int, req CreateContentRequest) []byte {
+func (s *Service) buildHookData(userID int, req contentdomain.CreateContentRequest) []byte {
 	data := hookData{
 		ContentID:    0,
 		UserID:       userID,
@@ -347,7 +320,7 @@ func (s *Service) buildHookData(userID int, req CreateContentRequest) []byte {
 	return b
 }
 
-func (s *Service) buildHookDataForUpdate(existing *Content, req UpdateContentRequest) []byte {
+func (s *Service) buildHookDataForUpdate(existing *contentdomain.Content, req UpdateContentRequest) []byte {
 	merged := make(map[string]any)
 	if existing.CustomFields != nil {
 		maps.Copy(merged, existing.CustomFields)
@@ -369,7 +342,7 @@ func (s *Service) buildHookDataForUpdate(existing *Content, req UpdateContentReq
 	return b
 }
 
-func (s *Service) applyHookResult(req *CreateContentRequest, result []byte) {
+func (s *Service) applyHookResult(req *contentdomain.CreateContentRequest, result []byte) {
 	var parsed hookData
 	if err := json.Unmarshal(result, &parsed); err != nil {
 		return
@@ -429,10 +402,10 @@ func (s *Service) validatePluginSystemFields(
 	for key, value := range pluginFields {
 		schema, found := schemaMap[key]
 		if !found {
-			return fmt.Errorf("%w: %s", ErrUnknownSystemFieldKey, key)
+			return fmt.Errorf("%w: %s", contentdomain.ErrUnknownSystemFieldKey, key)
 		}
 		if err := validateFieldValue(schema, value); err != nil {
-			return fmt.Errorf("%w: %s: %v", ErrSystemFieldValidation, schema.Name, err)
+			return fmt.Errorf("%w: %s: %v", contentdomain.ErrSystemFieldValidation, schema.Name, err)
 		}
 	}
 	return nil
@@ -450,7 +423,7 @@ func (s *Service) executeBeforeSaveHook(
 
 func (s *Service) executeAfterCreateHook(
 	ctx context.Context,
-	content *Content,
+	content *contentdomain.Content,
 ) {
 	if s.hookExecutor == nil {
 		return
@@ -470,7 +443,7 @@ func (s *Service) executeAfterCreateHook(
 
 func (s *Service) executeAfterPublishHook(
 	ctx context.Context,
-	content *Content,
+	content *contentdomain.Content,
 ) {
 	if s.hookExecutor == nil {
 		return
@@ -490,7 +463,7 @@ func (s *Service) executeAfterPublishHook(
 
 func (s *Service) executeAfterUnpublishHook(
 	ctx context.Context,
-	content *Content,
+	content *contentdomain.Content,
 ) {
 	if s.hookExecutor == nil {
 		return
@@ -516,7 +489,7 @@ func (s *Service) executeAfterUnpublishHook(
 // mirroring before_save semantics.
 func (s *Service) executeBeforeDeleteHook(
 	ctx context.Context,
-	existing *Content,
+	existing *contentdomain.Content,
 	postType string,
 ) error {
 	if s.hookExecutor == nil {
@@ -540,17 +513,22 @@ func (s *Service) executeBeforeDeleteHook(
 func (s *Service) SetSystemFields(
 	ctx context.Context,
 	contentID int,
-	userID int,
+	principal kernel.Principal,
 	systemFields map[string]any,
-) (*Content, error) {
+) (*contentdomain.Content, error) {
 	if s.postTypeService == nil {
 		return nil, fmt.Errorf("system fields not supported: post type service is nil")
 	}
 
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return nil, err
+	}
+
 	existing, err := s.repo.GetByID(ctx, contentID)
 	if err != nil {
-		if errors.Is(err, ErrContentNotFound) {
-			return nil, fmt.Errorf("%w: %w", ErrContentNotFound, err)
+		if errors.Is(err, contentdomain.ErrContentNotFound) {
+			return nil, fmt.Errorf("%w: %w", contentdomain.ErrContentNotFound, err)
 		}
 		return nil, fmt.Errorf("failed to get content: %w", err)
 	}
@@ -569,7 +547,7 @@ func (s *Service) SetSystemFields(
 			}
 		}
 		if !found {
-			return nil, fmt.Errorf("%w: %s", ErrUnknownSystemFieldKey, key)
+			return nil, fmt.Errorf("%w: %s", contentdomain.ErrUnknownSystemFieldKey, key)
 		}
 	}
 
@@ -579,7 +557,7 @@ func (s *Service) SetSystemFields(
 			continue
 		}
 		if err := validateFieldValue(sf, value); err != nil {
-			return nil, fmt.Errorf("%w: %s: %v", ErrSystemFieldValidation, sf.Name, err)
+			return nil, fmt.Errorf("%w: %s: %v", contentdomain.ErrSystemFieldValidation, sf.Name, err)
 		}
 	}
 
@@ -662,238 +640,16 @@ func (s *Service) roleCanPublish(role string) bool {
 	return s.roleChecker.CanPublish(role)
 }
 
-func (s *Service) Create(ctx context.Context, userID int, role string, req CreateContentRequest) (*Content, error) {
-	if err := ValidateTitle(req.Title); err != nil {
-		return nil, fmt.Errorf("title validation failed: %w", err)
-	}
-
-	format := req.Format
-	if format == "" {
-		format = FormatTiptap
-	}
-	if err := ValidateFormat(format); err != nil {
-		return nil, fmt.Errorf("format validation failed: %w", err)
-	}
-
-	if err := ValidateContent(req.Content, format); err != nil {
-		return nil, fmt.Errorf("content validation failed: %w", err)
-	}
-
-	if !req.Status.IsValid() {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, req.Status)
-	}
-
-	var err error
-	var tags []string
-	tags, err = ValidateTags(req.Tags)
-	if err != nil {
-		return nil, fmt.Errorf("tags validation failed: %w", err)
-	}
-
-	// The slug is immutable after creation, so it is resolved once here. A
-	// caller-supplied slug (admin-only at the handler layer) is validated and
-	// used as-is; otherwise it is auto-generated from the title. Uniqueness is
-	// enforced per-language below regardless of the source.
-	slug := strings.TrimSpace(req.Slug)
-	if slug != "" {
-		if err := ValidateSlug(slug); err != nil {
-			return nil, fmt.Errorf("slug validation failed: %w", err)
-		}
-	} else {
-		slug = s.GenerateSlug(req.Title)
-	}
-
-	language := req.Language
-	if language == "" {
-		language = s.defaultLanguage
-	}
-
-	// Validate translation group if provided
-	if req.TranslationGroupID != nil {
-		exists, err := s.repo.TranslationGroupExists(ctx, *req.TranslationGroupID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check translation group: %w", err)
-		}
-		if !exists {
-			return nil, ErrTranslationGroupNotFound
-		}
-	}
-
-	var unique bool
-	unique, err = s.repo.CheckSlugUnique(ctx, slug, language)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check slug uniqueness: %w", err)
-	}
-	if !unique {
-		return nil, fmt.Errorf("%w: %s", ErrSlugAlreadyExists, slug)
-	}
-
-	// Default post type to 'post' if not provided
-	postType := req.PostType
-	if postType == "" {
-		postType = "post"
-	}
-
-	// Validate post type if postTypeService is available
-	if s.postTypeService != nil {
-		_, err = s.postTypeService.GetBySlug(postType)
-		if err != nil {
-			return nil, fmt.Errorf("post type validation failed: %w", err)
-		}
-	}
-
-	// Per-type authorization: a role restricted to specific post types cannot
-	// create content for types outside its manage list (admins always pass).
-	if !s.roleCanManage(role, postType) {
-		return nil, ErrForbiddenPostType
-	}
-
-	// Publish capability: a role without it may still save content, but the
-	// item is forced to draft regardless of the requested status.
-	status := req.Status
-	if !s.roleCanPublish(role) && status == StatusPublished {
-		status = StatusDraft
-	}
-
-	// Capture pre-hook system field values
-	preHookSystemValues := s.getSystemFieldValues(postType, req.CustomFields)
-
-	// Execute BeforeSave hook with full data including any system fields
-	hookInput := s.buildHookData(userID, req)
-	hookResult, hookErr := s.executeBeforeSaveHook(ctx, hookInput)
-	if hookErr != nil {
-		return nil, fmt.Errorf("before_save hook failed: %w", hookErr)
-	}
-	if hookResult != nil {
-		s.applyHookResult(&req, hookResult)
-	}
-
-	// Detect which system fields the plugin added/modified
-	pluginSystemFields := s.diffSystemFieldValues(preHookSystemValues, s.getSystemFieldValues(postType, req.CustomFields))
-
-	// Validate plugin-set system field values
-	if err := s.validatePluginSystemFields(postType, pluginSystemFields); err != nil {
-		return nil, fmt.Errorf("plugin system field validation failed: %w", err)
-	}
-
-	s.stripSystemFields(postType, req.CustomFields)
-
-	// Merge plugin-set system field values back after stripping
-	if len(pluginSystemFields) > 0 {
-		if req.CustomFields == nil {
-			req.CustomFields = make(map[string]any)
-		}
-		maps.Copy(req.CustomFields, pluginSystemFields)
-	}
-
-	if err := s.validateCustomFields(postType, req.CustomFields); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCustomFieldValidation, err)
-	}
-
-	allowComments := s.commentsEnabled
-	if s.commentsEnabled {
-		if req.AllowComments != nil {
-			allowComments = *req.AllowComments
-		} else if postType == "page" {
-			allowComments = false
-		}
-	}
-
-	content := &Content{
-		UserID:             userID,
-		Title:              strings.TrimSpace(req.Title),
-		Slug:               slug,
-		Content:            req.Content,
-		Tags:               tags,
-		Status:             status,
-		Format:             format,
-		PostType:           postType,
-		MetaDescription:    req.MetaDescription,
-		OGTitle:            req.OGTitle,
-		OGDescription:      req.OGDescription,
-		AllowComments:      allowComments,
-		CustomFields:       req.CustomFields,
-		Language:           language,
-		TranslationGroupID: req.TranslationGroupID,
-	}
-
-	// Imports may carry their original publish date; surface it as the
-	// created-at timestamp so sorting, archives, and SEO datePublished all
-	// reflect the original publication time.
-	if req.PublishedAt != nil {
-		content.CreatedAt = *req.PublishedAt
-	}
-
-	// Creating directly as published runs the publish pipeline: auto-generate
-	// SEO metadata (honoring any overrides, like Update) so it lands in the
-	// initial insert, then fire AfterPublish after the row is persisted. This
-	// makes create-when-published behave like create + publish.
-	if status == StatusPublished && s.seoService != nil {
-		generated, err := s.generateSEOMetadata(content, req.MetaDescription, req.OGTitle, req.OGDescription)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate SEO metadata: %w", err)
-		}
-		content.MetaDescription = generated.MetaDescription
-		content.OGTitle = generated.OGTitle
-		content.OGDescription = generated.OGDescription
-	}
-
-	if err := s.repo.Create(ctx, content); err != nil {
-		return nil, fmt.Errorf("failed to create content: %w", err)
-	}
-
-	// Execute AfterCreate hook (fire and forget)
-	s.executeAfterCreateHook(ctx, content)
-
-	// Fire AfterPublish too when created directly as published, so plugins see
-	// the same draft→publish edge they get from the publish endpoint.
-	if status == StatusPublished {
-		s.executeAfterPublishHook(ctx, content)
-	}
-
-	return content, nil
-}
-
-func (s *Service) GenerateSlug(title string) string {
-	slug := strings.TrimSpace(title)
-	slug = strings.ToLower(slug)
-	slug = strings.ReplaceAll(slug, " ", "-")
-
-	var result strings.Builder
-	for _, r := range slug {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			result.WriteRune(r)
-		}
-	}
-	slug = result.String()
-
-	for strings.Contains(slug, "--") {
-		slug = strings.ReplaceAll(slug, "--", "-")
-	}
-
-	slug = strings.Trim(slug, "-")
-
-	if len(slug) > 200 {
-		slug = slug[:200]
-	}
-
-	if slug == "" {
-		slug = "untitled"
-	}
-
-	return slug
-}
-
 // updateSlug applies a requested slug change to a draft item. Published items
 // keep their permanent public URL; an empty or unchanged slug is a no-op.
-func (s *Service) updateSlug(ctx context.Context, existing *Content, slug string) error {
+func (s *Service) updateSlug(ctx context.Context, existing *contentdomain.Content, slug string) error {
 	if slug == "" || slug == existing.Slug {
 		return nil
 	}
-	if existing.Status == StatusPublished {
-		return ErrSlugImmutable
+	if existing.Status == contentdomain.StatusPublished {
+		return contentdomain.ErrSlugImmutable
 	}
-	if err := ValidateSlug(slug); err != nil {
+	if err := contentdomain.ValidateSlug(slug); err != nil {
 		return fmt.Errorf("slug validation failed: %w", err)
 	}
 	unique, err := s.repo.CheckSlugUnique(ctx, slug, existing.Language)
@@ -901,551 +657,10 @@ func (s *Service) updateSlug(ctx context.Context, existing *Content, slug string
 		return fmt.Errorf("failed to check slug uniqueness: %w", err)
 	}
 	if !unique {
-		return fmt.Errorf("%w: %s", ErrSlugAlreadyExists, slug)
+		return fmt.Errorf("%w: %s", contentdomain.ErrSlugAlreadyExists, slug)
 	}
 	existing.Slug = slug
 	return nil
-}
-
-func (s *Service) GetBySlug(ctx context.Context, slug string) (*Content, error) {
-	if err := ValidateSlug(slug); err != nil {
-		return nil, fmt.Errorf("slug validation failed: %w", err)
-	}
-
-	content, err := s.repo.GetBySlug(ctx, slug, s.defaultLanguage)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get content: %w", err)
-	}
-
-	return content, nil
-}
-
-func (s *Service) GetByID(ctx context.Context, id int) (*Content, error) {
-	content, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get content: %w", err)
-	}
-
-	return content, nil
-}
-
-// SlugExists reports whether a content item with the given slug already exists
-// in the given language. Importers use it for idempotent re-runs — items whose
-// slug already exists are skipped instead of failing or duplicating.
-func (s *Service) SlugExists(ctx context.Context, slug string, language string) (bool, error) {
-	slug = strings.TrimSpace(slug)
-	if slug == "" {
-		return false, nil
-	}
-	if language == "" {
-		language = s.defaultLanguage
-	}
-	unique, err := s.repo.CheckSlugUnique(ctx, slug, language)
-	if err != nil {
-		return false, err
-	}
-	return !unique, nil
-}
-
-// GetBySlugAndLanguage retrieves a content item by slug in the given language.
-// It returns ErrContentNotFound when the slug does not exist in that language.
-// Importers use it to resolve the ID of an already-imported item so translated
-// variants can still link to it on idempotent re-runs.
-func (s *Service) GetBySlugAndLanguage(ctx context.Context, slug string, language string) (*Content, error) {
-	slug = strings.TrimSpace(slug)
-	if slug == "" {
-		return nil, ErrContentNotFound
-	}
-	if language == "" {
-		language = s.defaultLanguage
-	}
-	return s.repo.GetBySlug(ctx, slug, language)
-}
-
-func (s *Service) GetByUser(ctx context.Context, userID int, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetByUser(ctx, userID, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user content: %w", err)
-	}
-
-	return contents, nil
-}
-
-func (s *Service) GetAll(ctx context.Context, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetAll(ctx, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all content: %w", err)
-	}
-
-	return contents, nil
-}
-
-func (s *Service) ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters ContentFilters) ([]*Content, error) {
-	contents, err := s.repo.ListByCursor(ctx, userID, limit, beforeID, filters)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list content: %w", err)
-	}
-
-	return contents, nil
-}
-
-func (s *Service) ListByFilters(ctx context.Context, userID int, filters ContentFilters) ([]*Content, error) {
-	if filters.Limit <= 0 {
-		filters.Limit = 100
-	}
-	if filters.Limit > 1000 {
-		filters.Limit = 1000
-	}
-	if filters.Offset < 0 {
-		filters.Offset = 0
-	}
-
-	if err := ValidateSortOrder(filters.SortOrder); err != nil {
-		return nil, err
-	}
-	for _, f := range filters.CustomFieldFilters {
-		if err := ValidateCustomFieldFilter(f); err != nil {
-			return nil, fmt.Errorf("invalid custom field filter: %w", err)
-		}
-	}
-
-	contents, err := s.repo.ListByFilters(ctx, userID, filters)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list content by filters: %w", err)
-	}
-
-	return contents, nil
-}
-
-// Count returns the number of content items matching the given filters, sharing the
-// same validation (sort order, custom field filters) as ListByFilters. userID <= 0
-// counts across all users (admin scope).
-func (s *Service) Count(ctx context.Context, userID int, filters ContentFilters) (int, error) {
-	if err := ValidateSortOrder(filters.SortOrder); err != nil {
-		return 0, err
-	}
-	for _, f := range filters.CustomFieldFilters {
-		if err := ValidateCustomFieldFilter(f); err != nil {
-			return 0, fmt.Errorf("invalid custom field filter: %w", err)
-		}
-	}
-
-	total, err := s.repo.Count(ctx, userID, filters)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count content: %w", err)
-	}
-
-	return total, nil
-}
-
-func (s *Service) GenerateSlugFromTitle(ctx context.Context, title string) (string, error) {
-	if err := ValidateTitle(title); err != nil {
-		return "", fmt.Errorf("title validation failed: %w", err)
-	}
-
-	slug := s.GenerateSlug(title)
-	return slug, nil
-}
-
-func (s *Service) GetPublished(ctx context.Context, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublished(ctx, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published content: %w", err)
-	}
-	return contents, nil
-}
-
-func (s *Service) GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*Content, error) {
-	return s.repo.GetTranslations(ctx, translationGroupID, excludeID)
-}
-
-func (s *Service) GetPublishedBySlug(ctx context.Context, slug string, language string) (*Content, error) {
-	if language == "" {
-		language = s.defaultLanguage
-	}
-
-	if err := ValidateSlug(slug); err != nil {
-		return nil, fmt.Errorf("slug validation failed: %w", err)
-	}
-
-	content, err := s.repo.GetPublishedBySlug(ctx, slug, language)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published content: %w", err)
-	}
-	return content, nil
-}
-
-func (s *Service) GetPublishedBySlugAny(ctx context.Context, slug string) (*Content, error) {
-	if err := ValidateSlug(slug); err != nil {
-		return nil, fmt.Errorf("slug validation failed: %w", err)
-	}
-
-	content, err := s.repo.GetPublishedBySlugAny(ctx, slug)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published content: %w", err)
-	}
-	return content, nil
-}
-
-func (s *Service) GetPublishedByID(ctx context.Context, id int) (*Content, error) {
-	content, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published content by id: %w", err)
-	}
-	if content.Status != StatusPublished {
-		return nil, ErrContentNotFound
-	}
-	return content, nil
-}
-
-func (s *Service) GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByAuthorUsername(ctx, username, languages, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published content by author: %w", err)
-	}
-	return contents, nil
-}
-
-func (s *Service) AuthorExists(ctx context.Context, username string) (bool, error) {
-	return s.repo.AuthorExists(ctx, username)
-}
-
-func (s *Service) GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByTag(ctx, tag, languages, year, month, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published content by tag: %w", err)
-	}
-	return contents, nil
-}
-
-func (s *Service) GetPublishedPages(ctx context.Context) ([]*Content, error) {
-	pages, err := s.repo.GetPublishedPages(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published pages: %w", err)
-	}
-	return pages, nil
-}
-
-func (s *Service) GetPublishedCustomPostTypes(ctx context.Context) ([]string, error) {
-	postTypes, err := s.repo.GetPublishedCustomPostTypes(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published custom post types: %w", err)
-	}
-	return postTypes, nil
-}
-
-func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*Content, error) {
-	contents, err := s.repo.GetPublishedByPostType(ctx, postType, languages, year, month, limit, offset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published content by post type: %w", err)
-	}
-	return contents, nil
-}
-
-func (s *Service) GetPublishedTags(ctx context.Context) ([]string, error) {
-	tags, err := s.repo.GetPublishedTags(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published tags: %w", err)
-	}
-	return tags, nil
-}
-
-func (s *Service) GetPublishedAuthors(ctx context.Context, filters PublishedAuthorFilters) ([]*PublishedAuthor, error) {
-	if err := ValidateSortOrder(filters.SortOrder); err != nil {
-		return nil, err
-	}
-	for _, f := range filters.CustomFieldFilters {
-		if err := ValidateCustomFieldFilter(f); err != nil {
-			return nil, err
-		}
-	}
-	authors, err := s.repo.GetPublishedAuthors(ctx, filters)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published authors: %w", err)
-	}
-	return authors, nil
-}
-
-func (s *Service) GetPublishedAuthor(ctx context.Context, username string) (*PublishedAuthor, error) {
-	author, err := s.repo.GetPublishedAuthor(ctx, username)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published author: %w", err)
-	}
-	return author, nil
-}
-
-func (s *Service) GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*ArchiveMonth, error) {
-	archive, err := s.repo.GetPublishedArchive(ctx, postType, languages)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get published archive: %w", err)
-	}
-	return archive, nil
-}
-
-func (s *Service) SearchPublished(ctx context.Context, query string, limit int) ([]*Content, error) {
-	query = strings.TrimSpace(query)
-	if len(query) < 2 {
-		return []*Content{}, nil
-	}
-	contents, err := s.repo.SearchPublished(ctx, query, limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search published content: %w", err)
-	}
-	return contents, nil
-}
-
-const (
-	// defaultRelatedLimit is the number of related posts returned when no limit is requested.
-	defaultRelatedLimit = 4
-	// maxRelatedLimit caps the number of related posts to keep queries bounded.
-	maxRelatedLimit = 20
-)
-
-// GetRelated returns up to limit related posts for the content identified by id.
-// Related posts share at least one tag, the same post type, and the same language
-// as the source, ranked by the number of shared tags then by recency. When there
-// are not enough tag-overlap matches (or the source has no tags), the result is
-// backfilled with the latest published posts of the same post type and language.
-// The source post is always excluded.
-func (s *Service) GetRelated(ctx context.Context, id int, limit int) ([]*Content, error) {
-	if limit <= 0 {
-		limit = defaultRelatedLimit
-	}
-	if limit > maxRelatedLimit {
-		limit = maxRelatedLimit
-	}
-
-	source, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get content: %w", err)
-	}
-
-	related, err := s.repo.GetRelatedByTags(ctx, id, source.Tags, source.PostType, source.Language, limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get related content by tags: %w", err)
-	}
-
-	if len(related) >= limit {
-		return related, nil
-	}
-
-	latest, err := s.repo.GetLatestByPostType(ctx, id, source.PostType, source.Language, limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest content by post type: %w", err)
-	}
-
-	seen := make(map[int]bool, len(related)+1)
-	seen[id] = true
-	for _, c := range related {
-		seen[c.ID] = true
-	}
-
-	for _, c := range latest {
-		if len(related) >= limit {
-			break
-		}
-		if seen[c.ID] {
-			continue
-		}
-		seen[c.ID] = true
-		related = append(related, c)
-	}
-
-	return related, nil
-}
-
-func (s *Service) Update(ctx context.Context, id int, userID int, role string, req UpdateContentRequest) (*Content, error) {
-	existing, err := s.repo.GetByID(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get content: %w", err)
-	}
-
-	if existing.UserID != userID && role != RoleAdmin {
-		return nil, ErrUnauthorized
-	}
-
-	if err := ValidateTitle(req.Title); err != nil {
-		return nil, fmt.Errorf("title validation failed: %w", err)
-	}
-
-	format := req.Format
-	if format == "" {
-		format = existing.Format
-	}
-	if format == "" {
-		format = FormatTiptap
-	}
-	if err := ValidateFormat(format); err != nil {
-		return nil, fmt.Errorf("format validation failed: %w", err)
-	}
-
-	if err := ValidateContent(req.Content, format); err != nil {
-		return nil, fmt.Errorf("content validation failed: %w", err)
-	}
-
-	if !req.Status.IsValid() {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, req.Status)
-	}
-
-	var tags []string
-	tags, err = ValidateTags(req.Tags)
-	if err != nil {
-		return nil, fmt.Errorf("tags validation failed: %w", err)
-	}
-
-	// Validate post type if postTypeService is available
-	if s.postTypeService != nil && req.PostType != "" {
-		_, err := s.postTypeService.GetBySlug(req.PostType)
-		if err != nil {
-			return nil, fmt.Errorf("post type validation failed: %w", err)
-		}
-	}
-
-	effectivePostType := existing.PostType
-	if req.PostType != "" {
-		effectivePostType = req.PostType
-	}
-	if effectivePostType == "" {
-		effectivePostType = "post"
-	}
-
-	// Per-type authorization: a role demoted from the type (or attempting to
-	// move content into a type it cannot manage) is rejected. Ownership is
-	// enforced above; this covers capability, which ownership alone cannot.
-	if !s.roleCanManage(role, effectivePostType) {
-		return nil, ErrForbiddenPostType
-	}
-
-	// Capture pre-hook system field values from the combined view
-	mergedCustomFields := make(map[string]any)
-	if req.CustomFields != nil {
-		maps.Copy(mergedCustomFields, req.CustomFields)
-	}
-	if existing.CustomFields != nil {
-		maps.Copy(mergedCustomFields, existing.CustomFields)
-	}
-	preHookSystemValues := s.getSystemFieldValues(effectivePostType, mergedCustomFields)
-
-	// Execute BeforeSave hook with full data including existing system fields
-	hookInput := s.buildHookDataForUpdate(existing, req)
-	hookResult, hookErr := s.executeBeforeSaveHook(ctx, hookInput)
-	if hookErr != nil {
-		return nil, fmt.Errorf("before_save hook failed: %w", hookErr)
-	}
-	if hookResult != nil {
-		s.applyHookResultForUpdate(&req, hookResult)
-	}
-
-	// Detect which system fields the plugin added/modified.
-	// Copy existing first, then req on top so hook changes in req take precedence.
-	postHookMerged := make(map[string]any)
-	if existing.CustomFields != nil {
-		maps.Copy(postHookMerged, existing.CustomFields)
-	}
-	if req.CustomFields != nil {
-		maps.Copy(postHookMerged, req.CustomFields)
-	}
-	pluginSystemFields := s.diffSystemFieldValues(preHookSystemValues, s.getSystemFieldValues(effectivePostType, postHookMerged))
-
-	// Validate plugin-set system field values
-	if err := s.validatePluginSystemFields(effectivePostType, pluginSystemFields); err != nil {
-		return nil, fmt.Errorf("plugin system field validation failed: %w", err)
-	}
-
-	s.stripSystemFields(effectivePostType, req.CustomFields)
-
-	if err := s.validateCustomFields(effectivePostType, req.CustomFields); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCustomFieldValidation, err)
-	}
-
-	// The slug is editable only while the content is a draft: it becomes the
-	// permanent public URL on publication, so a title edit never regenerates
-	// the slug of published content.
-	newTitle := strings.TrimSpace(req.Title)
-	existing.Title = newTitle
-	if err := s.updateSlug(ctx, existing, strings.TrimSpace(req.Slug)); err != nil {
-		return nil, err
-	}
-	existing.Content = req.Content
-	existing.Tags = tags
-	existing.Format = format
-	existing.PostType = req.PostType
-	if req.CustomFields != nil {
-		// Preserve system field values from existing content
-		var systemValues map[string]any
-		if existing.CustomFields != nil && s.postTypeService != nil {
-			if schemas, err := s.postTypeService.GetSystemFieldsByPostType(effectivePostType); err == nil {
-				for _, sf := range schemas {
-					if v, ok := existing.CustomFields[sf.Slug]; ok {
-						if systemValues == nil {
-							systemValues = make(map[string]any)
-						}
-						systemValues[sf.Slug] = v
-					}
-				}
-			}
-		}
-		existing.CustomFields = req.CustomFields
-		for slug, val := range systemValues {
-			if _, isPluginField := pluginSystemFields[slug]; !isPluginField {
-				existing.CustomFields[slug] = val
-			}
-		}
-		if len(pluginSystemFields) > 0 {
-			maps.Copy(existing.CustomFields, pluginSystemFields)
-		}
-	}
-
-	if req.AllowComments != nil && s.commentsEnabled {
-		existing.AllowComments = *req.AllowComments
-	} else if !s.commentsEnabled {
-		// Comments globally disabled — no item may accept comments.
-		existing.AllowComments = false
-	}
-
-	// Auto-generate SEO metadata when transitioning to published status. A role
-	// without the publish capability may keep already-published content
-	// published but cannot promote a draft, so the requested status is forced
-	// back to draft only on the draft→published edge.
-	if !s.roleCanPublish(role) && existing.Status != StatusPublished && req.Status == StatusPublished {
-		req.Status = StatusDraft
-	}
-	isTransitioningToPublished := existing.Status != StatusPublished && req.Status == StatusPublished
-	isLeavingPublished := existing.Status == StatusPublished && req.Status != StatusPublished
-	existing.Status = req.Status
-
-	if isTransitioningToPublished && s.seoService != nil {
-		generated, err := s.generateSEOMetadata(existing, req.MetaDescription, req.OGTitle, req.OGDescription)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate SEO metadata: %w", err)
-		}
-		existing.MetaDescription = generated.MetaDescription
-		existing.OGTitle = generated.OGTitle
-		existing.OGDescription = generated.OGDescription
-	} else {
-		// Use provided request values (may be empty strings)
-		existing.MetaDescription = req.MetaDescription
-		existing.OGTitle = req.OGTitle
-		existing.OGDescription = req.OGDescription
-	}
-
-	existing.UpdatedBy = userID
-
-	if err := s.repo.Update(ctx, existing); err != nil {
-		return nil, fmt.Errorf("failed to update content: %w", err)
-	}
-
-	// Execute AfterPublish hook on status transition (fire and forget)
-	if isTransitioningToPublished {
-		s.executeAfterPublishHook(ctx, existing)
-	}
-
-	// Execute AfterUnpublish hook when content leaves the published state
-	if isLeavingPublished {
-		s.executeAfterUnpublishHook(ctx, existing)
-	}
-
-	return existing, nil
 }
 
 // generateSEOMetadata builds the SEO input from content (title/content/slug-URL/
@@ -1454,7 +669,7 @@ func (s *Service) Update(ctx context.Context, id int, userID int, role string, r
 // (the status-only publish path). Shared by Create, Update, and transitionStatus
 // so every publish edge produces identical SEO.
 func (s *Service) generateSEOMetadata(
-	c *Content,
+	c *contentdomain.Content,
 	metaDescription, ogTitle, ogDescription string,
 ) (*seo.GeneratedMetadata, error) {
 	// datePublished mirrors the content's actual publish date (created_at);
@@ -1507,12 +722,12 @@ func (s *Service) generateSEOMetadata(
 // does not silently publish.
 func (s *Service) transitionStatus(
 	ctx context.Context,
-	existing *Content,
-	newStatus Status,
+	existing *contentdomain.Content,
+	newStatus contentdomain.Status,
 	userID int,
 ) error {
-	isTransitioningToPublished := existing.Status != StatusPublished && newStatus == StatusPublished
-	isLeavingPublished := existing.Status == StatusPublished && newStatus != StatusPublished
+	isTransitioningToPublished := existing.Status != contentdomain.StatusPublished && newStatus == contentdomain.StatusPublished
+	isLeavingPublished := existing.Status == contentdomain.StatusPublished && newStatus != contentdomain.StatusPublished
 	previousStatus := existing.Status
 	existing.Status = newStatus
 
@@ -1547,24 +762,801 @@ func (s *Service) transitionStatus(
 	return nil
 }
 
-// Publish flips a content item's status to StatusPublished via transitionStatus.
+func (s *Service) Create(ctx context.Context, principal kernel.Principal, req contentdomain.CreateContentRequest) (*contentdomain.Content, error) {
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return nil, err
+	}
+	role := identity.PrimaryRole(principal)
+	if err := contentdomain.ValidateTitle(req.Title); err != nil {
+		return nil, fmt.Errorf("title validation failed: %w", err)
+	}
+
+	format := req.Format
+	if format == "" {
+		format = contentdomain.FormatTiptap
+	}
+	if err := contentdomain.ValidateFormat(format); err != nil {
+		return nil, fmt.Errorf("format validation failed: %w", err)
+	}
+
+	if err := contentdomain.ValidateContent(req.Content, format); err != nil {
+		return nil, fmt.Errorf("content validation failed: %w", err)
+	}
+
+	if !req.Status.IsValid() {
+		return nil, fmt.Errorf("%w: %s", contentdomain.ErrInvalidStatus, req.Status)
+	}
+
+	var tags []string
+	tags, err = contentdomain.ValidateTags(req.Tags)
+	if err != nil {
+		return nil, fmt.Errorf("tags validation failed: %w", err)
+	}
+
+	// The slug is immutable after creation, so it is resolved once here. A
+	// caller-supplied slug (admin-only at the handler layer) is validated and
+	// used as-is; otherwise it is auto-generated from the title. Uniqueness is
+	// enforced per-language below regardless of the source.
+	slug := strings.TrimSpace(req.Slug)
+	if slug != "" {
+		if err := contentdomain.ValidateSlug(slug); err != nil {
+			return nil, fmt.Errorf("slug validation failed: %w", err)
+		}
+	} else {
+		slug = s.GenerateSlug(req.Title)
+	}
+
+	language := req.Language
+	if language == "" {
+		language = s.defaultLanguage
+	}
+
+	// Validate translation group if provided
+	if req.TranslationGroupID != nil {
+		exists, err := s.repo.TranslationGroupExists(ctx, *req.TranslationGroupID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check translation group: %w", err)
+		}
+		if !exists {
+			return nil, contentdomain.ErrTranslationGroupNotFound
+		}
+	}
+
+	var unique bool
+	unique, err = s.repo.CheckSlugUnique(ctx, slug, language)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check slug uniqueness: %w", err)
+	}
+	if !unique {
+		return nil, fmt.Errorf("%w: %s", contentdomain.ErrSlugAlreadyExists, slug)
+	}
+
+	// Default post type to 'post' if not provided
+	postType := req.PostType
+	if postType == "" {
+		postType = "post"
+	}
+
+	// Validate post type if postTypeService is available
+	if s.postTypeService != nil {
+		_, err = s.postTypeService.GetBySlug(postType)
+		if err != nil {
+			return nil, fmt.Errorf("post type validation failed: %w", err)
+		}
+	}
+
+	// Per-type authorization: a role restricted to specific post types cannot
+	// create content for types outside its manage list (admins always pass).
+	if !s.roleCanManage(role, postType) {
+		return nil, contentdomain.ErrForbiddenPostType
+	}
+
+	// Publish capability: a role without it may still save content, but the
+	// item is forced to draft regardless of the requested status.
+	status := req.Status
+	if !s.roleCanPublish(role) && status == contentdomain.StatusPublished {
+		status = contentdomain.StatusDraft
+	}
+
+	// Capture pre-hook system field values
+	preHookSystemValues := s.getSystemFieldValues(postType, req.CustomFields)
+
+	// Execute BeforeSave hook with full data including any system fields
+	hookInput := s.buildHookData(userID, req)
+	hookResult, hookErr := s.executeBeforeSaveHook(ctx, hookInput)
+	if hookErr != nil {
+		return nil, fmt.Errorf("before_save hook failed: %w", hookErr)
+	}
+	if hookResult != nil {
+		s.applyHookResult(&req, hookResult)
+	}
+
+	// Detect which system fields the plugin added/modified
+	pluginSystemFields := s.diffSystemFieldValues(preHookSystemValues, s.getSystemFieldValues(postType, req.CustomFields))
+
+	// Validate plugin-set system field values
+	if err := s.validatePluginSystemFields(postType, pluginSystemFields); err != nil {
+		return nil, fmt.Errorf("plugin system field validation failed: %w", err)
+	}
+
+	s.stripSystemFields(postType, req.CustomFields)
+
+	// Merge plugin-set system field values back after stripping
+	if len(pluginSystemFields) > 0 {
+		if req.CustomFields == nil {
+			req.CustomFields = make(map[string]any)
+		}
+		maps.Copy(req.CustomFields, pluginSystemFields)
+	}
+
+	if err := s.validateCustomFields(postType, req.CustomFields); err != nil {
+		return nil, fmt.Errorf("%w: %w", contentdomain.ErrCustomFieldValidation, err)
+	}
+
+	allowComments := s.commentsEnabled
+	if s.commentsEnabled {
+		if req.AllowComments != nil {
+			allowComments = *req.AllowComments
+		} else if postType == "page" {
+			allowComments = false
+		}
+	}
+
+	content := &contentdomain.Content{
+		UserID:             userID,
+		Title:              strings.TrimSpace(req.Title),
+		Slug:               slug,
+		Content:            req.Content,
+		Tags:               tags,
+		Status:             status,
+		Format:             format,
+		PostType:           postType,
+		MetaDescription:    req.MetaDescription,
+		OGTitle:            req.OGTitle,
+		OGDescription:      req.OGDescription,
+		AllowComments:      allowComments,
+		CustomFields:       req.CustomFields,
+		Language:           language,
+		TranslationGroupID: req.TranslationGroupID,
+	}
+
+	// Imports may carry their original publish date; surface it as the
+	// created-at timestamp so sorting, archives, and SEO datePublished all
+	// reflect the original publication time.
+	if req.PublishedAt != nil {
+		content.CreatedAt = *req.PublishedAt
+	}
+
+	// Creating directly as published runs the publish pipeline: auto-generate
+	// SEO metadata (honoring any overrides, like Update) so it lands in the
+	// initial insert, then fire AfterPublish after the row is persisted. This
+	// makes create-when-published behave like create + publish.
+	if status == contentdomain.StatusPublished && s.seoService != nil {
+		generated, err := s.generateSEOMetadata(content, req.MetaDescription, req.OGTitle, req.OGDescription)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate SEO metadata: %w", err)
+		}
+		content.MetaDescription = generated.MetaDescription
+		content.OGTitle = generated.OGTitle
+		content.OGDescription = generated.OGDescription
+	}
+
+	if err := s.repo.Create(ctx, content); err != nil {
+		return nil, fmt.Errorf("failed to create content: %w", err)
+	}
+
+	// Execute AfterCreate hook (fire and forget)
+	s.executeAfterCreateHook(ctx, content)
+
+	// Fire AfterPublish too when created directly as published, so plugins see
+	// the same draft→publish edge they get from the publish endpoint.
+	if status == contentdomain.StatusPublished {
+		s.executeAfterPublishHook(ctx, content)
+	}
+
+	return content, nil
+}
+
+func (s *Service) GenerateSlug(title string) string {
+	slug := strings.TrimSpace(title)
+	slug = strings.ToLower(slug)
+	slug = strings.ReplaceAll(slug, " ", "-")
+
+	var result strings.Builder
+	for _, r := range slug {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			result.WriteRune(r)
+		}
+	}
+	slug = result.String()
+
+	for strings.Contains(slug, "--") {
+		slug = strings.ReplaceAll(slug, "--", "-")
+	}
+
+	slug = strings.Trim(slug, "-")
+
+	if len(slug) > 200 {
+		slug = slug[:200]
+	}
+
+	if slug == "" {
+		slug = "untitled"
+	}
+
+	return slug
+}
+
+func (s *Service) GetBySlug(ctx context.Context, slug string) (*contentdomain.Content, error) {
+	if err := contentdomain.ValidateSlug(slug); err != nil {
+		return nil, fmt.Errorf("slug validation failed: %w", err)
+	}
+
+	content, err := s.repo.GetBySlug(ctx, slug, s.defaultLanguage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get content: %w", err)
+	}
+
+	return content, nil
+}
+
+func (s *Service) GetByID(ctx context.Context, id int) (*contentdomain.Content, error) {
+	content, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get content: %w", err)
+	}
+
+	return content, nil
+}
+
+// SlugExists reports whether a content item with the given slug already exists
+// in the given language. Importers use it for idempotent re-runs — items whose
+// slug already exists are skipped instead of failing or duplicating.
+func (s *Service) SlugExists(ctx context.Context, slug string, language string) (bool, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return false, nil
+	}
+	if language == "" {
+		language = s.defaultLanguage
+	}
+	unique, err := s.repo.CheckSlugUnique(ctx, slug, language)
+	if err != nil {
+		return false, err
+	}
+	return !unique, nil
+}
+
+// GetBySlugAndLanguage retrieves a content item by slug in the given language.
+// It returns contentdomain.ErrContentNotFound when the slug does not exist in that language.
+// Importers use it to resolve the ID of an already-imported item so translated
+// variants can still link to it on idempotent re-runs.
+func (s *Service) GetBySlugAndLanguage(ctx context.Context, slug string, language string) (*contentdomain.Content, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil, contentdomain.ErrContentNotFound
+	}
+	if language == "" {
+		language = s.defaultLanguage
+	}
+	return s.repo.GetBySlug(ctx, slug, language)
+}
+
+func (s *Service) GetByUser(ctx context.Context, userID int, limit int, offset int) ([]*contentdomain.Content, error) {
+	contents, err := s.repo.GetByUser(ctx, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user content: %w", err)
+	}
+
+	return contents, nil
+}
+
+func (s *Service) GetAll(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error) {
+	contents, err := s.repo.GetAll(ctx, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all content: %w", err)
+	}
+
+	return contents, nil
+}
+
+func (s *Service) ListByCursor(ctx context.Context, userID int, limit int, beforeID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error) {
+	contents, err := s.repo.ListByCursor(ctx, userID, limit, beforeID, filters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list content: %w", err)
+	}
+
+	return contents, nil
+}
+
+func (s *Service) ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error) {
+	if filters.Limit <= 0 {
+		filters.Limit = 100
+	}
+	if filters.Limit > 1000 {
+		filters.Limit = 1000
+	}
+	if filters.Offset < 0 {
+		filters.Offset = 0
+	}
+
+	if err := contentdomain.ValidateSortOrder(filters.SortOrder); err != nil {
+		return nil, err
+	}
+	for _, f := range filters.CustomFieldFilters {
+		if err := contentdomain.ValidateCustomFieldFilter(f); err != nil {
+			return nil, fmt.Errorf("invalid custom field filter: %w", err)
+		}
+	}
+
+	contents, err := s.repo.ListByFilters(ctx, userID, filters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list content by filters: %w", err)
+	}
+
+	return contents, nil
+}
+
+// Count returns the number of content items matching the given filters, sharing the
+// same validation (sort order, custom field filters) as ListByFilters. userID <= 0
+// counts across all users (admin scope).
+func (s *Service) Count(ctx context.Context, userID int, filters contentdomain.ContentFilters) (int, error) {
+	if err := contentdomain.ValidateSortOrder(filters.SortOrder); err != nil {
+		return 0, err
+	}
+	for _, f := range filters.CustomFieldFilters {
+		if err := contentdomain.ValidateCustomFieldFilter(f); err != nil {
+			return 0, fmt.Errorf("invalid custom field filter: %w", err)
+		}
+	}
+
+	total, err := s.repo.Count(ctx, userID, filters)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count content: %w", err)
+	}
+
+	return total, nil
+}
+
+func (s *Service) GenerateSlugFromTitle(ctx context.Context, title string) (string, error) {
+	if err := contentdomain.ValidateTitle(title); err != nil {
+		return "", fmt.Errorf("title validation failed: %w", err)
+	}
+
+	slug := s.GenerateSlug(title)
+	return slug, nil
+}
+
+func (s *Service) GetPublished(ctx context.Context, limit int, offset int) ([]*contentdomain.Content, error) {
+	contents, err := s.repo.GetPublished(ctx, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published content: %w", err)
+	}
+	return contents, nil
+}
+
+func (s *Service) GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error) {
+	return s.repo.GetTranslations(ctx, translationGroupID, excludeID)
+}
+
+func (s *Service) GetPublishedBySlug(ctx context.Context, slug string, language string) (*contentdomain.Content, error) {
+	if language == "" {
+		language = s.defaultLanguage
+	}
+
+	if err := contentdomain.ValidateSlug(slug); err != nil {
+		return nil, fmt.Errorf("slug validation failed: %w", err)
+	}
+
+	content, err := s.repo.GetPublishedBySlug(ctx, slug, language)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published content: %w", err)
+	}
+	return content, nil
+}
+
+func (s *Service) GetPublishedBySlugAny(ctx context.Context, slug string) (*contentdomain.Content, error) {
+	if err := contentdomain.ValidateSlug(slug); err != nil {
+		return nil, fmt.Errorf("slug validation failed: %w", err)
+	}
+
+	content, err := s.repo.GetPublishedBySlugAny(ctx, slug)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published content: %w", err)
+	}
+	return content, nil
+}
+
+func (s *Service) GetPublishedByID(ctx context.Context, id int) (*contentdomain.Content, error) {
+	content, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published content by id: %w", err)
+	}
+	if content.Status != contentdomain.StatusPublished {
+		return nil, contentdomain.ErrContentNotFound
+	}
+	return content, nil
+}
+
+func (s *Service) GetPublishedByAuthorUsername(ctx context.Context, username string, languages []string, limit int, offset int) ([]*contentdomain.Content, error) {
+	contents, err := s.repo.GetPublishedByAuthorUsername(ctx, username, languages, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published content by author: %w", err)
+	}
+	return contents, nil
+}
+
+func (s *Service) AuthorExists(ctx context.Context, username string) (bool, error) {
+	return s.repo.AuthorExists(ctx, username)
+}
+
+func (s *Service) GetPublishedByTag(ctx context.Context, tag string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
+	contents, err := s.repo.GetPublishedByTag(ctx, tag, languages, year, month, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published content by tag: %w", err)
+	}
+	return contents, nil
+}
+
+func (s *Service) GetPublishedPages(ctx context.Context) ([]*contentdomain.Content, error) {
+	pages, err := s.repo.GetPublishedPages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published pages: %w", err)
+	}
+	return pages, nil
+}
+
+func (s *Service) GetPublishedCustomPostTypes(ctx context.Context) ([]string, error) {
+	postTypes, err := s.repo.GetPublishedCustomPostTypes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published custom post types: %w", err)
+	}
+	return postTypes, nil
+}
+
+func (s *Service) GetPublishedByPostType(ctx context.Context, postType string, languages []string, year int, month int, limit int, offset int) ([]*contentdomain.Content, error) {
+	contents, err := s.repo.GetPublishedByPostType(ctx, postType, languages, year, month, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published content by post type: %w", err)
+	}
+	return contents, nil
+}
+
+func (s *Service) GetPublishedTags(ctx context.Context) ([]string, error) {
+	tags, err := s.repo.GetPublishedTags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published tags: %w", err)
+	}
+	return tags, nil
+}
+
+func (s *Service) GetPublishedAuthors(ctx context.Context, filters contentdomain.PublishedAuthorFilters) ([]*contentdomain.PublishedAuthor, error) {
+	if err := contentdomain.ValidateSortOrder(filters.SortOrder); err != nil {
+		return nil, err
+	}
+	for _, f := range filters.CustomFieldFilters {
+		if err := contentdomain.ValidateCustomFieldFilter(f); err != nil {
+			return nil, err
+		}
+	}
+	authors, err := s.repo.GetPublishedAuthors(ctx, filters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published authors: %w", err)
+	}
+	return authors, nil
+}
+
+func (s *Service) GetPublishedAuthor(ctx context.Context, username string) (*contentdomain.PublishedAuthor, error) {
+	author, err := s.repo.GetPublishedAuthor(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published author: %w", err)
+	}
+	return author, nil
+}
+
+func (s *Service) GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error) {
+	archive, err := s.repo.GetPublishedArchive(ctx, postType, languages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get published archive: %w", err)
+	}
+	return archive, nil
+}
+
+func (s *Service) SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error) {
+	query = strings.TrimSpace(query)
+	if len(query) < 2 {
+		return []*contentdomain.Content{}, nil
+	}
+	contents, err := s.repo.SearchPublished(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search published content: %w", err)
+	}
+	return contents, nil
+}
+
+const (
+	// defaultRelatedLimit is the number of related posts returned when no limit is requested.
+	defaultRelatedLimit = 4
+	// maxRelatedLimit caps the number of related posts to keep queries bounded.
+	maxRelatedLimit = 20
+)
+
+// GetRelated returns up to limit related posts for the content identified by id.
+// Related posts share at least one tag, the same post type, and the same language
+// as the source, ranked by the number of shared tags then by recency. When there
+// are not enough tag-overlap matches (or the source has no tags), the result is
+// backfilled with the latest published posts of the same post type and language.
+// The source post is always excluded.
+func (s *Service) GetRelated(ctx context.Context, id int, limit int) ([]*contentdomain.Content, error) {
+	if limit <= 0 {
+		limit = defaultRelatedLimit
+	}
+	if limit > maxRelatedLimit {
+		limit = maxRelatedLimit
+	}
+
+	source, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get content: %w", err)
+	}
+
+	related, err := s.repo.GetRelatedByTags(ctx, id, source.Tags, source.PostType, source.Language, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get related content by tags: %w", err)
+	}
+
+	if len(related) >= limit {
+		return related, nil
+	}
+
+	latest, err := s.repo.GetLatestByPostType(ctx, id, source.PostType, source.Language, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest content by post type: %w", err)
+	}
+
+	seen := make(map[int]bool, len(related)+1)
+	seen[id] = true
+	for _, c := range related {
+		seen[c.ID] = true
+	}
+
+	for _, c := range latest {
+		if len(related) >= limit {
+			break
+		}
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		related = append(related, c)
+	}
+
+	return related, nil
+}
+
+func (s *Service) Update(ctx context.Context, id int, principal kernel.Principal, req UpdateContentRequest) (*contentdomain.Content, error) {
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return nil, err
+	}
+	role := identity.PrimaryRole(principal)
+	existing, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get content: %w", err)
+	}
+
+	if existing.UserID != userID && role != contentdomain.RoleAdmin {
+		return nil, contentdomain.ErrUnauthorized
+	}
+
+	if err := contentdomain.ValidateTitle(req.Title); err != nil {
+		return nil, fmt.Errorf("title validation failed: %w", err)
+	}
+
+	format := req.Format
+	if format == "" {
+		format = existing.Format
+	}
+	if format == "" {
+		format = contentdomain.FormatTiptap
+	}
+	if err := contentdomain.ValidateFormat(format); err != nil {
+		return nil, fmt.Errorf("format validation failed: %w", err)
+	}
+
+	if err := contentdomain.ValidateContent(req.Content, format); err != nil {
+		return nil, fmt.Errorf("content validation failed: %w", err)
+	}
+
+	if !req.Status.IsValid() {
+		return nil, fmt.Errorf("%w: %s", contentdomain.ErrInvalidStatus, req.Status)
+	}
+
+	var tags []string
+	tags, err = contentdomain.ValidateTags(req.Tags)
+	if err != nil {
+		return nil, fmt.Errorf("tags validation failed: %w", err)
+	}
+
+	// Validate post type if postTypeService is available
+	if s.postTypeService != nil && req.PostType != "" {
+		_, err := s.postTypeService.GetBySlug(req.PostType)
+		if err != nil {
+			return nil, fmt.Errorf("post type validation failed: %w", err)
+		}
+	}
+
+	effectivePostType := existing.PostType
+	if req.PostType != "" {
+		effectivePostType = req.PostType
+	}
+	if effectivePostType == "" {
+		effectivePostType = "post"
+	}
+
+	// Per-type authorization: a role demoted from the type (or attempting to
+	// move content into a type it cannot manage) is rejected. Ownership is
+	// enforced above; this covers capability, which ownership alone cannot.
+	if !s.roleCanManage(role, effectivePostType) {
+		return nil, contentdomain.ErrForbiddenPostType
+	}
+
+	// Capture pre-hook system field values from the combined view
+	mergedCustomFields := make(map[string]any)
+	if req.CustomFields != nil {
+		maps.Copy(mergedCustomFields, req.CustomFields)
+	}
+	if existing.CustomFields != nil {
+		maps.Copy(mergedCustomFields, existing.CustomFields)
+	}
+	preHookSystemValues := s.getSystemFieldValues(effectivePostType, mergedCustomFields)
+
+	// Execute BeforeSave hook with full data including existing system fields
+	hookInput := s.buildHookDataForUpdate(existing, req)
+	hookResult, hookErr := s.executeBeforeSaveHook(ctx, hookInput)
+	if hookErr != nil {
+		return nil, fmt.Errorf("before_save hook failed: %w", hookErr)
+	}
+	if hookResult != nil {
+		s.applyHookResultForUpdate(&req, hookResult)
+	}
+
+	// Detect which system fields the plugin added/modified.
+	// Copy existing first, then req on top so hook changes in req take precedence.
+	postHookMerged := make(map[string]any)
+	if existing.CustomFields != nil {
+		maps.Copy(postHookMerged, existing.CustomFields)
+	}
+	if req.CustomFields != nil {
+		maps.Copy(postHookMerged, req.CustomFields)
+	}
+	pluginSystemFields := s.diffSystemFieldValues(preHookSystemValues, s.getSystemFieldValues(effectivePostType, postHookMerged))
+
+	// Validate plugin-set system field values
+	if err := s.validatePluginSystemFields(effectivePostType, pluginSystemFields); err != nil {
+		return nil, fmt.Errorf("plugin system field validation failed: %w", err)
+	}
+
+	s.stripSystemFields(effectivePostType, req.CustomFields)
+
+	if err := s.validateCustomFields(effectivePostType, req.CustomFields); err != nil {
+		return nil, fmt.Errorf("%w: %w", contentdomain.ErrCustomFieldValidation, err)
+	}
+
+	// The slug is editable only while the content is a draft: it becomes the
+	// permanent public URL on publication, so a title edit never regenerates
+	// the slug of published content.
+	newTitle := strings.TrimSpace(req.Title)
+	existing.Title = newTitle
+	if err := s.updateSlug(ctx, existing, strings.TrimSpace(req.Slug)); err != nil {
+		return nil, err
+	}
+	existing.Content = req.Content
+	existing.Tags = tags
+	existing.Format = format
+	existing.PostType = req.PostType
+	if req.CustomFields != nil {
+		// Preserve system field values from existing content
+		var systemValues map[string]any
+		if existing.CustomFields != nil && s.postTypeService != nil {
+			if schemas, err := s.postTypeService.GetSystemFieldsByPostType(effectivePostType); err == nil {
+				for _, sf := range schemas {
+					if v, ok := existing.CustomFields[sf.Slug]; ok {
+						if systemValues == nil {
+							systemValues = make(map[string]any)
+						}
+						systemValues[sf.Slug] = v
+					}
+				}
+			}
+		}
+		existing.CustomFields = req.CustomFields
+		for slug, val := range systemValues {
+			if _, isPluginField := pluginSystemFields[slug]; !isPluginField {
+				existing.CustomFields[slug] = val
+			}
+		}
+		if len(pluginSystemFields) > 0 {
+			maps.Copy(existing.CustomFields, pluginSystemFields)
+		}
+	}
+
+	if req.AllowComments != nil && s.commentsEnabled {
+		existing.AllowComments = *req.AllowComments
+	} else if !s.commentsEnabled {
+		// Comments globally disabled — no item may accept comments.
+		existing.AllowComments = false
+	}
+
+	// Auto-generate SEO metadata when transitioning to published status. A role
+	// without the publish capability may keep already-published content
+	// published but cannot promote a draft, so the requested status is forced
+	// back to draft only on the draft→published edge.
+	if !s.roleCanPublish(role) && existing.Status != contentdomain.StatusPublished && req.Status == contentdomain.StatusPublished {
+		req.Status = contentdomain.StatusDraft
+	}
+	isTransitioningToPublished := existing.Status != contentdomain.StatusPublished && req.Status == contentdomain.StatusPublished
+	isLeavingPublished := existing.Status == contentdomain.StatusPublished && req.Status != contentdomain.StatusPublished
+	existing.Status = req.Status
+
+	if isTransitioningToPublished && s.seoService != nil {
+		generated, err := s.generateSEOMetadata(existing, req.MetaDescription, req.OGTitle, req.OGDescription)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate SEO metadata: %w", err)
+		}
+		existing.MetaDescription = generated.MetaDescription
+		existing.OGTitle = generated.OGTitle
+		existing.OGDescription = generated.OGDescription
+	} else {
+		// Use provided request values (may be empty strings)
+		existing.MetaDescription = req.MetaDescription
+		existing.OGTitle = req.OGTitle
+		existing.OGDescription = req.OGDescription
+	}
+
+	existing.UpdatedBy = userID
+
+	if err := s.repo.Update(ctx, existing); err != nil {
+		return nil, fmt.Errorf("failed to update content: %w", err)
+	}
+
+	// Execute AfterPublish hook on status transition (fire and forget)
+	if isTransitioningToPublished {
+		s.executeAfterPublishHook(ctx, existing)
+	}
+
+	// Execute AfterUnpublish hook when content leaves the published state
+	if isLeavingPublished {
+		s.executeAfterUnpublishHook(ctx, existing)
+	}
+
+	return existing, nil
+}
+
+// Publish flips a content item's status to contentdomain.StatusPublished via transitionStatus.
 // Ownership/role checks mirror Update: a non-admin caller must be the owner or
-// the service returns ErrUnauthorized. An already-published post is a no-op
+// the service returns contentdomain.ErrUnauthorized. An already-published post is a no-op
 // (200 idempotent: the row is persisted unchanged, no hook fires, no SEO regen
 // runs) — only the actual draft→published edge triggers SEO + hook work.
 //
 // Errors:
-//   - ErrContentNotFound when the id does not exist
-//   - ErrUnauthorized when the caller is neither owner nor admin
+//   - contentdomain.ErrContentNotFound when the id does not exist
+//   - contentdomain.ErrUnauthorized when the caller is neither owner nor admin
 //   - wrapped repo / SEO errors on persistence / generation failure
-func (s *Service) Publish(ctx context.Context, id int, userID int, role string) (*Content, error) {
+func (s *Service) Publish(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error) {
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return nil, err
+	}
+	role := identity.PrimaryRole(principal)
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get content: %w", err)
 	}
 
-	if existing.UserID != userID && role != RoleAdmin {
-		return nil, ErrUnauthorized
+	if existing.UserID != userID && role != contentdomain.RoleAdmin {
+		return nil, contentdomain.ErrUnauthorized
 	}
 
 	postType := existing.PostType
@@ -1572,35 +1564,40 @@ func (s *Service) Publish(ctx context.Context, id int, userID int, role string) 
 		postType = "post"
 	}
 	if !s.roleCanManage(role, postType) {
-		return nil, ErrForbiddenPostType
+		return nil, contentdomain.ErrForbiddenPostType
 	}
 	if !s.roleCanPublish(role) {
-		return nil, ErrForbiddenPublish
+		return nil, contentdomain.ErrForbiddenPublish
 	}
 
-	if err := s.transitionStatus(ctx, existing, StatusPublished, userID); err != nil {
+	if err := s.transitionStatus(ctx, existing, contentdomain.StatusPublished, userID); err != nil {
 		return nil, err
 	}
 
 	return existing, nil
 }
 
-// Unpublish flips a content item's status to StatusDraft via transitionStatus.
+// Unpublish flips a content item's status to contentdomain.StatusDraft via transitionStatus.
 // Same ownership/role contract as Publish. An already-draft post is a no-op
 // (idempotent: row is persisted unchanged, no hook fires, no SEO regen runs).
 //
 // Errors:
-//   - ErrContentNotFound when the id does not exist
-//   - ErrUnauthorized when the caller is neither owner nor admin
+//   - contentdomain.ErrContentNotFound when the id does not exist
+//   - contentdomain.ErrUnauthorized when the caller is neither owner nor admin
 //   - wrapped repo errors on persistence failure
-func (s *Service) Unpublish(ctx context.Context, id int, userID int, role string) (*Content, error) {
+func (s *Service) Unpublish(ctx context.Context, id int, principal kernel.Principal) (*contentdomain.Content, error) {
+	userID, err := identity.IntID(principal)
+	if err != nil {
+		return nil, err
+	}
+	role := identity.PrimaryRole(principal)
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get content: %w", err)
 	}
 
-	if existing.UserID != userID && role != RoleAdmin {
-		return nil, ErrUnauthorized
+	if existing.UserID != userID && role != contentdomain.RoleAdmin {
+		return nil, contentdomain.ErrUnauthorized
 	}
 
 	postType := existing.PostType
@@ -1608,123 +1605,29 @@ func (s *Service) Unpublish(ctx context.Context, id int, userID int, role string
 		postType = "post"
 	}
 	if !s.roleCanManage(role, postType) {
-		return nil, ErrForbiddenPostType
+		return nil, contentdomain.ErrForbiddenPostType
 	}
 
-	if err := s.transitionStatus(ctx, existing, StatusDraft, userID); err != nil {
+	if err := s.transitionStatus(ctx, existing, contentdomain.StatusDraft, userID); err != nil {
 		return nil, err
 	}
 
 	return existing, nil
 }
 
-func (s *Service) SubmitComment(ctx context.Context, contentID int, userID int, req CreateCommentRequest) (*Comment, error) {
-	if err := ValidateCommentText(req.Comment); err != nil {
-		return nil, fmt.Errorf("comment validation failed: %w", err)
-	}
-
-	content, err := s.repo.GetByID(ctx, contentID)
+func (s *Service) DeleteContent(ctx context.Context, id int, principal kernel.Principal) error {
+	userID, err := identity.IntID(principal)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get content: %w", err)
+		return err
 	}
-
-	if !content.AllowComments {
-		return nil, ErrUnauthorized
-	}
-
-	comment := &Comment{
-		ContentID: contentID,
-		UserID:    userID,
-		Comment:   strings.TrimSpace(req.Comment),
-		Status:    CommentStatusPending,
-	}
-
-	if err := s.commentRepo.Create(ctx, comment); err != nil {
-		return nil, fmt.Errorf("failed to create comment: %w", err)
-	}
-
-	return comment, nil
-}
-
-func (s *Service) GetCommentsByUserID(ctx context.Context, userID int) ([]*Comment, error) {
-	comments, err := s.commentRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments by user: %w", err)
-	}
-
-	return comments, nil
-}
-
-// CountComments returns the total number of comments. userID <= 0 counts ALL comments
-// (admin global scope); otherwise it counts only the given user's comments, mirroring
-// GetCommentsByUserID's scope so a list's total matches its rows.
-func (s *Service) CountComments(ctx context.Context, userID int) (int, error) {
-	total, err := s.commentRepo.Count(ctx, userID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count comments: %w", err)
-	}
-	return total, nil
-}
-
-func (s *Service) GetCommentsForContent(ctx context.Context, contentID int) ([]*Comment, error) {
-	comments, err := s.commentRepo.GetByContentID(ctx, contentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments: %w", err)
-	}
-
-	return comments, nil
-}
-
-func (s *Service) GetCommentsForModeration(ctx context.Context, contentID int) ([]*Comment, error) {
-	comments, err := s.commentRepo.GetByContentIDForModeration(ctx, contentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments for moderation: %w", err)
-	}
-
-	return comments, nil
-}
-
-func (s *Service) GetCommentsByStatus(ctx context.Context, status CommentStatus) ([]*Comment, error) {
-	comments, err := s.commentRepo.GetByStatus(ctx, status)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comments by status: %w", err)
-	}
-
-	return comments, nil
-}
-
-func (s *Service) ApproveComment(ctx context.Context, commentID int) error {
-	if err := s.commentRepo.UpdateStatus(ctx, commentID, CommentStatusApproved); err != nil {
-		return fmt.Errorf("failed to approve comment: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) RejectComment(ctx context.Context, commentID int) error {
-	if err := s.commentRepo.UpdateStatus(ctx, commentID, CommentStatusRejected); err != nil {
-		return fmt.Errorf("failed to reject comment: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) MarkAsSpam(ctx context.Context, commentID int) error {
-	if err := s.commentRepo.UpdateStatus(ctx, commentID, CommentStatusSpam); err != nil {
-		return fmt.Errorf("failed to mark comment as spam: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) DeleteContent(ctx context.Context, id int, userID int, role string) error {
+	role := identity.PrimaryRole(principal)
 	existing, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get content: %w", err)
 	}
 
-	if existing.UserID != userID && role != RoleAdmin {
-		return ErrUnauthorized
+	if existing.UserID != userID && role != contentdomain.RoleAdmin {
+		return contentdomain.ErrUnauthorized
 	}
 
 	postType := existing.PostType
@@ -1732,7 +1635,7 @@ func (s *Service) DeleteContent(ctx context.Context, id int, userID int, role st
 		postType = "post"
 	}
 	if !s.roleCanManage(role, postType) {
-		return ErrForbiddenPostType
+		return contentdomain.ErrForbiddenPostType
 	}
 
 	if err := s.executeBeforeDeleteHook(ctx, existing, postType); err != nil {
@@ -1749,7 +1652,7 @@ func (s *Service) DeleteContent(ctx context.Context, id int, userID int, role st
 		}
 	}
 
-	if role == RoleAdmin {
+	if role == contentdomain.RoleAdmin {
 		if err := s.repo.DeleteByID(ctx, id); err != nil {
 			return fmt.Errorf("failed to delete content: %w", err)
 		}
@@ -1757,60 +1660,6 @@ func (s *Service) DeleteContent(ctx context.Context, id int, userID int, role st
 		if err := s.repo.Delete(ctx, id, userID); err != nil {
 			return fmt.Errorf("failed to delete content: %w", err)
 		}
-	}
-
-	return nil
-}
-
-func (s *Service) DeleteComment(ctx context.Context, commentID int) error {
-	if err := s.commentRepo.Delete(ctx, commentID); err != nil {
-		return fmt.Errorf("failed to delete comment: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) DeleteOwnComment(ctx context.Context, commentID int, userID int) error {
-	comment, err := s.commentRepo.GetByID(ctx, commentID)
-	if err != nil {
-		return ErrCommentNotFound
-	}
-
-	if comment.UserID != userID {
-		return ErrCommentNotFound
-	}
-
-	if err := s.commentRepo.Delete(ctx, commentID); err != nil {
-		return fmt.Errorf("failed to delete comment: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) DeleteCommentsByUserID(ctx context.Context, userID int) error {
-	if err := s.commentRepo.DeleteByUserID(ctx, userID); err != nil {
-		return fmt.Errorf("failed to delete comments by user: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Service) GetComment(ctx context.Context, commentID int) (*Comment, error) {
-	comment, err := s.commentRepo.GetByID(ctx, commentID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get comment: %w", err)
-	}
-
-	return comment, nil
-}
-
-func (s *Service) UpdateCommentStatus(ctx context.Context, commentID int, status CommentStatus) error {
-	if err := ValidateCommentStatus(status); err != nil {
-		return fmt.Errorf("invalid comment status: %w", err)
-	}
-
-	if err := s.commentRepo.UpdateStatus(ctx, commentID, status); err != nil {
-		return fmt.Errorf("failed to update comment status: %w", err)
 	}
 
 	return nil
@@ -1834,29 +1683,8 @@ func NewService(
 	return s
 }
 
-func NewServiceWithComments(
-	repo Repository,
-	commentRepo CommentRepository,
-	seoService *seo.Service,
-	postTypeService PostTypeServiceInterface,
-	opts ...Option,
-) *Service {
-	s := &Service{
-		repo:            repo,
-		commentRepo:     commentRepo,
-		seoService:      seoService,
-		postTypeService: postTypeService,
-		defaultLanguage: "en",
-	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
-}
-
 func NewServiceWithHooks(
 	repo Repository,
-	commentRepo CommentRepository,
 	seoService *seo.Service,
 	postTypeService PostTypeServiceInterface,
 	hookExecutor HookExecutor,
@@ -1864,7 +1692,6 @@ func NewServiceWithHooks(
 ) *Service {
 	s := &Service{
 		repo:            repo,
-		commentRepo:     commentRepo,
 		seoService:      seoService,
 		postTypeService: postTypeService,
 		hookExecutor:    hookExecutor,
