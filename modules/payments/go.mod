@@ -4,10 +4,8 @@ go 1.27
 
 toolchain go1.27.3
 
-replace github.com/aristorinjuang/lesstruct/kernel => ../../kernel
-
 require (
-	github.com/aristorinjuang/lesstruct/kernel v1.0.0
+	github.com/aristorinjuang/lesstruct/kernel v1.1.1
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.60.1

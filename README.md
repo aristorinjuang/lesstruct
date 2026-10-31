@@ -91,6 +91,10 @@ go install github.com/aristorinjuang/lesstruct@latest
 go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-core@latest
 ```
 
+`go install` needs `v1.1.1` or later — earlier tags predate the publishable
+module layout (see [module development](docs/module-development.md#releasing-first-party)).
+For an older version, use a release binary or build from source.
+
 ### Option C — Build from source
 
 ```bash

@@ -33,6 +33,7 @@ GOTOOLCHAIN_VERSION := go1.27.3
 
 # SUBMODULES lists every nested Go module covered by the test/lint gates
 # alongside the root module. Add each new modules/<name> here on creation.
+# `make release` derives the per-release tag list from it as well.
 SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/importers modules/adminpanel modules/users modules/auth
 
 lint: modernize depguard stylecheck
@@ -119,6 +120,83 @@ build-core:
 # module (pricing, variants, stock). Install path: ./cmd/lesstruct-ecommerce.
 build-ecommerce:
 	mkdir -p bin && go build -o bin/lesstruct-ecommerce ./cmd/lesstruct-ecommerce
+
+# release rewrites every Lesstruct require across the workspace to VERSION
+# (lockstep: root vX.Y.Z, kernel/vX.Y.Z, modules/*/vX.Y.Z share one number),
+# verifies the workspace still builds through a throwaway file proxy (the
+# tags do not exist yet, so the real proxy cannot resolve them), and prints
+# the commit, tag, push, and verify sequence. It never commits or tags by
+# itself: review the diff, run the gates, then follow the printed steps.
+# Filesystem `replace` directives must never come back — the proxy rejects
+# such modules, which is what broke `go install …@latest` before v1.1.1.
+# Never run a bare `go work sync` here either: it strips the intra-workspace
+# requires this target maintains (and prunes the matching go.sum entries).
+# The EDGE map below is the publishable require set; it mirrors the Requires
+# column in docs/built-in-modules.md — update both when the graph changes.
+release:
+	@if [ -z "$(VERSION)" ]; then echo "usage: make release VERSION=vX.Y.Z"; exit 1; fi
+	@case "$(VERSION)" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "VERSION must look like v1.2.3, got '$(VERSION)'"; exit 1;; esac
+	@LP=github.com/aristorinjuang/lesstruct; \
+	for m in . $(SUBMODULES); do \
+		(cd $$m && go mod edit -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join((r.get("Old") or {}).get("Path","") for r in d.get("Replace") or []))' | while IFS= read -r r; do \
+			if [ -n "$$r" ]; then go mod edit -dropreplace="$$r"; fi; \
+		done); \
+	done; \
+	(cd . && go mod edit \
+		-require=github.com/aristorinjuang/lesstruct/kernel@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/adminpanel@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/auth@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/cart@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/catalog@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/comments@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/importers@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/media@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/orders@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/payments@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/posttypes-basic@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/seo@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/site-ssr@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/textgen@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/theme-default@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/theme-storefront@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/users@$(VERSION)); \
+	edge() { m="$$1"; shift; a=""; for s in "$$@"; do a="$$a -require=$$LP/$$s@$(VERSION)"; done; (cd "modules/$$m" && go mod edit $$a); }; \
+	edge adminpanel kernel; \
+	edge auth kernel modules/users; \
+	edge cart kernel; \
+	edge catalog kernel; \
+	edge comments kernel; \
+	edge importers kernel modules/media modules/posttypes-basic modules/seo; \
+	edge media kernel; \
+	edge orders kernel; \
+	edge payments kernel; \
+	edge posttypes-basic kernel; \
+	edge seo kernel; \
+	edge site-ssr kernel modules/comments modules/media modules/posttypes-basic modules/theme-default; \
+	edge textgen kernel modules/media; \
+	edge theme-default kernel; \
+	edge theme-storefront kernel; \
+	edge users kernel modules/media
+	@tmp=$$(mktemp -d); \
+	for m in . $(SUBMODULES); do \
+		mod=$$(head -1 $$m/go.mod | awk '{print $$2}'); \
+		rel=$$(echo "$$mod" | sed 's#^github.com/aristorinjuang/lesstruct##'); \
+		if [ -z "$$rel" ]; then d="$$tmp/github.com/aristorinjuang/lesstruct/@v"; \
+		else d="$$tmp/github.com/aristorinjuang/lesstruct$$rel/@v"; fi; \
+		mkdir -p "$$d"; cp $$m/go.mod "$$d/$(VERSION).mod"; \
+		printf '{"Version":"$(VERSION)"}' > "$$d/$(VERSION).info"; \
+	done; \
+	export GOPROXY="file://$$tmp,https://proxy.golang.org" GOSUMDB=off; \
+	go build ./... && for m in $(SUBMODULES); do (cd $$m && go build ./...) || exit 1; done; \
+	rm -rf "$$tmp"
+	@echo "requires now pin $(VERSION) (builds update go.work.sum by themselves)."
+	@echo "next: review (git diff), run make lint test vulncheck, then:"
+	@echo "  git commit -m 'build: release $(VERSION)'"
+	@echo "  git tag $(VERSION) $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
+	@echo "  git push origin main --tags"
+	@echo "verify once the proxy picks the tags up:"
+	@echo "  GOWORK=off go mod tidy (in ./ and every SUBMODULE; expect no go.mod changes)"
+	@echo "  go install github.com/aristorinjuang/lesstruct@$(VERSION)"
 
 install: build-admin build-cli
 	go install

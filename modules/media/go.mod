@@ -6,7 +6,7 @@ toolchain go1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/aristorinjuang/lesstruct/kernel v1.1.0
+	github.com/aristorinjuang/lesstruct/kernel v1.1.1
 	github.com/deepteams/webp v1.2.1
 	github.com/openai/openai-go v1.12.0
 	github.com/stretchr/testify v1.11.1
@@ -58,5 +58,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
-
-replace github.com/aristorinjuang/lesstruct/kernel => ../../kernel

@@ -1,0 +1,22 @@
+go 1.27
+
+use (
+	.
+	./kernel
+	./modules/adminpanel
+	./modules/auth
+	./modules/cart
+	./modules/catalog
+	./modules/comments
+	./modules/importers
+	./modules/media
+	./modules/orders
+	./modules/payments
+	./modules/posttypes-basic
+	./modules/seo
+	./modules/site-ssr
+	./modules/textgen
+	./modules/theme-default
+	./modules/theme-storefront
+	./modules/users
+)

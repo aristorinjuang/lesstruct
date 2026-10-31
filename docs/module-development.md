@@ -25,7 +25,8 @@ single-source store pattern):
 ```
 modules/<name>/
   go.mod            # module github.com/aristorinjuang/lesstruct/modules/<name>
-                    # requires kernel, replaces it at ../../kernel for local dev
+                    # requires kernel (+ siblings) at the release tag; local
+                    # checkouts resolve through the repo-root go.work instead
   module.go         # kernel.Module: options, Requires, handler accessors
   domain/           # services over narrow seam interfaces; 100% coverage bar
   api/              # HTTP handlers + seams.go; writes through kernel/httpx
@@ -171,12 +172,26 @@ public-surface mounting only) — never the disabled list.
 
 ## Ship checklist
 
-1. Layout matches the template; `go.mod` requires + replaces kernel.
+1. Layout matches the template; `go.mod` requires kernel (+ siblings) at the release tag and carries no `replace` directives (a filesystem `replace` in a published `go.mod` makes `go install pkg@version` fail — local checkouts resolve through `go.work` instead).
 2. `Requires()` is the cascade you intend; listed in `SUBMODULES`.
 3. Handlers write through `kernel/httpx`; envelope parity covered.
 4. Manifest validates; conformance fixture adopted in the module test.
 5. Domain coverage at bar; depguard clean; lint + modernize clean.
 6. `README.md` names the seams; `docs/project-context.md` gains the entry.
+
+## Releasing (first-party)
+
+Releases are lockstep: the root module (`vX.Y.Z`), the kernel
+(`kernel/vX.Y.Z`), and every first-party module (`modules/<name>/vX.Y.Z`)
+are tagged at the same commit, and every `go.mod` requires the sibling
+modules at that same version. Run `make release VERSION=vX.Y.Z`, which
+rewrites the requires and verifies the workspace builds through a throwaway
+file proxy (local checkouts resolve siblings through the committed `go.work`
+workspace — never through `replace`; workspace builds keep `go.work.sum`
+updated by themselves), then prints the commit + tag + verify sequence. `go
+install` needs the module tags, so versions before `v1.1.1` (whose `go.mod`
+files still carry filesystem `replace` directives) cannot be installed that
+way — use a release binary or build from source instead.
 
 ## Building and installing third-party modules
 

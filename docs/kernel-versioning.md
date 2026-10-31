@@ -27,8 +27,17 @@ widening existing ones.
 
 ## Tag scheme
 
-- `kernel/vX.Y.Z` tags the kernel module. First-party modules and the main module pin it via `require` + `replace` for local development; external consumers resolve the tag. The kernel ships exactly one tag per release, **aligned with the main module's tag** (`v1.0.0` + `kernel/v1.0.0` land together).
-- The main module tags separately (`vX.Y.Z` at the repo root) once the phase gate passes. Never tag mid-phase.
+- The root module tags separately (`vX.Y.Z` at the repo root). The kernel
+  (`kernel/vX.Y.Z`) and every first-party module (`modules/<name>/vX.Y.Z`)
+  ship exactly one tag per release, **aligned with the root tag** — all tags
+  land on the same commit (`v1.0.0` + `kernel/v1.0.0` landed together, and so
+  does every release since).
+- Every `go.mod` requires its Lesstruct siblings at the release tag, and no
+  published `go.mod` carries a filesystem `replace` (the proxy rejects such
+  modules, which is what broke `go install …@latest` before `v1.1.1`). Local
+  checkouts resolve siblings through the committed `go.work` workspace
+  instead — see [module development](module-development.md#releasing-first-party)
+  and `make release`.
 
 ## Admin API versioning
 

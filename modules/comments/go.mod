@@ -5,7 +5,7 @@ go 1.27
 toolchain go1.27.3
 
 require (
-	github.com/aristorinjuang/lesstruct/kernel v1.1.0
+	github.com/aristorinjuang/lesstruct/kernel v1.1.1
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.59.0
@@ -26,5 +26,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
-
-replace github.com/aristorinjuang/lesstruct/kernel => ../../kernel

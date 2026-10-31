@@ -6,23 +6,23 @@ toolchain go1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/aristorinjuang/lesstruct/kernel v1.1.0
-	github.com/aristorinjuang/lesstruct/modules/adminpanel v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/auth v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/cart v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/catalog v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/comments v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/importers v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/media v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/orders v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/payments v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/seo v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/site-ssr v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/textgen v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/theme-default v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/theme-storefront v0.0.0
-	github.com/aristorinjuang/lesstruct/modules/users v0.0.0
+	github.com/aristorinjuang/lesstruct/kernel v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/adminpanel v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/auth v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/cart v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/catalog v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/comments v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/importers v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/media v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/orders v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/payments v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/seo v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/site-ssr v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/textgen v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/theme-default v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.1.1
+	github.com/aristorinjuang/lesstruct/modules/users v1.1.1
 	github.com/aws/aws-sdk-go-v2 v1.43.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.0
@@ -122,24 +122,4 @@ require (
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-)
-
-replace (
-	github.com/aristorinjuang/lesstruct/kernel => ./kernel
-	github.com/aristorinjuang/lesstruct/modules/adminpanel => ./modules/adminpanel
-	github.com/aristorinjuang/lesstruct/modules/auth => ./modules/auth
-	github.com/aristorinjuang/lesstruct/modules/cart => ./modules/cart
-	github.com/aristorinjuang/lesstruct/modules/catalog => ./modules/catalog
-	github.com/aristorinjuang/lesstruct/modules/comments => ./modules/comments
-	github.com/aristorinjuang/lesstruct/modules/importers => ./modules/importers
-	github.com/aristorinjuang/lesstruct/modules/media => ./modules/media
-	github.com/aristorinjuang/lesstruct/modules/orders => ./modules/orders
-	github.com/aristorinjuang/lesstruct/modules/payments => ./modules/payments
-	github.com/aristorinjuang/lesstruct/modules/posttypes-basic => ./modules/posttypes-basic
-	github.com/aristorinjuang/lesstruct/modules/seo => ./modules/seo
-	github.com/aristorinjuang/lesstruct/modules/site-ssr => ./modules/site-ssr
-	github.com/aristorinjuang/lesstruct/modules/textgen => ./modules/textgen
-	github.com/aristorinjuang/lesstruct/modules/theme-default => ./modules/theme-default
-	github.com/aristorinjuang/lesstruct/modules/theme-storefront => ./modules/theme-storefront
-	github.com/aristorinjuang/lesstruct/modules/users => ./modules/users
 )
