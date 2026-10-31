@@ -16,8 +16,9 @@ import (
 // returning-visitor negotiation with no other test failing.
 func TestNoCookieAllowlistMatchesEngine(t *testing.T) {
 	allowed := noCookieAllowlist()
-	require.Len(t, allowed, 3)
+	require.Len(t, allowed, 4)
 	assert.Contains(t, allowed, sitessr.LangCookieName)
 	assert.Contains(t, allowed, sitessr.ConsentCookieName)
 	assert.Contains(t, allowed, kernel.SessionCookieName)
+	assert.Contains(t, allowed, kernel.AuthHintCookieName)
 }

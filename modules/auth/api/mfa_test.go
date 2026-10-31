@@ -311,15 +311,31 @@ func TestVerifyMFA(t *testing.T) {
 				assert.Equal(t, tt.store.admin.TokenVersion, tt.issuer.tokenVersion,
 					"the issued token must carry the user's current token version")
 				cookies := w.Result().Cookies()
-				require.Len(t, cookies, 1, "one session cookie")
-				cookie := cookies[0]
-				assert.Equal(t, "lesstruct_jwt", cookie.Name, "session cookie name")
-				assert.Equal(t, "session-jwt", cookie.Value, "session cookie value")
-				assert.True(t, cookie.HttpOnly, "session cookie is HttpOnly")
-				assert.Equal(t, "/", cookie.Path, "session cookie path")
-				assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite, "session cookie is SameSite=Lax")
-				assert.Greater(t, cookie.MaxAge, 23*60*60, "cookie lifetime follows the token expiry")
-				assert.WithinDuration(t, time.Now().Add(24*time.Hour), cookie.Expires, 5*time.Minute, "cookie expiry follows the token expiry")
+				require.Len(t, cookies, 2, "session + hint cookies")
+				var session, hint *http.Cookie
+				for _, c := range cookies {
+					switch c.Name {
+					case "lesstruct_jwt":
+						session = c
+					case "lesstruct_auth":
+						hint = c
+					}
+				}
+				require.NotNil(t, session, "session cookie present")
+				require.NotNil(t, hint, "auth hint cookie present")
+				assert.Equal(t, "lesstruct_jwt", session.Name, "session cookie name")
+				assert.Equal(t, "session-jwt", session.Value, "session cookie value")
+				assert.True(t, session.HttpOnly, "session cookie is HttpOnly")
+				assert.Equal(t, "/", session.Path, "session cookie path")
+				assert.Equal(t, http.SameSiteLaxMode, session.SameSite, "session cookie is SameSite=Lax")
+				assert.Greater(t, session.MaxAge, 23*60*60, "cookie lifetime follows the token expiry")
+				assert.WithinDuration(t, time.Now().Add(24*time.Hour), session.Expires, 5*time.Minute, "cookie expiry follows the token expiry")
+				assert.Equal(t, "lesstruct_auth", hint.Name, "auth hint cookie name")
+				assert.False(t, hint.HttpOnly, "auth hint cookie is readable")
+				assert.Equal(t, "/", hint.Path, "auth hint cookie path")
+				assert.Equal(t, http.SameSiteLaxMode, hint.SameSite, "auth hint cookie is SameSite=Lax")
+				assert.Equal(t, session.MaxAge, hint.MaxAge, "hint lifetime follows the session")
+				assert.WithinDuration(t, session.Expires, hint.Expires, time.Minute, "hint expiry follows the session")
 			}
 		})
 	}

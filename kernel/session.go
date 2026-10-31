@@ -13,6 +13,11 @@ const (
 	// SessionCookieName is the HttpOnly browser session cookie. It is
 	// namespaced away from the storefront token keys.
 	SessionCookieName = "lesstruct_jwt"
+
+	// AuthHintCookieName is the JS-readable presence hint mirroring the
+	// session cookie. It carries a fixed sentinel, never a token or PII,
+	// so anonymous page loads can skip profile probes without a request.
+	AuthHintCookieName = "lesstruct_auth"
 )
 
 // RequestIsHTTPS reports whether the visitor reached the site over TLS.
@@ -31,7 +36,10 @@ func RequestIsHTTPS(r *http.Request) bool {
 
 // SetSessionCookie writes the browser session cookie. The cookie is HttpOnly,
 // SameSite=Lax, Path=/, and Secure exactly on HTTPS so plain-HTTP localhost
-// keeps working. Lifetime matches the token expiry.
+// keeps working. Lifetime matches the token expiry. It also writes the
+// JS-readable auth hint with the same scope and expiry so the storefront can
+// skip anonymous profile probes; the hint carries a fixed sentinel, never
+// the token.
 func SetSessionCookie(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -39,6 +47,7 @@ func SetSessionCookie(
 	expires time.Time,
 ) {
 	maxAge := max(0, int(time.Until(expires).Seconds()))
+	secure := RequestIsHTTPS(r)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
@@ -47,14 +56,28 @@ func SetSessionCookie(
 		Expires:  expires,
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   RequestIsHTTPS(r),
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     AuthHintCookieName,
+		Value:    "1",
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   maxAge,
+		HttpOnly: false,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
 // ClearSessionCookie clears the browser session cookie with matching
-// attributes so the deletion replaces the session cookie.
+// attributes so the deletion replaces the session cookie. It also clears
+// the auth hint with the same scope so later loads behave as anonymous.
 func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	secure := RequestIsHTTPS(r)
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
@@ -62,7 +85,18 @@ func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   RequestIsHTTPS(r),
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     AuthHintCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: false,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }

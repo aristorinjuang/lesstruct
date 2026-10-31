@@ -144,9 +144,22 @@ func TestLogin_ValidCredentials(t *testing.T) {
 	assert.Equal(t, "Admin", loginResp.User.Role, "Role")
 
 	cookies := verifyW.Result().Cookies()
-	require.Len(t, cookies, 1, "one session cookie")
-	assert.Equal(t, "lesstruct_jwt", cookies[0].Name, "session cookie name")
-	assert.True(t, cookies[0].HttpOnly, "session cookie is HttpOnly")
+	require.Len(t, cookies, 2, "session + hint cookies")
+	var session, hint *http.Cookie
+	for _, c := range cookies {
+		switch c.Name {
+		case "lesstruct_jwt":
+			session = c
+		case "lesstruct_auth":
+			hint = c
+		}
+	}
+	require.NotNil(t, session, "session cookie present")
+	require.NotNil(t, hint, "auth hint cookie present")
+	assert.Equal(t, "lesstruct_jwt", session.Name, "session cookie name")
+	assert.True(t, session.HttpOnly, "session cookie is HttpOnly")
+	assert.Equal(t, "lesstruct_auth", hint.Name, "auth hint cookie name")
+	assert.False(t, hint.HttpOnly, "auth hint cookie is readable")
 }
 
 func TestLogin_InvalidCredentials(t *testing.T) {

@@ -30,6 +30,24 @@ func TestSessionCookieName(t *testing.T) {
 	}
 }
 
+func TestAuthHintCookieName(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected string
+	}{
+		{
+			name:     "success - canonical auth hint cookie name",
+			expected: "lesstruct_auth",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, kernel.AuthHintCookieName)
+		})
+	}
+}
+
 func TestRequestIsHTTPS(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -109,15 +127,33 @@ func TestSetSessionCookie(t *testing.T) {
 			kernel.SetSessionCookie(w, req, "session-jwt", expires)
 
 			cookies := w.Result().Cookies()
-			require.Len(t, cookies, 1)
-			cookie := cookies[0]
-			assert.Equal(t, kernel.SessionCookieName, cookie.Name)
-			assert.Equal(t, "session-jwt", cookie.Value)
-			assert.Equal(t, "/", cookie.Path)
-			assert.True(t, cookie.HttpOnly)
-			assert.Equal(t, tt.wantSecure, cookie.Secure)
-			assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
-			assert.WithinDuration(t, expires, cookie.Expires, time.Minute)
+			require.Len(t, cookies, 2)
+			var session, hint *http.Cookie
+			for _, c := range cookies {
+				switch c.Name {
+				case kernel.SessionCookieName:
+					session = c
+				case kernel.AuthHintCookieName:
+					hint = c
+				}
+			}
+			require.NotNil(t, session, "session cookie present")
+			require.NotNil(t, hint, "auth hint cookie present")
+			assert.Equal(t, kernel.SessionCookieName, session.Name)
+			assert.Equal(t, "session-jwt", session.Value)
+			assert.Equal(t, "/", session.Path)
+			assert.True(t, session.HttpOnly)
+			assert.Equal(t, tt.wantSecure, session.Secure)
+			assert.Equal(t, http.SameSiteLaxMode, session.SameSite)
+			assert.WithinDuration(t, expires, session.Expires, time.Minute)
+			assert.Equal(t, kernel.AuthHintCookieName, hint.Name)
+			assert.Equal(t, "1", hint.Value)
+			assert.Equal(t, "/", hint.Path)
+			assert.False(t, hint.HttpOnly)
+			assert.Equal(t, tt.wantSecure, hint.Secure)
+			assert.Equal(t, http.SameSiteLaxMode, hint.SameSite)
+			assert.WithinDuration(t, expires, hint.Expires, time.Minute)
+			assert.Equal(t, session.MaxAge, hint.MaxAge)
 		})
 	}
 }
@@ -158,14 +194,30 @@ func TestClearSessionCookie(t *testing.T) {
 			kernel.ClearSessionCookie(w, req)
 
 			cookies := w.Result().Cookies()
-			require.Len(t, cookies, 1)
-			cookie := cookies[0]
-			assert.Equal(t, kernel.SessionCookieName, cookie.Name)
-			assert.Equal(t, "/", cookie.Path)
-			assert.True(t, cookie.HttpOnly)
-			assert.Equal(t, tt.wantSecure, cookie.Secure)
-			assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
-			assert.Equal(t, -1, cookie.MaxAge)
+			require.Len(t, cookies, 2)
+			var session, hint *http.Cookie
+			for _, c := range cookies {
+				switch c.Name {
+				case kernel.SessionCookieName:
+					session = c
+				case kernel.AuthHintCookieName:
+					hint = c
+				}
+			}
+			require.NotNil(t, session, "session cookie present")
+			require.NotNil(t, hint, "auth hint cookie present")
+			assert.Equal(t, kernel.SessionCookieName, session.Name)
+			assert.Equal(t, "/", session.Path)
+			assert.True(t, session.HttpOnly)
+			assert.Equal(t, tt.wantSecure, session.Secure)
+			assert.Equal(t, http.SameSiteLaxMode, session.SameSite)
+			assert.Equal(t, -1, session.MaxAge)
+			assert.Equal(t, kernel.AuthHintCookieName, hint.Name)
+			assert.Equal(t, "/", hint.Path)
+			assert.False(t, hint.HttpOnly)
+			assert.Equal(t, tt.wantSecure, hint.Secure)
+			assert.Equal(t, http.SameSiteLaxMode, hint.SameSite)
+			assert.Equal(t, -1, hint.MaxAge)
 		})
 	}
 }

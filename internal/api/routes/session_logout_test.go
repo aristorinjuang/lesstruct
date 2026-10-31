@@ -112,11 +112,26 @@ func TestAuthLogoutRoute_RevokesAndClears(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 
 	cookies := w.Result().Cookies()
-	require.Len(t, cookies, 1, "one cleared cookie")
-	cookie := cookies[0]
-	assert.Equal(t, "lesstruct_jwt", cookie.Name, "cleared cookie name")
-	assert.Equal(t, "/", cookie.Path, "cleared cookie path")
-	assert.True(t, cookie.HttpOnly, "cleared cookie is HttpOnly")
-	assert.True(t, cookie.Secure, "cleared cookie is Secure on HTTPS")
-	assert.Equal(t, -1, cookie.MaxAge, "cleared cookie expires immediately")
+	require.Len(t, cookies, 2, "session + hint cleared")
+	var session, hint *http.Cookie
+	for _, c := range cookies {
+		switch c.Name {
+		case "lesstruct_jwt":
+			session = c
+		case "lesstruct_auth":
+			hint = c
+		}
+	}
+	require.NotNil(t, session, "session cookie present")
+	require.NotNil(t, hint, "auth hint cookie present")
+	assert.Equal(t, "lesstruct_jwt", session.Name, "cleared cookie name")
+	assert.Equal(t, "/", session.Path, "cleared cookie path")
+	assert.True(t, session.HttpOnly, "cleared cookie is HttpOnly")
+	assert.True(t, session.Secure, "cleared cookie is Secure on HTTPS")
+	assert.Equal(t, -1, session.MaxAge, "cleared cookie expires immediately")
+	assert.Equal(t, "lesstruct_auth", hint.Name, "cleared hint name")
+	assert.Equal(t, "/", hint.Path, "cleared hint path")
+	assert.False(t, hint.HttpOnly, "cleared hint is readable")
+	assert.True(t, hint.Secure, "cleared hint is Secure on HTTPS")
+	assert.Equal(t, -1, hint.MaxAge, "cleared hint expires immediately")
 }

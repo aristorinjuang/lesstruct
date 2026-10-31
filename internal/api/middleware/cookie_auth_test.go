@@ -284,12 +284,17 @@ func TestAuthMiddleware_ClearsStaleSessionCookie(t *testing.T) {
 
 			assert.Equal(t, http.StatusUnauthorized, rr.Code)
 			cleared := false
+			hintCleared := false
 			for _, c := range rr.Result().Cookies() {
 				if c.Name == kernel.SessionCookieName && c.MaxAge < 0 {
 					cleared = true
 				}
+				if c.Name == kernel.AuthHintCookieName && c.MaxAge < 0 {
+					hintCleared = true
+				}
 			}
-			assert.Equal(t, tt.wantCleared, cleared, "stale cookie clearing")
+			assert.Equal(t, tt.wantCleared, cleared, "stale session clearing")
+			assert.Equal(t, tt.wantCleared, hintCleared, "stale hint clearing")
 		})
 	}
 }

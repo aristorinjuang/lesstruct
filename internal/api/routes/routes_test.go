@@ -296,7 +296,7 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		agentCommentHandler,
 		adminMiddleware,
 		corsMiddleware,
-		middleware.NewNoCookieMiddleware(logger, kernel.SessionCookieName),
+		middleware.NewNoCookieMiddleware(logger, kernel.SessionCookieName, kernel.AuthHintCookieName),
 		csrfMiddleware,
 		rateLimitMiddleware,
 		secHeaderMW,

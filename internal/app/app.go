@@ -434,13 +434,13 @@ func startServer(
 }
 
 // noCookieAllowlist names the only cookies allowed past the NoCookie guard:
-// the SSR engine's language preference, the GDPR consent choice, and the
-// browser session cookie. It exists so TestNoCookieAllowlistMatchesEngine can
-// pin the wiring against the engine's canonical constants (importing the
-// engine here would link the SSR stack into lean binaries like
-// lesstruct-core).
+// the SSR engine's language preference, the GDPR consent choice, the
+// browser session cookie, and its JS-readable auth hint. It exists so
+// TestNoCookieAllowlistMatchesEngine can pin the wiring against the engine's
+// canonical constants (importing the engine here would link the SSR stack
+// into lean binaries like lesstruct-core).
 func noCookieAllowlist() []string {
-	return []string{"lesstruct_lang", "lesstruct_consent", kernel.SessionCookieName}
+	return []string{"lesstruct_lang", "lesstruct_consent", kernel.SessionCookieName, kernel.AuthHintCookieName}
 }
 
 // Run boots an edition: loads config, wires the shared platform services,

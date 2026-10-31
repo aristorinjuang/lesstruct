@@ -27,6 +27,16 @@
 		}
 	}
 
+	// hasAuthHint reports whether the login hint cookie is present. Anonymous
+	// loads skip the profile prefill entirely so no 401 probe is issued.
+	function hasAuthHint() {
+		try {
+			return /(?:^|;\s*)lesstruct_auth=/.test(document.cookie);
+		} catch (_) {
+			return false;
+		}
+	}
+
 	// secureSuffix returns "; Secure" exactly when the page itself is HTTPS,
 	// so preference cookies stay off plain HTTP without breaking local
 	// development. Deletions need it too: a Secure cookie survives a
@@ -957,26 +967,30 @@
 		const submit = document.getElementById("place-order");
 		if (!form) return;
 
-		// Prefill email/name for logged-in buyers (best-effort): a failed
-		// fetch leaves the fields blank and the guest flow intact. The
-		// session travels in the HttpOnly cookie, so no token is read.
-		try {
-			const res = await fetch("/api/profile/", {
-				headers: { Accept: "application/json" },
-				credentials: "same-origin",
-			});
-			if (res.ok) {
-				const payload = await res.json().catch(() => null);
-				const profile = payload && payload.data && payload.data.profile;
-				if (profile) {
-					const emailInput = document.getElementById("checkout-email");
-					const nameInput = document.getElementById("checkout-name");
-					if (emailInput && !emailInput.value && profile.email) emailInput.value = profile.email;
-					if (nameInput && !nameInput.value && profile.name) nameInput.value = profile.name;
+		// Prefill email/name for logged-in buyers (best-effort): the auth
+		// hint gates the probe so anonymous loads issue zero profile
+		// requests. A failed fetch leaves the fields blank and the guest
+		// flow intact. The session travels in the HttpOnly cookie, so no
+		// token is read.
+		if (hasAuthHint()) {
+			try {
+				const res = await fetch("/api/profile/", {
+					headers: { Accept: "application/json" },
+					credentials: "same-origin",
+				});
+				if (res.ok) {
+					const payload = await res.json().catch(() => null);
+					const profile = payload && payload.data && payload.data.profile;
+					if (profile) {
+						const emailInput = document.getElementById("checkout-email");
+						const nameInput = document.getElementById("checkout-name");
+						if (emailInput && !emailInput.value && profile.email) emailInput.value = profile.email;
+						if (nameInput && !nameInput.value && profile.name) nameInput.value = profile.name;
+					}
 				}
+			} catch (_) {
+				/* prefill is best-effort: the guest flow stays intact */
 			}
-		} catch (_) {
-			/* prefill is best-effort: the guest flow stays intact */
 		}
 
 		let cart = null;

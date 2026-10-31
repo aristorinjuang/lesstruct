@@ -148,6 +148,10 @@ func TestModule_StorefrontMinified(t *testing.T) {
 			needle: "lesstruct_consent",
 		},
 		{
+			name:   "auth hint survives minification",
+			needle: "lesstruct_auth",
+		},
+		{
 			name:   "cart shell hook survives minification",
 			needle: "data-cart-page",
 		},
@@ -168,6 +172,83 @@ func TestModule_StorefrontMinified(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Contains(t, string(min), tt.needle)
+		})
+	}
+}
+
+func TestModule_ProfileProbesGated(t *testing.T) {
+	files := testutil.NewModule().ThemeFiles()
+
+	// Every client-side profile probe must check the auth hint first so
+	// anonymous loads issue zero /api/profile requests (and log zero 401s),
+	// while the probe itself stays for logged-in visitors.
+	tests := []struct {
+		name   string
+		file   string
+		needle string
+	}{
+		{
+			name:   "nav-auth checks the hint",
+			file:   "static/nav-auth.js",
+			needle: "lesstruct_auth=",
+		},
+		{
+			name:   "nav-auth keeps its probe",
+			file:   "static/nav-auth.js",
+			needle: "/api/profile",
+		},
+		{
+			name:   "nav-auth gates on the hint",
+			file:   "static/nav-auth.js",
+			needle: "if(hasHint())",
+		},
+		{
+			name:   "comments checks the hint",
+			file:   "static/comments.js",
+			needle: "lesstruct_auth=",
+		},
+		{
+			name:   "comments keeps its probe",
+			file:   "static/comments.js",
+			needle: "/api/profile",
+		},
+		{
+			name:   "comments gates on the hint",
+			file:   "static/comments.js",
+			needle: "if(hasHint())",
+		},
+		{
+			name:   "comments defaults to the login link",
+			file:   "static/comments.js",
+			needle: "else{showLogin()}",
+		},
+		{
+			name:   "storefront checks the hint",
+			file:   "static/storefront.js",
+			needle: "lesstruct_auth=",
+		},
+		{
+			name:   "storefront keeps its prefill probe",
+			file:   "static/storefront.js",
+			needle: "/api/profile/",
+		},
+		{
+			name:   "storefront source defines the hint helper",
+			file:   "static/storefront.src.js",
+			needle: "function hasAuthHint()",
+		},
+		{
+			name:   "storefront source gates the prefill",
+			file:   "static/storefront.src.js",
+			needle: "if (hasAuthHint())",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := fs.ReadFile(files, tt.file)
+			require.NoError(t, err)
+			assert.Contains(t, string(body), tt.needle)
 		})
 	}
 }
