@@ -131,6 +131,10 @@ func copyFS(fsys fs.FS, destDir string) error {
 			return nil
 		}
 
+		if isDevSource(path) {
+			return nil
+		}
+
 		data, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
@@ -194,6 +198,14 @@ func targzDir(sourceDir string, w io.Writer) error {
 	return gw.Close()
 }
 
+// isDevSource reports whether a static asset path is an authoring source
+// (for example base.src.css or storefront.src.js) rather than a shippable
+// artifact. Dev sources stay embedded for authoring but are never exported
+// to static-site archives, whichever copy path carries them.
+func isDevSource(name string) bool {
+	return strings.HasSuffix(name, ".src.css") || strings.HasSuffix(name, ".src.js")
+}
+
 // copyEmbeddedAssets copies the embedded static layer into the export, keeping
 // only assets referenced by rendered pages. Stylesheets are always exported
 // (see alwaysExportedAssets) and unminified dev sources never are.
@@ -206,8 +218,7 @@ func copyEmbeddedAssets(fsys fs.FS, destDir string, referenced map[string]bool) 
 			return nil
 		}
 
-		name := path.Base(p)
-		if strings.HasSuffix(name, ".src.css") {
+		if isDevSource(path.Base(p)) {
 			return nil
 		}
 		if !alwaysExportedAssets[p] && !referenced[p] {

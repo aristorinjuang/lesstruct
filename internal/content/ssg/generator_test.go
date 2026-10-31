@@ -283,6 +283,8 @@ func writeThemeStaticAssets(t *testing.T) string {
 	require.NoError(t, os.MkdirAll(filepath.Join(staticDir, "images", "icons"), 0755))
 	require.NoError(t, os.MkdirAll(filepath.Join(staticDir, "js"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "base.css"), []byte("/* theme base override */\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "app.src.js"), []byte("unminified();\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "notes.src.css"), []byte("/* notes */\n"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "images", "hero.jpg"), []byte("jpeg-bytes"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "images", "icons", "favicon-32x32.png"), []byte("png-bytes"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "js", "semantic-tabs.min.js"), []byte("tabs();"), 0644))
@@ -322,6 +324,8 @@ func TestGenerator_Generate_StaticAssets(t *testing.T) {
 			wantAbsentFiles: []string{
 				"static/base.src.css",
 				"static/style.src.css",
+				"static/app.src.js",
+				"static/notes.src.css",
 			},
 			wantErr: false,
 		},

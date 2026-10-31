@@ -796,6 +796,9 @@ updates and a payload-driven SKU row hidden when empty.
 
 Any file in the embedded `static/` can be replaced by a same-named file under
 `themes/<name>/static/`. The files are served at `/static/<filename>`.
+Minified theme assets keep their readable sources beside them:
+`theme-storefront`'s `storefront.js` is built from its `storefront.src.js`
+source; the `.src.*` dev sources are never exported to static-site archives.
 
 | File | Used by | DOM contract |
 |------|---------|--------------|

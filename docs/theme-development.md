@@ -835,7 +835,12 @@ Any file in `modules/theme-default/static/` can be replaced by a same-named file
 under `themes/<name>/static/`. The files are served at `/static/<filename>`.
 The active theme may also ship extra assets (for example `storefront.js` in
 `theme-storefront`); the static handler serves every file in the resolved
-theme filesystem, so a child theme can override those by name too.
+theme filesystem, so a child theme can override those by name too. Minified
+theme assets keep their readable sources beside them: `theme-storefront`'s
+`storefront.js` is built from `storefront.src.js` with `make js`, mirroring
+the `make css` flow for the default theme's `.src.css` sources. The `.src.*`
+dev sources are embedded for authoring but never exported to static-site
+archives.
 
 | File | Used by | DOM contract |
 |------|---------|--------------|

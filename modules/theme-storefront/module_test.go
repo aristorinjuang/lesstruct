@@ -1,6 +1,7 @@
 package themestorefront_test
 
 import (
+	"bytes"
 	"io/fs"
 	"testing"
 
@@ -101,6 +102,7 @@ func TestModule_ThemeFiles(t *testing.T) {
 		"static/base.css",
 		"static/style.css",
 		"static/storefront.js",
+		"static/storefront.src.js",
 		"static/nav-auth.js",
 		"static/comments.js",
 		"static/favicon.svg",
@@ -110,6 +112,63 @@ func TestModule_ThemeFiles(t *testing.T) {
 	} {
 		_, err := fs.Stat(files, path)
 		assert.NoError(t, err, "theme file %q must exist", path)
+	}
+}
+
+func TestModule_StorefrontMinified(t *testing.T) {
+	files := testutil.NewModule().ThemeFiles()
+
+	src, err := fs.ReadFile(files, "static/storefront.src.js")
+	require.NoError(t, err)
+
+	min, err := fs.ReadFile(files, "static/storefront.js")
+	require.NoError(t, err)
+
+	require.NotEmpty(t, bytes.TrimSpace(min), "storefront.js must not ship empty (regenerate with make js)")
+	assert.Less(t, len(min), len(src), "storefront.js must be the minified build of storefront.src.js (regenerate with make js)")
+	assert.NotContains(t, string(min), "Readable source of truth", "storefront.js must not be a copy of the readable source")
+
+	// Behavioral markers the minified bundle must carry: a source edit that
+	// changes logic without re-running `make js` leaves a stale bundle the
+	// size check alone cannot catch.
+	tests := []struct {
+		name   string
+		needle string
+	}{
+		{
+			name:   "public API base survives minification",
+			needle: "/api/v1/public",
+		},
+		{
+			name:   "cart token key survives minification",
+			needle: "lesstruct_cart_token",
+		},
+		{
+			name:   "consent gating survives minification",
+			needle: "lesstruct_consent",
+		},
+		{
+			name:   "cart shell hook survives minification",
+			needle: "data-cart-page",
+		},
+		{
+			name:   "checkout shell hook survives minification",
+			needle: "data-checkout-page",
+		},
+		{
+			name:   "tracking shell hook survives minification",
+			needle: "data-track-page",
+		},
+		{
+			name:   "checkout prefill target survives minification",
+			needle: "checkout-email",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Contains(t, string(min), tt.needle)
+		})
 	}
 }
 
