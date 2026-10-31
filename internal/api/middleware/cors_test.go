@@ -1,6 +1,8 @@
 package middleware_test
 
 import (
+	"bytes"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,7 @@ import (
 	appmiddleware "github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // testLogger creates a discard logger for CORS middleware tests
@@ -309,4 +312,102 @@ func TestCORSMiddleware_DefensiveCopy(t *testing.T) {
 
 	// Assert - defensive copy prevents external mutation
 	assert.Equal(t, "http://localhost:8080", rr.Header().Get("Access-Control-Allow-Origin"), "Expected original origin to still be allowed after slice mutation")
+}
+
+func TestCORSMiddleware_SameOriginSkipsCheckAndLog(t *testing.T) {
+	tests := []struct {
+		name           string
+		method         string
+		host           string
+		origin         string
+		forwardedProto string
+		useTLS         bool
+		wantLogEmpty   bool
+		wantCORSHeader string
+	}{
+		{
+			name:           "success - same-origin GET skips log and CORS headers",
+			method:         http.MethodGet,
+			host:           "example.com",
+			origin:         "http://example.com",
+			forwardedProto: "",
+			useTLS:         false,
+			wantLogEmpty:   true,
+			wantCORSHeader: "",
+		},
+		{
+			name:           "success - same-origin preflight skips log and CORS headers",
+			method:         http.MethodOptions,
+			host:           "example.com",
+			origin:         "http://example.com",
+			forwardedProto: "",
+			useTLS:         false,
+			wantLogEmpty:   true,
+			wantCORSHeader: "",
+		},
+		{
+			name:           "success - same-origin behind TLS-terminating proxy is recognized",
+			method:         http.MethodPost,
+			host:           "example.com",
+			origin:         "https://example.com",
+			forwardedProto: "https",
+			useTLS:         false,
+			wantLogEmpty:   true,
+			wantCORSHeader: "",
+		},
+		{
+			name:           "success - same-origin direct TLS is recognized",
+			method:         http.MethodPost,
+			host:           "example.com",
+			origin:         "https://example.com",
+			forwardedProto: "",
+			useTLS:         true,
+			wantLogEmpty:   true,
+			wantCORSHeader: "",
+		},
+		{
+			name:           "success - cross-origin unlisted still rejected and logged",
+			method:         http.MethodPost,
+			host:           "example.com",
+			origin:         "http://evil.com",
+			forwardedProto: "",
+			useTLS:         false,
+			wantLogEmpty:   false,
+			wantCORSHeader: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			corsMiddleware := appmiddleware.NewCORSMiddleware([]string{"https://allowed.example"}, util.NewLogger(&logs))
+
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("OK"))
+			})
+
+			req := httptest.NewRequest(tt.method, "/api/test", nil)
+			req.Host = tt.host
+			req.Header.Set("Origin", tt.origin)
+			if tt.forwardedProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
+			}
+			if tt.useTLS {
+				req.TLS = &tls.ConnectionState{ServerName: tt.host}
+			}
+
+			rr := httptest.NewRecorder()
+			handler := corsMiddleware.Handler(nextHandler)
+			handler.ServeHTTP(rr, req)
+
+			require.Equal(t, http.StatusOK, rr.Code)
+			assert.Equal(t, tt.wantCORSHeader, rr.Header().Get("Access-Control-Allow-Origin"))
+			if tt.wantLogEmpty {
+				assert.NotContains(t, logs.String(), "unauthorized origin")
+			} else {
+				assert.Contains(t, logs.String(), "unauthorized origin")
+			}
+		})
+	}
 }

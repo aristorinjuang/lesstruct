@@ -6,9 +6,7 @@ info:
 http:
   method: GET
   url: "{{BASE_URL}}/api/admin/users/{{USER_ID}}/deleted-content"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

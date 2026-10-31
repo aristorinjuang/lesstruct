@@ -33,6 +33,7 @@ full command reference lives in the [API Reference](/docs/api-reference/).
 - **Building a site?** Start with the [Theme Development](/docs/theme-development/) guide.
 - **Extending the CMS?** The [Plugin Development](/docs/plugin-development/) guide and [Plugin Capabilities](/docs/plugin-capabilities/) reference cover the WASM hook model and host functions.
 - **Integrating via API?** The [API Reference](/docs/api-reference/) documents every `/api/v1` endpoint, and `lesstruct-cli` ships in the same release for terminal-first and AI-agent workflows.
+- **Want to support Lesstruct?** [Sponsor the project](https://github.com/sponsors/aristorinjuang) or grab official merch at [merch.lesstruct.dev](https://merch.lesstruct.dev).
 
 ## AI agent ingestion
 

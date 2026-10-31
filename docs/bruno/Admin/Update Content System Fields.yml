@@ -15,9 +15,7 @@ http:
           "internal_notes": "Needs review"
         }
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

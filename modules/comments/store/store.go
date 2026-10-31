@@ -72,6 +72,22 @@ func scanCommentRows(rows *sql.Rows) ([]*commentdomain.Comment, error) {
 	return items, nil
 }
 
+// CommentItem represents a comment in the database
+type CommentItem struct {
+	ID           int            `json:"id"`
+	ContentID    int            `json:"contentId"`
+	UserID       int            `json:"userId"`
+	Comment      string         `json:"comment"`
+	Status       string         `json:"status"`
+	Author       sql.NullString `json:"author"`
+	Username     sql.NullString `json:"username"`
+	Role         sql.NullString `json:"role"`
+	ContentTitle sql.NullString `json:"contentTitle"`
+	ContentSlug  sql.NullString `json:"contentSlug"`
+	CreatedAt    time.Time      `json:"createdAt"`
+	UpdatedAt    time.Time      `json:"updatedAt"`
+}
+
 // Repository implements commentdomain.CommentRepository for every driver.
 type Repository struct {
 	db      *sql.DB
@@ -88,22 +104,6 @@ func (r *Repository) placeholders() func() string {
 		index++
 		return marker
 	}
-}
-
-// CommentItem represents a comment in the database
-type CommentItem struct {
-	ID           int            `json:"id"`
-	ContentID    int            `json:"contentId"`
-	UserID       int            `json:"userId"`
-	Comment      string         `json:"comment"`
-	Status       string         `json:"status"`
-	Author       sql.NullString `json:"author"`
-	Username     sql.NullString `json:"username"`
-	Role         sql.NullString `json:"role"`
-	ContentTitle sql.NullString `json:"contentTitle"`
-	ContentSlug  sql.NullString `json:"contentSlug"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
 }
 
 func (r *Repository) Create(ctx context.Context, comment *commentdomain.Comment) error {

@@ -2,8 +2,6 @@ package modules
 
 import (
 	roledomain "github.com/aristorinjuang/lesstruct/internal/domain/role"
-	commentapi "github.com/aristorinjuang/lesstruct/modules/comments/api"
-	commentagent "github.com/aristorinjuang/lesstruct/modules/comments/api/agent"
 	mediaapi "github.com/aristorinjuang/lesstruct/modules/media/api"
 	mediaagent "github.com/aristorinjuang/lesstruct/modules/media/api/agent"
 	"github.com/aristorinjuang/lesstruct/modules/posttypes-basic/api"
@@ -80,30 +78,6 @@ func NewMediaRoleCapabilities(service *roledomain.Service) mediaapi.RoleCapabili
 // media module's agent seam (upload gate). A nil service yields nil, and the
 // module preserves the legacy allow-all behavior.
 func NewAgentMediaRoleCapabilities(service *roledomain.Service) mediaagent.RoleCapabilities {
-	if service == nil {
-		return nil
-	}
-	return &roleCapabilities{
-		service: service,
-	}
-}
-
-// NewCommentRoleCapabilities adapts the config-driven role registry to the
-// comments module's browser seam (comment-posting gate). A nil service yields
-// nil, and the module preserves the legacy allow-all behavior.
-func NewCommentRoleCapabilities(service *roledomain.Service) commentapi.RoleCapabilities {
-	if service == nil {
-		return nil
-	}
-	return &roleCapabilities{
-		service: service,
-	}
-}
-
-// NewAgentCommentRoleCapabilities adapts the config-driven role registry to
-// the comments module's agent seam (comment-posting gate). A nil service
-// yields nil, and the module preserves the legacy allow-all behavior.
-func NewAgentCommentRoleCapabilities(service *roledomain.Service) commentagent.RoleCapabilities {
 	if service == nil {
 		return nil
 	}

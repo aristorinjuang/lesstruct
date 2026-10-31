@@ -10,12 +10,12 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/internal/domain/content/mocks"
-	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
-	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
-	"github.com/aristorinjuang/lesstruct/modules/seo/domain"
 	"github.com/aristorinjuang/lesstruct/internal/identity"
 	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
+	"github.com/aristorinjuang/lesstruct/modules/seo/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -41,6 +41,22 @@ func (stubPostTypeService) GetFieldsByPostType(slug string) ([]customfield.Field
 
 func (stubPostTypeService) GetSystemFieldsByPostType(slug string) ([]customfield.FieldSchema, error) {
 	return nil, nil
+}
+
+func (stubPostTypeService) SearchableSlugs() []string {
+	return nil
+}
+
+// stubSearchablePostTypes extends stubPostTypeService with a fixed search
+// scope so SearchPublished's registry scoping is observable without a full
+// post-type registry.
+type stubSearchablePostTypes struct {
+	stubPostTypeService
+	slugs []string
+}
+
+func (s stubSearchablePostTypes) SearchableSlugs() []string {
+	return s.slugs
 }
 
 func (m *mockHookExecutor) Execute(ctx context.Context, hookName plugin.HookName, data []byte) ([]byte, error) {
@@ -486,6 +502,65 @@ func TestService_Create_DefaultLanguage(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			assert.Equal(t, tt.wantLanguage, result.Language)
+			mockRepo.AssertExpectations(t)
+		})
+	}
+}
+
+func TestService_Create_LanguageValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		languages   []string
+		reqLanguage string
+		wantErr     error
+	}{
+		{
+			name:        "success - configured language passes",
+			languages:   []string{"en", "id"},
+			reqLanguage: "id",
+		},
+		{
+			name:        "success - empty language falls back to default without validation",
+			languages:   []string{"en", "id"},
+			reqLanguage: "",
+		},
+		{
+			name:        "error - unconfigured language is rejected",
+			languages:   []string{"en", "id"},
+			reqLanguage: "xx",
+			wantErr:     contentdomain.ErrInvalidLanguage,
+		},
+		{
+			name:        "success - no configured languages skips validation",
+			languages:   nil,
+			reqLanguage: "xx",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo := &mocks.MockRepository{}
+			mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", mock.Anything).Return(true, nil)
+			mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+				c := args.Get(1).(*contentdomain.Content)
+				c.ID = 1
+			})
+
+			service := content.NewService(mockRepo, nil, nil, content.WithLanguages(tt.languages...))
+			_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), contentdomain.CreateContentRequest{
+				Title:    "Test Title",
+				Content:  testTipTapJSON("test"),
+				Tags:     []string{},
+				Status:   contentdomain.StatusDraft,
+				Language: tt.reqLanguage,
+			})
+
+			if tt.wantErr != nil {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
 			mockRepo.AssertExpectations(t)
 		})
 	}
@@ -1682,6 +1757,178 @@ func TestService_PostTypeValidation(t *testing.T) {
 
 		mockRepo.AssertExpectations(t)
 		mockPostType.AssertExpectations(t)
+	})
+
+	t.Run("canonicalizes_legacy_gallery_string_on_create", func(t *testing.T) {
+		var persisted contentdomain.Content
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			persisted = *args.Get(1).(*contentdomain.Content)
+			persisted.ID = 1
+		})
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Images", Slug: "images", Type: customfield.FieldTypeGallery},
+		}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"images": "/uploads/media/abc.webp\nhttps://cdn.example.com/x.webp",
+			},
+		}
+
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+		require.NoError(t, err, "Service.Create() unexpected error")
+
+		expected := []any{
+			map[string]any{"url": "/uploads/media/abc.webp", "alt": ""},
+			map[string]any{"url": "https://cdn.example.com/x.webp", "alt": ""},
+		}
+		assert.Equal(t, expected, persisted.CustomFields["images"], "legacy gallery string must canonicalize")
+	})
+
+	t.Run("canonicalizes_multiselect_array_on_create", func(t *testing.T) {
+		var persisted contentdomain.Content
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			persisted = *args.Get(1).(*contentdomain.Content)
+			persisted.ID = 1
+		})
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Sizes", Slug: "sizes", Type: customfield.FieldTypeMultiselect, Options: []string{"S", "M", "L"}},
+		}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"sizes": []any{"S", "M"},
+			},
+		}
+
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+		require.NoError(t, err, "Service.Create() unexpected error")
+
+		assert.Equal(t, []any{"S", "M"}, persisted.CustomFields["sizes"], "multiselect array must persist")
+	})
+
+	t.Run("rejects_multiselect_item_outside_options", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Sizes", Slug: "sizes", Type: customfield.FieldTypeMultiselect, Options: []string{"S", "M", "L"}},
+		}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"sizes": []any{"XL"},
+			},
+		}
+
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+		require.Error(t, err, "Service.Create() expected error, got nil")
+		assert.Contains(t, err.Error(), "Sizes")
+		assert.Contains(t, err.Error(), "configured options")
+	})
+
+	t.Run("canonicalizes_legacy_list_string_on_update", func(t *testing.T) {
+		existing := &contentdomain.Content{
+			ID:       5,
+			UserID:   1,
+			Title:    "Test Title",
+			Slug:     "test-title",
+			Content:  testTipTapJSON("Test content"),
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+		}
+		var persisted contentdomain.Content
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("GetByID", mock.Anything, 5).Return(existing, nil)
+		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			persisted = *args.Get(1).(*contentdomain.Content)
+		})
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Specs", Slug: "specs", Type: customfield.FieldTypeList},
+		}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+
+		req := content.UpdateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"specs": "Cotton\nMachine wash",
+			},
+		}
+
+		_, err := service.Update(context.Background(), 5, identity.New(1, "admin", contentdomain.RoleAdmin), req)
+		require.NoError(t, err, "Service.Update() unexpected error")
+
+		assert.Equal(t, []any{"Cotton", "Machine wash"}, persisted.CustomFields["specs"], "legacy list string must canonicalize")
+	})
+
+	t.Run("rejects_gallery_url_with_non_http_scheme", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Images", Slug: "images", Type: customfield.FieldTypeGallery},
+		}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		service := content.NewService(mockRepo, nil, mockPostType)
+
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"images": []any{map[string]any{"url": "javascript:alert(1)"}},
+			},
+		}
+
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+		require.Error(t, err, "Service.Create() expected error, got nil")
+		assert.Contains(t, err.Error(), "Images")
+		assert.Contains(t, err.Error(), "root-relative path")
 	})
 
 	t.Run("skips_validation_when_service_is_nil", func(t *testing.T) {
@@ -5173,19 +5420,20 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 func TestService_SearchPublished(t *testing.T) {
 	tests := []struct {
-		name      string
-		query     string
-		limit     int
-		setupMock func(*mocks.MockRepository)
-		wantCount int
-		wantErr   bool
+		name            string
+		query           string
+		limit           int
+		postTypeService content.PostTypeServiceInterface
+		setupMock       func(*mocks.MockRepository)
+		wantCount       int
+		wantErr         bool
 	}{
 		{
 			name:  "returns results for valid query",
 			query: "golang",
 			limit: 10,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("SearchPublished", mock.Anything, "golang", 10).Return([]*contentdomain.Content{
+				m.On("SearchPublished", mock.Anything, "golang", []string(nil), 10).Return([]*contentdomain.Content{
 					{ID: 1, Title: "Golang Tutorial", Slug: "golang-tut", Status: contentdomain.StatusPublished, PostType: "post"},
 				}, nil)
 			},
@@ -5215,7 +5463,7 @@ func TestService_SearchPublished(t *testing.T) {
 			query: "  golang  ",
 			limit: 10,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("SearchPublished", mock.Anything, "golang", 10).Return([]*contentdomain.Content{}, nil)
+				m.On("SearchPublished", mock.Anything, "golang", []string(nil), 10).Return([]*contentdomain.Content{}, nil)
 			},
 			wantCount: 0,
 			wantErr:   false,
@@ -5234,7 +5482,34 @@ func TestService_SearchPublished(t *testing.T) {
 			query: "nonexistent",
 			limit: 10,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("SearchPublished", mock.Anything, "nonexistent", 10).Return([]*contentdomain.Content{}, nil)
+				m.On("SearchPublished", mock.Anything, "nonexistent", []string(nil), 10).Return([]*contentdomain.Content{}, nil)
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name:  "scopes search to the searchable post types",
+			query: "golang",
+			limit: 10,
+			postTypeService: stubSearchablePostTypes{
+				slugs: []string{"post", "product", "page"},
+			},
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("SearchPublished", mock.Anything, "golang", []string{"post", "product", "page"}, 10).Return([]*contentdomain.Content{
+					{ID: 2, Title: "Golang Tee", Slug: "golang-tee", Status: contentdomain.StatusPublished, PostType: "product"},
+				}, nil)
+			},
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name:  "returns empty when every registered type is hidden",
+			query: "golang",
+			limit: 10,
+			postTypeService: stubSearchablePostTypes{
+				slugs: []string{},
+			},
+			setupMock: func(m *mocks.MockRepository) {
 			},
 			wantCount: 0,
 			wantErr:   false,
@@ -5244,7 +5519,7 @@ func TestService_SearchPublished(t *testing.T) {
 			query: "test",
 			limit: 10,
 			setupMock: func(m *mocks.MockRepository) {
-				m.On("SearchPublished", mock.Anything, "test", 10).Return(nil, errors.New("db error"))
+				m.On("SearchPublished", mock.Anything, "test", []string(nil), 10).Return(nil, errors.New("db error"))
 			},
 			wantCount: 0,
 			wantErr:   true,
@@ -5256,7 +5531,7 @@ func TestService_SearchPublished(t *testing.T) {
 			mockRepo := &mocks.MockRepository{}
 			tt.setupMock(mockRepo)
 
-			service := content.NewService(mockRepo, nil, nil)
+			service := content.NewService(mockRepo, nil, tt.postTypeService)
 			results, err := service.SearchPublished(context.Background(), tt.query, tt.limit)
 
 			if tt.wantErr {
@@ -6044,6 +6319,29 @@ func TestService_GetRelated(t *testing.T) {
 			},
 			expectedIDs: nil,
 			expectedErr: errors.New("failed to get latest content by post type"),
+		},
+		{
+			name:  "backfill stops as soon as the limit is reached",
+			id:    1,
+			limit: 3,
+			setupMock: func(m *mocks.MockRepository) {
+				m.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
+					ID:       1,
+					Title:    "Source",
+					Tags:     []string{"go"},
+					PostType: "post",
+					Language: "en",
+				}, nil)
+				m.On("GetRelatedByTags", mock.Anything, 1, []string{"go"}, "post", "en", 3).Return([]*contentdomain.Content{
+					{ID: 2, Title: "Related 2"},
+				}, nil)
+				m.On("GetLatestByPostType", mock.Anything, 1, "post", "en", 3).Return([]*contentdomain.Content{
+					{ID: 3, Title: "Latest 3"},
+					{ID: 4, Title: "Latest 4"},
+					{ID: 5, Title: "Latest 5"},
+				}, nil)
+			},
+			expectedIDs: []int{2, 3, 4},
 		},
 	}
 

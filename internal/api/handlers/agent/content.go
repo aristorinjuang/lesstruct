@@ -154,6 +154,7 @@ func normalizeContentFormat(format string) (string, string) {
 // convertContentBody converts the request body based on the normalized format.
 // This is the inner implementation shared by Create and Update. iframeHosts is
 // the sanitizer's iframe allowlist (derived from the CSP frame-src directive).
+// <style> blocks are stripped for every author: page CSS belongs in the theme.
 func convertContentBody(req ContentRequest, normalized string, iframeHosts []string) (body string, errMsg string) {
 	if normalized == formatMarkdown {
 		converted, err := markdown.Convert(req.Body)
@@ -317,8 +318,14 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// as-given; the service normalizes Tags via contentdomain.ValidateTags,
 	// rejects an unknown Language with ErrInvalidLanguage, and validates a
 	// provided TranslationGroupID exists (ErrTranslationGroupNotFound) — all
-	// mapped to VALIDATION_ERROR by handleError.
+	// mapped to VALIDATION_ERROR by handleError. A provided featured image is
+	// forwarded (empty = none).
 	slug := req.Slug
+
+	featuredImage := ""
+	if req.FeaturedImage != nil {
+		featuredImage = *req.FeaturedImage
+	}
 
 	domainReq := contentdomain.CreateContentRequest{
 		Title:              req.Title,
@@ -327,6 +334,7 @@ func (h *ContentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Status:             status,
 		Format:             contentdomain.Format(normalized),
 		PostType:           req.PostType,
+		FeaturedImage:      featuredImage,
 		CustomFields:       req.CustomFields,
 		Tags:               req.Tags,
 		Language:           req.Language,
@@ -538,7 +546,8 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	// req.CustomFields != nil). Tags and Language are forwarded as-given; the
 	// service normalizes Tags via contentdomain.ValidateTags and rejects an
 	// unknown Language with ErrInvalidLanguage (mapped to VALIDATION_ERROR by
-	// handleError).
+	// handleError). FeaturedImage follows the pointer contract: absent keeps
+	// the stored reference, "" clears it, a value replaces it (validated).
 	domainReq := contentservice.UpdateContentRequest{
 		Title:              req.Title,
 		Content:            body,
@@ -551,6 +560,7 @@ func (h *ContentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		MetaDescription:    existing.MetaDescription,
 		OGTitle:            existing.OGTitle,
 		OGDescription:      existing.OGDescription,
+		FeaturedImage:      req.FeaturedImage,
 		AllowComments:      &existing.AllowComments,
 		TranslationGroupID: existing.TranslationGroupID,
 	}

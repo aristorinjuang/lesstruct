@@ -1,0 +1,25 @@
+{{- define "body"}}
+<section class="container page-shell" data-cart-page>
+	<header class="page-head">
+		<p class="eyebrow">{{if eq .Lang "id"}}Belanja{{else}}Shop{{end}}</p>
+		<h1>{{if eq .Lang "id"}}Keranjang{{else}}Your cart{{end}}</h1>
+	</header>
+	<noscript><p class="alert alert--error">{{if eq .Lang "id"}}JavaScript diperlukan untuk memuat keranjang. Aktifkan JavaScript atau hubungi kami untuk memesan.{{else}}JavaScript is required to load your cart. Enable JavaScript or contact us to order.{{end}}</p></noscript>
+	<div class="form-error" id="cart-error" role="alert" hidden></div>
+	<div class="cart-layout">
+		<div class="cart-lines" id="cart-lines" aria-live="polite">
+			<p class="loading">{{if eq .Lang "id"}}Memuat keranjang&hellip;{{else}}Loading your cart&hellip;{{end}}</p>
+		</div>
+		<aside class="cart-summary" id="cart-summary" aria-label="{{if eq .Lang "id"}}Ringkasan{{else}}Summary{{end}}">
+			<h2>{{if eq .Lang "id"}}Ringkasan{{else}}Summary{{end}}</h2>
+			<dl class="cart-summary__rows">
+				<div><dt>{{if eq .Lang "id"}}Subtotal{{else}}Subtotal{{end}}</dt><dd data-cart-subtotal>&mdash;</dd></div>
+				<div><dt>{{if eq .Lang "id"}}Pengiriman{{else}}Shipping{{end}}</dt><dd class="muted">{{if eq .Lang "id"}}Diatur oleh toko{{else}}Set by the store{{end}}</dd></div>
+				<div class="cart-summary__total"><dt>{{if eq .Lang "id"}}Perkiraan total{{else}}Estimated total{{end}}</dt><dd data-cart-total>&mdash;</dd></div>
+			</dl>
+			<a class="btn btn--block" href="/checkout" id="checkout-link">{{if eq .Lang "id"}}Lanjut ke Checkout{{else}}Continue to checkout{{end}}</a>
+			<a class="cart-summary__continue" href="/">&larr; {{if eq .Lang "id"}}Lanjut belanja{{else}}Continue shopping{{end}}</a>
+		</aside>
+	</div>
+</section>
+{{- end}}

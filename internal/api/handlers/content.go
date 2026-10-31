@@ -68,7 +68,10 @@ func handleContentError(w http.ResponseWriter, err error) {
 		code = "invalid_title"
 		message = err.Error()
 	case errors.Is(err, contentdomain.ErrEmptyContent),
-		errors.Is(err, contentdomain.ErrContentTooLong):
+		errors.Is(err, contentdomain.ErrContentTooLong),
+		errors.Is(err, contentdomain.ErrInvalidTipTapContent),
+		errors.Is(err, contentdomain.ErrHTMLInTitle),
+		errors.Is(err, contentdomain.ErrHTMLInPlainText):
 		statusCode = http.StatusBadRequest
 		code = "invalid_content"
 		message = err.Error()
@@ -358,6 +361,7 @@ type SearchResult struct {
 	Slug            string `json:"slug"`
 	Title           string `json:"title"`
 	MetaDescription string `json:"metaDescription"`
+	PostType        string `json:"postType"`
 }
 
 // PublicAuthorResponse is the safe, public-facing shape for a published author.
@@ -396,6 +400,7 @@ type CreateContentRequest struct {
 	MetaDescription    string         `json:"metaDescription,omitempty"`
 	OGTitle            string         `json:"ogTitle,omitempty"`
 	OGDescription      string         `json:"ogDescription,omitempty"`
+	FeaturedImage      string         `json:"featuredImage,omitempty"`
 	AllowComments      *bool          `json:"allowComments,omitempty"`
 	CustomFields       map[string]any `json:"customFields,omitempty"`
 	Language           string         `json:"language,omitempty"`
@@ -533,6 +538,7 @@ func (h *ContentHandler) CreateContent(w http.ResponseWriter, r *http.Request) {
 		MetaDescription:    req.MetaDescription,
 		OGTitle:            req.OGTitle,
 		OGDescription:      req.OGDescription,
+		FeaturedImage:      req.FeaturedImage,
 		AllowComments:      req.AllowComments,
 		CustomFields:       req.CustomFields,
 		Language:           req.Language,
@@ -742,6 +748,7 @@ func (h *ContentHandler) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		MetaDescription:    req.MetaDescription,
 		OGTitle:            req.OGTitle,
 		OGDescription:      req.OGDescription,
+		FeaturedImage:      &req.FeaturedImage,
 		AllowComments:      req.AllowComments,
 		CustomFields:       req.CustomFields,
 		Language:           req.Language,
@@ -827,6 +834,7 @@ func (h *ContentHandler) GetContent(w http.ResponseWriter, r *http.Request) {
 		"metaDescription":    content.MetaDescription,
 		"ogTitle":            content.OGTitle,
 		"ogDescription":      content.OGDescription,
+		"featuredImage":      content.FeaturedImage,
 		"author":             content.Author,
 		"username":           content.Username,
 		"allowComments":      content.AllowComments,
@@ -1012,7 +1020,12 @@ func (h *ContentHandler) ListPublishedContents(w http.ResponseWriter, r *http.Re
 	items := make([]publicContentItem, 0, len(contents))
 	for _, c := range contents {
 		item := publicContentItem{Content: c}
-		img := seo.ExtractImageURL(c.Content)
+		// Explicit featured image wins; the body-derived image is the
+		// fallback for items without one.
+		img := c.FeaturedImage
+		if img == "" {
+			img = seo.ExtractImageURL(c.Content)
+		}
 		if img != "" && h.featuredImageResolver != nil {
 			img = h.featuredImageResolver(img)
 		}
@@ -1061,9 +1074,16 @@ func (h *ContentHandler) GetPublishedContent(w http.ResponseWriter, r *http.Requ
 		response["customFields"] = content.CustomFields
 	}
 
-	ogImage := seo.ExtractImageURL(content.Content)
-	if ogImage != "" {
-		response["ogImage"] = seo.BuildURL(h.baseURL, ogImage)
+	// Explicit featured image wins; the body-derived image is the fallback
+	// (surfaced as ogImage, matching the historical response shape).
+	featuredImage := content.FeaturedImage
+	if featuredImage == "" {
+		featuredImage = seo.ExtractImageURL(content.Content)
+	}
+	if featuredImage != "" {
+		featuredImage = seo.BuildURL(h.baseURL, featuredImage)
+		response["featuredImage"] = featuredImage
+		response["ogImage"] = featuredImage
 	}
 
 	sendSuccessResponse(w, http.StatusOK, response)
@@ -1379,6 +1399,7 @@ func (h *ContentHandler) SearchPublished(w http.ResponseWriter, r *http.Request)
 			Slug:            c.Slug,
 			Title:           c.Title,
 			MetaDescription: c.MetaDescription,
+			PostType:        c.PostType,
 		}
 	}
 

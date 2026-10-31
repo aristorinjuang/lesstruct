@@ -37,6 +37,8 @@ jobs:
           version: v2.14.0
       - name: Check for modern Go syntax
         run: go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@v0.21.1 -test $(go list ./... | grep -v '/web/')
+      - name: Check file layout style
+        run: go run ./tools/stylecheck/cmd/stylecheck .
 
   go-vulncheck:
     name: Go Vulnerability Check

@@ -76,7 +76,7 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*User, error) {
 	var updatedAt sql.NullTime
 	var customFields *string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, email, name, role, status, email_verified, profile_picture, last_login_at, created_at, updated_at, custom_fields
+		SELECT id, username, password_hash, email, name, role, status, email_verified, token_version, profile_picture, last_login_at, created_at, updated_at, custom_fields
 		FROM users
 		WHERE username = $1
 	`, constants.DefaultUsername).Scan(
@@ -88,6 +88,7 @@ func (r *UserRepository) GetAdminUser(ctx context.Context) (*User, error) {
 		&user.Role,
 		&user.Status,
 		&user.EmailVerified,
+		&user.TokenVersion,
 		&profilePicture,
 		&user.LastLoginAt,
 		&createdAt,
@@ -141,11 +142,22 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *User) error {
 		return fmt.Errorf("failed to marshal custom fields: %w", cErr)
 	}
 
+	// Consent evidence stays NULL for accounts created without an
+	// affirmative act (admin-created users, pre-consent installs).
+	var consentAt any
+	if user.ConsentAt != nil {
+		consentAt = *user.ConsentAt
+	}
+	var consentEvidence any
+	if user.ConsentEvidence != "" {
+		consentEvidence = user.ConsentEvidence
+	}
+
 	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO users (username, password_hash, email, name, role, status, custom_fields)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO users (username, password_hash, email, name, role, status, custom_fields, consent_at, consent_evidence)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id
-	`, user.Username, user.PasswordHash, email, name, user.Role, user.Status, customFieldsJSON).Scan(&user.ID)
+	`, user.Username, user.PasswordHash, email, name, user.Role, user.Status, customFieldsJSON, consentAt, consentEvidence).Scan(&user.ID)
 	if err != nil {
 		return err
 	}
@@ -285,7 +297,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, er
 	var profilePicture sql.NullString
 	var customFields *string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, email, name, role, status, email_verified, profile_picture, last_login_at, custom_fields, created_at, updated_at
+		SELECT id, username, email, name, role, status, email_verified, token_version, profile_picture, last_login_at, custom_fields, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`, userID).Scan(
@@ -296,6 +308,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID int) (*User, er
 		&user.Role,
 		&user.Status,
 		&user.EmailVerified,
+		&user.TokenVersion,
 		&profilePicture,
 		&user.LastLoginAt,
 		&customFields,
@@ -336,7 +349,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 	var profilePicture sql.NullString
 	var customFields *string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, email, name, role, status, email_verified, profile_picture, last_login_at, custom_fields, created_at, updated_at
+		SELECT id, username, email, name, role, status, email_verified, token_version, profile_picture, last_login_at, custom_fields, created_at, updated_at
 		FROM users
 		WHERE LOWER(email) = LOWER($1)
 	`, email).Scan(
@@ -347,6 +360,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*Use
 		&user.Role,
 		&user.Status,
 		&user.EmailVerified,
+		&user.TokenVersion,
 		&profilePicture,
 		&user.LastLoginAt,
 		&customFields,
@@ -384,7 +398,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 	var profilePicture sql.NullString
 	var customFields *string
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, username, password_hash, email, name, role, status, email_verified, profile_picture, last_login_at, custom_fields, created_at, updated_at
+		SELECT id, username, password_hash, email, name, role, status, email_verified, token_version, profile_picture, last_login_at, custom_fields, created_at, updated_at
 		FROM users
 		WHERE LOWER(username) = LOWER($1)
 	`, username).Scan(
@@ -396,6 +410,7 @@ func (r *UserRepository) GetUserByUsername(ctx context.Context, username string)
 		&user.Role,
 		&user.Status,
 		&user.EmailVerified,
+		&user.TokenVersion,
 		&profilePicture,
 		&user.LastLoginAt,
 		&customFields,
@@ -738,7 +753,7 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID int, current
 
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE users
-		SET password_hash = $1, updated_at = NOW()
+		SET password_hash = $1, token_version = token_version + 1, updated_at = NOW()
 		WHERE id = $2 AND password_hash = $3
 	`, newPasswordHash, userID, currentPasswordHash)
 	if err != nil {
@@ -789,9 +804,39 @@ func (r *UserRepository) UpdatePasswordByUserID(ctx context.Context, userID int,
 
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE users
-		SET password_hash = $1, updated_at = NOW()
+		SET password_hash = $1, token_version = token_version + 1, updated_at = NOW()
 		WHERE id = $2
 	`, newPasswordHash, userID)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return fmt.Errorf("user not found with ID %d", userID)
+	}
+
+	return nil
+}
+
+// RevokeSessions invalidates every session for a user by bumping the stored
+// token version. The auth middleware rejects any token whose embedded version
+// no longer matches, so previously issued Bearers and session cookies stop
+// working on the next request.
+func (r *UserRepository) RevokeSessions(ctx context.Context, userID int) error {
+	if err := r.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("database connection lost: %w", err)
+	}
+
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET token_version = token_version + 1, updated_at = NOW()
+		WHERE id = $1
+	`, userID)
 	if err != nil {
 		return err
 	}

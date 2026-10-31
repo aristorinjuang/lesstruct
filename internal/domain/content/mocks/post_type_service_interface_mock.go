@@ -16,10 +16,19 @@ func NewMockPostTypeServiceInterface(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPostTypeServiceInterface {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPostTypeServiceInterface{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -217,6 +226,52 @@ func (_c *MockPostTypeServiceInterface_GetSystemFieldsByPostType_Call) Return(fi
 }
 
 func (_c *MockPostTypeServiceInterface_GetSystemFieldsByPostType_Call) RunAndReturn(run func(slug string) ([]customfield.FieldSchema, error)) *MockPostTypeServiceInterface_GetSystemFieldsByPostType_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SearchableSlugs provides a mock function for the type MockPostTypeServiceInterface
+func (_mock *MockPostTypeServiceInterface) SearchableSlugs() []string {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for SearchableSlugs")
+	}
+
+	var r0 []string
+	if returnFunc, ok := ret.Get(0).(func() []string); ok {
+		r0 = returnFunc()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	return r0
+}
+
+// MockPostTypeServiceInterface_SearchableSlugs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SearchableSlugs'
+type MockPostTypeServiceInterface_SearchableSlugs_Call struct {
+	*mock.Call
+}
+
+// SearchableSlugs is a helper method to define mock.On call
+func (_e *MockPostTypeServiceInterface_Expecter) SearchableSlugs() *MockPostTypeServiceInterface_SearchableSlugs_Call {
+	return &MockPostTypeServiceInterface_SearchableSlugs_Call{Call: _e.mock.On("SearchableSlugs")}
+}
+
+func (_c *MockPostTypeServiceInterface_SearchableSlugs_Call) Run(run func()) *MockPostTypeServiceInterface_SearchableSlugs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *MockPostTypeServiceInterface_SearchableSlugs_Call) Return(strings []string) *MockPostTypeServiceInterface_SearchableSlugs_Call {
+	_c.Call.Return(strings)
+	return _c
+}
+
+func (_c *MockPostTypeServiceInterface_SearchableSlugs_Call) RunAndReturn(run func() []string) *MockPostTypeServiceInterface_SearchableSlugs_Call {
 	_c.Call.Return(run)
 	return _c
 }

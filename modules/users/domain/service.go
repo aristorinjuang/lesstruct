@@ -73,30 +73,52 @@ func WithApprovalEmailRequired() UserManagementOption {
 	}
 }
 
+// WithManagementRegistrationEnabled overrides the registration gate consulted
+// for the Commentator role on the update path. When unset it defaults to the
+// comments flag (legacy coupling), mirroring AdminCreateUserService; the
+// composition root sets it from [registration].IsEnabled.
+func WithManagementRegistrationEnabled(enabled bool) UserManagementOption {
+	return func(s *UserManagementService) {
+		s.registrationEnabled = &enabled
+	}
+}
+
 // UserManagementService handles user management operations
 type UserManagementService struct {
 	userRepo              UserRepo
 	blockedEmailRepo      BlockedEmailRepo
 	policy                CredentialPolicy
 	commentsEnabled       bool
+	registrationEnabled   *bool
 	roleService           RoleAssigner
 	approvalEmailRequired bool
 }
 
+// registrationAllowsCommentator reports whether the Commentator role may be
+// assigned: with the override unset it defaults to the comments flag,
+// preserving the legacy coupling shared with the create path.
+func (s *UserManagementService) registrationAllowsCommentator() bool {
+	if s.registrationEnabled != nil {
+		return *s.registrationEnabled
+	}
+	return s.commentsEnabled
+}
+
 // isAssignableRole reports whether an admin may assign the role. With a role
 // service the allowlist is registry-driven; the Commentator role additionally
-// requires the comment system to be enabled.
+// requires the comment system and registration both enabled.
 func (s *UserManagementService) isAssignableRole(role string) bool {
+	commentatorAllowed := s.commentsEnabled && s.registrationAllowsCommentator()
 	if s.roleService != nil {
 		if !s.roleService.IsAssignable(role) {
 			return false
 		}
-		if role == RoleCommentator && !s.commentsEnabled {
+		if role == RoleCommentator && !commentatorAllowed {
 			return false
 		}
 		return true
 	}
-	return isAllowedRole(role, s.commentsEnabled)
+	return isAllowedRole(role, s.commentsEnabled) && (role != RoleCommentator || commentatorAllowed)
 }
 
 // GetPendingUsers retrieves users with pending status with pagination

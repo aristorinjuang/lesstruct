@@ -1,0 +1,99 @@
+{{- define "body"}}
+{{- $images := lines (index .CustomFields "images")}}
+{{- $gallery := index .CustomFieldGalleries "images"}}
+{{- $material := index .CustomFields "material"}}
+<article class="product-page" data-product-page data-product-slug="{{.Slug}}">
+	<nav class="container breadcrumb" aria-label="Breadcrumb">
+		<a href="/">{{if eq .Lang "id"}}Beranda{{else}}Home{{end}}</a>
+		<span aria-hidden="true">/</span>
+		<a href="/{{.PostType}}">{{if eq .Lang "id"}}Produk{{else}}Products{{end}}</a>
+		{{- if .Tags}}{{with index .Tags 0}}
+		<span aria-hidden="true">/</span>
+		<a href="/tags/{{. | urlpath}}">{{.}}</a>
+		{{- end}}{{end}}
+	</nav>
+	<div class="container product-layout">
+		<section class="product-gallery" aria-label="{{if eq .Lang "id"}}Galeri produk{{else}}Product gallery{{end}}">
+			<figure class="product-gallery__main">
+				{{- if $gallery}}
+				{{- with index $gallery 0}}
+				<img id="product-main-image" src="{{.Large}}"{{if .Srcset}} srcset="{{.Srcset}}"{{end}} alt="{{if .Alt}}{{.Alt}}{{else}}{{$.Title}}{{end}}" fetchpriority="high">
+				{{- end}}
+				{{- else if $images}}
+				<img id="product-main-image" src="{{index $images 0}}" alt="{{.Title}}" fetchpriority="high">
+				{{- else if .OGImage}}
+				<img id="product-main-image" src="{{.OGImage}}" alt="{{.Title}}" fetchpriority="high">
+				{{- else}}
+				<div class="product-gallery__fallback" id="product-main-image">{{.Title}}</div>
+				{{- end}}
+			</figure>
+			{{- if $gallery}}
+			{{- if gt (len $gallery) 1}}
+			<div class="product-gallery__thumbs">
+				{{- range $i, $image := $gallery}}
+				<button type="button" class="product-gallery__thumb{{if eq $i 0}} is-active{{end}}" data-image="{{$image.Large}}"{{if $image.Srcset}} data-srcset="{{$image.Srcset}}"{{end}} aria-label="{{if eq $.Lang "id"}}Lihat gambar {{$i}}{{else}}View image {{$i}}{{end}}">
+					<img src="{{$image.Thumb}}" alt="{{$image.Alt}}" loading="lazy">
+				</button>
+				{{- end}}
+			</div>
+			{{- end}}
+			{{- else if gt (len $images) 1}}
+			<div class="product-gallery__thumbs">
+				{{- range $i, $image := $images}}
+				<button type="button" class="product-gallery__thumb{{if eq $i 0}} is-active{{end}}" data-image="{{$image}}" aria-label="{{if eq $.Lang "id"}}Lihat gambar {{$i}}{{else}}View image {{$i}}{{end}}">
+					<img src="{{$image}}" alt="" loading="lazy">
+				</button>
+				{{- end}}
+			</div>
+			{{- end}}
+		</section>
+		<section class="product-info">
+			{{- if .Tags}}{{with index .Tags 0}}<p class="eyebrow">{{.}}</p>{{end}}{{end}}
+			<h1 class="product-info__title">{{.Title}}</h1>
+			<p class="price price--large" data-price data-price-main data-product-slug="{{.Slug}}"><span class="price__value">&mdash;</span></p>
+			<p class="product-stock" id="product-stock" aria-live="polite"></p>
+			<div class="variant-matrix" id="product-variants" data-variant-matrix>
+				<p class="variant-picker__label" id="variant-label">{{if eq .Lang "id"}}Pilih varian{{else}}Choose options{{end}}</p>
+				<div data-variant-axes></div>
+			</div>
+			<div class="product-buy">
+				<label class="qty" for="product-quantity">
+					<span>{{if eq .Lang "id"}}Jumlah{{else}}Qty{{end}}</span>
+					<input id="product-quantity" class="qty__input" type="number" min="1" max="99" step="1" value="1" inputmode="numeric">
+				</label>
+				<button class="btn product-buy__add" id="add-to-cart" type="button" disabled>{{if eq .Lang "id"}}Tambah ke Keranjang{{else}}Add to cart{{end}}</button>
+				<button class="btn btn--ghost product-buy__now" id="buy-now" type="button" disabled>{{if eq .Lang "id"}}Beli Sekarang{{else}}Buy now{{end}}</button>
+			</div>
+			<p class="form-error" id="product-error" role="alert" hidden></p>
+			<p class="cart-note" id="cart-note" hidden><a href="/cart">{{if eq .Lang "id"}}Lihat keranjang{{else}}View cart{{end}} &rarr;</a></p>
+			<dl class="product-specs">
+				<div><dt id="product-sizes-label">{{if eq .Lang "id"}}Ukuran{{else}}Sizes{{end}}</dt><dd id="product-sizes">&mdash;</dd></div>
+				{{- if $material}}<div><dt>{{if eq .Lang "id"}}Bahan{{else}}Material{{end}}</dt><dd>{{$material}}</dd></div>{{end}}
+				<div id="product-sku-row" hidden><dt>SKU</dt><dd id="product-sku">&mdash;</dd></div>
+			</dl>
+			{{- if .LanguageLinks}}
+			<div class="content-languages">
+				{{- range .LanguageLinks}}<a href="{{.URL}}" hreflang="{{.Code}}" rel="alternate" class="lang-link{{if eq $.Lang .Code}} lang-link--active{{end}}">{{.Name}}</a>{{end}}
+			</div>
+			{{- end}}
+		</section>
+	</div>
+	{{- with .Body}}
+	<section class="container product-desc">
+		<h2 class="section-head__title">{{if eq $.Lang "id"}}Deskripsi{{else}}Details{{end}}</h2>
+		<div class="content-body">{{.}}</div>
+	</section>
+	{{- end}}
+	{{- if .Related}}
+	<section class="container related">
+		<header class="section-head">
+			<h2>{{if eq .Lang "id"}}Produk Terkait{{else}}You may also like{{end}}</h2>
+		</header>
+		<div class="product-grid">
+			{{- range .Related}}{{template "product-card" .}}{{end}}
+		</div>
+	</section>
+	{{- end}}
+</article>
+{{.PostScripts}}
+{{- end}}

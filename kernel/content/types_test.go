@@ -533,3 +533,62 @@ func TestValidateOGDescription(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateFeaturedImage(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr error
+	}{
+		{
+			name:    "empty means no explicit featured image",
+			value:   "",
+			wantErr: nil,
+		},
+		{
+			name:    "root-relative media path",
+			value:   "/uploads/media/abc123.webp",
+			wantErr: nil,
+		},
+		{
+			name:    "https absolute URL",
+			value:   "https://cdn.example.com/photos/x.webp",
+			wantErr: nil,
+		},
+		{
+			name:    "http absolute URL",
+			value:   "http://example.com/x.webp",
+			wantErr: nil,
+		},
+		{
+			name:    "protocol-relative URL rejected",
+			value:   "//evil.example.com/x.webp",
+			wantErr: contentdomain.ErrInvalidFeaturedImage,
+		},
+		{
+			name:    "javascript scheme rejected",
+			value:   "javascript:alert(1)",
+			wantErr: contentdomain.ErrInvalidFeaturedImage,
+		},
+		{
+			name:    "bare path without root slash rejected",
+			value:   "uploads/media/abc.webp",
+			wantErr: contentdomain.ErrInvalidFeaturedImage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := contentdomain.ValidateFeaturedImage(tt.value)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("ValidateFeaturedImage(%q) error = %v, want %v", tt.value, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ValidateFeaturedImage(%q) unexpected error: %v", tt.value, err)
+			}
+		})
+	}
+}

@@ -16,9 +16,7 @@ http:
     - name: status
       value: ""
       type: query
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

@@ -13,9 +13,7 @@ http:
         "confirmed": true,
         "reason": "testing purpose"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

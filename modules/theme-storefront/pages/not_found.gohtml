@@ -1,0 +1,11 @@
+{{- define "body"}}
+<section class="container not-found">
+	<p class="eyebrow">404</p>
+	<h1>{{if eq .Lang "id"}}Halaman tidak ditemukan.{{else}}Page not found.{{end}}</h1>
+	<p>{{if eq .Lang "id"}}Tautan mungkin sudah usang, atau halaman sudah dipindahkan.{{else}}The link may be out of date, or the page has moved.{{end}}</p>
+	<div class="not-found__actions">
+		<a class="btn" href="/">{{if eq .Lang "id"}}Kembali ke Beranda{{else}}Back to home{{end}}</a>
+		<a class="btn btn--ghost" href="/orders/track">{{if eq .Lang "id"}}Lacak Pesanan{{else}}Track an order{{end}}</a>
+	</div>
+</section>
+{{- end}}

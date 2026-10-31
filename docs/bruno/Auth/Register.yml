@@ -3,8 +3,13 @@ info:
   type: http
   seq: 5
 
-# Returns 403 REGISTRATION_DISABLED when [comments] enabled = false in
-# config.toml — self-registration only creates Commentator accounts.
+# Always answers 200 with {"data":{"message":"..."}} — a duplicate username or
+# email is indistinguishable from success (anti-enumeration); the existing
+# account's holder gets a notice email instead. Other outcomes: 403
+# REGISTRATION_DISABLED when self-registration is disabled. When the store
+# resolves both terms of service and privacy policy (or
+# [legal] registration_consent = true), omitting consentAccepted returns
+# 400 CONSENT_REQUIRED.
 
 http:
   method: POST
@@ -15,7 +20,8 @@ http:
       {
         "username": "{{USERNAME}}",
         "email": "{{USER_EMAIL}}",
-        "password": "{{USER_PASSWORD}}"
+        "password": "{{USER_PASSWORD}}",
+        "consentAccepted": true
       }
   auth: inherit
 

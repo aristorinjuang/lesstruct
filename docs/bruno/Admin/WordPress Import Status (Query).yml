@@ -10,9 +10,7 @@ http:
     - name: jobId
       value: "{{JOB_ID}}"
       type: query
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

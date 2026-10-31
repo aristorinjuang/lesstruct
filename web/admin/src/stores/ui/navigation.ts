@@ -47,13 +47,22 @@ export const useNavigationStore = defineStore('navigation', () => {
     { immediate: false }
   )
 
-  // Static navigation items (non-post-type). The Comments entry is hidden when
-  // the comment system is disabled.
+  // Static navigation items (non-post-type). The Comments entry is hidden
+  // when the comment system is disabled; the Orders and Payments entries
+  // only exist on commerce installs (exported through the public config
+  // extras).
   const staticNavigationItems = computed<NavigationItem[]>(() => {
-    const { commentsEnabled } = useConfig()
+    const { commentsEnabled, orders, payments } = useConfig()
     const items: NavigationItem[] = [
       { path: '/dashboard', label: 'Dashboard', icon: 'chart-bars', permission: 'admin' },
     ]
+    if (orders.value) {
+      items.push({ path: '/orders', label: 'Orders', icon: 'shopping-bag', permission: 'admin' })
+      items.push({ path: '/settings/invoice', label: 'Invoice settings', icon: 'document', permission: 'admin' })
+    }
+    if (payments.value) {
+      items.push({ path: '/payments', label: 'Payments', icon: 'document-text', permission: 'admin' })
+    }
     if (commentsEnabled.value) {
       items.push({ path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' })
     }

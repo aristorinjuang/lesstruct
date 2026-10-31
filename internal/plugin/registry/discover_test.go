@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
+	"github.com/aristorinjuang/lesstruct/internal/plugin/loader"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/registry"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/runtime"
 	"github.com/stretchr/testify/assert"
@@ -52,7 +53,7 @@ func compileAndInstantiate(
 	rt runtime.Runtime,
 	wasm []byte,
 	name string,
-) plugin.Plugin {
+) loader.LoadedPlugin {
 	t.Helper()
 	ctx := t.Context()
 
@@ -66,11 +67,13 @@ func compileAndInstantiate(
 	)
 	require.NoError(t, err)
 
-	return plugin.Plugin{
-		Name:     name,
-		Module:   mod,
-		Status:   plugin.StatusLoaded,
-		LoadedAt: time.Now(),
+	return loader.LoadedPlugin{
+		Plugin: plugin.Plugin{
+			Name:     name,
+			Status:   plugin.StatusLoaded,
+			LoadedAt: time.Now(),
+		},
+		Module: mod,
 	}
 }
 

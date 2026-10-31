@@ -15,11 +15,16 @@ import (
 	"github.com/tetratelabs/wazero"
 )
 
+// failedPlugin returns the failure record for a load that never instantiated.
+func failedPlugin() LoadedPlugin {
+	return LoadedPlugin{Plugin: plugin.Plugin{Status: plugin.StatusFailed}}
+}
+
 type Loader struct {
-	rt             runtime.Runtime
-	pluginsDir     string
-	hostFunctions  *hostfunctions.Registry
-	logger         func(string)
+	rt            runtime.Runtime
+	pluginsDir    string
+	hostFunctions *hostfunctions.Registry
+	logger        func(string)
 }
 
 func (l Loader) Discover(ctx context.Context) ([]string, error) {
@@ -39,15 +44,16 @@ func (l Loader) Discover(ctx context.Context) ([]string, error) {
 	return paths, nil
 }
 
-// Load loads a single .wasm plugin, along with its optional capability manifest.
-// The returned PluginLoadResult includes the parsed manifest if one was found.
+// Load loads a single .wasm plugin, along with its optional capability
+// manifest. The returned LoadedPlugin pairs the domain metadata with the live
+// WASM instance; the manifest is nil when the plugin has none.
 func (l Loader) Load(
 	ctx context.Context,
 	filePath string,
-) (plugin.Plugin, *capability.Manifest, error) {
+) (LoadedPlugin, *capability.Manifest, error) {
 	wasmBytes, err := os.ReadFile(filePath)
 	if err != nil {
-		return plugin.Plugin{Status: plugin.StatusFailed}, nil, fmt.Errorf(
+		return failedPlugin(), nil, fmt.Errorf(
 			"reading %s: %w",
 			filePath,
 			err,
@@ -56,7 +62,7 @@ func (l Loader) Load(
 
 	compiled, err := l.rt.Runtime().CompileModule(ctx, wasmBytes)
 	if err != nil {
-		return plugin.Plugin{Status: plugin.StatusFailed}, nil, fmt.Errorf(
+		return failedPlugin(), nil, fmt.Errorf(
 			"%w: %v",
 			plugin.ErrPluginInvalidFormat,
 			err,
@@ -70,7 +76,7 @@ func (l Loader) Load(
 	manifest, manifestErr := capability.LoadManifest(manifestPath)
 	if manifestErr != nil {
 		_ = compiled.Close(ctx)
-		return plugin.Plugin{Status: plugin.StatusFailed}, nil, fmt.Errorf(
+		return failedPlugin(), nil, fmt.Errorf(
 			"loading manifest %s: %w",
 			manifestPath,
 			manifestErr,
@@ -81,7 +87,7 @@ func (l Loader) Load(
 	if manifest != nil && l.hostFunctions != nil {
 		if _, err := l.hostFunctions.InstantiateModule(ctx, l.rt.Runtime(), manifest); err != nil {
 			_ = compiled.Close(ctx)
-			return plugin.Plugin{Status: plugin.StatusFailed}, nil, fmt.Errorf(
+			return failedPlugin(), nil, fmt.Errorf(
 				"instantiating host functions for %s: %w",
 				pluginName,
 				err,
@@ -104,27 +110,29 @@ func (l Loader) Load(
 	)
 	if err != nil {
 		_ = compiled.Close(ctx)
-		return plugin.Plugin{Status: plugin.StatusFailed}, manifest, fmt.Errorf(
+		return failedPlugin(), manifest, fmt.Errorf(
 			"%w: %v",
 			plugin.ErrPluginLoadFailed,
 			err,
 		)
 	}
 
-	return plugin.Plugin{
-		Name:     pluginName,
-		FilePath: filePath,
-		Module:   mod,
-		Status:   plugin.StatusLoaded,
-		LoadedAt: time.Now(),
+	return LoadedPlugin{
+		Plugin: plugin.Plugin{
+			Name:     pluginName,
+			FilePath: filePath,
+			Status:   plugin.StatusLoaded,
+			LoadedAt: time.Now(),
+		},
+		Module: mod,
 	}, manifest, nil
 }
 
 func (l Loader) LoadAll(
 	ctx context.Context,
-) ([]plugin.Plugin, []PluginLoadResult) {
+) ([]LoadedPlugin, []PluginLoadResult) {
 	var (
-		loaded  []plugin.Plugin
+		loaded  []LoadedPlugin
 		results []PluginLoadResult
 	)
 
@@ -164,7 +172,7 @@ func (l Loader) LoadAll(
 	return loaded, results
 }
 
-func (l Loader) Unload(ctx context.Context, plg *plugin.Plugin) error {
+func (l Loader) Unload(ctx context.Context, plg *LoadedPlugin) error {
 	if plg.Module == nil {
 		return fmt.Errorf("cannot unload plugin %q: module is nil", plg.Name)
 	}

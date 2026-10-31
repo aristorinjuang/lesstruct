@@ -56,12 +56,20 @@ type Service struct {
 // mergeIntoDefaultLocked merges pt's Fields and SystemFields into the existing
 // built-in post type of the same slug, preserving the built-in's identity. The
 // write lock must be held by the caller, and the caller must have confirmed the
-// slug is a built-in default (so registry[pt.Slug] always exists).
+// slug is a built-in default (so registry[pt.Slug] always exists). Indonesian
+// display overrides (NameID/DescriptionID) merge when set so built-ins can be
+// localized without redefining them.
 func (s *Service) mergeIntoDefaultLocked(pt PostType) error {
 	base := s.registry[pt.Slug]
 	base.Fields = mergeFields(base.Fields, pt.Fields)
 	base.SystemFields = mergeFields(base.SystemFields, pt.SystemFields)
 	base.Hidden = pt.Hidden
+	if pt.NameID != "" {
+		base.NameID = pt.NameID
+	}
+	if pt.DescriptionID != "" {
+		base.DescriptionID = pt.DescriptionID
+	}
 	s.registry[pt.Slug] = base
 	return nil
 }
@@ -91,8 +99,9 @@ func (s *Service) registerUnsafe(pt PostType) error {
 // and stored; a slug matching a built-in type (post/page/media/comment) instead
 // EXTENDS that built-in — its Fields and SystemFields are merged in (by slug),
 // preserving the built-in's Name/Description/Supports/identity. Only the fields
-// are validated on the extension path, because an extension entry legitimately
-// omits name/supports (it is not defining a new type).
+// plus the optional Indonesian display overrides are validated on the extension
+// path, because an extension entry legitimately omits name/supports (it is not
+// defining a new type).
 func (s *Service) Register(pt PostType) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -107,6 +116,12 @@ func (s *Service) Register(pt PostType) error {
 		}
 		if err := customfield.ValidateFields(pt.SystemFields); err != nil {
 			return fmt.Errorf("extending default post type %q system fields: %w", pt.Slug, err)
+		}
+		if err := ValidateNameID(pt.NameID); err != nil {
+			return err
+		}
+		if err := ValidateDescriptionID(pt.DescriptionID); err != nil {
+			return err
 		}
 		return s.mergeIntoDefaultLocked(pt)
 	}

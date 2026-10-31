@@ -75,12 +75,9 @@ outputFormats:
 
 menu:
   after:
-    - name: "Features"
-      url: "/docs/features/"
-      weight: 1
     - name: "Tour"
       url: "/tour/"
-      weight: 2
+      weight: 3
     - name: "GitHub"
       url: "https://github.com/aristorinjuang/lesstruct"
       weight: 10
@@ -93,7 +90,7 @@ menu:
 
 params:
   BookTheme: "auto"
-  BookLogo: "/brand/lesstruct.webp"
+  BookLogo: "/brand/lesstruct-320.webp"
   BookSection: "docs"
   BookSearch: true
   BookComments: false

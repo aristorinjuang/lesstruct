@@ -4,18 +4,35 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>{{.PageTitle}}</title>
-	<meta name="description" content="{{.Description}}">
+	{{- $desc := .Description}}{{- if not $desc}}{{- if eq .Lang "id"}}{{- $desc = print .SiteConfig.Name " — artikel, panduan, dan kabar terbaru."}}{{- else}}{{- $desc = print .SiteConfig.Name " — articles, guides, and updates."}}{{- end}}{{- end}}
+	<meta name="description" content="{{$desc}}">
 	<meta property="og:title" content="{{.OGTitle}}">
-	<meta property="og:description" content="{{.OGDesc}}">
+	<meta property="og:description" content="{{if .OGDesc}}{{.OGDesc}}{{else}}{{$desc}}{{end}}">
 	{{- if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
 	<meta property="og:type" content="website">
 	<meta property="og:site_name" content="{{.SiteConfig.Name}}">
 	<meta name="twitter:card" content="summary_large_image">
 	{{- if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">{{end}}
+	{{- if .SiteConfig.Favicon}}
+	<link rel="icon" href="{{.SiteConfig.Favicon}}">
+	<link rel="apple-touch-icon" href="{{.SiteConfig.Favicon}}">
+	{{- else}}
+	<link rel="icon" type="image/png" href="/static/favicon-96x96.png" sizes="96x96">
+	<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+	<link rel="shortcut icon" href="/static/favicon.ico">
+	<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+	{{- end}}
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
 	<link rel="stylesheet" href="{{assetURL "base.css"}}">
 	<link rel="stylesheet" href="{{assetURL "style.css"}}">
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" media="print" onload="this.media='all'">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css" media="print" onload="this.media='all'">
+	<noscript>
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/styles/github-dark.min.css">
+	</noscript>
 </head>
 <body>
 	<header class="site-header">
@@ -28,8 +45,15 @@
 					{{- range .NavigationItems}}
 					<a href="{{.URL}}"{{if .IsActive}} class="active"{{end}}>{{.Title}}</a>
 					{{- end}}
+					{{- if .Languages}}
+					<select id="language-select" class="language-select" aria-label="Language" hidden>
+						{{- range .Languages}}<option value="{{.URL}}"{{if eq .Code $.Lang}} selected{{end}}>{{upper .Code}}</option>{{end}}
+					</select>
+					<noscript><span>{{- range .Languages}} <a href="{{.URL}}" hreflang="{{.Code}}" class="lang-link">{{upper .Code}}</a>{{end}}</span></noscript>
+					{{- end}}
 					<a id="nav-login" href="/login">{{t .Lang "ui.login"}}</a><a id="nav-logout" href="/" style="display:none">{{t .Lang "ui.logout"}}</a>
 				</nav>
+				<script>(function(){var s=document.getElementById('language-select');if(!s)return;if(!s.options.length)return;s.removeAttribute('hidden');s.addEventListener('change',function(){if(s.value)window.location.href=s.value;});})();</script>
 			</div>
 		</div>
 	</header>
@@ -38,14 +62,27 @@
 	</main>
 	<footer class="site-footer">
 		<div class="container">
+			{{- if .FooterItems}}
+			<nav class="site-footer__nav">
+				{{- range .FooterItems}}<a href="{{.URL}}">{{.Title}}</a>{{end}}
+			</nav>
+			{{- end}}
 			<p>&copy; {{.SiteConfig.Name}}</p>
 		</div>
 	</footer>
-	<script src="/static/nav-auth.js"></script>
-	<script src="/static/search.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+	<div id="cookie-banner" class="cookie-banner" role="region" aria-label="{{t .Lang "ui.cookie_notice"}}" hidden>
+		<p>{{.Legal.CookieNotice.Before}}{{if .Legal.CookieNotice.LinkText}}{{if .Legal.CookieNotice.URL}}<a href="{{.Legal.CookieNotice.URL}}">{{.Legal.CookieNotice.LinkText}}</a>{{else}}{{.Legal.CookieNotice.LinkText}}{{end}}{{end}}{{.Legal.CookieNotice.After}}</p>
+		<div class="cookie-banner__actions">
+			<button type="button" id="cookie-accept">{{t .Lang "ui.cookie_accept"}}</button>
+			<button type="button" id="cookie-decline">{{t .Lang "ui.cookie_decline"}}</button>
+		</div>
+	</div>
+	<script>(function(){function c(){var m=document.cookie.match(/(?:^|;\s*)lesstruct_consent=([^;]*)/);return m?decodeURIComponent(m[1]).replace(/^\s+|\s+$/g,''):'';}function s(v){var h=location.protocol==="https:"?"; Secure":"";document.cookie="lesstruct_consent="+encodeURIComponent(v)+"; Path=/; Max-Age=31536000; SameSite=Lax"+h;}var b=document.getElementById('cookie-banner');if(!b)return;var v=c();if(v==='accepted'||v==='declined'){b.setAttribute('hidden','');return;}b.removeAttribute('hidden');var a=document.getElementById('cookie-accept');var d=document.getElementById('cookie-decline');if(a)a.addEventListener('click',function(){s('accepted');b.setAttribute('hidden','');});if(d)d.addEventListener('click',function(){s('declined');b.setAttribute('hidden','');try{localStorage.removeItem('lesstruct_currency');}catch(_){}document.cookie='lesstruct_lang=; Path=/; Max-Age=0; SameSite=Lax'+(location.protocol==="https:"?"; Secure":"');});})();</script>
+	<script src="/static/nav-auth.js" defer></script>
+	<script src="/static/search.js" defer></script>
+	<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" defer></script>
 	<script defer src="/static/math.js"></script>
-	<script src="/static/highlight.min.js"></script>
+	<script src="/static/highlight.min.js" defer></script>
 	<script>document.addEventListener('DOMContentLoaded', function() { hljs.highlightAll() })</script>
 </body>
 </html>

@@ -1,0 +1,370 @@
+@startuml Lesstruct Commerce — Class Diagram
+title Lesstruct commerce domain classes (tactical view)
+
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+skinparam arrowColor #4b5563
+
+package "orders — core" {
+  class OrderService {
+    +Checkout(ctx, CheckoutInput) (*Order, error)
+    +Tracking(ctx, number, email) (*Order, error)
+    +Get(ctx, id) (*Order, error)
+    +List(ctx, status, beforeID, limit) ([]Order, error)
+    +Transition(ctx, id, to) (*Order, error)
+    +SetShipping(ctx, id, amount) (*Order, error)
+    +ConfirmPaid(ctx, id) (*Order, error)
+    +ExpireStale(ctx, before, limit) ([]int64, error)
+    +BuildInvoice(ctx, id, InvoiceSettings) (*InvoiceDocument, error)
+  }
+
+  class Order {
+    +ID int64
+    +Status Status
+    +Items []OrderItem
+    +CustomerEmail string
+    +CustomerName string
+    +CustomerPhone string
+    +ShipTo Address
+    +Currency string
+    +Subtotal int64
+    +ShippingMinor int64
+    +CreatedAt time.Time
+    +UpdatedAt time.Time
+    +DisplayNumber() string
+    +TotalMinor() int64
+  }
+
+  class OrderItem {
+    +ID int64
+    +OrderID int64
+    +ProductContentID int
+    +VariantID *int64
+    +SKU string
+    +Title string
+    +UnitPrice int64
+    +Quantity int
+    +LineTotal() int64
+  }
+
+  class Money {
+    +Amount int64
+    +Currency string
+    +Format() string
+  }
+
+  class Address {
+    +Street string
+    +City string
+    +Province string
+    +PostalCode string
+  }
+
+  enum Status {
+    pending
+    paid
+    packed
+    shipped
+    delivered
+    cancelled
+    refunded
+    expired
+  }
+
+  class CheckoutInput {
+    +Token string
+    +Email string
+    +Name string
+    +Phone string
+    +ShipTo Address
+  }
+
+  class InvoiceDocument {
+    +Number string
+    +OrderNumber string
+    +IssuedAt time.Time
+    +CustomerName string
+    +CustomerEmail string
+    +CustomerPhone string
+    +ShipTo Address
+    +SellerName string
+    +SellerAddress string
+    +SellerTaxID string
+    +Lines []InvoiceLine
+    +Subtotal Money
+    +Shipping Money
+    +TaxRate float64
+    +Tax Money
+    +Total Money
+  }
+
+  class InvoiceLine {
+    +Title string
+    +SKU string
+    +Quantity int
+    +UnitPrice Money
+    +LineTotal Money
+  }
+
+  interface OrderStore {
+    +CreateOrder(ctx, order) (int64, error)
+    +FindByID(ctx, id) (*Order, error)
+    +FindByNumberAndEmail(ctx, id, email) (*Order, error)
+    +List(ctx, status, beforeID, limit) ([]Order, error)
+    +SetStatus(ctx, id, to) error
+    +SetShipping(ctx, id, amount) (bool, error)
+    +MarkPaid(ctx, id) (bool, error)
+    +ExpirePending(ctx, before, limit) ([]int64, error)
+  }
+
+  interface CartSource {
+    +Snapshot(ctx, token) (CartSnapshot, error)
+    +Consume(ctx, token) error
+  }
+
+  interface ContentSource {
+    +ProductTitle(ctx, contentID) (string, bool)
+  }
+
+  interface Inventory {
+    +Reserve(ctx, items) error
+    +Release(ctx, items) error
+  }
+
+  interface Mailer {
+    +SendOrderConfirmationEmail(ctx, order) error
+    +SendOrderStatusEmail(ctx, order, from) error
+  }
+
+  interface InvoiceRenderer {
+    +Render(ctx, doc) ([]byte, error)
+  }
+}
+
+package "cart — supporting" {
+  class CartService {
+    +CreateCart(ctx) (string, *Cart, error)
+    +GetCart(ctx, token) (*Cart, error)
+    +AddItem(ctx, token, productID, variantID, qty) (*Cart, error)
+    +UpdateItem(ctx, token, itemID, qty) (*Cart, error)
+    +RemoveItem(ctx, token, itemID) (*Cart, error)
+    +DeleteCart(ctx, token) error
+  }
+
+  class Cart {
+    +ID int64
+    +Lines []CartLine
+    +Subtotal() int64
+    +ItemCount() int
+  }
+
+  class CartLine {
+    +ID int64
+    +ProductContentID int
+    +VariantID *int64
+    +SKU string
+    +Title string
+    +Slug string
+    +ImageURL string
+    +Quantity int
+    +UnitPrice int64
+    +InStock bool
+    +Available bool
+    +LineTotal() int64
+  }
+
+  class CatalogItem {
+    +ProductContentID int
+    +VariantID *int64
+    +SKU string
+    +Title string
+    +Slug string
+    +ImageURL string
+    +UnitPrice int64
+    +InStock bool
+  }
+
+  interface CartStore {
+    +CreateCart(ctx, tokenHash) (int64, error)
+    +FindCart(ctx, tokenHash) (*StoredCart, error)
+    +AddLine(ctx, cartID, productID, variantID, qty) (StoredLine, error)
+    +SetLineQuantity(ctx, cartID, itemID, qty) error
+    +RemoveLine(ctx, cartID, itemID) error
+    +DeleteCart(ctx, cartID) error
+  }
+
+  interface CatalogSource {
+    +ResolveLine(ctx, productID, variantID) (CatalogItem, error)
+  }
+}
+
+package "catalog — core commerce data" {
+  class CatalogService {
+    +GetProduct(ctx, contentID) (*Product, error)
+    +UpsertProduct(ctx, contentID, input) (*Product, error)
+    +AdjustStock(ctx, contentID, variantID, delta) error
+  }
+
+  class Product {
+    +ContentID int
+    +Price int64
+    +SalePrice *int64
+    +SKU string
+    +TrackInventory bool
+    +Stock int
+    +WeightGrams *int
+    +LowStockThreshold *int
+    +Options map[string][]string
+    +Variants []Variant
+    +UpdatedAt time.Time
+    +InStock() bool
+    +LowStock() bool
+    +EffectivePrice(v) int64
+    +VariantInStock(v) bool
+  }
+
+  class Variant {
+    +ID int64
+    +ProductContentID int
+    +Options map[string]string
+    +SKU string
+    +Price *int64
+    +Stock int
+    +WeightGrams *int
+    +ImageURL string
+  }
+
+  interface ProductStore {
+    +GetProduct(ctx, contentID) (*Product, error)
+    +UpsertProduct(ctx, contentID, product) error
+    +AdjustStock(ctx, contentID, variantID, delta) (bool, error)
+  }
+
+  interface "Mailer" as CatalogMailer {
+    +SendLowStockAlert(ctx, product, variantID, stock) error
+  }
+}
+
+package "payments — supporting" {
+  class PaymentService {
+    +Methods() []Method
+    +Submit(ctx, orderNumber, email, method, reference) (*Payment, error)
+    +Verify(ctx, id, verifiedBy) (*Payment, error)
+    +Reject(ctx, id) (*Payment, error)
+    +List(ctx, status, beforeID, limit) ([]Payment, error)
+    +Detail(ctx, id) (*PaymentDetail, error)
+    +ListByOrder(ctx, orderID) ([]Payment, error)
+    +Mint(ctx, orderNumber, email) (*GatewaySession, error)
+    +HandleNotification(ctx, event) error
+    +GatewayAdopted() bool
+  }
+
+  class Payment {
+    +ID int64
+    +OrderID int64
+    +Method Method
+    +Status PaymentStatus
+    +Reference string
+    +Amount int64
+    +VerifiedBy string
+    +CreatedAt time.Time
+    +UpdatedAt time.Time
+  }
+
+  enum Method {
+    manual
+    midtrans
+  }
+
+  enum "Status" as PaymentStatus {
+    pending
+    verified
+    rejected
+  }
+
+  class OrderRef {
+    +ID int64
+    +OrderNumber string
+    +Status string
+    +TotalMinor int64
+    +CustomerEmail string
+    +Currency string
+  }
+
+  class PaymentDetail {
+    +Payment Payment
+    +OrderNumber string
+    +OrderStatus string
+    +OrderTotal int64
+  }
+
+  interface PaymentsStore {
+    +Insert(ctx, payment) (int64, error)
+    +FindByID(ctx, id) (*Payment, error)
+    +FindByReference(ctx, reference) (*Payment, error)
+    +List(ctx, status, beforeID, limit) ([]Payment, error)
+    +ListByOrder(ctx, orderID) ([]Payment, error)
+    +SetStatus(ctx, id, status, verifiedBy) error
+  }
+
+  interface Orders {
+    +Details(ctx, orderNumber, email) (*OrderRef, error)
+    +DetailsByID(ctx, orderID) (*OrderRef, error)
+    +DetailsByNumber(ctx, orderNumber) (*OrderRef, error)
+    +Confirm(ctx, orderID) (*OrderRef, error)
+    +Refund(ctx, orderID) error
+  }
+
+  interface Gateway {
+    +Mint(ctx, order) (*GatewaySession, error)
+    +Authenticate(orderNumber, statusCode, gross, signature) bool
+    +MinorUnits(gross) (int64, error)
+  }
+}
+
+Order "1" *-- "0..*" OrderItem : items
+Order *-- Address : shipTo
+Order --> Status : status
+Order --> Money : renders via
+OrderService ..> OrderStore : port
+OrderService ..> CartSource : port
+OrderService ..> ContentSource : port
+OrderService ..> Inventory : port
+OrderService ..> Mailer : port
+OrderService ..> InvoiceRenderer : port
+OrderService ..> Order : use cases
+OrderService ..> InvoiceDocument : derives
+InvoiceDocument "1" *-- "0..*" InvoiceLine
+InvoiceLine *-- Money
+InvoiceDocument *-- Money
+
+Cart "1" *-- "0..*" CartLine
+CartService ..> CartStore : port
+CartService ..> CatalogSource : port
+CartService ..> Cart : use cases
+CatalogSource ..> CatalogItem : returns
+
+Product "1" *-- "0..*" Variant
+CatalogService ..> ProductStore : port
+CatalogService ..> CatalogMailer : port
+CatalogService ..> Product : use cases
+
+PaymentService ..> PaymentsStore : port
+PaymentService ..> Orders : port
+PaymentService ..> Gateway : port (optional)
+PaymentService ..> Payment : use cases
+PaymentDetail *-- Payment
+OrderRef ..> Payment : snapshot source
+
+CartSource ..> CatalogItem : projects
+Inventory ..> CatalogService : adapted by edition
+Orders ..> OrderService : adapted by edition
+ContentSource ..> OrderItem : title snapshot
+
+note right of OrderService
+  Application service: use-case orchestration
+  plus the invariants that need persistence.
+  No separate application/ package.
+end note
+
+@enduml

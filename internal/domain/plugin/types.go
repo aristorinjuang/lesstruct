@@ -3,8 +3,6 @@ package plugin
 import (
 	"errors"
 	"time"
-
-	"github.com/tetratelabs/wazero/api"
 )
 
 type Status string
@@ -22,13 +20,12 @@ func (s Status) String() string {
 type Plugin struct {
 	Name     string
 	FilePath string
-	Module   api.Module
 	Status   Status
 	LoadedAt time.Time
 }
 
 var (
-	ErrPluginNotFound     = errors.New("plugin not found")
+	ErrPluginNotFound      = errors.New("plugin not found")
 	ErrPluginInvalidFormat = errors.New("invalid WASM format")
 	ErrPluginLoadFailed    = errors.New("plugin load failed")
 )

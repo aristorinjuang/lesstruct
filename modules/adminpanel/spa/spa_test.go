@@ -1,15 +1,52 @@
 package spa_test
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/modules/adminpanel/spa"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestEmbeddedBuild_IncludesTwoStepLogin(t *testing.T) {
+	buildFS := spa.FS()
+
+	var (
+		foundMFARequired bool
+		foundVerifyCall  bool
+	)
+
+	err := fs.WalkDir(buildFS, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".js") {
+			return nil
+		}
+
+		content, err := fs.ReadFile(buildFS, path)
+		if err != nil {
+			return err
+		}
+
+		if bytes.Contains(content, []byte("mfaRequired")) {
+			foundMFARequired = true
+		}
+		if bytes.Contains(content, []byte("/api/auth/mfa/verify")) {
+			foundVerifyCall = true
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+	assert.True(t, foundMFARequired, "embedded admin build should handle the MFA challenge; run make build-admin")
+	assert.True(t, foundVerifyCall, "embedded admin build should call the MFA verify endpoint; run make build-admin")
+}
 
 func TestServeAdmin_RootReturnsIndexHTML(t *testing.T) {
 	h := spa.NewHandler(false, "")

@@ -2,6 +2,7 @@ package content
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
@@ -29,6 +30,19 @@ func (a *PostTypeAdapter) GetFieldsByPostType(slug string) ([]customfield.FieldS
 
 func (a *PostTypeAdapter) GetSystemFieldsByPostType(slug string) ([]customfield.FieldSchema, error) {
 	return a.service.GetSystemFieldsByPostType(slug)
+}
+
+// SearchableSlugs projects the registered post types into the public-search
+// scope: every non-hidden slug, sorted so queries and tests are deterministic.
+func (a *PostTypeAdapter) SearchableSlugs() []string {
+	slugs := make([]string, 0)
+	for _, pt := range a.service.GetAll() {
+		if !pt.Hidden {
+			slugs = append(slugs, pt.Slug)
+		}
+	}
+	slices.Sort(slugs)
+	return slugs
 }
 
 // NewPostTypeAdapter creates a new adapter for post type service

@@ -2,10 +2,10 @@ module github.com/aristorinjuang/lesstruct/modules/seo
 
 go 1.27
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
-	github.com/aristorinjuang/lesstruct/kernel v1.0.0
+	github.com/aristorinjuang/lesstruct/kernel v1.1.0
 	github.com/stretchr/testify v1.11.1
 	modernc.org/sqlite v1.59.0
 )

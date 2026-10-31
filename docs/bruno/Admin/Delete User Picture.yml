@@ -6,9 +6,7 @@ info:
 http:
   method: DELETE
   url: "{{BASE_URL}}/api/admin/users/{{USER_ID}}/picture"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

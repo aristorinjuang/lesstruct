@@ -12,6 +12,31 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Flat list shapes mirror the SuccessList wire contract for the user
+// admin surfaces: the items array rides data directly with meta beside
+// it — never a nested {data, meta} object inside data.
+type flatUsersPage struct {
+	Data []*api.UserInList `json:"data"`
+	Meta pageMeta          `json:"meta"`
+}
+
+type flatPendingPage struct {
+	Data []*api.PendingUser `json:"data"`
+	Meta pageMeta           `json:"meta"`
+}
+
+type flatDeletedPage struct {
+	Data []*api.DeletedContentItem `json:"data"`
+	Meta pageMeta                  `json:"meta"`
+}
+
+type pageMeta struct {
+	Count  int `json:"count"`
+	Total  int `json:"total"`
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
 // umgmtSetupTestRouter sets up a test router with user management routes.
 // The helper name is prefixed with umgmt to avoid colliding with helpers
 // defined by other parallel migration workers in package api_test.
@@ -91,9 +116,7 @@ func TestApproveUserFlow(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var wrapper struct {
-		Data api.GetPendingUsersResponse `json:"data"`
-	}
+	var wrapper flatPendingPage
 	if err := json.NewDecoder(w.Body).Decode(&wrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v. Body: %s", err, w.Body.String())
 	}
@@ -101,16 +124,16 @@ func TestApproveUserFlow(t *testing.T) {
 	resp := wrapper.Data
 	t.Logf("Response: %+v", resp)
 
-	if len(resp.Data) != 1 {
-		t.Fatalf("Expected 1 pending user, got %d", len(resp.Data))
+	if len(resp) != 1 {
+		t.Fatalf("Expected 1 pending user, got %d", len(resp))
 	}
 
-	if resp.Data[0].Username != "pendinguser" {
-		t.Errorf("Expected username 'pendinguser', got '%s'", resp.Data[0].Username)
+	if resp[0].Username != "pendinguser" {
+		t.Errorf("Expected username 'pendinguser', got '%s'", resp[0].Username)
 	}
 
-	if resp.Meta.Count != 1 {
-		t.Errorf("Expected count 1, got %d", resp.Meta.Count)
+	if wrapper.Meta.Count != 1 {
+		t.Errorf("Expected count 1, got %d", wrapper.Meta.Count)
 	}
 
 	// Test 2: Approve user
@@ -298,14 +321,12 @@ func TestSuspendUserFlow(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var usersWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var usersWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&usersWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	users := usersWrapper.Data.Data
+	users := usersWrapper.Data
 	if len(users) != 1 {
 		t.Fatalf("Expected 1 user, got %d", len(users))
 	}
@@ -544,14 +565,12 @@ func TestStatusFilteringInUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var allUsersWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var allUsersWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&allUsersWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	allUsersResp := allUsersWrapper.Data.Data
+	allUsersResp := allUsersWrapper.Data
 	if len(allUsersResp) != 4 {
 		t.Errorf("Expected 4 users, got %d", len(allUsersResp))
 	}
@@ -568,14 +587,12 @@ func TestStatusFilteringInUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var suspendedUsersWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var suspendedUsersWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&suspendedUsersWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	suspendedUsers := suspendedUsersWrapper.Data.Data
+	suspendedUsers := suspendedUsersWrapper.Data
 	if len(suspendedUsers) != 2 {
 		t.Errorf("Expected 2 suspended users, got %d", len(suspendedUsers))
 	}
@@ -598,14 +615,12 @@ func TestStatusFilteringInUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var verifiedUsersWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var verifiedUsersWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&verifiedUsersWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	verifiedUsers := verifiedUsersWrapper.Data.Data
+	verifiedUsers := verifiedUsersWrapper.Data
 	if len(verifiedUsers) != 1 {
 		t.Errorf("Expected 1 verified user, got %d", len(verifiedUsers))
 	}
@@ -626,14 +641,12 @@ func TestStatusFilteringInUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var deletedUsersWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var deletedUsersWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&deletedUsersWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	deletedUsers := deletedUsersWrapper.Data.Data
+	deletedUsers := deletedUsersWrapper.Data
 	if len(deletedUsers) != 1 {
 		t.Errorf("Expected 1 soft_deleted user, got %d", len(deletedUsers))
 	}
@@ -654,20 +667,18 @@ func TestStatusFilteringInUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	var paginatedUsersWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var paginatedUsersWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&paginatedUsersWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	paginatedUsers := paginatedUsersWrapper.Data.Data
+	paginatedUsers := paginatedUsersWrapper.Data
 	if len(paginatedUsers) != 1 {
 		t.Errorf("Expected 1 user with limit=1, got %d", len(paginatedUsers))
 	}
 
-	if paginatedUsersWrapper.Data.Meta.Limit != 1 {
-		t.Errorf("Expected meta.limit=1, got %d", paginatedUsersWrapper.Data.Meta.Limit)
+	if paginatedUsersWrapper.Meta.Limit != 1 {
+		t.Errorf("Expected meta.limit=1, got %d", paginatedUsersWrapper.Meta.Limit)
 	}
 
 	// Test offset parameter skips results correctly
@@ -682,20 +693,18 @@ func TestStatusFilteringInUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var offsetWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var offsetWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&offsetWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	offsetUsers := offsetWrapper.Data.Data
+	offsetUsers := offsetWrapper.Data
 	if len(offsetUsers) != 3 {
 		t.Errorf("Expected 3 users with offset=1 (skipping first of 4), got %d", len(offsetUsers))
 	}
 
-	if offsetWrapper.Data.Meta.Offset != 1 {
-		t.Errorf("Expected meta.offset=1, got %d", offsetWrapper.Data.Meta.Offset)
+	if offsetWrapper.Meta.Offset != 1 {
+		t.Errorf("Expected meta.offset=1, got %d", offsetWrapper.Meta.Offset)
 	}
 
 	// Test max limit is capped at 1000
@@ -710,15 +719,13 @@ func TestStatusFilteringInUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var maxLimitWrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var maxLimitWrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&maxLimitWrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if maxLimitWrapper.Data.Meta.Limit != 1000 {
-		t.Errorf("Expected meta.limit capped to 1000, got %d", maxLimitWrapper.Data.Meta.Limit)
+	if maxLimitWrapper.Meta.Limit != 1000 {
+		t.Errorf("Expected meta.limit capped to 1000, got %d", maxLimitWrapper.Meta.Limit)
 	}
 }
 
@@ -794,32 +801,30 @@ func TestGetSoftDeletedContent(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var wrapper struct {
-		Data api.GetSoftDeletedContentResponse `json:"data"`
-	}
+	var wrapper flatDeletedPage
 	if err := json.NewDecoder(w.Body).Decode(&wrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
 	resp := wrapper.Data
-	if len(resp.Data) != 2 {
-		t.Errorf("Expected 2 deleted content items, got %d", len(resp.Data))
+	if len(resp) != 2 {
+		t.Errorf("Expected 2 deleted content items, got %d", len(resp))
 	}
 
-	if resp.Data[0].ContentType != "post" {
-		t.Errorf("Expected content type 'post', got '%s'", resp.Data[0].ContentType)
+	if resp[0].ContentType != "post" {
+		t.Errorf("Expected content type 'post', got '%s'", resp[0].ContentType)
 	}
 
-	if resp.Data[1].ContentType != "comment" {
-		t.Errorf("Expected content type 'comment', got '%s'", resp.Data[1].ContentType)
+	if resp[1].ContentType != "comment" {
+		t.Errorf("Expected content type 'comment', got '%s'", resp[1].ContentType)
 	}
 
-	if resp.Data[0].DeletedBy != "admin" {
-		t.Errorf("Expected deletedBy 'admin', got '%s'", resp.Data[0].DeletedBy)
+	if resp[0].DeletedBy != "admin" {
+		t.Errorf("Expected deletedBy 'admin', got '%s'", resp[0].DeletedBy)
 	}
 
-	if resp.Meta.Count != 2 {
-		t.Errorf("Expected count 2, got %d", resp.Meta.Count)
+	if wrapper.Meta.Count != 2 {
+		t.Errorf("Expected count 2, got %d", wrapper.Meta.Count)
 	}
 }
 
@@ -1461,5 +1466,54 @@ func TestUpdateUser_EmailExists(t *testing.T) {
 
 	if w.Code != http.StatusConflict {
 		t.Errorf("Expected status 409, got %d", w.Code)
+	}
+}
+
+func TestGetAllUsers_IncludesDisplayName(t *testing.T) {
+	named := &userdomain.User{
+		ID:       7,
+		Username: "qanit7b",
+		Name:     "QA NIT Seven B",
+		Email:    "qanit7b@example.com",
+		Status:   "verified",
+		Role:     "Contributor",
+	}
+	nameless := &userdomain.User{
+		ID:       8,
+		Username: "noname",
+		Email:    "noname@example.com",
+		Status:   "verified",
+		Role:     "Contributor",
+	}
+
+	userRepo := &stubUserRepo{all: []*userdomain.User{named, nameless}, total: 2}
+	blockedEmailRepo := &stubBlockedRepo{}
+	emailService := &stubMailer{}
+	softDeleteRepo := &stubSoftDelete{}
+
+	router := umgmtSetupTestRouter(t, userRepo, blockedEmailRepo, emailService, softDeleteRepo)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var wrapper flatUsersPage
+	if err := json.NewDecoder(w.Body).Decode(&wrapper); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(wrapper.Data) != 2 {
+		t.Fatalf("Expected 2 users, got %d", len(wrapper.Data))
+	}
+	if wrapper.Data[0].Name != "QA NIT Seven B" {
+		t.Errorf("Expected display name to survive the list projection, got %q", wrapper.Data[0].Name)
+	}
+	if wrapper.Data[1].Name != "" {
+		t.Errorf("Expected empty display name to stay empty, got %q", wrapper.Data[1].Name)
 	}
 }

@@ -13,18 +13,6 @@ import (
 	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
-// GetPendingUsersResponse represents the response for pending users
-type GetPendingUsersResponse struct {
-	Data []*PendingUser `json:"data"`
-	Meta *ResponseMeta  `json:"meta"`
-}
-
-// ResponseMeta represents metadata in API responses
-type ResponseMeta struct {
-	Count     int    `json:"count"`
-	Timestamp string `json:"timestamp"`
-}
-
 // PendingUser represents a pending user in the response
 type PendingUser struct {
 	ID             int       `json:"id"`
@@ -66,31 +54,17 @@ type MarkUserAsSpamResponse struct {
 	Email   string `json:"email"`
 }
 
-// GetAllUsersResponse represents the response for get all users
-type GetAllUsersResponse struct {
-	Data []*UserInList `json:"data"`
-	Meta *UsersMeta    `json:"meta"`
-}
-
 // UserInList represents a user in the list response
 type UserInList struct {
 	ID             int            `json:"id"`
 	Username       string         `json:"username"`
+	Name           string         `json:"name,omitempty"`
 	Email          string         `json:"email"`
 	Status         string         `json:"status"`
 	Role           string         `json:"role"`
 	ProfilePicture string         `json:"profilePicture,omitempty"`
 	CustomFields   map[string]any `json:"customFields,omitempty"`
 	CreatedAt      time.Time      `json:"createdAt"`
-}
-
-// UsersMeta represents metadata for users list
-type UsersMeta struct {
-	Count     int    `json:"count"`
-	Total     int    `json:"total"`
-	Limit     int    `json:"limit"`
-	Offset    int    `json:"offset"`
-	Timestamp string `json:"timestamp"`
 }
 
 // SuspendUserResponse represents the response for suspend user
@@ -116,12 +90,6 @@ type SoftDeleteUserResponse struct {
 type SoftDeleteContentRequest struct {
 	Confirmed bool   `json:"confirmed"`
 	Reason    string `json:"reason"`
-}
-
-// GetSoftDeletedContentResponse represents the response for get soft deleted content
-type GetSoftDeletedContentResponse struct {
-	Data []*DeletedContentItem `json:"data"`
-	Meta *ResponseMeta         `json:"meta"`
 }
 
 // DeletedContentItem represents a soft deleted content item
@@ -251,15 +219,13 @@ func (h *UserManagementHandler) GetPendingUsers(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	// Send response
-	resp := GetPendingUsersResponse{
-		Data: pendingUsers,
-		Meta: &ResponseMeta{
-			Count:     len(pendingUsers),
-			Timestamp: time.Now().Format(time.RFC3339),
-		},
-	}
-	httpx.Success(w, resp)
+	// Send response as a flat list: the envelope carries the items array
+	// directly (httpx.SuccessList), like every other list endpoint — never
+	// a nested {data, meta} object inside the envelope's data.
+	httpx.SuccessList(w, pendingUsers, map[string]any{
+		"count":     len(pendingUsers),
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }
 
 // ApproveUser handles POST /api/admin/users/:id/approve
@@ -512,6 +478,7 @@ func (h *UserManagementHandler) GetAllUsers(w http.ResponseWriter, r *http.Reque
 		usersList[i] = &UserInList{
 			ID:             u.ID,
 			Username:       u.Username,
+			Name:           u.Name,
 			Email:          u.Email,
 			Status:         u.Status,
 			Role:           u.Role,
@@ -528,18 +495,16 @@ func (h *UserManagementHandler) GetAllUsers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Send response
-	resp := GetAllUsersResponse{
-		Data: usersList,
-		Meta: &UsersMeta{
-			Count:     len(usersList),
-			Total:     total,
-			Limit:     limit,
-			Offset:    offset,
-			Timestamp: time.Now().Format(time.RFC3339),
-		},
-	}
-	httpx.Success(w, resp)
+	// Send response as a flat list: the envelope carries the items array
+	// directly (httpx.SuccessList), like every other list endpoint — never
+	// a nested {data, meta} object inside the envelope's data.
+	httpx.SuccessList(w, usersList, map[string]any{
+		"count":     len(usersList),
+		"total":     total,
+		"limit":     limit,
+		"offset":    offset,
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }
 
 // SuspendUser handles POST /api/admin/users/:id/suspend
@@ -861,15 +826,13 @@ func (h *UserManagementHandler) GetSoftDeletedContent(w http.ResponseWriter, r *
 		}
 	}
 
-	// Send response
-	resp := GetSoftDeletedContentResponse{
-		Data: contentList,
-		Meta: &ResponseMeta{
-			Count:     len(contentList),
-			Timestamp: time.Now().Format(time.RFC3339),
-		},
-	}
-	httpx.Success(w, resp)
+	// Send response as a flat list: the envelope carries the items array
+	// directly (httpx.SuccessList), like every other list endpoint — never
+	// a nested {data, meta} object inside the envelope's data.
+	httpx.SuccessList(w, contentList, map[string]any{
+		"count":     len(contentList),
+		"timestamp": time.Now().Format(time.RFC3339),
+	})
 }
 
 // RestoreContent handles POST /api/admin/content/:id/restore

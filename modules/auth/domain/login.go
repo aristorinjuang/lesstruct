@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/kernel"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
 var (
@@ -19,6 +21,29 @@ var (
 	AccountLockoutDuration = 15 * time.Minute
 )
 
+// IsEmailIdentifier reports whether a login identifier is an email address
+// rather than a username. Usernames are validated as [a-zA-Z0-9_-]{1,50}, so
+// an "@" unambiguously marks an email identifier.
+func IsEmailIdentifier(identifier string) bool {
+	return strings.Contains(identifier, "@")
+}
+
+// LoginRequest represents a login request
+type LoginRequest struct {
+	// Username is the login identifier: a username or an email address.
+	Username string
+	Password string
+}
+
+// LoginResult represents the result of a successful login
+type LoginResult struct {
+	ID       int
+	UserID   string
+	Username string
+	Email    string
+	Role     string
+}
+
 // LoginService handles login business logic with account lockout
 type LoginService struct {
 	userRepo        userStore
@@ -27,18 +52,14 @@ type LoginService struct {
 	logger          kernel.Logger
 }
 
-// LoginRequest represents a login request
-type LoginRequest struct {
-	Username string
-	Password string
-}
-
-// LoginResult represents the result of a successful login
-type LoginResult struct {
-	UserID   string
-	Username string
-	Email    string
-	Role     string
+// findUser resolves a login identifier to a user. Identifiers containing an
+// "@" are email addresses; usernames are validated without "@", so the
+// distinction is unambiguous.
+func (s *LoginService) findUser(ctx context.Context, identifier string) (*userdomain.User, error) {
+	if IsEmailIdentifier(identifier) {
+		return s.userRepo.GetUserByEmail(ctx, identifier)
+	}
+	return s.userRepo.GetUserByUsername(ctx, identifier)
 }
 
 // handleFailedLogin handles a failed login attempt and implements account lockout
@@ -88,8 +109,8 @@ func (s *LoginService) Login(ctx context.Context, req LoginRequest) (*LoginResul
 		return nil, ErrInvalidCredentials
 	}
 
-	// Get user by username
-	user, err := s.userRepo.GetUserByUsername(ctx, req.Username)
+	// Get user by username or email
+	user, err := s.findUser(ctx, req.Username)
 	if err != nil {
 		return nil, fmt.Errorf("database error: %w", err)
 	}
@@ -102,7 +123,13 @@ func (s *LoginService) Login(ctx context.Context, req LoginRequest) (*LoginResul
 	// Check if account is locked before attempting authentication
 	isLocked, _, err := s.failedLoginRepo.IsLocked(ctx, user.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check lock status: %w", err)
+		// Fail open on a lockout-store error: refusing the attempt would turn a
+		// persistence problem into a 500 that is indistinguishable from a
+		// username-enumeration oracle (unknown users never reach this call).
+		if s.logger != nil {
+			s.logger.Error("failed to check lock status: %v", err)
+		}
+		isLocked = false
 	}
 
 	if isLocked {
@@ -127,10 +154,12 @@ func (s *LoginService) Login(ctx context.Context, req LoginRequest) (*LoginResul
 	// Verify password against hash
 	err = s.policy.VerifyPassword(user.PasswordHash, req.Password)
 	if err != nil {
-		// Invalid password - increment failed attempt counter
-		incrementErr := s.handleFailedLogin(ctx, user.ID)
-		if incrementErr != nil {
-			return nil, fmt.Errorf("failed to record failed attempt: %w", incrementErr)
+		// Invalid password - record the failed attempt. A persistence error here
+		// must not change the response: answering 500 for an existing user (while
+		// an unknown user gets a clean 401) is a username-enumeration oracle, and
+		// it hides a broken lockout subsystem behind a generic error.
+		if incrementErr := s.handleFailedLogin(ctx, user.ID); incrementErr != nil && s.logger != nil {
+			s.logger.Error("failed to record failed login attempt: %v", incrementErr)
 		}
 		return nil, ErrInvalidCredentials
 	}
@@ -156,6 +185,7 @@ func (s *LoginService) Login(ctx context.Context, req LoginRequest) (*LoginResul
 		// Log error but don't fail login - this is not critical
 		// The counter will be cleaned up by the next failed login or background job
 		return &LoginResult{
+			ID:       user.ID,
 			UserID:   fmt.Sprintf("%d", user.ID),
 			Username: user.Username,
 			Email:    user.Email,
@@ -165,6 +195,7 @@ func (s *LoginService) Login(ctx context.Context, req LoginRequest) (*LoginResul
 
 	// Return user info for token generation
 	return &LoginResult{
+		ID:       user.ID,
 		UserID:   fmt.Sprintf("%d", user.ID),
 		Username: user.Username,
 		Email:    user.Email,
@@ -173,9 +204,9 @@ func (s *LoginService) Login(ctx context.Context, req LoginRequest) (*LoginResul
 }
 
 // IsAccountLocked checks if an account is currently locked
-func (s *LoginService) IsAccountLocked(ctx context.Context, username string) (bool, *time.Time, error) {
-	// Get user by username
-	user, err := s.userRepo.GetUserByUsername(ctx, username)
+func (s *LoginService) IsAccountLocked(ctx context.Context, identifier string) (bool, *time.Time, error) {
+	// Get user by username or email
+	user, err := s.findUser(ctx, identifier)
 	if err != nil {
 		return false, nil, fmt.Errorf("database error: %w", err)
 	}
@@ -190,9 +221,9 @@ func (s *LoginService) IsAccountLocked(ctx context.Context, username string) (bo
 }
 
 // GetFailedLoginAttempts returns the number of failed login attempts for a user
-func (s *LoginService) GetFailedLoginAttempts(ctx context.Context, username string) (int, error) {
-	// Get user by username
-	user, err := s.userRepo.GetUserByUsername(ctx, username)
+func (s *LoginService) GetFailedLoginAttempts(ctx context.Context, identifier string) (int, error) {
+	// Get user by username or email
+	user, err := s.findUser(ctx, identifier)
 	if err != nil {
 		return 0, fmt.Errorf("database error: %w", err)
 	}

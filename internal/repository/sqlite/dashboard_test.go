@@ -49,6 +49,7 @@ func setupDashboardTestDB(t *testing.T) *sql.DB {
 			meta_description TEXT,
 			og_title TEXT,
 			og_description TEXT,
+			featured_image TEXT,
 			language TEXT NOT NULL DEFAULT 'en',
 			translation_group_id INTEGER DEFAULT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

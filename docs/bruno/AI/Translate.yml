@@ -17,9 +17,7 @@ http:
         "title": "Hello world",
         "metaDescription": "A short test summary."
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

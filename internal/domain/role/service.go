@@ -8,9 +8,10 @@ import (
 // defaultRoles returns the built-in roles. Admin is the reserved superuser
 // (IsAdmin short-circuits every capability check to true). Contributor manages
 // every registered post type and may publish; Commentator manages no content
-// types but keeps the media and comment capabilities that any authenticated
-// user has today. Capabilities can be narrowed or widened per site by declaring
-// a same-name [[role]] entry in config.toml (except Admin).
+// types and may only comment — media upload/generate/delete requires the media
+// capability (Contributor and Admin have it). Capabilities can be narrowed or
+// widened per site by declaring a same-name [[role]] entry in config.toml
+// (except Admin).
 func defaultRoles() []Role {
 	return []Role{
 		{
@@ -31,7 +32,7 @@ func defaultRoles() []Role {
 		{
 			Name:     "Commentator",
 			Publish:  false,
-			Media:    true,
+			Media:    false,
 			Comments: true,
 		},
 	}

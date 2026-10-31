@@ -74,15 +74,6 @@ type AdminCreateUserRepo interface {
 	CreateUser(ctx context.Context, user *User) error
 }
 
-// AdminCreateUserService handles admin-initiated user creation
-type AdminCreateUserService struct {
-	userRepo         AdminCreateUserRepo
-	blockedEmailRepo BlockedEmailRepo
-	policy           CredentialPolicy
-	commentsEnabled  bool
-	roleService      RoleAssigner
-}
-
 // AdminCreateUserOption configures an AdminCreateUserService. A role service
 // makes the assignable-role allowlist config-driven; without one the legacy
 // three-role allowlist applies.
@@ -96,20 +87,57 @@ func WithRoleService(rs RoleAssigner) AdminCreateUserOption {
 	}
 }
 
+// WithRegistrationEnabled overrides the registration gate consulted for the
+// Commentator role. When unset it defaults to the comments flag (legacy
+// coupling); the composition root sets it from [registration].IsEnabled.
+func WithRegistrationEnabled(enabled bool) AdminCreateUserOption {
+	return func(s *AdminCreateUserService) {
+		s.registrationEnabled = &enabled
+	}
+}
+
+// AdminCreateUserService handles admin-initiated user creation
+type AdminCreateUserService struct {
+	userRepo            AdminCreateUserRepo
+	blockedEmailRepo    BlockedEmailRepo
+	policy              CredentialPolicy
+	commentsEnabled     bool
+	registrationEnabled *bool
+	roleService         RoleAssigner
+}
+
+// registrationAllowsCommentator reports whether the Commentator role may be
+// assigned: it requires the comment system and self-registration both
+// enabled. An unset registration override defaults to the comments flag,
+// preserving the legacy coupling.
+func (s *AdminCreateUserService) registrationAllowsCommentator() bool {
+	if s.registrationEnabled != nil {
+		return *s.registrationEnabled
+	}
+	return s.commentsEnabled
+}
+
 // isAllowedRole reports whether an admin may assign the role. With a role
 // service the allowlist is registry-driven; the Commentator role additionally
-// requires the comment system to be enabled.
+// requires the comment system and registration both enabled.
 func (s *AdminCreateUserService) isAllowedRole(role string) bool {
+	commentatorAllowed := s.commentsEnabled && s.registrationAllowsCommentator()
 	if s.roleService != nil {
 		if !s.roleService.IsAssignable(role) {
 			return false
 		}
-		if role == RoleCommentator && !s.commentsEnabled {
+		if role == RoleCommentator && !commentatorAllowed {
 			return false
 		}
 		return true
 	}
-	return isAllowedRole(role, s.commentsEnabled)
+	if !allowedAdminRoles[role] {
+		return false
+	}
+	if role == RoleCommentator && !commentatorAllowed {
+		return false
+	}
+	return true
 }
 
 // CreateUser creates a new user with verified status and an auto-generated password

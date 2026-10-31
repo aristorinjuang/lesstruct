@@ -1,0 +1,15 @@
+info:
+  name: Reject Payment
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/payments/{{PAYMENT_ID}}/reject"
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

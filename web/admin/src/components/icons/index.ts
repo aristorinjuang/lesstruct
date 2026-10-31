@@ -16,6 +16,7 @@ import IconDocumentText from './IconDocumentText.vue'
 import IconPhoto from './IconPhoto.vue'
 import IconUsers from './IconUsers.vue'
 import IconChatBubble from './IconChatBubble.vue'
+import IconShoppingBag from './IconShoppingBag.vue'
 import IconArrowDownTray from './IconArrowDownTray.vue'
 import IconArrowUpTray from './IconArrowUpTray.vue'
 
@@ -33,6 +34,7 @@ export const icons = {
   photo: IconPhoto,
   users: IconUsers,
   'chat-bubble': IconChatBubble,
+  'shopping-bag': IconShoppingBag,
   'arrow-down-tray': IconArrowDownTray,
   'arrow-up-tray': IconArrowUpTray,
 }
@@ -53,6 +55,7 @@ export {
   IconPhoto,
   IconUsers,
   IconChatBubble,
+  IconShoppingBag,
   IconArrowDownTray,
   IconArrowUpTray,
 }

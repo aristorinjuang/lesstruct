@@ -1,0 +1,21 @@
+info:
+  name: Soft-Delete User
+  type: http
+  seq: 8
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/users/{{USER_ID}}/soft-delete"
+  body:
+    type: json
+    data: |-
+      {"confirmed": true, "reason": "review"}
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

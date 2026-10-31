@@ -16,6 +16,7 @@ type CreateContentRequest struct {
 	MetaDescription    string         `json:"metaDescription,omitempty"`
 	OGTitle            string         `json:"ogTitle,omitempty"`
 	OGDescription      string         `json:"ogDescription,omitempty"`
+	FeaturedImage      string         `json:"featuredImage,omitempty"`
 	AllowComments      *bool          `json:"allowComments,omitempty"`
 	CustomFields       map[string]any `json:"customFields,omitempty"`
 	Language           string         `json:"language,omitempty"`

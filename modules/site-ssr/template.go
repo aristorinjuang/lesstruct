@@ -16,17 +16,49 @@ import (
 	"github.com/aristorinjuang/lesstruct/kernel/i18n"
 )
 
-// embeddedFS is the default theme artifact filesystem installed once at
-// startup from the theme-default module (layouts under pages/, static assets
-// under static/). THEME_DIR overrides resolve over it via resolveFS; without
-// an installed theme only on-disk files resolve.
-var embeddedFS fs.FS
+var (
+	// embeddedFS is the default theme artifact filesystem installed once at
+	// startup from the theme-default module (layouts under pages/, static assets
+	// under static/). THEME_DIR overrides resolve over it via resolveFS; without
+	// an installed theme only on-disk files resolve.
+	embeddedFS fs.FS
+
+	// themeFuncs holds the extra template funcs contributed by the installed
+	// theme. Engine funcs always win on name collisions, so a theme cannot break
+	// the layout contract.
+	themeFuncs template.FuncMap
+
+	// themePages lists the standalone pages the installed theme serves at fixed
+	// public paths (e.g. "cart" renders /cart from pages/cart.gohtml). The
+	// engine owns no page names; themes declare what they ship.
+	themePages []string
+)
+
+// standalonePageTemplate maps a theme page key to its template filename:
+// "cart" -> "cart.html", "orders/track" -> "orders-track.html".
+func standalonePageTemplate(page string) string {
+	return strings.ReplaceAll(page, "/", "-") + ".html"
+}
 
 // SetEmbeddedFS installs the default theme artifact filesystem. The
 // composition root calls it once after resolving the ThemeProvider; test
 // fixtures call it with fixture filesystems.
 func SetEmbeddedFS(files fs.FS) {
 	embeddedFS = files
+}
+
+// SetThemeFuncs installs the active theme's extra template funcs. The
+// composition root calls it once alongside SetEmbeddedFS. Passing nil keeps
+// only the engine funcs.
+func SetThemeFuncs(funcs template.FuncMap) {
+	themeFuncs = funcs
+}
+
+// SetThemePages installs the standalone page paths the active theme serves.
+// Orders is preserved; the composition root calls it once alongside
+// SetEmbeddedFS. Passing nil means the theme ships no standalone pages.
+func SetThemePages(pages []string) {
+	themePages = pages
 }
 
 // ComputeAssetHash reads base.css and style.css from the resolved static
@@ -109,21 +141,61 @@ type NavigationItem struct {
 	IsActive bool
 }
 
+// CookieNotice is the consent banner's notice split around its policy link.
+// Every piece is a plain string, so the layout escapes each one and no
+// translation can inject markup. An empty URL renders the link label as
+// plain text: the notice keeps its meaning without a dead link.
+type CookieNotice struct {
+	Before   string
+	LinkText string
+	After    string
+	URL      string
+}
+
+// LegalData is the page-wide legal projection: where each conventional
+// document lives (resolved, overridden, or empty when absent) and whether
+// checkout and registration must demand an affirmative consent act. The
+// consent gates mirror the server-side enforcement exactly — both read the
+// same boot-time resolution.
+type LegalData struct {
+	CookiePolicyURL     string
+	PrivacyPolicyURL    string
+	TermsOfServiceURL   string
+	ReturnsPolicyURL    string
+	CookieNotice        CookieNotice
+	CheckoutConsent     bool
+	RegistrationConsent bool
+}
+
 type LanguageLink struct {
 	Code string
 	Name string
 	URL  string
 }
 
-// SiteConfig carries the site-wide identity (name + optional logo) read from
-// the optional [site_config] block in config.toml. It is the same on every
-// page, so it lives on LayoutData rather than per-page data. Name is always
-// populated (the handler defaults it to the application name); Logo is empty
-// unless the operator configures one, in which case themes render an <img>
-// (using Name as the alt text) instead of the name as text.
+// SiteConfig carries the site-wide identity (name, optional logo, optional
+// favicon, optional product image ratio, optional hero) read from the optional
+// [site_config] block in config.toml. It is the same on every page, so it lives on
+// LayoutData rather than per-page data. Name is always populated (the handler
+// defaults it to the application name); Logo is empty unless the operator
+// configures one, in which case themes render an <img> (using Name as the alt
+// text) instead of the name as text. Favicon is likewise empty unless
+// configured, in which case themes use it for the icon links instead of their
+// bundled favicon set. ProductImageRatio is the canonical "W / H" form
+// validated at load (empty means the theme's hard-coded 4/5 applies); the
+// storefront layout emits it as an inline aspect-ratio override. HeroImage,
+// HeroTitle, and HeroSubtitle are the optional storefront hero overrides: an
+// empty HeroImage keeps the monogram panel, a set one renders the photo
+// instead; empty HeroTitle/HeroSubtitle keep the bilingual defaults. It is typed
+// as template.CSS so the layout style block renders verbatim.
 type SiteConfig struct {
-	Name string
-	Logo string
+	Name              string
+	Logo              string
+	Favicon           string
+	ProductImageRatio template.CSS
+	HeroImage         string
+	HeroTitle         string
+	HeroSubtitle      string
 }
 
 type LayoutData struct {
@@ -134,10 +206,19 @@ type LayoutData struct {
 	OGImage         string
 	PageTitle       string
 	NavigationItems []NavigationItem
-	CurrentPath     string
+	// FooterItems is the full site map the footer lists: every published page
+	// (conventional legal pages included) and every listing post type.
+	FooterItems   []NavigationItem
+	Legal         LegalData
+	CurrentPath   string
 	Lang            string
 	LanguageLinks   []LanguageLink
+	Languages       []LanguageLink
 	SiteConfig      SiteConfig
+	// NoIndex asks the layout to emit a robots noindex directive. Standalone
+	// application pages (cart, checkout, order tracking) set it because their
+	// server-rendered shells carry no indexable content.
+	NoIndex bool
 }
 
 type PostItem struct {
@@ -200,6 +281,25 @@ type CommentItem struct {
 	CreatedAt time.Time
 }
 
+// GalleryImage is one resolved gallery custom-field entry: the stored URL
+// and alt text plus the thumbnail-pipeline renditions. Thumb/Medium/Large
+// carry the variant URLs keyed by suffix name (never pixel widths, so they
+// adapt to any [[thumbnail]] config); each falls back to the original URL
+// when the media record is missing or has no such variant (external URLs
+// always render as-is). Srcset spreads whatever variants exist. URL is the
+// canonical display URL (the media record's URL when resolved, else the
+// stored URL); Original pins that same fallback target explicitly so
+// themes can always recover the unmodified source.
+type GalleryImage struct {
+	URL      string
+	Alt      string
+	Thumb    string
+	Medium   string
+	Large    string
+	Srcset   string
+	Original string
+}
+
 type ContentData struct {
 	LayoutData
 	Slug                  string
@@ -212,6 +312,10 @@ type ContentData struct {
 	AllowComments         bool
 	CustomFields          map[string]any
 	CustomFieldsFormatted []FormattedField
+	// CustomFieldGalleries carries the resolved gallery-typed custom fields,
+	// keyed by field slug in schema order. Themes prefer it over the raw
+	// lines fallback for gallery fields (e.g. product images).
+	CustomFieldGalleries  map[string][]GalleryImage
 	Related               []PostItem
 	Comments              []CommentItem
 	PostType              string
@@ -255,10 +359,20 @@ type ResetPasswordData struct {
 	LayoutData
 }
 
+// StandalonePageData is the render context for a theme-declared standalone
+// page (cart, checkout, order tracking). The shell is server-rendered for
+// consistent chrome and caching; the commerce data hydrates client-side from
+// the public JSON APIs. Page is the theme's page key (e.g. "orders/track").
+type StandalonePageData struct {
+	LayoutData
+	Page string
+}
+
 type Templates struct {
 	layout         *template.Template
 	index          *template.Template
 	home           *template.Template
+	pages          map[string]*template.Template
 	content        map[string]*template.Template
 	contentBySlug  map[string]*template.Template
 	contentDefault *template.Template
@@ -281,6 +395,26 @@ func (t *Templates) RenderIndex(w http.ResponseWriter, data IndexData) error {
 func (t *Templates) RenderHome(w http.ResponseWriter, data IndexData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	return t.home.Execute(w, data)
+}
+
+// HasPage reports whether the installed theme declares a standalone page at
+// the given key ("cart", "checkout", "orders/track"). The handler checks it
+// before falling through to content so a declared page always renders.
+func (t *Templates) HasPage(page string) bool {
+	_, ok := t.pages[page]
+	return ok
+}
+
+// RenderPage renders one theme-declared standalone page. The page key must
+// be declared by the theme; NewTemplates already skipped undeclared or
+// templateless pages, so a miss here is a wiring bug, not a 404.
+func (t *Templates) RenderPage(w http.ResponseWriter, data StandalonePageData) error {
+	tpl, ok := t.pages[data.Page]
+	if !ok {
+		return fmt.Errorf("theme does not declare the %q page", data.Page)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	return tpl.Execute(w, data)
 }
 
 func (t *Templates) RenderContent(w http.ResponseWriter, data ContentData) error {
@@ -390,6 +524,10 @@ func (t *Templates) RenderRegisterToString(data AuthPageData) (string, error) {
 	return t.renderToString(t.register, data)
 }
 
+// NewTemplates builds the template set from the theme filesystem and the
+// i18n catalog. It loads the shared layout, the fixed pages, the content
+// templates (per post type plus per-slug overrides), and the standalone pages
+// the theme declares through ThemePageProvider.
 func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) (*Templates, error) {
 	tFunc := func(lang, key string) string { return key }
 	if catalog != nil {
@@ -398,9 +536,10 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) 
 
 	assetHash := ComputeAssetHash(theme)
 
-	layout := template.Must(template.New("layout").Funcs(template.FuncMap{
+	funcs := template.FuncMap{
 		"urlpath": url.PathEscape,
 		"t":       tFunc,
+		"upper":   strings.ToUpper,
 		"assetURL": func(name string) string {
 			ext := ".css"
 			base := strings.TrimSuffix(name, ext)
@@ -408,7 +547,19 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) 
 		},
 		"formatDate":     FormatDate,
 		"formatDateTime": FormatDateTime,
-	}).Parse(readThemeFile(theme, "layout.html")))
+	}
+	// Theme funcs extend the engine vocabulary; engine names always win so a
+	// theme cannot shadow urlpath, t, upper, assetURL, or the date formatters.
+	for name, fn := range themeFuncs {
+		if _, exists := funcs[name]; !exists {
+			funcs[name] = fn
+		}
+	}
+
+	layout := template.New("layout").Funcs(funcs)
+	for _, source := range readLayoutSources(theme) {
+		layout = template.Must(layout.Parse(source))
+	}
 
 	t := &Templates{
 		layout:  layout,
@@ -455,6 +606,24 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) 
 	t.contentBySlug = make(map[string]*template.Template)
 	for key, tplContent := range findPerSlugTemplateOverrides(theme, knownPostTypes) {
 		t.contentBySlug[key] = template.Must(template.Must(t.layout.Clone()).Parse(tplContent))
+	}
+
+	// Load the standalone pages the theme declares (cart, checkout, order
+	// tracking). They render through the shared layout so chrome and site
+	// config stay consistent; their data hydrates client-side. A declared
+	// page without a template is skipped, so a partial theme still boots and
+	// the path falls through to content/404.
+	t.pages = make(map[string]*template.Template, len(themePages))
+	for _, page := range themePages {
+		page = strings.Trim(page, "/")
+		if page == "" {
+			continue
+		}
+		body := readThemeFile(theme, standalonePageTemplate(page))
+		if body == "" {
+			continue
+		}
+		t.pages[page] = template.Must(template.Must(t.layout.Clone()).Parse(body))
 	}
 
 	return t, nil

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -143,6 +144,7 @@ type Content struct {
 	MetaDescription    string         `json:"metaDescription,omitempty"`
 	OGTitle            string         `json:"ogTitle,omitempty"`
 	OGDescription      string         `json:"ogDescription,omitempty"`
+	FeaturedImage      string         `json:"featuredImage,omitempty"`
 	Author             string         `json:"author,omitempty"`
 	Username           string         `json:"username,omitempty"`
 	AllowComments      bool           `json:"allowComments"`
@@ -364,6 +366,28 @@ func ValidateTags(tags []string) ([]string, error) {
 		trimmed = append(trimmed, t)
 	}
 	return trimmed, nil
+}
+
+// ErrInvalidFeaturedImage is returned when the featured image is neither an
+// http(s) URL nor a root-relative media path.
+var ErrInvalidFeaturedImage = errors.New("featured image must be an http(s) URL or a root-relative path")
+
+// ValidateFeaturedImage validates the explicit featured-image reference: an
+// http(s) absolute URL or a root-relative media path (/uploads/...). Empty
+// means "no explicit featured image" — presentation falls back to the
+// body-derived image. Protocol-relative (//) and other schemes are rejected.
+func ValidateFeaturedImage(value string) error {
+	if value == "" {
+		return nil
+	}
+	if strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") {
+		return nil
+	}
+	u, err := url.Parse(value)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return ErrInvalidFeaturedImage
+	}
+	return nil
 }
 
 // ValidateMetaDescription validates the meta description field

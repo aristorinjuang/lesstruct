@@ -201,3 +201,33 @@ func TestMockEmailService(t *testing.T) {
 
 	assert.NoError(t, err, "MockEmailService() failed")
 }
+
+func TestService_SendMFACodeEmail_Disabled(t *testing.T) {
+	tests := []struct {
+		name   string
+		config email.SMTPConfig
+	}{
+		{
+			name:   "error - host and port missing",
+			config: email.SMTPConfig{},
+		},
+		{
+			name:   "error - host only",
+			config: email.SMTPConfig{Host: "smtp.example.com"},
+		},
+		{
+			name:   "error - port only",
+			config: email.SMTPConfig{Port: 587},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := email.NewService(tt.config, slog.Default(), "http://localhost:8080")
+
+			err := service.SendMFACodeEmail(context.Background(), "user@example.com", "username", "123456")
+
+			assert.ErrorContains(t, err, "email service is disabled", "Expected disabled-service error")
+		})
+	}
+}

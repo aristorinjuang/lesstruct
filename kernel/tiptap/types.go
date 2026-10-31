@@ -22,4 +22,7 @@ type document struct {
 type ImageVariant struct {
 	URL   string
 	Width int
+	// Height is the rendition height in pixels. Zero when unknown; the
+	// renderer omits width/height attributes instead of guessing.
+	Height int
 }

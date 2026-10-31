@@ -2,7 +2,7 @@
 
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth, clearAuth } from '@/composables/useAuth'
+import { useAuth, clearAuth, homePathFor } from '@/composables/useAuth'
 import { useNavigation } from '@/composables/useNavigation'
 import IconMenu from '@/components/icons/IconMenu.vue'
 import IconUser from '@/components/icons/IconUser.vue'
@@ -46,13 +46,7 @@ onUnmounted(() => {
 })
 
 function handleLogoClick() {
-  if (role.value === 'Admin') {
-    router.push('/dashboard')
-  } else if (role.value === 'Commentator') {
-    router.push('/comment')
-  } else {
-    router.push('/content?type=post')
-  }
+  router.push(homePathFor(role.value))
 }
 
 function toggleProfileDropdown() {
@@ -69,8 +63,14 @@ function handleApiKeysClick() {
   router.push('/profile/api-keys')
 }
 
-function handleLogout() {
+async function handleLogout() {
   profileDropdownOpen.value = false
+  try {
+    await api.post('/api/auth/logout', {})
+  } catch {
+    // The cookie may already be expired: still drop the local identity so
+    // the UI never shows a stale session.
+  }
   clearAuth()
   router.push('/login')
 }

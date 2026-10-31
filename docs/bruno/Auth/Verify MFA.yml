@@ -1,0 +1,28 @@
+info:
+  name: Verify MFA
+  type: http
+  seq: 4
+  docs: >-
+    Step 2 of login: exchanges the emailed 6-digit code for the session. The
+    challenge comes from Login; the code expires after 5 minutes, allows 5
+    wrong attempts, and is single-use. On success the server sets the
+    `lesstruct_jwt` HttpOnly cookie — Bruno's cookie jar stores it and sends
+    it on the browser-realm requests below. No token is returned in the body.
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/auth/mfa/verify"
+  body:
+    type: json
+    data: |-
+      {
+        "challengeToken": "{{MFA_CHALLENGE_TOKEN}}",
+        "code": "{{MFA_CODE}}"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

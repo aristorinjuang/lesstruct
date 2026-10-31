@@ -5,7 +5,7 @@
 package mocks
 
 import (
-	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
+	"github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -15,10 +15,19 @@ func NewMockPostTypeLister(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockPostTypeLister {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockPostTypeLister{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }

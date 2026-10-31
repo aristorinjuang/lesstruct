@@ -15,11 +15,11 @@ func TestNoCookieMiddleware(t *testing.T) {
 	logger := util.NewLogger(os.Stdout)
 
 	tests := []struct {
-		name            string
-		handler         http.HandlerFunc
-		expectCookies   bool
-		expectedBody    string
-		expectedStatus  int
+		name           string
+		handler        http.HandlerFunc
+		expectCookies  bool
+		expectedBody   string
+		expectedStatus int
 	}{
 		{
 			name: "strips Set-Cookie header from response",
@@ -200,4 +200,86 @@ func TestNoCookieMiddleware_BearerAuthPassesThrough(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Empty(t, rec.Header().Values("Set-Cookie"), "protected endpoint must not set cookies")
 	assert.Contains(t, rec.Body.String(), "Bearer test-jwt-token", "Authorization header must pass through")
+}
+
+func TestNoCookieMiddleware_Allowlist(t *testing.T) {
+	logger := util.NewLogger(os.Stdout)
+
+	tests := []struct {
+		name        string
+		cookies     []http.Cookie
+		allowed     []string
+		wantPresent []string
+		wantAbsent  []string
+	}{
+		{
+			name: "success - allowlisted lang passes, session stripped",
+			cookies: []http.Cookie{
+				{Name: "lesstruct_lang", Value: "id"},
+				{Name: "sessionid", Value: "abc"},
+			},
+			allowed:     []string{"lesstruct_lang", "lesstruct_consent"},
+			wantPresent: []string{"lesstruct_lang=id"},
+			wantAbsent:  []string{"sessionid="},
+		},
+		{
+			name: "success - consent cookie passes",
+			cookies: []http.Cookie{
+				{Name: "lesstruct_consent", Value: "accepted"},
+				{Name: "tracking", Value: "xyz"},
+			},
+			allowed:     []string{"lesstruct_lang", "lesstruct_consent"},
+			wantPresent: []string{"lesstruct_consent=accepted"},
+			wantAbsent:  []string{"tracking="},
+		},
+		{
+			name: "success - no allowlist strips everything",
+			cookies: []http.Cookie{
+				{Name: "lesstruct_lang", Value: "id"},
+			},
+			allowed:     []string{},
+			wantPresent: []string{},
+			wantAbsent:  []string{"lesstruct_lang="},
+		},
+		{
+			name: "success - all allowed preserves all",
+			cookies: []http.Cookie{
+				{Name: "lesstruct_lang", Value: "en"},
+				{Name: "lesstruct_consent", Value: "declined"},
+			},
+			allowed:     []string{"lesstruct_lang", "lesstruct_consent"},
+			wantPresent: []string{"lesstruct_lang=en", "lesstruct_consent=declined"},
+			wantAbsent:  []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := middleware.NewNoCookieMiddleware(logger, tt.allowed...)
+
+			handler := m.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				for _, c := range tt.cookies {
+					cCopy := c
+					http.SetCookie(w, &cCopy)
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("ok"))
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			joined := ""
+			for _, h := range rec.Header().Values("Set-Cookie") {
+				joined += h + "\n"
+			}
+			for _, want := range tt.wantPresent {
+				assert.Contains(t, joined, want, "expected cookie to pass")
+			}
+			for _, absent := range tt.wantAbsent {
+				assert.NotContains(t, joined, absent, "expected cookie to be stripped")
+			}
+		})
+	}
 }

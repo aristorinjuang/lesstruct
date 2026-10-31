@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import api, { ApiError } from './request'
 
-const MOCK_TOKEN = 'mock-jwt-token'
-
 describe('download', () => {
   let createObjectURLSpy: ReturnType<typeof vi.fn>
   let revokeObjectURLSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    localStorage.setItem('auth_token', MOCK_TOKEN)
     createObjectURLSpy = vi.fn(() => 'blob:mock')
     revokeObjectURLSpy = vi.fn()
     vi.stubGlobal('URL', {
@@ -42,7 +39,8 @@ describe('download', () => {
       '/api/admin/export',
       expect.objectContaining({
         method: 'GET',
-        headers: { Authorization: `Bearer ${MOCK_TOKEN}` },
+        headers: {},
+        credentials: 'include',
       })
     )
     expect(filename).toBe('lesstruct-export-20260808-120000.tar.gz')

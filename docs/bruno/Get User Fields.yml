@@ -6,9 +6,7 @@ info:
 http:
   method: GET
   url: "{{BASE_URL}}/api/v1/user_fields"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

@@ -18,13 +18,6 @@ type AuthNotificationRecorder struct {
 	repo repository.NotificationRepo
 }
 
-// NewAuthNotificationRecorder creates an AuthNotificationRecorder.
-func NewAuthNotificationRecorder(repo repository.NotificationRepo) *AuthNotificationRecorder {
-	return &AuthNotificationRecorder{
-		repo: repo,
-	}
-}
-
 // RecordUserRegistered records a new-registration admin notification.
 func (r *AuthNotificationRecorder) RecordUserRegistered(ctx context.Context, username, email string) error {
 	return r.repo.CreateNotification(ctx, repository.NotificationTypeUserRegistered,
@@ -35,6 +28,13 @@ func (r *AuthNotificationRecorder) RecordUserRegistered(ctx context.Context, use
 func (r *AuthNotificationRecorder) RecordUserVerified(ctx context.Context, username, email string) error {
 	return r.repo.CreateNotification(ctx, repository.NotificationTypeUserVerified,
 		fmt.Sprintf("User %s verified their email (%s)", html.EscapeString(username), html.EscapeString(email)))
+}
+
+// NewAuthNotificationRecorder creates an AuthNotificationRecorder.
+func NewAuthNotificationRecorder(repo repository.NotificationRepo) *AuthNotificationRecorder {
+	return &AuthNotificationRecorder{
+		repo: repo,
+	}
 }
 
 var _ authapi.NotificationRecorder = (*AuthNotificationRecorder)(nil)

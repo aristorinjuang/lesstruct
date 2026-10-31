@@ -9,9 +9,10 @@ import (
 
 // Claims represents JWT claims structure
 type Claims struct {
-	UserID   string `json:"user_id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	UserID       string `json:"user_id"`
+	Username     string `json:"username"`
+	Role         string `json:"role"`
+	TokenVersion int    `json:"ver"`
 	jwt.RegisteredClaims
 }
 
@@ -20,17 +21,23 @@ type JWTManager struct {
 	secretKey string
 }
 
-// GenerateToken creates a new JWT token for a user
-func (j *JWTManager) GenerateToken(userID, username, role string) (string, error) {
+// GenerateToken creates a new JWT token for a user. tokenVersion is the user's
+// current session generation; the auth middleware rejects the token once the
+// stored version moves past it.
+func (j *JWTManager) GenerateToken(userID, username, role string, tokenVersion int) (string, error) {
 	if userID == "" || username == "" || role == "" {
 		return "", errors.New("user ID, username, and role are required")
+	}
+	if tokenVersion < 0 {
+		return "", errors.New("token version must not be negative")
 	}
 
 	// Create claims with expiration time
 	claims := Claims{
-		UserID:   userID,
-		Username: username,
-		Role:     role,
+		UserID:       userID,
+		Username:     username,
+		Role:         role,
+		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

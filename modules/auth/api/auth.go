@@ -3,25 +3,44 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/aristorinjuang/lesstruct/kernel/httpx"
 	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
+
+const (
+	// registrationAcceptedMessage is the single reply every accepted-shaped
+	// registration gets, success or duplicate alike.
+	registrationAcceptedMessage = "Registration successful. Please check your email to verify your account."
+	// logoutMessage is the single reply every successful logout gets.
+	logoutMessage = "Logged out successfully."
+)
+
+// FirstLoginRequiredResponse tells the client to open the first-login setup
+// page instead of completing a session. The bootstrap admin has no email
+// address until setup finishes, so no code can be delivered yet.
+type FirstLoginRequiredResponse struct {
+	FirstLoginRequired bool `json:"firstLoginRequired"`
+}
 
 // LoginRequest represents the login request body
 type LoginRequest struct {
+	// Username carries the login identifier: a username or an email address.
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// LoginResponse represents the successful login response
+// LoginResponse represents the successful login response. The session
+// travels in the HttpOnly cookie, never in the body.
 type LoginResponse struct {
-	Token string      `json:"token"`
-	User  UserInfoRef `json:"user"`
+	User UserInfoRef `json:"user"`
 }
 
 // UserInfoRef represents user information returned in login response
@@ -33,16 +52,19 @@ type UserInfoRef struct {
 
 // RegisterUserRequest represents the registration request body
 type RegisterUserRequest struct {
-	Username string `json:"username"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username        string `json:"username"`
+	Name            string `json:"name"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	ConsentAccepted bool   `json:"consentAccepted,omitempty"`
 }
 
-// RegisterUserResponse represents the successful registration response
+// RegisterUserResponse is the registration response. Deliberately minimal:
+// a duplicate username or email must be indistinguishable from success, so
+// the body never includes the new account's ID (a conflict has none) and
+// both outcomes share one message and status.
 type RegisterUserResponse struct {
 	Message string `json:"message"`
-	UserID  int    `json:"userId"`
 }
 
 // VerifyEmailResponse represents the successful email verification response
@@ -75,6 +97,12 @@ type ResetPasswordRequest struct {
 	NewPassword string `json:"newPassword"`
 }
 
+// LogoutResponse represents the successful logout response. Sessions are
+// revoked server-side and the session cookie is cleared.
+type LogoutResponse struct {
+	Message string `json:"message"`
+}
+
 // AuthHandler handles authentication HTTP requests
 // AuthHandlerOption customizes an AuthHandler at construction time
 type AuthHandlerOption func(*AuthHandler)
@@ -98,25 +126,37 @@ type AuthHandler struct {
 	registrationService   *authdomain.RegistrationService
 	verificationService   *authdomain.VerificationService
 	loginService          *authdomain.LoginService
+	mfaService            *authdomain.MFAService
 	passwordResetService  *authdomain.PasswordResetService
 	userRepo              UserStore
 	failedLoginRepo       authdomain.FailedLoginAttemptRepo
 	notificationRepo      NotificationRecorder
 	emailService          Mailer
+	mfaDeliverer          MFACodeDeliverer
 	blockedEmailRepo      BlockedEmailChecker
 	adminApprovalRequired bool
 }
 
+// findUser resolves a login identifier to a user. Identifiers containing an
+// "@" are email addresses; usernames are validated without "@", so the
+// distinction is unambiguous.
+func (h *AuthHandler) findUser(ctx context.Context, identifier string) (*userdomain.User, error) {
+	if authdomain.IsEmailIdentifier(identifier) {
+		return h.userRepo.GetUserByEmail(ctx, identifier)
+	}
+	return h.userRepo.GetUserByUsername(ctx, identifier)
+}
+
 // sendAccountLockoutEmail sends an email notification about account lockout
-func (h *AuthHandler) sendAccountLockoutEmail(ctx context.Context, username string) {
+func (h *AuthHandler) sendAccountLockoutEmail(ctx context.Context, identifier string) {
 	// Validate username before processing
-	if username == "" {
+	if identifier == "" {
 		h.logger.Error("Empty username provided for lockout email")
 		return
 	}
 
 	// Get user details
-	user, err := h.userRepo.GetUserByUsername(ctx, username)
+	user, err := h.findUser(ctx, identifier)
 	if err != nil || user == nil {
 		h.logger.Error("Failed to get user for lockout email: %v", err)
 		return
@@ -136,7 +176,7 @@ func (h *AuthHandler) sendAccountLockoutEmail(ctx context.Context, username stri
 		return
 	}
 	if !shouldSend {
-		h.logger.Info("Lockout email recently sent, skipping for user: %s", username)
+		h.logger.Info("Lockout email recently sent, skipping for user: %s", user.Username)
 		return
 	}
 
@@ -210,12 +250,23 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Check if default credentials are being used after first-login setup is complete
 	// Only check DB when someone actually tries the default credentials (performance optimization)
+	bootstrapSetup := false
 	if req.Username == authdomain.DefaultUsername && req.Password == authdomain.DefaultPassword {
 		admin, err := h.userRepo.GetAdminUser(r.Context())
-		if err == nil && h.firstLoginService.IsSetupComplete(admin.PasswordHash) {
+		switch {
+		case err != nil && !errors.Is(err, userdomain.ErrAdminNotFound):
+			// A missing admin is a normal invalid-credentials case. Any other
+			// lookup failure must fail closed: falling through would let the
+			// default credentials start an MFA flow without the setup step.
+			h.logger.Error("Failed to check default admin credentials: %v", err)
+			httpx.Error(w, http.StatusInternalServerError, "LOGIN_FAILED", "Failed to process login", nil)
+			return
+		case err == nil && admin != nil && h.firstLoginService.IsSetupComplete(admin.PasswordHash):
 			h.logger.Info("Attempted login with default credentials after first-login setup")
 			httpx.Error(w, http.StatusUnauthorized, "DEFAULT_CREDENTIALS_INVALID", "Default credentials are no longer valid. Please use your new password.", nil)
 			return
+		case err == nil && admin != nil:
+			bootstrapSetup = true
 		}
 	}
 
@@ -279,25 +330,44 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate JWT token
-	token, err := h.jwtManager.GenerateToken(loginResult.UserID, loginResult.Username, loginResult.Role)
-	if err != nil {
-		h.logger.Error("Failed to generate token for user: %s", loginResult.Username)
-		httpx.Error(w, http.StatusInternalServerError, "TOKEN_GENERATION_FAILED", "Failed to generate authentication token", nil)
+	// The bootstrap admin has no email address until setup finishes, so it
+	// cannot receive a code. Send the client to the setup page without issuing
+	// a session; every later login, including this account's, uses MFA.
+	if bootstrapSetup {
+		h.logger.Info("Default admin requires first-login setup")
+		httpx.Success(w, FirstLoginRequiredResponse{FirstLoginRequired: true})
 		return
 	}
 
-	// Log successful login
-	h.logger.Info("Successful login for user: %s (role: %s)", loginResult.Username, loginResult.Role)
+	// Credentials are correct: start the second factor. A JWT is only issued
+	// after the emailed code is verified, and a missing MFA wiring fails
+	// closed rather than degrading to password-only login.
+	if h.mfaService == nil || h.mfaDeliverer == nil {
+		h.logger.Error("Login MFA is not configured")
+		httpx.Error(w, http.StatusServiceUnavailable, "MFA_UNAVAILABLE", "Login verification is unavailable. Please try again later.", nil)
+		return
+	}
 
-	// Return success response with token and user info
-	httpx.Success(w, LoginResponse{
-		Token: token,
-		User: UserInfoRef{
-			ID:       loginResult.UserID,
-			Username: loginResult.Username,
-			Role:     loginResult.Role,
-		},
+	challenge, err := h.mfaService.CreateChallenge(r.Context(), loginResult.ID)
+	if err != nil {
+		h.logger.Error("Failed to create login challenge for user: %s", loginResult.Username)
+		httpx.Error(w, http.StatusInternalServerError, "LOGIN_FAILED", "Failed to process login", nil)
+		return
+	}
+
+	if err := h.mfaDeliverer.DeliverMFACode(r.Context(), loginResult.Email, loginResult.Username, challenge.Code); err != nil {
+		h.logger.Error("Failed to deliver login MFA code for user: %s", loginResult.Username)
+		httpx.Error(w, http.StatusServiceUnavailable, "MFA_UNAVAILABLE", "We could not send your verification code. Please try again later.", nil)
+		return
+	}
+
+	h.logger.Info("Login password accepted for user: %s; MFA code sent", loginResult.Username)
+
+	httpx.Success(w, MFARequiredResponse{
+		MFARequired:    true,
+		ChallengeToken: challenge.Token,
+		EmailHint:      MaskEmail(loginResult.Email),
+		ExpiresIn:      int(time.Until(challenge.ExpiresAt).Seconds()),
 	})
 }
 
@@ -360,10 +430,11 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	result, err := h.registrationService.RegisterUser(ctx, authdomain.RegisterRequest{
-		Username: req.Username,
-		Name:     req.Name,
-		Email:    req.Email,
-		Password: req.Password,
+		Username:        req.Username,
+		Name:            req.Name,
+		Email:           req.Email,
+		Password:        req.Password,
+		ConsentAccepted: req.ConsentAccepted,
 	})
 
 	// Handle specific errors
@@ -371,13 +442,22 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		switch err {
 		case authdomain.ErrRegistrationDisabled:
 			httpx.Error(w, http.StatusForbidden, "REGISTRATION_DISABLED", "Self-registration is disabled on this instance", nil)
+		case authdomain.ErrConsentRequired:
+			httpx.Error(w, http.StatusBadRequest, "CONSENT_REQUIRED", "Consent to the terms and privacy policy is required", nil)
 		case authdomain.ErrUsernameInvalid:
 			httpx.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid username format", nil)
 		case authdomain.ErrUsernameExists, authdomain.ErrEmailExists:
-			// Use generic error to prevent email enumeration
-			httpx.Error(w, http.StatusConflict, "ACCOUNT_EXISTS", "An account with this username or email already exists", nil)
-		case authdomain.ErrInvalidPassword, authdomain.ErrInvalidEmail:
-			httpx.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid email or password", nil)
+			// Anti-enumeration: a duplicate username or email reads exactly
+			// like a fresh registration. The account holder — never the
+			// requester — is the one who gets told, by email.
+			h.notifyRegistrationConflict(r.Context(), req.Username, req.Email)
+			httpx.SendJSON(w, http.StatusOK, httpx.Response{
+				Data: RegisterUserResponse{Message: registrationAcceptedMessage},
+			})
+		case authdomain.ErrInvalidPassword:
+			httpx.Error(w, http.StatusBadRequest, "INVALID_PASSWORD", authdomain.ErrInvalidPassword.Error(), nil)
+		case authdomain.ErrInvalidEmail:
+			httpx.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid email format", nil)
 		default:
 			h.logger.Error("Registration failed: %v", err)
 			httpx.Error(w, http.StatusInternalServerError, "REGISTRATION_FAILED", "Failed to register user", nil)
@@ -422,12 +502,48 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	httpx.SendJSON(w, http.StatusCreated, httpx.Response{
-		Data: RegisterUserResponse{
-			Message: result.Message,
-			UserID:  result.UserID,
-		},
+	httpx.SendJSON(w, http.StatusOK, httpx.Response{
+		Data: RegisterUserResponse{Message: registrationAcceptedMessage},
 	})
+}
+
+// notifyRegistrationConflict resolves the account a registration attempt
+// collided with and emails its holder. Lookup by email first (the address is
+// provably theirs), falling back to the username's account when the submitted
+// email is new. The send is asynchronous and best-effort — the response is
+// already on the wire and must not depend on it — and the notice carries no
+// links, so it can never be turned into a phishing vector.
+func (h *AuthHandler) notifyRegistrationConflict(ctx context.Context, username, email string) {
+	existing, err := h.userRepo.GetUserByEmail(ctx, email)
+	if err != nil {
+		h.logger.Error("Failed to look up conflicting account by email: %v", err)
+		return
+	}
+	if existing == nil {
+		existing, err = h.userRepo.GetUserByUsername(ctx, username)
+		if err != nil {
+			h.logger.Error("Failed to look up conflicting account by username: %v", err)
+			return
+		}
+	}
+	if existing == nil || existing.Email == "" {
+		return
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				h.logger.Error("Panic in registration-conflict email sending: %v", r)
+			}
+		}()
+
+		sendCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := h.emailService.SendRegistrationAttemptEmail(sendCtx, existing.Email, existing.Username); err != nil {
+			h.logger.Error("Failed to send registration attempt email: %v", err)
+		}
+	}()
 }
 
 // VerifyEmail handles GET /api/auth/verify-email
@@ -705,6 +821,40 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Logout handles POST /api/auth/logout. It revokes every session for the
+// caller by bumping the stored token version — previously issued Bearer
+// tokens and session cookies stop validating on the next request — and
+// clears the session cookie with matching attributes. It runs behind
+// RequireAuth, so a missing credential never reaches it; the defensive
+// rejection below only covers a forged context.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	principal, ok := kernel.PrincipalFromContext(r.Context())
+	if !ok || principal.ID == "" {
+		httpx.Error(w, http.StatusUnauthorized, "MISSING_TOKEN", "Missing authorization token", nil)
+		return
+	}
+
+	userID, err := strconv.Atoi(principal.ID)
+	if err != nil {
+		httpx.Error(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid authorization token", nil)
+		return
+	}
+
+	if err := h.userRepo.RevokeSessions(r.Context(), userID); err != nil {
+		h.logger.Error("Failed to revoke sessions for user %s: %v", principal.ID, err)
+		httpx.Error(w, http.StatusInternalServerError, "LOGOUT_FAILED", "Failed to log out", nil)
+		return
+	}
+
+	kernel.ClearSessionCookie(w, r)
+
+	h.logger.Info("Successful logout for user: %s", principal.Username)
+
+	httpx.Success(w, LogoutResponse{
+		Message: logoutMessage,
+	})
+}
+
 // NewAuthHandler creates a new auth handler. A nil logger degrades to a
 // discard sink so the handler is safe to construct in any context.
 func NewAuthHandler(
@@ -715,11 +865,13 @@ func NewAuthHandler(
 	registrationService *authdomain.RegistrationService,
 	verificationService *authdomain.VerificationService,
 	loginService *authdomain.LoginService,
+	mfaService *authdomain.MFAService,
 	passwordResetService *authdomain.PasswordResetService,
 	userRepo UserStore,
 	failedLoginRepo authdomain.FailedLoginAttemptRepo,
 	notificationRepo NotificationRecorder,
 	emailService Mailer,
+	mfaDeliverer MFACodeDeliverer,
 	blockedEmailRepo BlockedEmailChecker,
 	opts ...AuthHandlerOption,
 ) *AuthHandler {
@@ -734,11 +886,13 @@ func NewAuthHandler(
 		registrationService:  registrationService,
 		verificationService:  verificationService,
 		loginService:         loginService,
+		mfaService:           mfaService,
 		passwordResetService: passwordResetService,
 		userRepo:             userRepo,
 		failedLoginRepo:      failedLoginRepo,
 		notificationRepo:     notificationRepo,
 		emailService:         emailService,
+		mfaDeliverer:         mfaDeliverer,
 		blockedEmailRepo:     blockedEmailRepo,
 	}
 	for _, opt := range opts {

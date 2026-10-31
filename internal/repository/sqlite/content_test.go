@@ -42,6 +42,7 @@ func setupContentTestDB(t *testing.T) *sql.DB {
 			meta_description TEXT,
 			og_title TEXT,
 			og_description TEXT,
+			featured_image TEXT,
 				allow_comments INTEGER DEFAULT 1,
 				custom_fields TEXT,
 			updated_by INTEGER REFERENCES users(id),
@@ -1085,12 +1086,13 @@ func TestContentRepository_GetPublishedTags(t *testing.T) {
 
 func TestContentRepository_SearchPublished(t *testing.T) {
 	tests := []struct {
-		name       string
-		setupDB    func(*sql.DB)
-		query      string
-		limit      int
-		wantCount  int
-		wantErr    bool
+		name      string
+		setupDB   func(*sql.DB)
+		query     string
+		postTypes []string
+		limit     int
+		wantCount int
+		wantErr   bool
 	}{
 		{
 			name:  "search by title",
@@ -1100,6 +1102,7 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Python Guide', 'python-guide', 'body', '[]', 'published', 'post')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
 			limit:     10,
 			wantCount: 1,
 			wantErr:   false,
@@ -1111,6 +1114,7 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, meta_description, status, post_type) VALUES (1, 'Post One', 'post-one', 'body', '[]', 'Learn golang basics', 'published', 'post')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
 			limit:     10,
 			wantCount: 1,
 			wantErr:   false,
@@ -1122,6 +1126,58 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'GOLANG Rocks', 'golang-rocks', 'body', '[]', 'published', 'post')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
+			limit:     10,
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name:  "searches custom post types when scoped",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Lesstruct Tee', 'lesstruct-tee', 'body', '[]', 'published', 'product')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Lesstruct Post', 'lesstruct-post', 'body', '[]', 'published', 'post')`)
+			},
+			query:     "lesstruct",
+			postTypes: []string{"product"},
+			limit:     10,
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name:  "unscoped nil list searches every type",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Post', 'golang-post', 'body', '[]', 'published', 'post')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Page', 'golang-page', 'body', '[]', 'published', 'page')`)
+			},
+			query:     "golang",
+			postTypes: nil,
+			limit:     10,
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name:  "excludes types outside the scope",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Post', 'golang-post', 'body', '[]', 'published', 'post')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Product', 'golang-product', 'body', '[]', 'published', 'product')`)
+			},
+			query:     "golang",
+			postTypes: []string{"product"},
+			limit:     10,
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name:  "empty list searches every type like nil",
+			setupDB: func(db *sql.DB) {
+				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
+				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Post', 'golang-post', 'body', '[]', 'published', 'post')`)
+			},
+			query:     "golang",
+			postTypes: []string{},
 			limit:     10,
 			wantCount: 1,
 			wantErr:   false,
@@ -1133,6 +1189,7 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Tutorial', 'golang-tut', 'body', '[]', 'published', 'post')`)
 			},
 			query:     "ruby",
+			postTypes: []string{"post"},
 			limit:     10,
 			wantCount: 0,
 			wantErr:   false,
@@ -1144,17 +1201,19 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Draft', 'golang-draft', 'body', '[]', 'draft', 'post')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
 			limit:     10,
 			wantCount: 0,
 			wantErr:   false,
 		},
 		{
-			name:  "excludes pages",
+			name:  "excludes pages when scoped to post",
 			setupDB: func(db *sql.DB) {
 				_, _ = db.Exec(`INSERT INTO users (id, username, password_hash, role, status) VALUES (1, 'author', 'hash', 'admin', 'active')`)
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Page', 'golang-page', 'body', '[]', 'published', 'page')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
 			limit:     10,
 			wantCount: 0,
 			wantErr:   false,
@@ -1168,6 +1227,7 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang 3', 'golang-3', 'body', '[]', 'published', 'post')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
 			limit:     2,
 			wantCount: 2,
 			wantErr:   false,
@@ -1179,6 +1239,7 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Post', 'golang-post', 'body', '[]', 'published', 'post')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
 			limit:     0,
 			wantCount: 1,
 			wantErr:   false,
@@ -1190,6 +1251,7 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				_, _ = db.Exec(`INSERT INTO content_items (user_id, title, slug, content, tags, status, post_type) VALUES (1, 'Golang Nil', 'golang-nil', 'body', '[]', 'published', 'post')`)
 			},
 			query:     "golang",
+			postTypes: []string{"post"},
 			limit:     10,
 			wantCount: 1,
 			wantErr:   false,
@@ -1214,7 +1276,7 @@ func TestContentRepository_SearchPublished(t *testing.T) {
 				ctx = context.Background()
 			}
 
-			results, err := repo.SearchPublished(ctx, tt.query, tt.limit)
+			results, err := repo.SearchPublished(ctx, tt.query, tt.postTypes, tt.limit)
 
 			if tt.wantErr {
 				require.Error(t, err)

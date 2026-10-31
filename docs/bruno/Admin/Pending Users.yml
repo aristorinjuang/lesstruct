@@ -11,9 +11,7 @@ info:
 http:
   method: GET
   url: "{{BASE_URL}}/api/admin/pending-users"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

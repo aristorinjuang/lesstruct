@@ -7,9 +7,9 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/database"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
-	_ "modernc.org/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 // closeSoftDeleteTestDB is a helper function that explicitly ignores the error from Close()

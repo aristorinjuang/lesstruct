@@ -42,6 +42,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helv
 type EmailService interface {
 	SendVerificationEmail(ctx context.Context, to, username, token string) error
 	SendAccountLockoutEmail(ctx context.Context, to, username string) error
+	SendRegistrationAttemptEmail(ctx context.Context, to, username string) error
 	SendUserApprovedEmail(ctx context.Context, to, username string) error
 	SendUserRejectedEmail(ctx context.Context, to, username string) error
 	SendUserSuspendedEmail(ctx context.Context, to, username, reason string) error
@@ -52,6 +53,7 @@ type EmailService interface {
 	SendAccountDeletedNotification(ctx context.Context, to, username string) error
 	SendAccountCreatedEmail(ctx context.Context, to, username, plainPassword string) error
 	SendPasswordResetEmail(ctx context.Context, to, username, token string) error
+	SendMFACodeEmail(ctx context.Context, to, username, code string) error
 }
 
 // SMTPConfig contains SMTP configuration
@@ -65,11 +67,19 @@ type SMTPConfig struct {
 
 // Service handles email sending operations
 type Service struct {
-	config  SMTPConfig
-	timeout time.Duration
-	enabled bool
-	logger  *slog.Logger
-	baseURL string // Base URL for site links (e.g., "http://localhost:8080")
+	config           SMTPConfig
+	timeout          time.Duration
+	enabled          bool
+	logger           *slog.Logger
+	baseURL          string // Base URL for site links (e.g., "http://localhost:8080")
+	privacyPolicyURL string // Optional link rendered in account-email footers
+}
+
+// SetPrivacyPolicyURL adopts the resolved privacy-policy link for the email
+// footer. An empty URL leaves the footer unchanged: the store publishes no
+// privacy policy, so there is nothing to link.
+func (s *Service) SetPrivacyPolicyURL(url string) {
+	s.privacyPolicyURL = url
 }
 
 // sendEmail sends an email using SMTP
@@ -194,6 +204,12 @@ func (s *Service) buildEmailMessage(from, to, subject string, body emailBody) []
 
 // generateVerificationEmailBody generates the email body for verification
 func (s *Service) generateVerificationEmailBody(username, verificationURL string) emailBody {
+	var privacyText, privacyHTML string
+	if s.privacyPolicyURL != "" {
+		privacyText = fmt.Sprintf("\nRead our privacy policy: %s\n", s.privacyPolicyURL)
+		privacyHTML = fmt.Sprintf("\n<p>Read our <a href=%q>Privacy Policy</a>.</p>", s.privacyPolicyURL)
+	}
+
 	text := fmt.Sprintf(`Hello %s,
 
 Thank you for registering with Lesstruct!
@@ -204,9 +220,9 @@ Please click the link below to verify your email address:
 This link will expire in 24 hours.
 
 If you did not create an account, please ignore this email.
-
+%s
 Best regards,
-The Lesstruct Team`, username, verificationURL)
+The Lesstruct Team`, username, verificationURL, privacyText)
 
 	html := htmlWrap(fmt.Sprintf(`
 <p>Hello %s,</p>
@@ -219,7 +235,7 @@ The Lesstruct Team`, username, verificationURL)
 
 <p>This link will expire in 24 hours.</p>
 
-<p>If you did not create an account, please ignore this email.</p>`, username, verificationURL))
+<p>If you did not create an account, please ignore this email.</p>%s`, username, verificationURL, privacyHTML))
 
 	return emailBody{text: text, html: html}
 }
@@ -249,6 +265,38 @@ The Lesstruct Team`, username)
 <p>If this was not you, please ensure your password is secure and consider changing it.</p>
 
 <p>If you continue to experience issues, please contact our support team.</p>`, username))
+
+	return emailBody{text: text, html: html}
+}
+
+// generateRegistrationAttemptEmailBody generates the email body notifying an
+// account holder that someone tried to register using their (username or)
+// email address. It deliberately carries no action links: the recipient does
+// nothing, and the sender learns nothing about the account.
+func (s *Service) generateRegistrationAttemptEmailBody(username string) emailBody {
+	text := fmt.Sprintf(`Hello %s,
+
+Someone just tried to register a new account using your username or email address.
+
+The registration was not completed, and your account was not changed in any way.
+
+If this was you: you may already have an account — try signing in or use the "Forgot password" link instead.
+
+If this was not you: no action is needed. Your account is safe.
+
+Best regards,
+The Lesstruct Team`, username)
+
+	html := htmlWrap(fmt.Sprintf(`
+<p>Hello %s,</p>
+
+<p>Someone just tried to register a new account using your username or email address.</p>
+
+<p>The registration was not completed, and your account was not changed in any way.</p>
+
+<p>If this was you: you may already have an account — try signing in or use the "Forgot password" link instead.</p>
+
+<p>If this was not you: no action is needed. Your account is safe.</p>`, username))
 
 	return emailBody{text: text, html: html}
 }
@@ -515,6 +563,37 @@ The Lesstruct Team`, username, username, plainPassword, loginURL)
 	return emailBody{text: text, html: html}
 }
 
+// generateMFACodeEmailBody renders the one-time login code email. The code is
+// the second factor: it is deliberately short-lived and never logged by this
+// service.
+func (s *Service) generateMFACodeEmailBody(username, code string, expiresInMinutes int) emailBody {
+	text := fmt.Sprintf(`Hello %s,
+
+Your Lesstruct login verification code is:
+
+%s
+
+This code expires in %d minutes and can be used once.
+
+If you did not try to sign in, someone may have your password. Change it immediately.
+
+Best regards,
+The Lesstruct Team`, username, code, expiresInMinutes)
+
+	html := htmlWrap(fmt.Sprintf(`
+<p>Hello %s,</p>
+
+<p>Your Lesstruct login verification code is:</p>
+
+<p style="font-size: 2rem; font-weight: 700; letter-spacing: 0.35rem;">%s</p>
+
+<p>This code expires in %d minutes and can be used once.</p>
+
+<p>If you did not try to sign in, someone may have your password. Change it immediately.</p>`, username, code, expiresInMinutes))
+
+	return emailBody{text: text, html: html}
+}
+
 // generatePasswordResetEmailBody generates the email body for password reset
 func (s *Service) generatePasswordResetEmailBody(username, resetURL string) emailBody {
 	text := fmt.Sprintf(`Hello %s,
@@ -605,6 +684,40 @@ func (s *Service) SendAccountLockoutEmail(ctx context.Context, to, username stri
 	}
 
 	s.logger.Info("Account lockout email sent successfully",
+		"recipient", to,
+		"username", username)
+
+	return nil
+}
+
+// SendRegistrationAttemptEmail notifies an existing account holder that a
+// registration attempt collided with their username or email. It backs the
+// anti-enumeration registration contract: the requester always gets the same
+// generic response, and the real owner is the one who finds out.
+func (s *Service) SendRegistrationAttemptEmail(ctx context.Context, to, username string) error {
+	if !s.enabled {
+		s.logger.Warn("Email service is disabled",
+			"reason", "SMTP_HOST and SMTP_PORT must be configured",
+			"recipient", to)
+		return fmt.Errorf("email service is disabled: SMTP_HOST and SMTP_PORT must be configured")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	subject := "Registration Attempt on Your Account - Lesstruct"
+	body := s.generateRegistrationAttemptEmailBody(username)
+
+	err := s.sendEmail(ctx, to, subject, body)
+	if err != nil {
+		s.logger.Error("Failed to send registration attempt email",
+			"recipient", to,
+			"username", username,
+			"error", err)
+		return fmt.Errorf("failed to send registration attempt email: %w", err)
+	}
+
+	s.logger.Info("Registration attempt email sent successfully",
 		"recipient", to,
 		"username", username)
 
@@ -924,6 +1037,37 @@ func (s *Service) SendPasswordResetEmail(ctx context.Context, to, username, toke
 	}
 
 	s.logger.Info("Password reset email sent successfully",
+		"recipient", to,
+		"username", username)
+
+	return nil
+}
+
+// SendMFACodeEmail sends the one-time login verification code to a user.
+func (s *Service) SendMFACodeEmail(ctx context.Context, to, username, code string) error {
+	if !s.enabled {
+		s.logger.Warn("Email service is disabled",
+			"reason", "SMTP_HOST and SMTP_PORT must be configured",
+			"recipient", to)
+		return fmt.Errorf("email service is disabled: SMTP_HOST and SMTP_PORT must be configured")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	subject := "Your Lesstruct Login Verification Code"
+	body := s.generateMFACodeEmailBody(username, code, 5)
+
+	err := s.sendEmail(ctx, to, subject, body)
+	if err != nil {
+		s.logger.Error("Failed to send login verification code email",
+			"recipient", to,
+			"username", username,
+			"error", err)
+		return fmt.Errorf("failed to send login verification code email: %w", err)
+	}
+
+	s.logger.Info("Login verification code email sent successfully",
 		"recipient", to,
 		"username", username)
 

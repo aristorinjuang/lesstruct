@@ -81,13 +81,23 @@ func (s *Service) LoadConfigFromFile(path string) error {
 	return nil
 }
 
-// NewService creates a Service pre-loaded with default thumbnail config.
+// NewService creates a Service pre-loaded with the default thumbnail
+// config: the 64/280/616 trio the storefront is tuned for (gallery thumbs,
+// cards, gallery main). Operators override them with [[thumbnail]] blocks.
 func NewService() *Service {
 	return &Service{
 		configs: []ThumbnailConfig{
 			{
-				MaxWidth: 370,
+				MaxWidth: 64,
 				Suffix:   "_thumb",
+			},
+			{
+				MaxWidth: 280,
+				Suffix:   "_medium",
+			},
+			{
+				MaxWidth: 616,
+				Suffix:   "_large",
 			},
 		},
 	}

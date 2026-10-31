@@ -16,21 +16,6 @@ import (
 // module's reserved name; the two reconcile when that module lands.
 const adminRoleName = "Admin"
 
-// RoleCapabilities is the narrow role-registry seam this handler depends on.
-// Core satisfies it with an adapter over *role.Service (which cannot be
-// imported here); the users module implements it natively when it lands.
-type RoleCapabilities interface {
-	CanMedia(name string) bool
-}
-
-// discardLogger drops log lines. It backs the nil-logger fallback in
-// NewMediaHandler so the handler is safe to construct in any context.
-type discardLogger struct{}
-
-func (discardLogger) Info(string, ...any) {}
-
-func (discardLogger) Error(string, ...any) {}
-
 // authenticatedUserID reads the owning user id from the kernel principal the
 // Bearer middleware injects. It returns ok=false when no auth middleware ran
 // or the id is not a decimal int — a defensive case the handler maps to
@@ -87,6 +72,21 @@ func handleMediaError(w http.ResponseWriter, err error) {
 	}
 }
 
+// RoleCapabilities is the narrow role-registry seam this handler depends on.
+// Core satisfies it with an adapter over *role.Service (which cannot be
+// imported here); the users module implements it natively when it lands.
+type RoleCapabilities interface {
+	CanMedia(name string) bool
+}
+
+// discardLogger drops log lines. It backs the nil-logger fallback in
+// NewMediaHandler so the handler is safe to construct in any context.
+type discardLogger struct{}
+
+func (discardLogger) Info(string, ...any) {}
+
+func (discardLogger) Error(string, ...any) {}
+
 // MediaService is the narrow slice of the media domain service the agent handlers depend
 // on. *mediadomain.Service satisfies it. It is exported so mockery can generate an exported
 // constructor callable from the package's *_test files (CLAUDE.md mandates *_test packages,
@@ -95,6 +95,7 @@ type MediaService interface {
 	Upload(ctx context.Context, req mediadomain.UploadRequest) (*mediadomain.Media, error)
 	GetByID(ctx context.Context, id int) (*mediadomain.Media, error)
 	ListByCursor(ctx context.Context, userID int, limit int, beforeID int) ([]*mediadomain.Media, error)
+	Delete(ctx context.Context, id int, principal kernel.Principal) error
 }
 
 // MediaHandlerOption configures a MediaHandler. A role service makes the upload
@@ -263,6 +264,37 @@ func (h *MediaHandler) List(w http.ResponseWriter, r *http.Request) {
 		projections,
 		httpx.ListMeta{Pagination: httpx.Pagination{NextCursor: nextCursor, HasMore: hasMore}},
 	)
+}
+
+// Delete handles DELETE /api/v1/media/{id}. It mirrors the browser admin's
+// delete: the caller's role must manage media, then the domain deletes
+// (owner-or-admin — a non-owner gets 403, a ghost id 404). Success answers
+// 204 with no body.
+func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	principal, ok := kernel.PrincipalFromContext(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+	if !h.uploadAllowed(r) {
+		httpx.Error(w, http.StatusForbidden, "FORBIDDEN", "Your role cannot manage media", nil)
+		return
+	}
+
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid media ID", nil)
+		return
+	}
+
+	if err := h.mediaService.Delete(r.Context(), id, principal); err != nil {
+		h.logger.Error("agent delete media failed: id=%d err=%v", id, err)
+		handleMediaError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // NewMediaHandler constructs a MediaHandler backed by the given media service. A nil logger

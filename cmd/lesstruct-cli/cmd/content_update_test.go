@@ -286,29 +286,34 @@ func TestContentUpdate_ValidationErrorFromServer(t *testing.T) {
 	assert.Empty(t, out.String(), "no data on stdout for an error")
 }
 
-func TestContentUpdate_EmptyBodyExitsFive(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("server should not be called when body is empty")
-		_, _ = io.ReadAll(r.Body)
-		w.WriteHeader(http.StatusOK)
-	}))
+func TestContentUpdate_FlagsOnlyEditKeepsStoredBody(t *testing.T) {
+	// No body given: the stored body, title, and format carry forward, so a
+	// flags-only edit (here a retitle) works without resending content.
+	const storedExisting = `{"id":7,"title":"Original","body":"# Stored body","format":"tiptap","status":"published","postType":"post","tags":["x"],"language":"en"}`
+	var put requestInfo
+	srv := newPatchServer(t, storedExisting, &put)
 	defer srv.Close()
 
 	var out, errOut bytes.Buffer
 	code := cmd.ExecuteArgs(
-		[]string{"content", "update", "7", "--base-url", srv.URL, "--api-key", "k"},
+		[]string{"content", "update", "7", "--title", "Retitled", "--base-url", srv.URL, "--api-key", "k"},
 		strings.NewReader("   \n\n  "),
 		&out,
 		&errOut,
 	)
-	assert.Equal(t, 5, code)
-	assert.Contains(t, errOut.String(), "no markdown body provided")
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	assert.Equal(t, "# Stored body", put.payload["body"], "missing body resends the stored body")
+	assert.Equal(t, "tiptap", put.payload["format"], "missing body keeps the stored format")
+	assert.Equal(t, "Retitled", put.payload["title"], "explicit --title still wins")
+	assert.Contains(t, out.String(), "Updated content #7")
 }
 
-func TestContentUpdate_EmptyBodyFromFileExitsFive(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("server should not be called when --file is empty")
-	}))
+func TestContentUpdate_EmptyBodyFromFileKeepsStoredBody(t *testing.T) {
+	// An empty --file is the same as no body: flags-only edit against the
+	// stored content, not a validation error.
+	const storedExisting = `{"id":7,"title":"Original","body":"# Stored body","format":"tiptap","status":"draft","postType":"post","tags":[],"language":"en"}`
+	var put requestInfo
+	srv := newPatchServer(t, storedExisting, &put)
 	defer srv.Close()
 
 	dir := t.TempDir()
@@ -322,8 +327,98 @@ func TestContentUpdate_EmptyBodyFromFileExitsFive(t *testing.T) {
 		&out,
 		&errOut,
 	)
-	assert.Equal(t, 5, code)
-	assert.Contains(t, errOut.String(), "no markdown body provided")
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	assert.Equal(t, "# Stored body", put.payload["body"])
+	assert.Equal(t, "Original", put.payload["title"], "missing --title keeps the stored title")
+}
+
+func TestContentUpdate_FormatWithoutBodyIsUsageError(t *testing.T) {
+	// --format describes the incoming body; with no body there is nothing to
+	// apply it to, and silently applying it to the stored body would corrupt it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("server should not be called when --format has no body")
+	}))
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{"content", "update", "7", "--format", "html", "--base-url", srv.URL, "--api-key", "k"},
+		strings.NewReader(""),
+		&out,
+		&errOut,
+	)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut.String(), "--format needs a body")
+}
+
+func TestContentUpdate_FieldJSON(t *testing.T) {
+	t.Run("arrays survive the round trip", func(t *testing.T) {
+		var info requestInfo
+		srv := newCreateServer(t, http.StatusOK, updateSuccessEnvelope, &info)
+		defer srv.Close()
+
+		var out, errOut bytes.Buffer
+		code := cmd.ExecuteArgs(
+			[]string{
+				"content", "update", "7", "# Hi",
+				"--field-json", `gallery=[{"url":"/uploads/media/x.webp"}]`,
+				"--base-url", srv.URL, "--api-key", "k",
+			},
+			strings.NewReader(""),
+			&out,
+			&errOut,
+		)
+		require.Equal(t, 0, code, "stderr: %s", errOut)
+		fields, ok := info.payload["customFields"].(map[string]any)
+		require.True(t, ok, "customFields must be a JSON object on the wire")
+		gallery, ok := fields["gallery"].([]any)
+		require.True(t, ok, "gallery must arrive as an array, not a string")
+		require.Len(t, gallery, 1)
+	})
+
+	t.Run("invalid json is a usage error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Errorf("server should not be called for invalid --field-json")
+		}))
+		defer srv.Close()
+
+		var out, errOut bytes.Buffer
+		code := cmd.ExecuteArgs(
+			[]string{
+				"content", "update", "7", "# Hi",
+				"--field-json", "gallery=[{oops",
+				"--base-url", srv.URL, "--api-key", "k",
+			},
+			strings.NewReader(""),
+			&out,
+			&errOut,
+		)
+		assert.Equal(t, 5, code)
+		assert.Contains(t, errOut.String(), "not valid JSON")
+	})
+
+	t.Run("field-json wins over field on key conflict", func(t *testing.T) {
+		var info requestInfo
+		srv := newCreateServer(t, http.StatusOK, updateSuccessEnvelope, &info)
+		defer srv.Close()
+
+		var out, errOut bytes.Buffer
+		code := cmd.ExecuteArgs(
+			[]string{
+				"content", "update", "7", "# Hi",
+				"--field", "count=1",
+				"--field-json", "count=2",
+				"--base-url", srv.URL, "--api-key", "k",
+			},
+			strings.NewReader(""),
+			&out,
+			&errOut,
+		)
+		require.Equal(t, 0, code, "stderr: %s", errOut)
+		fields, ok := info.payload["customFields"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, float64(2), fields["count"])
+	})
 }
 
 func TestContentUpdate_InvalidOutputExitsTwo(t *testing.T) {

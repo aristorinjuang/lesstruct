@@ -12,8 +12,8 @@ import (
 	appmiddleware "github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
-	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -45,6 +45,7 @@ func TestAPIKeyAuthMiddleware_Handler(t *testing.T) {
 		ID:       userID,
 		Username: "alice",
 		Role:     "Editor",
+		Status:   "verified",
 	}
 
 	tests := []struct {
@@ -58,7 +59,7 @@ func TestAPIKeyAuthMiddleware_Handler(t *testing.T) {
 		wantBodyCode       string // expected error code substring ("" = skip)
 		wantNextCalled     bool
 		wantUserID         string
-		wantUpdateLastUsed bool // true → middleware MUST call UpdateLastUsed
+		wantUpdateLastUsed bool   // true → middleware MUST call UpdateLastUsed
 		disclosureTag      string // "malformed"/"wrongSecret" for byte-identity check
 	}{
 		{
@@ -142,6 +143,24 @@ func TestAPIKeyAuthMiddleware_Handler(t *testing.T) {
 			},
 			setupUser: func(u *mocks.MockUserLookup) {
 				u.EXPECT().GetUserByID(mock.Anything, userID).Return(nil, errors.New("user not found with ID 42"))
+			},
+			wantStatus:     http.StatusUnauthorized,
+			wantBodyCode:   "INVALID_API_KEY",
+			wantNextCalled: false,
+		},
+		{
+			name:   "soft-deleted owner - 401 INVALID_API_KEY, UpdateLastUsed not called",
+			header: "Bearer " + validToken,
+			setupVerifier: func(v *mocks.MockAPIKeyVerifier) {
+				v.EXPECT().Verify(mock.Anything, validToken).Return(verifiedKey, nil)
+			},
+			setupUser: func(u *mocks.MockUserLookup) {
+				u.EXPECT().GetUserByID(mock.Anything, userID).Return(&userdomain.User{
+					ID:       userID,
+					Username: "alice",
+					Role:     "Editor",
+					Status:   "soft_deleted",
+				}, nil)
 			},
 			wantStatus:     http.StatusUnauthorized,
 			wantBodyCode:   "INVALID_API_KEY",

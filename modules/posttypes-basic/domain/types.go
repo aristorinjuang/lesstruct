@@ -20,6 +20,10 @@ var (
 	ErrDuplicatePostType = errors.New("post type with this slug already exists")
 	// ErrPostTypeNotFound is returned when a post type is not found
 	ErrPostTypeNotFound = errors.New("post type not found")
+	// ErrInvalidPostTypeNameID is returned when the optional Indonesian name fails validation
+	ErrInvalidPostTypeNameID = errors.New("post type name_id must be between 1 and 200 characters when set")
+	// ErrInvalidPostTypeDescriptionID is returned when the optional Indonesian description fails validation
+	ErrInvalidPostTypeDescriptionID = errors.New("post type description_id must be at most 500 characters when set")
 )
 
 // SupportedFeatures returns the list of valid feature names
@@ -56,12 +60,14 @@ func (uf UserFields) Validate() error {
 
 // PostType represents a custom post type configuration
 type PostType struct {
-	Name         string                    `json:"name" toml:"name"`
-	Slug         string                    `json:"slug" toml:"slug"`
-	Description  string                    `json:"description,omitempty" toml:"description,omitempty"`
-	Supports     []string                  `json:"supports" toml:"supports"`
-	Fields       []customfield.FieldSchema `json:"fields,omitempty" toml:"fields,omitempty"`
-	SystemFields []customfield.FieldSchema `json:"systemFields,omitempty" toml:"system_fields,omitempty"`
+	Name          string                    `json:"name" toml:"name"`
+	Slug          string                    `json:"slug" toml:"slug"`
+	Description   string                    `json:"description,omitempty" toml:"description,omitempty"`
+	NameID        string                    `json:"name_id,omitempty" toml:"name_id,omitempty"`
+	DescriptionID string                    `json:"description_id,omitempty" toml:"description_id,omitempty"`
+	Supports      []string                  `json:"supports" toml:"supports"`
+	Fields        []customfield.FieldSchema `json:"fields,omitempty" toml:"fields,omitempty"`
+	SystemFields  []customfield.FieldSchema `json:"systemFields,omitempty" toml:"system_fields,omitempty"`
 	// Hidden hides the post type from the admin panel and the public post-type
 	// API. The type stays fully registered (content validation, templates, and
 	// the WordPress importer still resolve it) — hiding is presentation only.
@@ -81,6 +87,14 @@ func Validate(pt PostType) error {
 	}
 
 	if err := ValidateSupports(pt.Supports); err != nil {
+		return err
+	}
+
+	if err := ValidateNameID(pt.NameID); err != nil {
+		return err
+	}
+
+	if err := ValidateDescriptionID(pt.DescriptionID); err != nil {
 		return err
 	}
 
@@ -148,5 +162,32 @@ func ValidateSupports(supports []string) error {
 		}
 	}
 
+	return nil
+}
+
+// ValidateNameID validates the optional Indonesian name override. Empty is
+// allowed (falls back to Name); when set it must be 1-200 characters.
+func ValidateNameID(nameID string) error {
+	trimmed := strings.TrimSpace(nameID)
+	if trimmed == "" {
+		return nil
+	}
+	if utf8.RuneCountInString(trimmed) > 200 {
+		return ErrInvalidPostTypeNameID
+	}
+	return nil
+}
+
+// ValidateDescriptionID validates the optional Indonesian description override.
+// Empty is allowed (falls back to Description); when set it must be at most
+// 500 characters.
+func ValidateDescriptionID(descriptionID string) error {
+	trimmed := strings.TrimSpace(descriptionID)
+	if trimmed == "" {
+		return nil
+	}
+	if utf8.RuneCountInString(trimmed) > 500 {
+		return ErrInvalidPostTypeDescriptionID
+	}
 	return nil
 }

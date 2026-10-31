@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
+	"github.com/aristorinjuang/lesstruct/internal/plugin/loader"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/registry"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/runtime"
 	"github.com/stretchr/testify/assert"
@@ -55,10 +56,12 @@ func TestDiscoverHooksIntegration(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		plg := plugin.Plugin{
-			Name:   "memory-plugin",
+		plg := loader.LoadedPlugin{
+			Plugin: plugin.Plugin{
+				Name:   "memory-plugin",
+				Status: plugin.StatusLoaded,
+			},
 			Module: mod,
-			Status: plugin.StatusLoaded,
 		}
 
 		reg := registry.NewRegistry(nil)
@@ -90,10 +93,12 @@ func TestDiscoverHooksIntegration(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		plg := plugin.Plugin{
-			Name:   "immutable-plugin",
+		plg := loader.LoadedPlugin{
+			Plugin: plugin.Plugin{
+				Name:   "immutable-plugin",
+				Status: plugin.StatusLoaded,
+			},
 			Module: mod,
-			Status: plugin.StatusLoaded,
 		}
 
 		reg := registry.NewRegistry(nil)
@@ -125,10 +130,12 @@ func TestDiscoverHooksIntegration(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		plg := plugin.Plugin{
-			Name:   "isolation-plugin",
+		plg := loader.LoadedPlugin{
+			Plugin: plugin.Plugin{
+				Name:   "isolation-plugin",
+				Status: plugin.StatusLoaded,
+			},
 			Module: mod,
-			Status: plugin.StatusLoaded,
 		}
 
 		reg := registry.NewRegistry(nil)
@@ -164,10 +171,12 @@ func TestDiscoverHooksIntegration(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		plg := plugin.Plugin{
-			Name:   "large-payload-plugin",
+		plg := loader.LoadedPlugin{
+			Plugin: plugin.Plugin{
+				Name:   "large-payload-plugin",
+				Status: plugin.StatusLoaded,
+			},
 			Module: mod,
-			Status: plugin.StatusLoaded,
 		}
 
 		reg := registry.NewRegistry(nil)
@@ -201,10 +210,12 @@ func TestDiscoverHooksIntegration(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		plg := plugin.Plugin{
-			Name:   "zero-return-plugin",
+		plg := loader.LoadedPlugin{
+			Plugin: plugin.Plugin{
+				Name:   "zero-return-plugin",
+				Status: plugin.StatusLoaded,
+			},
 			Module: mod,
-			Status: plugin.StatusLoaded,
 		}
 
 		reg := registry.NewRegistry(nil)

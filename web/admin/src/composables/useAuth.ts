@@ -1,171 +1,158 @@
 import { ref, computed } from 'vue'
+import request from '@/utils/request'
 
-interface JwtPayload {
-  sub?: string
-  user_id?: string | number
-  exp?: number
-  iat?: number
+export interface SessionUser {
+  id: string | number
+  username: string
+  role: string
 }
 
-/**
- * Parse JWT token without external library
- * @param token JWT token string
- * @returns Decoded payload or null if invalid
- */
-function parseJwt(token: string): JwtPayload | null {
-  try {
-    const base64Url = token.split('.')[1]
-    if (!base64Url) {
-      return null
-    }
+// Legacy browser-session keys. The session now lives in the HttpOnly
+// `lesstruct_jwt` cookie, so any JWT readable from script storage is stale —
+// purge it on boot so a past XSS-readable token dies on first load.
+const LEGACY_SESSION_KEYS = [
+  'lesstruct_admin_token',
+  'lesstruct_admin_role',
+  'auth_token',
+  'token',
+  'user_role',
+]
 
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    )
-
-    return JSON.parse(jsonPayload) as JwtPayload
-  } catch {
-    return null
+if (typeof localStorage !== 'undefined') {
+  for (const key of LEGACY_SESSION_KEYS) {
+    localStorage.removeItem(key)
   }
 }
 
-/**
- * Check if token is expired
- * @param payload Decoded JWT payload
- * @returns true if token is expired or will expire in less than 1 minute
- */
-function isTokenExpired(payload: JwtPayload): boolean {
-  if (!payload.exp) {
-    return false
-  }
+// Shared reactive session state — persists across all useAuth() calls.
+// The identity is hydrated from /api/profile (cookie-authenticated), never
+// parsed from a token.
+const currentUser = ref<SessionUser | null>(null)
+const sessionLoaded = ref(false)
 
-  const now = Math.floor(Date.now() / 1000)
-  const expiresInSeconds = payload.exp - now
+// In-flight profile probe shared by concurrent guard calls so one navigation
+// burst issues exactly one request.
+let sessionPromise: Promise<SessionUser | null> | null = null
 
-  // Consider token expired if less than 1 minute remaining
-  return expiresInSeconds < 60
-}
+// Cross-tab session sync. The session itself lives in the HttpOnly cookie,
+// which no tab can read — so tabs coordinate through a storage event instead:
+// any login or logout writes this key, and every other tab drops its cached
+// identity and re-probes on next use. The value is just a timestamp; it
+// carries no session data.
+const SESSION_EVENT_KEY = 'lesstruct_session_event'
 
-// Shared reactive token state — persists across all useAuth() calls
-const token = ref<string | null>(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
-)
-
-// Shared reactive user role state
-const userRole = ref<string | null>(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('user_role') : null
-)
-
-// Listen for storage changes from other tabs/windows
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (event) => {
-    if (event.key === 'auth_token') {
-      token.value = event.newValue
-    }
-    if (event.key === 'user_role') {
-      userRole.value = event.newValue
+    if (event.key === SESSION_EVENT_KEY) {
+      currentUser.value = null
+      sessionLoaded.value = false
     }
   })
 }
 
-export function setAuthToken(newToken: string | null) {
-  if (newToken === null) {
-    localStorage.removeItem('auth_token')
-  } else {
-    localStorage.setItem('auth_token', newToken)
+function broadcastSessionChange() {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(SESSION_EVENT_KEY, String(Date.now()))
+    } catch {
+      // Storage unavailable: cross-tab sync is best-effort only.
+    }
   }
-  token.value = newToken
 }
 
-export function setUserRole(role: string | null) {
-  if (role === null) {
-    localStorage.removeItem('user_role')
-  } else {
-    localStorage.setItem('user_role', role)
-  }
-  userRole.value = role
+export function setSession(user: SessionUser | null) {
+  currentUser.value = user
+  sessionLoaded.value = true
+  broadcastSessionChange()
 }
 
 export function clearAuth() {
-  setAuthToken(null)
-  setUserRole(null)
+  currentUser.value = null
+  // Forget the probe result too: the next guard re-probes the server, so a
+  // failed server logout (cookie still alive) re-discovers the session
+  // instead of showing a stale signed-out UI.
+  sessionLoaded.value = false
+  broadcastSessionChange()
+}
+
+async function loadSession(): Promise<SessionUser | null> {
+  try {
+    const response = await request.get<{
+      data: { profile: { id: string | number; username: string; role: string } }
+    }>('/api/profile')
+    const profile = response.data?.data?.profile
+    if (profile && profile.username && profile.role) {
+      currentUser.value = { id: profile.id, username: profile.username, role: profile.role }
+    } else {
+      currentUser.value = null
+    }
+    sessionLoaded.value = true
+  } catch (err) {
+    currentUser.value = null
+    // A 401 definitively means "no session" — cache it like a success so
+    // anonymous browsing doesn't probe on every navigation. Any other
+    // failure is transient: stay unloaded so the next navigation retries
+    // instead of showing a signed-out UI for a live session.
+    if ((err as { statusCode?: unknown } | null | undefined)?.statusCode === 401) {
+      sessionLoaded.value = true
+    }
+  }
+  return currentUser.value
+}
+
+export function refreshSession(): Promise<SessionUser | null> {
+  if (sessionLoaded.value) {
+    return Promise.resolve(currentUser.value)
+  }
+  if (sessionPromise) {
+    return sessionPromise
+  }
+  sessionPromise = loadSession().finally(() => {
+    sessionPromise = null
+  })
+  return sessionPromise
 }
 
 export function useAuth() {
-  const payload = computed(() => {
-    if (!token.value) {
-      return null
-    }
-    return parseJwt(token.value)
-  })
+  const userId = computed(() => currentUser.value?.id ?? null)
 
-  const userId = computed(() => {
-    if (!payload.value) {
-      return null
-    }
+  const isAuthenticated = computed(() => currentUser.value !== null)
 
-    // Try user_id first, then sub (subject)
-    const userIdValue = payload.value.user_id ?? payload.value.sub ?? null
-
-    if (userIdValue === null) {
-      return null
-    }
-
-    // Parse user_id as integer if it's a fully numeric string, otherwise return as-is
-    if (typeof userIdValue === 'string') {
-      const parsed = Number(userIdValue)
-      return isFinite(parsed) && String(parsed) === userIdValue ? parsed : userIdValue
-    }
-
-    return userIdValue
-  })
-
-  const isAuthenticated = computed(() => {
-    if (!token.value || !payload.value) {
-      return false
-    }
-
-    return !isTokenExpired(payload.value)
-  })
-
-  const isTokenExpiredValue = computed(() => {
-    if (!payload.value) {
-      return true
-    }
-    return isTokenExpired(payload.value)
-  })
-
-  const role = computed(() => userRole.value)
+  const role = computed(() => currentUser.value?.role ?? null)
 
   return {
-    token,
-    payload,
+    user: currentUser,
     userId,
     isAuthenticated,
-    isTokenExpired: isTokenExpiredValue,
     role,
+    sessionLoaded,
   }
 }
 
 /**
- * Get authentication status without reactivity
- * Useful for router guards where computed values aren't available
- * @returns true if authenticated with a valid non-expired token
+ * Get the stored session role without reactivity, for router guards.
+ * Only meaningful after refreshSession() has resolved.
  */
-export function getAuthStatus(): boolean {
-  const currentToken = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
-  if (!currentToken) {
-    return false
-  }
+export function getSessionRole(): string | null {
+  return currentUser.value?.role ?? null
+}
 
-  const payload = parseJwt(currentToken)
-  if (!payload) {
-    return false
-  }
+/**
+ * Roles allowed to boot the admin SPA. A storefront session (e.g. a
+ * Commentator from the shop) shares the same session cookie but must not
+ * boot the admin shell: the router bounces it to the login view with a
+ * message.
+ */
+export const ADMIN_BOOT_ROLES = new Set(['Admin', 'Contributor', 'Commentator'])
 
-  return !isTokenExpired(payload)
+/**
+ * Landing page for a role after login and for role-blind redirects (root,
+ * unknown URLs, login visits). Admins get the dashboard, Commentators get
+ * their profile — they manage no content and may not need the comment
+ * system — and every other role keeps the content list.
+ */
+export function homePathFor(role: string | null | undefined): string {
+  if (role === 'Admin') return '/dashboard'
+  if (role === 'Commentator') return '/profile'
+  return '/content?type=post'
 }

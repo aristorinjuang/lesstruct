@@ -2,13 +2,13 @@
 <div class="tag-page container">
 	<h1>#{{.TagName}}</h1>
 	<div class="posts-grid">
-		{{- range .Posts}}
-		<article class="post-card" data-post-type="{{.PostType}}">
-			<a href="/{{.Slug}}">
-				{{- if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
-				<h2>{{.Title}}</h2>
-				{{- if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
-				<time>{{formatDate $.Lang .CreatedAt}}</time>
+		{{- range $i, $post := .Posts}}
+		<article class="post-card" data-post-type="{{$post.PostType}}">
+			<a href="/{{$post.Slug}}">
+				{{- if $post.ImageURL}}<img src="{{$post.ImageURL}}"{{if $post.ImageSrcset}} srcset="{{$post.ImageSrcset}}" sizes="{{$post.ImageSizes}}"{{end}} alt="{{$post.Title}}" class="post-card__image"{{if eq $i 0}} loading="eager" fetchpriority="high"{{else}} loading="lazy"{{end}}>{{end}}
+				<h2>{{$post.Title}}</h2>
+				{{- if $post.MetaDescription}}<p>{{$post.MetaDescription}}</p>{{end}}
+				<time>{{formatDate $.Lang $post.CreatedAt}}</time>
 			</a>
 		</article>
 		{{- else}}

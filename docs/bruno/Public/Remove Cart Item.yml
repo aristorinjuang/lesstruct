@@ -1,0 +1,19 @@
+info:
+  name: Remove Cart Item
+  type: http
+  seq: 5
+
+http:
+  method: DELETE
+  url: "{{BASE_URL}}/api/v1/public/cart/items/{{CART_ITEM_ID}}"
+  headers:
+    - name: X-Cart-Token
+      value: "{{CART_TOKEN}}"
+      disabled: false
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -95,3 +95,31 @@ func TestContentSystemFields_InvalidIDIsValidationExit(t *testing.T) {
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, errOut.String(), "invalid content id")
 }
+
+func TestContentSystemFields_FieldJSON(t *testing.T) {
+	// --field-json carries values --field cannot express; it wins on key conflict.
+	var info requestInfo
+	srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{
+			"content", "system-fields", "7",
+			"--field", "priority=5",
+			"--field-json", `priority=7`,
+			"--field-json", `allowed=["a","b"]`,
+			"--base-url", srv.URL, "--api-key", "k",
+		},
+		strings.NewReader(""),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	systemFields, ok := info.payload["systemFields"].(map[string]any)
+	require.True(t, ok, "payload must wrap fields under systemFields, got %v", info.payload)
+	assert.Equal(t, float64(7), systemFields["priority"], "--field-json wins on key conflict")
+	allowed, ok := systemFields["allowed"].([]any)
+	require.True(t, ok, "array must arrive as an array, not a string")
+	assert.Equal(t, []any{"a", "b"}, allowed)
+}

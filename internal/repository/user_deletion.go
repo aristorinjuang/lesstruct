@@ -60,7 +60,7 @@ func (r *UserDeletionRepository) DeleteAllUserData(ctx context.Context, userID i
 	}
 
 	// Delete user media (placeholder for future functionality)
-	if _, err = tx.ExecContext(ctx, `DELETE FROM media_files WHERE uploaded_by_user_id = ?`, userID); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM media_files WHERE user_id = ?`, userID); err != nil {
 		// Table may not exist yet; ignore error for placeholder
 		_ = err
 	}

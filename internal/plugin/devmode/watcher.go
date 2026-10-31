@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/loader"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/registry"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/runtime"
@@ -28,7 +27,7 @@ type Watcher struct {
 	rt         runtime.Runtime
 	pluginsDir string
 	logger     func(string)
-	plugins    map[string]*plugin.Plugin
+	plugins    map[string]*loader.LoadedPlugin
 	mu         sync.Mutex
 	fswatcher  *fsnotify.Watcher
 	done       chan struct{}
@@ -216,6 +215,6 @@ func NewWatcher(
 		rt:         rt,
 		pluginsDir: pluginsDir,
 		logger:     logger,
-		plugins:    make(map[string]*plugin.Plugin),
+		plugins:    make(map[string]*loader.LoadedPlugin),
 	}
 }

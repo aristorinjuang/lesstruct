@@ -1,0 +1,24 @@
+info:
+  name: Update Invoice Settings
+  type: http
+  seq: 7
+
+http:
+  method: PUT
+  url: "{{BASE_URL}}/api/v1/orders/invoice-settings"
+  body:
+    type: json
+    data: |-
+      {
+        "sellerName": "PT Lesstruct Demo",
+        "sellerAddress": "Jl. Example No. 1, Jakarta",
+        "sellerTaxId": "01.234.567.8-901.234",
+        "taxRate": 12
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

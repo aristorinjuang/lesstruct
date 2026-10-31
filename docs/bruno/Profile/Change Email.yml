@@ -13,9 +13,7 @@ http:
         "newEmail": "{{USER_EMAIL}}",
         "currentPassword": "{{USER_PASSWORD}}"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

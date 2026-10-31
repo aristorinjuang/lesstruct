@@ -12,9 +12,7 @@ http:
       {
         "status": "approved"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

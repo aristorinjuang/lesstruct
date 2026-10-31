@@ -25,9 +25,30 @@ Make sure a Lesstruct instance with sample content is running at the URL in
 make screenshots             # runs scripts/screenshots/capture.mjs
 ```
 
+To capture only some scenes (leaving the other committed screenshots
+untouched), pass a filter — useful when adding scenes against a demo whose
+other content differs from the committed shots:
+
+```bash
+cd scripts/screenshots && node capture.mjs --only=orders,payments
+```
+
 Every scene is captured in both light and dark (except `og-card`, a single
-image). Output is written to `site/static/screenshots/` and, for scenes flagged
-`readme: true`, mirrored to `docs/assets/screenshots/`.
+image). Playwright emits PNGs; the script converts each one to WebP
+(`convert.mjs`, quality 82) and deletes the PNG. The exception is `og-card`,
+which stays PNG because link-preview scrapers handle it most reliably. Output
+is written to `site/static/screenshots/` and, for scenes flagged `readme: true`,
+mirrored to `docs/assets/screenshots/`.
+
+To convert screenshots that were captured before the WebP pipeline without
+re-running a live instance:
+
+```bash
+cd scripts/screenshots && node convert.mjs
+```
+
+It batch-converts every PNG under both screenshot directories (except
+`og-card.png`) and removes the source PNGs.
 
 ## Adding a scene
 
@@ -53,17 +74,19 @@ Then reference it in a docs page with the `screenshot` shortcode:
 {{< screenshot src="my-scene" alt="..." caption="..." >}}
 ```
 
-The shortcode fails the docs build if the light PNG is missing, so a referenced
-but uncaptured scene cannot ship by accident. When a `-dark.png` is also present
+The shortcode fails the docs build if the light WebP is missing, so a referenced
+but uncaptured scene cannot ship by accident. When a `-dark.webp` is also present
 the shortcode emits a `<picture>` with a dark variant; when it is absent (the
 content site's default theme is light-only) it emits a plain `<img>`. Set
 `lightOnly: true` on a scene to capture light only.
 
 ## How it works
 
-- **Auth.** Logs into the admin SPA once (`/admin/login`) and persists the
-  storage state (cookies + localStorage JWT) to `.auth/admin.json`, which is
-  deleted at the end of the run. The JWT is never written anywhere else.
+- **Auth.** Logs into the admin SPA once (`/admin/login`) — completing the
+  emailed-code second step by polling the Mailtrap Email Sandbox configured
+  in `.env.local` — and persists the
+  storage state (session cookie) to `.auth/admin.json`, which is
+  deleted at the end of the run. The session never touches script storage.
 - **Color schemes.** Emulates `prefers-color-scheme` per context. For the admin
   SPA, an init script sets `localStorage['lesstruct-theme'] = 'system'` so the
   app's theme follows the emulated scheme; the content site responds to the CSS
@@ -77,7 +100,7 @@ content site's default theme is light-only) it emits a plain `<img>`. Set
 
 ## Version pin
 
-The captured PNGs record whatever the running instance renders. When the admin
-UI or default theme changes meaningfully, re-run `make screenshots` against an
-up-to-date instance and commit the new PNGs in the same change as the docs
-update (per `AGENTS.md`).
+The captured screenshots record whatever the running instance renders. When the
+admin UI or default theme changes meaningfully, re-run `make screenshots`
+against an up-to-date instance and commit the new WebP files in the same change
+as the docs update (per `AGENTS.md`).

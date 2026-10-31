@@ -90,10 +90,22 @@ type RoleCapabilities interface {
 
 // Handler handles post type HTTP requests.
 type Handler struct {
-	postTypeService PostTypeServiceInterface
-	commentsEnabled bool
-	resolve         kernel.CapabilityResolver
-	roles           RoleCapabilities
+	postTypeService     PostTypeServiceInterface
+	commentsEnabled     bool
+	registrationEnabled *bool
+	resolve             kernel.CapabilityResolver
+	roles               RoleCapabilities
+}
+
+// commentatorAllowed reports whether the Commentator role may be assigned:
+// it requires the comment system and self-registration both enabled. An
+// unset registration override defaults to the comments flag, preserving
+// the legacy coupling shared with the users module.
+func (h *Handler) commentatorAllowed() bool {
+	if h.registrationEnabled != nil {
+		return h.commentsEnabled && *h.registrationEnabled
+	}
+	return h.commentsEnabled
 }
 
 // listPostTypes returns the registered post types. Hidden is a presentation
@@ -156,6 +168,8 @@ func (h *Handler) GetPostTypes(w http.ResponseWriter, r *http.Request) {
 // editor and navigation should surface). Requires roles; when the module was
 // built without them it returns 404, mirroring the fail-closed stance of the
 // config-driven role feature. Served here until the users module takes it over.
+// The Commentator entry is filtered on the same predicate the users module
+// gates admin creation with (comments and registration both enabled).
 func (h *Handler) GetRoles(w http.ResponseWriter, r *http.Request) {
 	if h.roles == nil {
 		httpx.Error(w, http.StatusNotFound, "roles_unavailable", "Role registry is not configured", nil)
@@ -171,8 +185,12 @@ func (h *Handler) GetRoles(w http.ResponseWriter, r *http.Request) {
 		allSlugs = append(allSlugs, pt.Slug)
 	}
 
+	allowCommentator := h.commentatorAllowed()
 	roles := make([]roleDTO, 0, len(h.roles.GetAll()))
 	for _, rl := range h.roles.GetAll() {
+		if rl.Name == "Commentator" && !allowCommentator {
+			continue
+		}
 		roles = append(roles, roleDTO(rl))
 	}
 
@@ -213,6 +231,13 @@ func (h *Handler) GetUserFieldsEndpoint(w http.ResponseWriter, r *http.Request) 
 		"fields":       h.postTypeService.GetUserFields(),
 		"systemFields": h.postTypeService.GetUserSystemFields(),
 	}, false)
+}
+
+// SetRegistrationEnabled adopts the registration gate consulted for the
+// Commentator role in GetRoles. When unset it defaults to the comments
+// flag, preserving the legacy coupling.
+func (h *Handler) SetRegistrationEnabled(enabled bool) {
+	h.registrationEnabled = &enabled
 }
 
 // New builds a Handler. A nil resolver disables role scoping (legacy

@@ -6,9 +6,7 @@ info:
 http:
   method: GET
   url: "{{BASE_URL}}/api/profile/user-fields"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

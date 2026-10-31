@@ -1,0 +1,23 @@
+info:
+  name: Set Order Shipping (Agent)
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/orders/{{ORDER_ID}}/shipping"
+  body:
+    type: json
+    data: |-
+      {
+        "amount": 15000
+      }
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

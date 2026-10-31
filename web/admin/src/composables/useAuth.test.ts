@@ -1,7 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { defineComponent, h, nextTick } from 'vue'
-import { useAuth, setAuthToken, getAuthStatus } from './useAuth'
+import { defineComponent, h } from 'vue'
+import {
+  useAuth,
+  setSession,
+  clearAuth,
+  refreshSession,
+  getSessionRole,
+  ADMIN_BOOT_ROLES,
+  homePathFor,
+} from './useAuth'
+import request from '@/utils/request'
+
+vi.mock('@/utils/request', () => ({
+  default: {
+    get: vi.fn(),
+    post: vi.fn(),
+  },
+}))
 
 // Helper component to test composable in proper Vue context
 const TestComponent = defineComponent({
@@ -14,24 +30,18 @@ const TestComponent = defineComponent({
   },
 })
 
-function base64UrlEncode(str: string): string {
-  return btoa(str)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '')
-}
-
-function createToken(payload: Record<string, unknown>): string {
-  const header = { alg: 'HS256', typ: 'JWT' }
-  return `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(payload))}.signature`
-}
-
-const now = Math.floor(Date.now() / 1000)
+const profileResponse = (role = 'Admin') => ({
+  data: {
+    data: {
+      profile: { id: 1, username: 'admin', role },
+    },
+  },
+})
 
 describe('useAuth', () => {
   beforeEach(() => {
     localStorage.clear()
-    setAuthToken(null)
+    clearAuth()
     vi.clearAllMocks()
   })
 
@@ -39,201 +49,158 @@ describe('useAuth', () => {
     return mount(TestComponent)
   }
 
-  describe('JWT parsing with string user_id', () => {
-    it('should parse numeric user_id from a fake JWT-shaped string', () => {
-      // Fake JWT-shaped string used only to exercise the parser.
-      // Signature is literally the string 'test' — not a signed token.
-      const fakeBackendTokenLikeShape = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6IkFkbWluIiwiaWF0IjoxNzE0NTk2MDAwLCJleHAiOjE3MTQ2ODE2MDB9.test'
+  describe('script-readable storage', () => {
+    it('never stores the session in localStorage', () => {
+      setSession({ id: 1, username: 'admin', role: 'Admin' })
 
-      localStorage.setItem('auth_token', fakeBackendTokenLikeShape)
-      setAuthToken(fakeBackendTokenLikeShape)
-
-      const wrapper = mountTestComponent()
-
-      expect(wrapper.vm.auth.userId.value).toBe(1)
-    })
-
-    it('should handle string user_id in JWT payload', () => {
-      const token = createToken({
-        user_id: '123',
-        username: 'testuser',
-        role: 'Admin',
-        iat: now,
-        exp: now + 3600,
-      })
-
-      setAuthToken(token)
-      const wrapper = mountTestComponent()
-
-      expect(wrapper.vm.auth.userId.value).toBe(123)
-    })
-
-    it('should handle numeric user_id in JWT payload', () => {
-      const token = createToken({
-        user_id: 456,
-        username: 'testuser',
-        role: 'Admin',
-        iat: now,
-        exp: now + 3600,
-      })
-
-      setAuthToken(token)
-      const wrapper = mountTestComponent()
-
-      expect(wrapper.vm.auth.userId.value).toBe(456)
-    })
-
-    it('should not silently truncate mixed alphanumeric strings', () => {
-      const token = createToken({
-        user_id: '1abc',
-        username: 'testuser',
-        role: 'Admin',
-        iat: now,
-        exp: now + 3600,
-      })
-
-      setAuthToken(token)
-      const wrapper = mountTestComponent()
-
-      // Should return original string, not truncated number
-      expect(wrapper.vm.auth.userId.value).toBe('1abc')
-    })
-
-    it('should fallback to sub when user_id is not present', () => {
-      const token = createToken({
-        sub: '789',
-        username: 'testuser',
-        role: 'Admin',
-        iat: now,
-        exp: now + 3600,
-      })
-
-      setAuthToken(token)
-      const wrapper = mountTestComponent()
-
-      expect(wrapper.vm.auth.userId.value).toBe(789)
-    })
-
-    it('should return null when neither user_id nor sub is present', () => {
-      const token = createToken({
-        username: 'testuser',
-        role: 'Admin',
-        iat: now,
-        exp: now + 3600,
-      })
-
-      setAuthToken(token)
-      const wrapper = mountTestComponent()
-
-      expect(wrapper.vm.auth.userId.value).toBeNull()
+      expect(localStorage.getItem('lesstruct_admin_token')).toBeNull()
+      expect(localStorage.getItem('lesstruct_admin_role')).toBeNull()
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('token')).toBeNull()
+      expect(localStorage.getItem('user_role')).toBeNull()
     })
   })
 
-  describe('token expiration', () => {
-    it('should return false for isAuthenticated when token is expired', () => {
-      const token = createToken({
-        user_id: '1',
-        username: 'testuser',
-        iat: now - 7200,
-        exp: now - 3600,
-      })
-
-      setAuthToken(token)
+  describe('session state', () => {
+    it('starts unauthenticated without a session', () => {
       const wrapper = mountTestComponent()
 
       expect(wrapper.vm.auth.isAuthenticated.value).toBe(false)
+      expect(wrapper.vm.auth.userId.value).toBeNull()
+      expect(wrapper.vm.auth.role.value).toBeNull()
     })
 
-    it('should return true for isAuthenticated when token is valid', () => {
-      const token = createToken({
-        user_id: '1',
-        username: 'testuser',
-        iat: now,
-        exp: now + 3600,
-      })
-
-      setAuthToken(token)
+    it('derives identity from the session set at login', () => {
+      setSession({ id: 1, username: 'admin', role: 'Admin' })
       const wrapper = mountTestComponent()
 
       expect(wrapper.vm.auth.isAuthenticated.value).toBe(true)
+      expect(wrapper.vm.auth.userId.value).toBe(1)
+      expect(wrapper.vm.auth.role.value).toBe('Admin')
     })
 
-    it('should consider token expired if less than 1 minute remaining', () => {
-      const token = createToken({
-        user_id: '1',
-        username: 'testuser',
-        iat: now,
-        exp: now + 30,
-      })
-
-      setAuthToken(token)
+    it('clears the session on logout', () => {
+      setSession({ id: 1, username: 'admin', role: 'Admin' })
+      clearAuth()
       const wrapper = mountTestComponent()
 
       expect(wrapper.vm.auth.isAuthenticated.value).toBe(false)
+      expect(wrapper.vm.auth.role.value).toBeNull()
+    })
+
+    it('exposes the role for guards', () => {
+      setSession({ id: '7', username: 'alice', role: 'Contributor' })
+
+      expect(getSessionRole()).toBe('Contributor')
     })
   })
 
-  describe('setAuthToken', () => {
-    it('should store token in localStorage', () => {
-      const token = 'test-token'
-      setAuthToken(token)
+  describe('refreshSession', () => {
+    it('hydrates the session from the profile probe', async () => {
+      vi.mocked(request.get).mockResolvedValue(profileResponse())
 
-      expect(localStorage.getItem('auth_token')).toBe(token)
-    })
+      const user = await refreshSession()
 
-    it('should remove token from localStorage when passed null', () => {
-      localStorage.setItem('auth_token', 'test-token')
-      setAuthToken(null)
+      expect(request.get).toHaveBeenCalledWith('/api/profile')
+      expect(user).toMatchObject({ username: 'admin', role: 'Admin' })
 
-      expect(localStorage.getItem('auth_token')).toBeNull()
-    })
-  })
-
-  describe('getAuthStatus', () => {
-    it('should return false when no token exists', () => {
-      expect(getAuthStatus()).toBe(false)
-    })
-
-    it('should return true for valid token', () => {
-      const token = createToken({
-        user_id: '1',
-        username: 'testuser',
-        iat: now,
-        exp: now + 3600,
-      })
-
-      localStorage.setItem('auth_token', token)
-
-      expect(getAuthStatus()).toBe(true)
-    })
-
-    it('should return false for expired token', () => {
-      const token = createToken({
-        user_id: '1',
-        username: 'testuser',
-        iat: now - 7200,
-        exp: now - 3600,
-      })
-
-      localStorage.setItem('auth_token', token)
-
-      expect(getAuthStatus()).toBe(false)
-    })
-  })
-
-  describe('storage event listener', () => {
-    it('should update token when storage changes from another tab', async () => {
       const wrapper = mountTestComponent()
+      expect(wrapper.vm.auth.isAuthenticated.value).toBe(true)
+    })
 
-      expect(wrapper.vm.auth.token.value).toBeNull()
+    it('resolves to null when the probe is unauthorized', async () => {
+      vi.mocked(request.get).mockRejectedValue(new Error('Unauthorized'))
 
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: 'auth_token',
-        newValue: 'new-token',
-      }))
+      const user = await refreshSession()
 
-      await nextTick()
-      expect(wrapper.vm.auth.token.value).toBe('new-token')
+      expect(user).toBeNull()
+
+      const wrapper = mountTestComponent()
+      expect(wrapper.vm.auth.isAuthenticated.value).toBe(false)
+    })
+
+    it('reuses a loaded session without probing again', async () => {
+      vi.mocked(request.get).mockResolvedValue(profileResponse())
+      await refreshSession()
+      vi.mocked(request.get).mockClear()
+
+      const user = await refreshSession()
+
+      expect(request.get).not.toHaveBeenCalled()
+      expect(user).toMatchObject({ username: 'admin' })
+    })
+
+    it('retries after a transient probe failure', async () => {
+      vi.mocked(request.get).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      vi.mocked(request.get).mockResolvedValue(profileResponse())
+
+      expect(await refreshSession()).toBeNull()
+
+      const user = await refreshSession()
+
+      expect(request.get).toHaveBeenCalledTimes(2)
+      expect(user).toMatchObject({ username: 'admin' })
+    })
+
+    it('caches a definitive 401 without probing again', async () => {
+      vi.mocked(request.get).mockRejectedValue({ statusCode: 401 })
+
+      expect(await refreshSession()).toBeNull()
+      expect(await refreshSession()).toBeNull()
+
+      expect(request.get).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('cross-tab sync', () => {
+    it('broadcasts login and logout for other tabs', async () => {
+      const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+      setSession({ id: 1, username: 'admin', role: 'Admin' })
+      expect(setItem).toHaveBeenCalledWith('lesstruct_session_event', expect.any(String))
+
+      clearAuth()
+      expect(setItem).toHaveBeenCalledTimes(2)
+    })
+
+    it('drops the cached session when another tab changes it', async () => {
+      vi.mocked(request.get).mockResolvedValue(profileResponse())
+      await refreshSession()
+
+      window.dispatchEvent(new StorageEvent('storage', { key: 'lesstruct_session_event' }))
+
+      const wrapper = mountTestComponent()
+      expect(wrapper.vm.auth.isAuthenticated.value).toBe(false)
+
+      vi.mocked(request.get).mockClear()
+      await refreshSession()
+      expect(request.get).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('ADMIN_BOOT_ROLES', () => {
+    it('admits the staff roles', () => {
+      expect(ADMIN_BOOT_ROLES.has('Admin')).toBe(true)
+      expect(ADMIN_BOOT_ROLES.has('Contributor')).toBe(true)
+      expect(ADMIN_BOOT_ROLES.has('Commentator')).toBe(true)
+    })
+  })
+
+  describe('homePathFor', () => {
+    it('sends admins to the dashboard', () => {
+      expect(homePathFor('Admin')).toBe('/dashboard')
+    })
+
+    it('sends commentators to their profile', () => {
+      expect(homePathFor('Commentator')).toBe('/profile')
+    })
+
+    it('sends content roles to the content list', () => {
+      expect(homePathFor('Contributor')).toBe('/content?type=post')
+    })
+
+    it('falls back to the content list for unknown roles', () => {
+      expect(homePathFor('Journalist')).toBe('/content?type=post')
     })
   })
 })

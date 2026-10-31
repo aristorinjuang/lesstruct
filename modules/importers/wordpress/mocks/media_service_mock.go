@@ -7,7 +7,8 @@ package mocks
 import (
 	"context"
 
-	media "github.com/aristorinjuang/lesstruct/modules/media/domain"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	"github.com/aristorinjuang/lesstruct/modules/media/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +18,19 @@ func newMockmediaService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *mockmediaService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &mockmediaService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -39,8 +49,8 @@ func (_m *mockmediaService) EXPECT() *mockmediaService_Expecter {
 }
 
 // GenerateFromBytes provides a mock function for the type mockmediaService
-func (_mock *mockmediaService) GenerateFromBytes(ctx context.Context, imageBytes []byte, userID int, altText string, originalFilename string) (*media.Media, error) {
-	ret := _mock.Called(ctx, imageBytes, userID, altText, originalFilename)
+func (_mock *mockmediaService) GenerateFromBytes(ctx context.Context, imageBytes []byte, principal kernel.Principal, altText string, originalFilename string) (*media.Media, error) {
+	ret := _mock.Called(ctx, imageBytes, principal, altText, originalFilename)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GenerateFromBytes")
@@ -48,18 +58,18 @@ func (_mock *mockmediaService) GenerateFromBytes(ctx context.Context, imageBytes
 
 	var r0 *media.Media
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte, int, string, string) (*media.Media, error)); ok {
-		return returnFunc(ctx, imageBytes, userID, altText, originalFilename)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte, kernel.Principal, string, string) (*media.Media, error)); ok {
+		return returnFunc(ctx, imageBytes, principal, altText, originalFilename)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte, int, string, string) *media.Media); ok {
-		r0 = returnFunc(ctx, imageBytes, userID, altText, originalFilename)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte, kernel.Principal, string, string) *media.Media); ok {
+		r0 = returnFunc(ctx, imageBytes, principal, altText, originalFilename)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*media.Media)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, []byte, int, string, string) error); ok {
-		r1 = returnFunc(ctx, imageBytes, userID, altText, originalFilename)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []byte, kernel.Principal, string, string) error); ok {
+		r1 = returnFunc(ctx, imageBytes, principal, altText, originalFilename)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -74,14 +84,14 @@ type mockmediaService_GenerateFromBytes_Call struct {
 // GenerateFromBytes is a helper method to define mock.On call
 //   - ctx context.Context
 //   - imageBytes []byte
-//   - userID int
+//   - principal kernel.Principal
 //   - altText string
 //   - originalFilename string
-func (_e *mockmediaService_Expecter) GenerateFromBytes(ctx any, imageBytes any, userID any, altText any, originalFilename any) *mockmediaService_GenerateFromBytes_Call {
-	return &mockmediaService_GenerateFromBytes_Call{Call: _e.mock.On("GenerateFromBytes", ctx, imageBytes, userID, altText, originalFilename)}
+func (_e *mockmediaService_Expecter) GenerateFromBytes(ctx any, imageBytes any, principal any, altText any, originalFilename any) *mockmediaService_GenerateFromBytes_Call {
+	return &mockmediaService_GenerateFromBytes_Call{Call: _e.mock.On("GenerateFromBytes", ctx, imageBytes, principal, altText, originalFilename)}
 }
 
-func (_c *mockmediaService_GenerateFromBytes_Call) Run(run func(ctx context.Context, imageBytes []byte, userID int, altText string, originalFilename string)) *mockmediaService_GenerateFromBytes_Call {
+func (_c *mockmediaService_GenerateFromBytes_Call) Run(run func(ctx context.Context, imageBytes []byte, principal kernel.Principal, altText string, originalFilename string)) *mockmediaService_GenerateFromBytes_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -91,9 +101,9 @@ func (_c *mockmediaService_GenerateFromBytes_Call) Run(run func(ctx context.Cont
 		if args[1] != nil {
 			arg1 = args[1].([]byte)
 		}
-		var arg2 int
+		var arg2 kernel.Principal
 		if args[2] != nil {
-			arg2 = args[2].(int)
+			arg2 = args[2].(kernel.Principal)
 		}
 		var arg3 string
 		if args[3] != nil {
@@ -119,7 +129,7 @@ func (_c *mockmediaService_GenerateFromBytes_Call) Return(media1 *media.Media, e
 	return _c
 }
 
-func (_c *mockmediaService_GenerateFromBytes_Call) RunAndReturn(run func(ctx context.Context, imageBytes []byte, userID int, altText string, originalFilename string) (*media.Media, error)) *mockmediaService_GenerateFromBytes_Call {
+func (_c *mockmediaService_GenerateFromBytes_Call) RunAndReturn(run func(ctx context.Context, imageBytes []byte, principal kernel.Principal, altText string, originalFilename string) (*media.Media, error)) *mockmediaService_GenerateFromBytes_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -378,8 +378,8 @@ func TestValidateFileContent(t *testing.T) {
 		{name: "invalid executable content", buffer: append([]byte{0x4D, 0x5A}, make([]byte, 510)...), wantErr: true},
 		{name: "invalid html content", buffer: append([]byte("<html>"), make([]byte, 506)...), wantErr: true},
 		{name: "empty content", buffer: []byte{}, wantErr: true},
-			{name: "truncated jpeg content", buffer: []byte{0xFF, 0xD8}, wantErr: true},
-			{name: "truncated single byte", buffer: []byte{0xFF}, wantErr: true},
+		{name: "truncated jpeg content", buffer: []byte{0xFF, 0xD8}, wantErr: true},
+		{name: "truncated single byte", buffer: []byte{0xFF}, wantErr: true},
 	}
 
 	for _, tt := range tests {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/kernel/sanitize"
 	"github.com/yuin/goldmark/ast"
+	extast "github.com/yuin/goldmark/extension/ast"
 )
 
 // ttNode is a TipTap document node. Its shape mirrors the structure validated
@@ -75,6 +76,8 @@ func renderBlock(n ast.Node, source []byte) []ttNode {
 		return []ttNode{{Type: "blockquote", Content: content}}
 	case ast.KindList:
 		return []ttNode{renderList(n.(*ast.List), source)}
+	case extast.KindTable:
+		return []ttNode{renderTable(n.(*extast.Table), source)}
 	case ast.KindHTMLBlock:
 		text := sanitizeHTML(htmlBlockText(n.(*ast.HTMLBlock), source))
 		if strings.TrimSpace(text) == "" {
@@ -117,6 +120,82 @@ func renderListItem(n ast.Node, source []byte) ttNode {
 		content = []ttNode{{Type: "paragraph"}}
 	}
 	return ttNode{Type: "listItem", Content: content}
+}
+
+// renderTable converts a goldmark GFM Table into a TipTap table node.
+// goldmark dissolves the header row wrapper: the TableHeader holds the
+// header cells directly, while each body TableRow holds its own cells —
+// so the first rendered row maps to tableHeader cells and the rest to
+// tableCell. A table that yields no rows degrades to an empty paragraph;
+// the conversion never fails.
+func renderTable(table *extast.Table, source []byte) ttNode {
+	rows := make([]ttNode, 0)
+	for c := table.FirstChild(); c != nil; c = c.NextSibling() {
+		var cells []ttNode
+		switch c.Kind() {
+		case extast.KindTableHeader:
+			cells = renderTableCells(c, source, true)
+		case extast.KindTableRow:
+			cells = renderTableCells(c, source, false)
+		default:
+			log.Printf("markdown: stripping unsupported %s table child", c.Kind())
+			continue
+		}
+		if len(cells) == 0 {
+			continue
+		}
+		rows = append(rows, ttNode{Type: "tableRow", Content: cells})
+	}
+	if len(rows) == 0 {
+		return ttNode{Type: "paragraph"}
+	}
+	return ttNode{Type: "table", Content: rows}
+}
+
+// renderTableCells converts one header or body row into TipTap cells. Cell
+// children are inline nodes, so each cell wraps them in the paragraph
+// TipTap cells require; an empty cell gets an empty paragraph. Column
+// alignment rides the cell's `align` attr — the same attribute the admin
+// editor writes — and only when the delimiter row requests it.
+func renderTableCells(row ast.Node, source []byte, header bool) []ttNode {
+	cellType := "tableCell"
+	if header {
+		cellType = "tableHeader"
+	}
+	cells := make([]ttNode, 0)
+	for c := row.FirstChild(); c != nil; c = c.NextSibling() {
+		if c.Kind() != extast.KindTableCell {
+			log.Printf("markdown: stripping unsupported %s table-row child", c.Kind())
+			continue
+		}
+		inline := renderInline(c, source, nil)
+		paragraph := ttNode{Type: "paragraph"}
+		if len(inline) > 0 {
+			paragraph.Content = inline
+		}
+		cell := ttNode{Type: cellType, Content: []ttNode{paragraph}}
+		if align := tableCellAlign(c.(*extast.TableCell)); align != "" {
+			cell.Attrs = map[string]any{"align": align}
+		}
+		cells = append(cells, cell)
+	}
+	return cells
+}
+
+// tableCellAlign reports the cell's delimiter-row alignment in the
+// vocabulary the editor writes. Columns without a marker carry no attr,
+// so they render with the default justification.
+func tableCellAlign(cell *extast.TableCell) string {
+	switch cell.Alignment {
+	case extast.AlignLeft:
+		return "left"
+	case extast.AlignCenter:
+		return "center"
+	case extast.AlignRight:
+		return "right"
+	default:
+		return ""
+	}
 }
 
 // isSoleImageParagraph reports whether the node has exactly one child and that
@@ -182,6 +261,8 @@ func renderInlineNode(n ast.Node, source []byte, marks []ttMark) []ttNode {
 			return nil
 		}
 		return []ttNode{textNode(code, []ttMark{{Type: "code"}})}
+	case extast.KindStrikethrough:
+		return renderInline(n, source, appendMarks(marks, ttMark{Type: "strike"}))
 	case ast.KindLink:
 		link := n.(*ast.Link)
 		return renderInline(n, source, appendMarks(marks, linkMark(string(link.Destination), string(link.Title))))

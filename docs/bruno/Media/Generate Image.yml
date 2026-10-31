@@ -12,9 +12,7 @@ http:
       {
         "prompt": "A beautiful sunset over the ocean"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

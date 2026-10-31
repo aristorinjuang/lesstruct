@@ -30,6 +30,7 @@ export interface Content {
   metaDescription?: string
   ogTitle?: string
   ogDescription?: string
+  featuredImage?: string
   author?: string
   username?: string
   allowComments?: boolean
@@ -55,6 +56,7 @@ export interface CreateContentRequest {
   metaDescription?: string
   ogTitle?: string
   ogDescription?: string
+  featuredImage?: string
   allowComments?: boolean
   customFields?: Record<string, unknown>
   language?: string
@@ -72,6 +74,7 @@ export interface UpdateContentRequest {
   metaDescription?: string
   ogTitle?: string
   ogDescription?: string
+  featuredImage?: string
   allowComments?: boolean
   customFields?: Record<string, unknown>
   language?: string

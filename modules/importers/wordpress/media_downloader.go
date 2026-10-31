@@ -22,6 +22,20 @@ const (
 	maxRetries        = 3
 	initialBackoff    = 500 * time.Millisecond
 	backoffMultiplier = 2
+	// maxRedirectHops bounds the redirect chain a single download follows.
+	// It matches Go's default so legitimate chains behave identically;
+	// hitting it fails fast instead of burning retries.
+	maxRedirectHops = 10
+)
+
+var (
+	// errForbiddenRedirect marks a redirect target the SSRF guard refused.
+	// Refusals fail the download without retry: retrying a refused target
+	// is pointless and noisy.
+	errForbiddenRedirect = errors.New("redirect target failed SSRF validation")
+	// errTooManyRedirects marks a redirect chain that exceeded
+	// maxRedirectHops. Loops fail fast for the same reason.
+	errTooManyRedirects = errors.New("too many redirects")
 )
 
 // validateImageURL guards against SSRF: the WordPress importer fetches URLs
@@ -35,6 +49,9 @@ func validateImageURL(imageURL string, allowPrivate bool) error {
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("image URL %q must use http or https", imageURL)
+	}
+	if u.User != nil {
+		return fmt.Errorf("image URL %q must not contain credentials", imageURL)
 	}
 	if allowPrivate {
 		return nil
@@ -167,6 +184,21 @@ func (d *MediaDownloader) PHash(imageURL string) (uint64, bool) {
 	return hash, ok
 }
 
+// checkRedirect re-runs the SSRF guard on every redirect hop so a public
+// URL cannot 302 into loopback, private space, or a non-http(s) scheme.
+// It mirrors the initial validateImageURL call in download, including the
+// allowPrivate test hook, so tests keep exercising loopback servers.
+// Chains past maxRedirectHops fail fast instead of burning retries.
+func (d *MediaDownloader) checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirectHops {
+		return fmt.Errorf("%w: stopped after %d redirects", errTooManyRedirects, len(via))
+	}
+	if err := validateImageURL(req.URL.String(), d.allowPrivate); err != nil {
+		return fmt.Errorf("%w: %w", errForbiddenRedirect, err)
+	}
+	return nil
+}
+
 // download fetches the image and re-uploads it through the media service,
 // with retries and backoff.
 func (d *MediaDownloader) download(ctx context.Context, imageURL string, userID int) (string, error) {
@@ -194,6 +226,9 @@ func (d *MediaDownloader) download(ctx context.Context, imageURL string, userID 
 
 		resp, err := d.httpClient.Do(req)
 		if err != nil {
+			if errors.Is(err, errForbiddenRedirect) || errors.Is(err, errTooManyRedirects) {
+				return "", fmt.Errorf("refused redirect while downloading image %q: %w", imageURL, err)
+			}
 			if !isRetryableError(err) || attempt == maxRetries {
 				return "", fmt.Errorf("failed to download image %q: %w", imageURL, err)
 			}
@@ -304,6 +339,23 @@ func NewMediaDownloader(
 	for _, opt := range opts {
 		opt(d)
 	}
+	// Guard every redirect hop with the SSRF check, including on a
+	// caller-supplied client (no caller sets CheckRedirect today). Clone
+	// instead of mutating the caller's client, and honor a pre-existing
+	// hook after the guard so future callers keep their behavior. The
+	// default client would otherwise follow up to 10 hops blind.
+	client := *d.httpClient
+	prev := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := d.checkRedirect(req, via); err != nil {
+			return err
+		}
+		if prev != nil {
+			return prev(req, via)
+		}
+		return nil
+	}
+	d.httpClient = &client
 	return d
 }
 

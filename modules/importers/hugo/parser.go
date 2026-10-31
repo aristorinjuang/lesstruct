@@ -72,6 +72,20 @@ func configFileCandidates(root string) []string {
 	}
 }
 
+func removeDups(items []*HugoItem) []*HugoItem {
+	seen := make(map[string]bool)
+	var result []*HugoItem
+	for _, item := range items {
+		key := item.FilePath
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, item)
+	}
+	return result
+}
+
 func ParseContentFile(path string) (*HugoItem, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -244,20 +258,6 @@ func WalkContentTree(root string) (*HugoSite, error) {
 
 	site.Items = removeDups(items)
 	return site, nil
-}
-
-func removeDups(items []*HugoItem) []*HugoItem {
-	seen := make(map[string]bool)
-	var result []*HugoItem
-	for _, item := range items {
-		key := item.FilePath
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		result = append(result, item)
-	}
-	return result
 }
 
 // LoadSiteConfig reads the Hugo site configuration from the archive root.

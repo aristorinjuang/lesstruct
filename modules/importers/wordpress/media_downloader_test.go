@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/kernel"
@@ -202,8 +204,9 @@ func TestMediaDownloader_UnreachableURL(t *testing.T) {
 
 func TestMediaDownloader_SSRFGuard(t *testing.T) {
 	// The downloader fetches URLs from operator-uploaded WXR files: http(s)
-	// only, and hosts must not resolve to loopback, private, or link-local
-	// addresses. Without the allow-private hook these are all rejected.
+	// only, no credentials, and hosts must not resolve to loopback, private,
+	// or link-local addresses. Without the allow-private hook these are all
+	// rejected.
 	mediaSvc := &fakeMediaService{}
 
 	tests := []struct {
@@ -215,6 +218,11 @@ func TestMediaDownloader_SSRFGuard(t *testing.T) {
 			name:     "error - ftp scheme",
 			imageURL: "ftp://example.com/cover.png",
 			contains: "must use http or https",
+		},
+		{
+			name:     "error - credentials in URL",
+			imageURL: "http://user:pass@example.com/cover.png",
+			contains: "must not contain credentials",
 		},
 		{
 			name:     "error - loopback IP literal",
@@ -282,4 +290,115 @@ func TestMediaDownloader_SSRFGuard_PrivateAllowed(t *testing.T) {
 	url, err := dl.DownloadAndUpload(context.Background(), server.URL+"/cover.png", 1)
 	require.NoError(t, err)
 	assert.Equal(t, "http://example.com/uploads/cover.webp", url)
+}
+
+// TestMediaDownloader_RedirectValidation proves every redirect hop is
+// re-validated with the SSRF guard: a public URL cannot smuggle a forbidden
+// target past the initial check via 302, while legitimate chains follow.
+// Refusals and loops fail fast (hit counts prove no backoff retries).
+func TestMediaDownloader_RedirectValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		// chain maps a served path to its behavior: "PNG" serves image
+		// bytes, "LOCAL:<path>" 302s to the same server, any other value
+		// 302s verbatim.
+		chain        map[string]string
+		wantErrParts []string
+		wantURL      string
+		wantHits     int64
+		wantUploads  int
+	}{
+		{
+			name: "success - single redirect is followed",
+			chain: map[string]string{
+				"/start.png": "LOCAL:/final.png",
+				"/final.png": "PNG",
+			},
+			wantURL:     "http://example.com/uploads/ok.webp",
+			wantHits:    2,
+			wantUploads: 1,
+		},
+		{
+			name: "success - two-hop chain is followed",
+			chain: map[string]string{
+				"/start.png": "LOCAL:/mid.png",
+				"/mid.png":   "LOCAL:/final.png",
+				"/final.png": "PNG",
+			},
+			wantURL:     "http://example.com/uploads/ok.webp",
+			wantHits:    3,
+			wantUploads: 1,
+		},
+		{
+			name: "error - forbidden target on second hop is refused",
+			chain: map[string]string{
+				"/start.png": "LOCAL:/mid.png",
+				"/mid.png":   "ftp://example.com/evil.png",
+			},
+			wantErrParts: []string{"refused redirect", "must use http or https"},
+			wantHits:     2,
+			wantUploads:  0,
+		},
+		{
+			name: "error - redirect carrying credentials is refused",
+			chain: map[string]string{
+				"/start.png": "http://user:pass@127.0.0.1/evil.png",
+			},
+			wantErrParts: []string{"refused redirect", "must not contain credentials"},
+			wantHits:     1,
+			wantUploads:  0,
+		},
+		{
+			name: "error - redirect loop fails fast",
+			chain: map[string]string{
+				"/start.png": "LOCAL:/loop.png",
+				"/loop.png":  "LOCAL:/loop.png",
+			},
+			wantErrParts: []string{"refused redirect", "too many redirects"},
+			wantHits:     10,
+			wantUploads:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var hits atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				action, ok := tt.chain[r.URL.Path]
+				if !ok {
+					http.NotFound(w, r)
+					return
+				}
+				if action == "PNG" {
+					_, _ = w.Write(pngSignature)
+					return
+				}
+				to := action
+				if rest, ok := strings.CutPrefix(action, "LOCAL:"); ok {
+					to = "http://" + r.Host + rest
+				}
+				http.Redirect(w, r, to, http.StatusFound)
+			}))
+			defer server.Close()
+
+			mediaSvc := &fakeMediaService{returnMedia: &mediadomain.Media{URL: "http://example.com/uploads/ok.webp"}}
+			dl := wordpress.NewMediaDownloader(server.Client(), mediaSvc, wordpress.MediaDownloaderAllowPrivateHosts())
+
+			url, err := dl.DownloadAndUpload(context.Background(), server.URL+"/start.png", 1)
+
+			if len(tt.wantErrParts) > 0 {
+				require.Error(t, err)
+				for _, part := range tt.wantErrParts {
+					assert.Contains(t, err.Error(), part)
+				}
+				assert.Empty(t, url)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantURL, url)
+			}
+			assert.Equal(t, tt.wantHits, hits.Load(), "origin server hits")
+			assert.Equal(t, tt.wantUploads, mediaSvc.called, "media uploads")
+		})
+	}
 }

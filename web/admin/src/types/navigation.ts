@@ -16,6 +16,7 @@ export type NavigationItemIcon =
   | 'user'
   | 'users'
   | 'chat-bubble'
+  | 'shopping-bag'
   | 'arrow-down-tray'
   | 'arrow-up-tray'
 

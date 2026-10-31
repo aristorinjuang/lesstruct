@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,10 +23,10 @@ var defaultDirectives = []defaultDirective{
 	{Name: "default-src", Sources: []string{"'self'"}},
 	{Name: "script-src", Sources: []string{"'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"}},
 	{Name: "style-src", Sources: []string{"'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"}},
-	{Name: "img-src", Sources: []string{"'self'", "data:", "blob:", "https:"}},
+	{Name: "img-src", Sources: []string{"'self'", "data:", "blob:"}},
 	{Name: "font-src", Sources: []string{"'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"}},
 	{Name: "connect-src", Sources: []string{"'self'"}},
-	{Name: "frame-src", Sources: []string{"'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"}},
+	{Name: "frame-src", Sources: []string{"'self'", "blob:", "chrome-extension:", "https://www.youtube.com", "https://www.youtube-nocookie.com"}}, // blob: + chrome-extension: let Chromium's built-in PDF viewer (an extension iframe) render blob-tab PDFs such as admin invoices.
 	{Name: "frame-ancestors", Sources: []string{"'none'"}},
 	{Name: "base-uri", Sources: []string{"'self'"}},
 	{Name: "form-action", Sources: []string{"'self'"}},
@@ -143,6 +144,27 @@ func frameSourcesFromPolicy(policy, name string) []string {
 		return fields[1:]
 	}
 	return nil
+}
+
+// storageImgOrigin reduces a storage public base URL to its scheme://host
+// origin for img-src. Unparseable input, a non-http(s) scheme, or a missing
+// host returns "" so nothing is appended.
+func storageImgOrigin(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return ""
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return ""
+	}
+	if parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // CSPConfig holds the optional [csp] block from config.toml. All fields have
@@ -366,6 +388,17 @@ func (c CSPConfig) XFrameOptions() string {
 	return ""
 }
 
+// adoptStorageOrigin appends the S3/CDN storage origin to img-src so media
+// served from STORAGE_S3_PUBLIC_BASE_URL keeps rendering under the tightened
+// default. The wildcard `https:` is no longer in the baseline (it enabled
+// off-site tracking beacons via inline CSS), so this keeps object-storage
+// deployments working without operator config.
+func (c *CSPConfig) adoptStorageOrigin(storagePublicBaseURL string) {
+	if origin := storageImgOrigin(storagePublicBaseURL); origin != "" {
+		c.ImgSrc = dedup(append(c.ImgSrc, origin))
+	}
+}
+
 // LoadCSPConfig reads the optional [csp] block from config.toml. When the
 // file, section, or directory is missing it returns a zero-value CSPConfig
 // (fully backward compatible — Build() returns the default policy).
@@ -399,6 +432,11 @@ func LoadCSPConfig(cfg *Config) (CSPConfig, error) {
 	if err := ccf.CSPConfig.validate(); err != nil {
 		return CSPConfig{}, err
 	}
+
+	// The s3 storage driver serves media from the configured public base URL
+	// (a bucket or CDN origin), so it must be reachable under img-src. A full
+	// [csp] policy override owns its own img-src and is left untouched.
+	ccf.CSPConfig.adoptStorageOrigin(cfg.StorageS3PublicBaseURL)
 
 	return ccf.CSPConfig, nil
 }

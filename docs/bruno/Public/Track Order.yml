@@ -1,0 +1,27 @@
+info:
+  name: Track Order
+  type: http
+  seq: 10
+
+http:
+  method: GET
+  # Guest tracking is three-factor: number + email + the per-order tracking
+  # token from the checkout response / confirmation email. A wrong or missing
+  # token reads as 404 NOT_FOUND, identical to a wrong email.
+  url: "{{BASE_URL}}/api/v1/public/orders/{{ORDER_NUMBER}}"
+  params:
+    - name: email
+      value: "{{TRACK_EMAIL}}"
+      type: query
+      disabled: false
+    - name: token
+      value: "{{TRACK_TOKEN}}"
+      type: query
+      disabled: false
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

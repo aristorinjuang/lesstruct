@@ -71,12 +71,11 @@ func decodeImage(r io.Reader) (image.Image, error) {
 		return nil, err
 	}
 
-	if err := probePixelBudget(head, r); err != nil {
-		return nil, err
-	}
-
 	var stream io.Reader
 	if rs, ok := r.(io.ReadSeeker); ok {
+		if err := probePixelBudget(head, rs); err != nil {
+			return nil, err
+		}
 		if _, err := rs.Seek(0, io.SeekStart); err != nil {
 			return nil, fmt.Errorf("failed to rewind image after dimension probe: %w", err)
 		}
@@ -86,7 +85,10 @@ func decodeImage(r io.Reader) (image.Image, error) {
 		if rerr != nil {
 			return nil, rerr
 		}
-		stream = io.MultiReader(bytes.NewReader(head), bytes.NewReader(rest))
+		if err := probePixelBudget(head, bytes.NewReader(rest)); err != nil {
+			return nil, err
+		}
+		stream = bytes.NewReader(append(head, rest...))
 	}
 	if isWebP(head) {
 		return ximagewebp.Decode(stream)
@@ -208,7 +210,7 @@ func sanitizeWebP(data []byte) ([]byte, error) {
 }
 
 // cropToAspect center-crops img to the given width/height ratio.
-func cropToAspect(img image.Image, ratio float64) (image.Image, error) {
+func cropToAspect(img image.Image, ratio float64) image.Image {
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
@@ -221,7 +223,7 @@ func cropToAspect(img image.Image, ratio float64) (image.Image, error) {
 		cropHeight = int(math.Round(float64(width) / ratio))
 	}
 	if cropWidth == width && cropHeight == height {
-		return img, nil
+		return img
 	}
 
 	x0 := bounds.Min.X + (width-cropWidth)/2
@@ -230,7 +232,7 @@ func cropToAspect(img image.Image, ratio float64) (image.Image, error) {
 
 	cropped := image.NewRGBA(image.Rect(0, 0, cropWidth, cropHeight))
 	draw.Draw(cropped, cropped.Bounds(), img, crop.Min, draw.Src)
-	return cropped, nil
+	return cropped
 }
 
 // ProcessResult contains the result of image processing
@@ -395,10 +397,7 @@ func (p *Processor) CropToOpenGraph(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to decode image for Open Graph crop: %w", err)
 	}
 
-	cropped, err := cropToAspect(img, float64(OGImageWidth)/float64(OGImageHeight))
-	if err != nil {
-		return nil, err
-	}
+	cropped := cropToAspect(img, float64(OGImageWidth)/float64(OGImageHeight))
 
 	dst := image.NewRGBA(image.Rect(0, 0, OGImageWidth, OGImageHeight))
 	draw.BiLinear.Scale(dst, dst.Bounds(), cropped, cropped.Bounds(), draw.Over, nil)

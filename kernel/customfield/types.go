@@ -15,25 +15,29 @@ const PostScriptSlug = "post_script"
 var (
 	ErrFieldNameRequired  = errors.New("field name is required and must be between 1 and 200 characters")
 	ErrFieldSlugInvalid   = errors.New("field slug must be between 1 and 200 characters and contain only lowercase letters, numbers, and underscores")
-	ErrFieldTypeInvalid   = errors.New("field type must be one of: text, textarea, number, date, datetime, email, url, select, checkbox")
+	ErrFieldTypeInvalid   = errors.New("field type must be one of: text, textarea, number, date, datetime, email, url, select, checkbox, multiselect, list, gallery")
 	ErrSelectRequiresOpts = errors.New("select fields require an options list")
 	ErrSelectEmptyOption  = errors.New("select field options must not contain empty or blank strings")
 	ErrNumberMinGTMax     = errors.New("min cannot be greater than max")
-	ErrMaxLengthInvalid   = errors.New("max_length must be greater than 0 and is only valid for text and textarea fields")
+	ErrMaxLengthInvalid   = errors.New("max_length must be greater than 0 and is only valid for text, textarea, and list fields")
+	ErrMaxItemsInvalid    = errors.New("max_items must be greater than 0 and is only valid for list and gallery fields")
 	ErrDuplicateFieldSlug = errors.New("duplicate field slug")
 
 	slugPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 	validFieldTypes = map[FieldType]bool{
-		FieldTypeText:     true,
-		FieldTypeTextarea: true,
-		FieldTypeNumber:   true,
-		FieldTypeDate:     true,
-		FieldTypeDatetime: true,
-		FieldTypeEmail:    true,
-		FieldTypeUrl:      true,
-		FieldTypeSelect:   true,
-		FieldTypeCheckbox: true,
+		FieldTypeText:       true,
+		FieldTypeTextarea:   true,
+		FieldTypeNumber:     true,
+		FieldTypeDate:       true,
+		FieldTypeDatetime:   true,
+		FieldTypeEmail:      true,
+		FieldTypeUrl:        true,
+		FieldTypeSelect:     true,
+		FieldTypeCheckbox:   true,
+		FieldTypeMultiselect: true,
+		FieldTypeList:       true,
+		FieldTypeGallery:    true,
 	}
 )
 
@@ -50,6 +54,16 @@ const (
 	FieldTypeUrl      FieldType = "url"
 	FieldTypeSelect   FieldType = "select"
 	FieldTypeCheckbox FieldType = "checkbox"
+	// FieldTypeMultiselect is an ordered array of strings drawn from the
+	// configured options — the many-values sibling of select.
+	FieldTypeMultiselect FieldType = "multiselect"
+	// FieldTypeList is an ordered array of free-form strings (specs,
+	// ingredients, step lists) — the general-purpose string array.
+	FieldTypeList FieldType = "list"
+	// FieldTypeGallery is an ordered array of media items ({url, alt}) —
+	// references into the media library rendered as a captioned image
+	// collection.
+	FieldTypeGallery FieldType = "gallery"
 )
 
 // FieldSchema describes one custom field: identity, type, and constraints.
@@ -62,10 +76,11 @@ type FieldSchema struct {
 	Min       *float64  `json:"min,omitempty" toml:"min,omitempty"`
 	Max       *float64  `json:"max,omitempty" toml:"max,omitempty"`
 	MaxLength *int      `json:"maxLength,omitempty" toml:"max_length,omitempty"`
+	MaxItems  *int      `json:"maxItems,omitempty" toml:"max_items,omitempty"`
 }
 
 // ValidateField checks one field schema: name, slug, type, options, range,
-// and length constraints.
+// length, and item-count constraints.
 func ValidateField(f FieldSchema) error {
 	if err := ValidateFieldName(f.Name); err != nil {
 		return err
@@ -88,6 +103,10 @@ func ValidateField(f FieldSchema) error {
 	}
 
 	if err := ValidateMaxLength(f.Type, f.MaxLength); err != nil {
+		return err
+	}
+
+	if err := ValidateMaxItems(f.Type, f.MaxItems); err != nil {
 		return err
 	}
 
@@ -140,14 +159,14 @@ func ValidateFieldType(t FieldType) error {
 	return nil
 }
 
-// ValidateSelectOptions requires non-blank options for select fields;
-// other types ignore options.
+// ValidateSelectOptions requires non-blank options for select and
+// multiselect fields; other types ignore options.
 func ValidateSelectOptions(t FieldType, options []string) error {
-	if t == FieldTypeSelect && len(options) == 0 {
+	if (t == FieldTypeSelect || t == FieldTypeMultiselect) && len(options) == 0 {
 		return ErrSelectRequiresOpts
 	}
 
-	if t == FieldTypeSelect {
+	if t == FieldTypeSelect || t == FieldTypeMultiselect {
 		for _, opt := range options {
 			if strings.TrimSpace(opt) == "" {
 				return ErrSelectEmptyOption
@@ -171,18 +190,36 @@ func ValidateNumberRange(t FieldType, min, max *float64) error {
 	return nil
 }
 
-// ValidateMaxLength allows max_length only on text and textarea fields.
+// ValidateMaxLength allows max_length on text and textarea fields (the whole
+// value) and on list fields (per item); other types reject it.
 func ValidateMaxLength(t FieldType, maxLength *int) error {
 	if maxLength == nil {
 		return nil
 	}
 
-	if t != FieldTypeText && t != FieldTypeTextarea {
+	if t != FieldTypeText && t != FieldTypeTextarea && t != FieldTypeList {
 		return ErrMaxLengthInvalid
 	}
 
 	if *maxLength <= 0 {
 		return ErrMaxLengthInvalid
+	}
+	return nil
+}
+
+// ValidateMaxItems allows max_items on list and gallery fields only, and
+// requires a positive value when present.
+func ValidateMaxItems(t FieldType, maxItems *int) error {
+	if maxItems == nil {
+		return nil
+	}
+
+	if t != FieldTypeList && t != FieldTypeGallery {
+		return ErrMaxItemsInvalid
+	}
+
+	if *maxItems <= 0 {
+		return ErrMaxItemsInvalid
 	}
 	return nil
 }

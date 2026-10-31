@@ -22,9 +22,12 @@ var (
 )
 
 // htmlDocumentPolicy creates a permissive bluemonday policy for HTML document
-// content. It allows full HTML5 elements, inline styles, <style> blocks,
-// data-* attributes, and iframe embeds. Script tags, event handlers (on*),
-// and javascript: URLs are blocked.
+// content. It allows full HTML5 elements, inline styles, data-* attributes,
+// and iframe embeds. Script tags, event handlers (on*), javascript: URLs,
+// <style> blocks, and form controls are blocked: without style blocks and
+// inputs HTML-format content cannot host overlay CSS or credential-collection
+// UIs, and external CSS/image beacons are closed by the CSP (img-src has no
+// wildcard https:).
 func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 	p := bluemonday.NewPolicy()
 
@@ -41,13 +44,16 @@ func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 		"a", "img", "picture", "source", "figure", "figcaption",
 		"strong", "em", "b", "i", "u", "s", "small", "sub", "sup", "mark", "del", "ins",
 		"table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col",
-		"form", "input", "textarea", "select", "option", "optgroup", "button", "label",
 		"video", "audio", "source", "track",
 		"embed", "object", "param",
 		"svg", "path", "circle", "rect", "line", "polyline", "polygon", "g", "defs", "use",
 		"canvas", "map", "area",
-		"style",
 	)
+
+	// <style> blocks are stripped for every author: the element is unknown
+	// to the policy and bluemonday treats it as fundamentally unsafe, so it
+	// is dropped without AllowUnsafe. Page CSS belongs in the theme;
+	// per-element styling stays available through inline style attributes.
 
 	// Global attributes.
 	p.AllowAttrs("id", "class", "style", "title", "lang", "dir", "role", "tabindex").Globally()
@@ -71,14 +77,9 @@ func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 	p.AllowAttrs("controls", "autoplay", "loop", "muted", "poster", "preload").OnElements("video", "audio")
 	p.AllowAttrs("poster").OnElements("video")
 
-	// Form elements.
-	p.AllowAttrs("type", "name", "value", "placeholder", "required", "disabled", "checked", "readonly", "min", "max", "step", "pattern", "minlength", "maxlength").OnElements("input")
-	p.AllowAttrs("rows", "cols", "placeholder", "required", "disabled", "readonly").OnElements("textarea")
-	p.AllowAttrs("multiple", "required", "disabled").OnElements("select")
-	p.AllowAttrs("selected", "disabled", "value").OnElements("option")
-	p.AllowAttrs("disabled", "label").OnElements("optgroup")
-	p.AllowAttrs("for").OnElements("label")
-	p.AllowAttrs("type", "disabled").OnElements("button")
+	// Form elements are stripped entirely: HTML-format content must not be
+	// able to host credential-collection UI (fake inputs/buttons overlaid on
+	// the page). The site's own forms are theme markup, not editorial content.
 
 	// Table attributes.
 	p.AllowAttrs("colspan", "rowspan", "scope", "headers").OnElements("th", "td")
@@ -87,17 +88,6 @@ func htmlDocumentPolicy(iframeAllowlist ...string) *bluemonday.Policy {
 	// SVG attributes.
 	p.AllowAttrs("viewBox", "xmlns", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "d", "cx", "cy", "r", "x", "y", "width", "height", "rx", "ry", "points", "transform", "opacity", "clip-path", "mask").OnElements("svg", "path", "circle", "rect", "line", "polyline", "polygon", "g", "defs", "use")
 	p.AllowAttrs("href", "xlink:href").OnElements("use", "a")
-
-	// Style attributes.
-	p.AllowAttrs("type").OnElements("style")
-
-	// AllowUnsafe is required for bluemonday to actually emit <style> elements
-	// even when AllowElements declares them. bluemonday treats <style> and
-	// <script> as "fundamentally unsafe" and silently drops them by default.
-	// HTML format is admin-authored trusted content; <script> is rejected
-	// upfront by ValidateHTMLDocument, and CSS-only XSS vectors are
-	// neutralized by modern browsers.
-	p.AllowUnsafe(true)
 
 	// Allow iframe embeds restricted to the allowlisted hosts when provided.
 	// bluemonday's AllowIFrames only manages the sandbox attribute, so host
@@ -186,8 +176,9 @@ func hardenExternalLinks(input string) string {
 }
 
 // SanitizeHTMLDocument sanitizes an HTML document body using the permissive
-// HTML document policy. The iframeAllowlist controls which domains are allowed
-// in iframe src attributes.
+// HTML document policy. <style> blocks are stripped for every author — page
+// CSS belongs in the theme. The iframeAllowlist controls which domains
+// are allowed in iframe src attributes.
 func SanitizeHTMLDocument(html string, iframeAllowlist ...string) string {
 	p := htmlDocumentPolicy(iframeAllowlist...)
 	sanitized := p.Sanitize(html)

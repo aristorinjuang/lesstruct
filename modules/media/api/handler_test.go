@@ -468,6 +468,9 @@ func TestMediaHandler_GetMediaByID_Variants(t *testing.T) {
 }
 
 func TestMediaHandler_GetMedia(t *testing.T) {
+	// Admin principal: the list scope expectations below pin the global scope.
+	principal := kernel.Principal{ID: "1", Username: "admin", Roles: []string{"Admin"}}
+
 	makeMedia := func(id int) *media.Media {
 		return &media.Media{
 			ID:               id,
@@ -576,6 +579,7 @@ func TestMediaHandler_GetMedia(t *testing.T) {
 			if tt.wantCode == "" {
 				mockService.EXPECT().SearchMediaByCursor(
 					mock.Anything,
+					principal,
 					tt.mockSearch,
 					tt.mockDateFilter,
 					tt.mockLimit,
@@ -583,6 +587,7 @@ func TestMediaHandler_GetMedia(t *testing.T) {
 				).Return(tt.mediaList, nil)
 				mockService.EXPECT().Count(
 					mock.Anything,
+					principal,
 					tt.mockSearch,
 					tt.mockDateFilter,
 				).Return(tt.mockTotal, nil)
@@ -591,7 +596,7 @@ func TestMediaHandler_GetMedia(t *testing.T) {
 			handler := mediaapi.NewMediaHandler(mockService, nil, nil)
 
 			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
-			req = req.WithContext(kernel.ContextWithPrincipal(req.Context(), kernel.Principal{ID: "1", Username: "testuser"}))
+			req = req.WithContext(kernel.ContextWithPrincipal(req.Context(), principal))
 
 			w := httptest.NewRecorder()
 			handler.GetMedia(w, req)
@@ -666,6 +671,45 @@ func TestMediaHandler_GetMedia(t *testing.T) {
 			assert.Empty(t, variants2)
 		})
 	}
+}
+
+// TestMediaHandler_GetMedia_NonAdminScopePassedThrough proves the handler
+// forwards the caller's principal untouched: the service decides the scope
+// (admins see everything, other roles their own library), the handler only
+// carries identity through.
+func TestMediaHandler_GetMedia_NonAdminScopePassedThrough(t *testing.T) {
+	buyer := kernel.Principal{ID: "7", Username: "buyer", Roles: []string{"Commentator"}}
+
+	mockService := apimocks.NewMockMediaServiceInterface(t)
+	mockService.EXPECT().SearchMediaByCursor(
+		mock.Anything,
+		buyer,
+		"",
+		"",
+		51,
+		0,
+	).Return([]*media.Media{}, nil)
+	mockService.EXPECT().Count(
+		mock.Anything,
+		buyer,
+		"",
+		"",
+	).Return(0, nil)
+
+	handler := mediaapi.NewMediaHandler(mockService, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/media", nil)
+	req = req.WithContext(kernel.ContextWithPrincipal(req.Context(), buyer))
+
+	w := httptest.NewRecorder()
+	handler.GetMedia(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	_, ok := resp["data"].([]any)
+	require.True(t, ok, "data must be a bare JSON array")
 }
 
 func TestMediaHandler_GenerateImage(t *testing.T) {

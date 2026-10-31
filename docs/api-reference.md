@@ -1,6 +1,6 @@
 # Lesstruct API Reference (`/api/v1`)
 
-Lesstruct exposes a versioned, API-key-authenticated REST API at `/api/v1` for creating, reading, updating, and deleting **Content** and **Media**. It is designed for programmatic consumers — the `lesstruct-cli`, MCP servers, AI agents (Claude Code, OpenCode, Hermes, …), and human integrators — and accepts Markdown as a first-class authoring format.
+Lesstruct exposes a versioned, API-key-authenticated REST API at `/api/v1` for creating, reading, updating, and deleting **Content** and **Media** — plus the commerce admin surface (catalog, orders, payments, invoice settings) on eCommerce builds, and media deletion. It is designed for programmatic consumers — the [`lesstruct-cli`](cli.md), MCP servers, AI agents (Claude Code, OpenCode, Hermes, …), and human integrators — and accepts Markdown as a first-class authoring format.
 
 This reference documents the **implemented** surface. For the design intent, see `_bmad-output/planning-artifacts/architecture-ai-cli.md`.
 
@@ -43,6 +43,16 @@ Only the `keyID` is ever logged — the secret and the full key string are redac
 ### Authorization
 
 A key acts **as the user who created it**. It inherits that user's role and permissions, and every operation is scoped to that user's own resources (you can only list/read your own content and media, unless your role is Admin). Lesstruct's existing role-based access control governs every request unchanged.
+
+### Realms
+
+`/api/v1` is Bearer API-key-only; browser admin routes accept the `lesstruct_jwt` HttpOnly session cookie (or a Bearer JWT for compatibility — a present header wins). Sending an API-key-shaped Bearer (`lesstruct_…`) to a browser-only route returns `401 JWT_REQUIRED` (use a cookie or JWT there) instead of the generic `INVALID_TOKEN` a malformed JWT returns. Shared admin paths — media list/get/delete and the commerce surface (catalog, orders, payments, invoice settings) — dispatch by credential instead: an API-key Bearer runs the agent chain, anything else the browser chain, with the same capability checks on both. `POST /api/auth/logout` ends the browser session: it bumps the account's `token_version` so previously issued cookies and Bearers stop validating, and clears the cookie with matching attributes.
+
+### Browser sessions
+
+Browser login is two-step with mandatory email MFA. `POST /api/auth/login` checks the password and returns an MFA challenge (`mfaRequired`, `challengeToken`, `emailHint`); it never issues a session. `POST /api/auth/mfa/verify` consumes the emailed 6-digit code and sets the `lesstruct_jwt` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` exactly on HTTPS, lifetime matching the token expiry) — the response body carries only the user (`{data: {user: {id, username, role}}}`, no token). Both `mfa/verify` and `logout` require CSRF validation (same-origin requests pass automatically; cross-origin clients must send `Origin` and be allowlisted).
+
+The cookie is sent automatically on same-origin `fetch` calls; cross-origin clients must use `credentials: 'include'` with an allowlisted origin (`Access-Control-Allow-Credentials` is set for allowlisted origins). Logout (`POST /api/auth/logout`, CSRF + session required) revokes **all** of the account's sessions at once by bumping `token_version` — every device is signed out, and previously issued cookies and Bearer JWTs stop validating. Programmatic (non-browser) clients must use API keys instead of the login endpoints: no login JSON response contains a token anymore.
 
 ## Conventions
 
@@ -225,7 +235,8 @@ POST /api/v1/content
 | `tags` | no | Array of tag strings. Server normalizes (trim, lowercase, dedupe, length-bound) via `ValidateTags`; an invalid tag returns 400 `VALIDATION_ERROR`. |
 | `language` | no | Language code (e.g. `"en"`, `"id"`). Must be in the server's configured languages list (`config.toml` `[languages]`); an unknown code returns 400 `VALIDATION_ERROR` (`ErrInvalidLanguage`). |
 | `slug` | no | A custom slug (lowercase letters, digits, hyphens, and dots; 1–200 chars; must not start or end with a dot and must not contain `..`; unique per language, else 400 `ErrSlugAlreadyExists`). Omit to auto-generate from the title. The slug is **immutable once the item is published** — see [Update content](#update-content). |
-| `customFields` | no | Custom-field values, validated through the same path the admin uses. Admin-managed **system fields** (declared per post type) are rejected here with `400 VALIDATION_ERROR` — set them via [Set system fields](#set-system-fields). |
+| `featuredImage` | no | Explicit featured image: an `http(s)` URL or a root-relative media path (`/uploads/...`). Wins over the body-derived image in public responses and og:image; empty keeps the fallback. Invalid shapes return 400 `VALIDATION_ERROR`. |
+| `customFields` | no | Custom-field values, validated through the same path the admin uses. Array-type fields (`multiselect`, `list`, `gallery`) accept legacy single-string input (comma- / newline-separated) and canonicalize to JSON arrays on storage — see [configuration.md](configuration.md#field-rules). Admin-managed **system fields** (declared per post type) are rejected here with `400 VALIDATION_ERROR` — set them via [Set system fields](#set-system-fields). |
 | `translationGroupId` | no | ID of an existing content item whose translation group this item joins. The server validates the ID exists; a miss returns 400 `ErrTranslationGroupNotFound`. |
 | `isPublished` | no | `true` → `"published"`; `false`/omitted → `"draft"`. |
 
@@ -287,7 +298,7 @@ Query parameters:
 PUT /api/v1/content/{id}
 ```
 
-Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, and `language`. SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. The `slug` is **immutable via this endpoint** and never changes on update (editing the title does not regenerate it — it is the public URL); any `slug` you send here is ignored. `format: markdown` converts the body to Tiptap before storing. `format: html` stores raw HTML directly.
+Accepts `title`, `body`, `format`, `postType`, `customFields`, `isPublished`, `tags`, `language`, and `featuredImage` (absent keeps the stored reference, `""` clears it). SEO metadata (`metaDescription`, `ogTitle`, `ogDescription`), `allowComments`, and `translationGroupId` are **preserved from the existing item** and cannot be changed via this endpoint — any values you send for them are ignored. The `slug` is **immutable via this endpoint** and never changes on update (editing the title does not regenerate it — it is the public URL); any `slug` you send here is ignored. `format: markdown` converts the body to Tiptap before storing. `format: html` stores raw HTML directly.
 
 **Response** `200 OK`: `{"data":{"content":{…}}}` with the updated item.
 
@@ -456,6 +467,18 @@ GET /api/v1/media/{id}
 
 Returns `404 NOT_FOUND` if the media does not exist or you are not its owner (and not Admin) — existence is not disclosed.
 
+### Delete media
+
+```http
+DELETE /api/v1/media/{id}
+```
+
+Deletes a media item. Owners may delete their own media; deleting another
+user's media requires the Admin role (`403 FORBIDDEN` otherwise, `404
+NOT_FOUND` for a ghost id). Like the other co-owned media paths this is
+dual-realm: an API-key Bearer runs the agent chain, anything else the
+browser chain. **Response** `204 No Content` with an empty body.
+
 ### List media
 
 ```http
@@ -464,7 +487,7 @@ GET /api/v1/media?limit=50&cursor=<cursor>
 
 Returns the caller's own media, newest-first, using [cursor pagination](#pagination). Same envelope as the [content list](#list-content): a bare `data` array plus `meta.pagination`.
 
-> **Shared path note.** `GET /api/v1/media` and `GET /api/v1/media/{id}` are shared with the browser admin panel; the server dispatches to the agent handler when the request presents a `lesstruct_`-prefixed Bearer token, and to the browser handler otherwise. For agent clients this is transparent — always send the Bearer key. `POST /api/v1/media` (upload) is agent/Bearer-only. The browser admin handler speaks the **same contract**: `limit` (default `50`, clamped to `100`) plus `cursor`, returning the same bare-array list with `meta.pagination` — the admin media library pages through it with infinite scroll.
+> **Shared path note.** `GET /api/v1/media`, `GET /api/v1/media/{id}`, and `DELETE /api/v1/media/{id}` are shared with the browser admin panel; the server dispatches to the agent handler when the request presents a `lesstruct_`-prefixed Bearer token, and to the browser handler otherwise. For agent clients this is transparent — always send the Bearer key. `POST /api/v1/media` (upload) is agent/Bearer-only. The browser admin handler speaks the **same contract**: `limit` (default `50`, clamped to `100`) plus `cursor`, returning the same bare-array list with `meta.pagination` — the admin media library pages through it with infinite scroll.
 
 ## Comments
 
@@ -604,11 +627,13 @@ Errors use the envelope's `error` object: `{"error":{"code":"…","message":"…
 | `401` | `INVALID_API_KEY` | The key is malformed or unknown. | auth middleware |
 | `401` | `REVOKED_KEY` | The key has been revoked. | auth middleware |
 | `401` | `EXPIRED_KEY` | The key has expired. | auth middleware |
+| `401` | `JWT_REQUIRED` | An API-key-shaped Bearer was sent to a JWT-only route; use a JWT. | auth middleware |
 | `400` | `VALIDATION_ERROR` | Bad request body, invalid Tiptap, custom-field validation, invalid cursor, invalid id, missing `file` part, bad alt text, etc. | handler |
+| `400` | `CONSENT_REQUIRED` | Checkout or registration arrived without the required terms/privacy acceptance while the `[legal]` gate is active. | checkout / auth handler |
 | `404` | `NOT_FOUND` | Resource does not exist, or you don't own it (and aren't Admin) — existence is not disclosed. | handler |
 | `403` | `FORBIDDEN` | Reserved for service-layer rejections. Not the response for resources you don't own — those return `404` (no-enumeration). Rarely emitted on the agent surface. | handler |
 | `409` | `CONFLICT` | Duplicate media upload. | media handler |
-| `429` | `RATE_LIMITED` | You have exceeded the per-key rate limit. | rate-limit middleware |
+| `429` | `RATE_LIMITED` | You have exceeded the per-key rate limit — or your IP spent its Bearer auth-failure budget (repeated invalid API keys). | rate-limit middleware |
 | `500` | `INTERNAL_ERROR` | Unexpected server error. | handler |
 
 ### No-enumeration
@@ -617,7 +642,7 @@ Resource existence is never disclosed: a request for a resource you don't own (a
 
 ## Authoring in Markdown
 
-Set `format: "markdown"` on create/update to author content in Markdown. The server parses it with [goldmark](https://github.com/yuin/goldmark) (core CommonMark) and converts it to canonical **Tiptap JSON**, which is what is stored. **Raw Markdown is never persisted.**
+Set `format: "markdown"` on create/update to author content in Markdown. The server parses it with [goldmark](https://github.com/yuin/goldmark) (CommonMark plus the GFM table and strikethrough extensions) and converts it to canonical **Tiptap JSON**, which is what is stored. **Raw Markdown is never persisted.**
 
 ```bash
 curl -X POST -H "Authorization: Bearer lesstruct_<...>" \
@@ -644,12 +669,14 @@ curl -X POST -H "Authorization: Bearer lesstruct_<...>" \
 | `![alt](url "title")` | Image (`src`/`alt`/`title`). |
 | `[text](url "title")` | Link (`href`/`title`). |
 | `<https://example.com>` | Autolink (→ link). |
+| `~~strike~~` | Strikethrough. |
+| GFM table (`\| a \| b \|` + `\|---\|` delimiter) | Table: first row → header cells, the rest → body cells; `:---`/`:---:`/`---:` set the column alignment. |
 | Hard line break (`··\n` or `text\`) | Hard break. |
 
 ### Sanitized / not enabled
 
 - **Raw HTML is sanitized.** Inline and block raw HTML is reduced to **safe plain text** (tags are stripped, visible text is kept) via [bluemonday](https://github.com/microcosm-cc/bluemonday). Raw HTML markup is never stored. Converting rich HTML formatting to Tiptap marks is out of scope — only the visible text survives.
-- **Tables, task lists, and strikethrough** are not enabled (core CommonMark only). They render as plain text/paragraphs.
+- **Task lists** are not enabled. They render as plain text/paragraphs — no other pipeline leg (validator, renderer, editor) speaks `taskList`/`taskItem`, so converting them here alone would emit documents nothing can render.
 
 ### URL safety
 
@@ -681,7 +708,9 @@ A link or image with another scheme (`javascript:`, `data:`, `file:`, …) cause
 
 ## Rate limiting
 
-`/api/v1` is rate-limited **per API key** (not per IP) for attribution and fairness, using the same token-bucket limiter as the rest of the API. When you exceed the limit you receive `429 RATE_LIMITED`. Browser/admin routes are rate-limited per IP.
+`/api/v1` is rate-limited in three layers that share nothing but the `429 RATE_LIMITED` code. **Per API key** (attempt-based, for attribution and fairness, using the same token-bucket limiter as the rest of the API), **per IP** (attempt-based ceiling over the same budget, so rotating fake keyIDs buys no fresh budget), and **per IP on outcome** (the auth-failure budget: every `401` from the Bearer group — login-shape or key-shape, on any Bearer endpoint including both media GETs — spends one shared per-IP slot for a minute, no matter how often the presented key rotates). When a layer trips you receive `429 RATE_LIMITED`; outcome-based refusals carry a `Retry-After: 60` backoff hint. Browser/admin routes are rate-limited per IP.
+
+If you hit the limit, wait and retry with backoff. Successes and non-401 responses never spend the outcome budget, so normal use — including polling with a valid key — is unaffected. `RATE_LIMIT_ENABLED=false` disables all three layers.
 
 If you hit the limit, wait and retry with backoff. The limit is shared across all requests made with a given key.
 
@@ -708,7 +737,7 @@ Enhance existing rich-text content or generate HTML/CSS from a natural-language 
 **Response:** `200 OK` with `{ "data": { "content": "...", "title": "...", "metaDescription": "..." } }`.
 
 - `format=tiptap` → returns enhanced TipTap JSON in `content`, plus an AI-generated SEO `title` (max 60 characters, also suitable as the OG title) and `metaDescription` (max 160 characters).
-- `format=html` → returns an HTML fragment with `<style>` block first. The AI surfaces the user's media library images as context. `title` and `metaDescription` are omitted.
+- `format=html` → returns an HTML fragment with `<style>` block first. The AI surfaces the user's media library images as context. `title` and `metaDescription` are omitted. Note: creating or updating `format: html` content strips the `<style>` block for every author (inline `style=""` attributes are unaffected) — page CSS belongs in the theme.
 
 ### Translate
 
@@ -978,9 +1007,651 @@ Returns published content items. With no `cf_*` or `sort_by` parameter, results 
 
 | Field | Description |
 |---|---|
-| `featuredImage` | Absolute thumbnail URL resolved from the item's media record, or omitted when the content body contains no image. |
+| `featuredImage` | Absolute thumbnail URL — the explicit `featuredImage` when set, otherwise derived from the item's media record / body image; omitted when neither exists. |
 
 An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"An internal error occurred"}}`.
+
+---
+
+```http
+GET /api/v1/public/search
+```
+
+Searches published content by title and meta description (case-insensitive substring, `LIKE`-escaped). The search spans every registered, non-hidden post type — a product catalog with the blog hidden searches products and pages, not just posts. Results are newest first.
+
+**Query parameters:**
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `q` | *(required)* | Search string. Shorter than 2 characters (after trimming) returns an empty result set. |
+| `limit` | 10 | Max items returned (clamped to 1–100). |
+
+**Response** (`200`):
+
+```json
+{
+  "data": [
+    {
+      "slug": "lesstruct-tee",
+      "title": "Lesstruct Tee",
+      "metaDescription": "The official Lesstruct t-shirt",
+      "postType": "product"
+    }
+  ],
+  "error": null,
+  "meta": { "timestamp": "2026-07-15T10:00:00Z" }
+}
+```
+
+| Field | Description |
+|---|---|
+| `slug` | Content slug — resolves to `/{slug}/` on the content site. |
+| `title` | Content title. |
+| `metaDescription` | SEO meta description (derived from the body when not set explicitly). |
+| `postType` | The content's post type, so themes can label or route mixed-type results. |
+
+An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"An internal error occurred"}}`.
+
+---
+
+```http
+GET /api/v1/public/catalog/products/{slug}
+```
+
+Returns the commerce data of a published product: pricing in integer minor units, stock posture, and the variant matrix. Served by the eCommerce edition's catalog module (other editions return 404 — the route does not exist). The slug must resolve to a **published** product; drafts, unknown slugs, and items without catalog data all return `404 NOT_FOUND` (no existence disclosure). Translated slugs resolve through the translation group: a translation without its own catalog record serves the group root's record, while a translation that carries its own record keeps it.
+
+**Response** (`200`):
+
+```json
+{
+  "data": {
+    "contentId": 42,
+    "sku": "TSHIRT",
+    "currency": "IDR",
+    "price": 299000,
+    "salePrice": 249000,
+    "inStock": true,
+    "lowStock": false,
+    "stock": 7,
+    "options": { "size": ["S", "M", "L"] },
+    "variants": [
+      { "id": 1, "options": { "size": "S" }, "sku": "TSHIRT-S", "price": 249000, "inStock": true },
+      { "id": 2, "options": { "size": "M" }, "sku": "TSHIRT-M", "price": 279000, "inStock": true, "imageUrl": "/uploads/media/m.webp" }
+    ]
+  },
+  "error": null,
+  "meta": { "timestamp": "2026-07-15T10:00:00Z" }
+}
+```
+
+| Field | Description |
+|---|---|
+| `price` | Regular price, integer minor units (whole rupiah for IDR). |
+| `salePrice` | Optional sale price; when set it becomes the effective product price. |
+| `inStock` | Always `true` for inventory-untracked products; tracked products need positive stock. |
+| `lowStock` | `true` when tracked stock has reached the configured `lowStockThreshold`; omitted otherwise. |
+| `options` | The variant axes and their allowed values. |
+| `variants[].price` | Effective price: the variant's override, else the sale price, else the regular price. |
+
+Admin commerce data is managed via `GET/PUT /api/v1/catalog/products/{contentID}` (admin capability; `400 VALIDATION_ERROR` on invalid prices, options, or variant matrices). The admin GET/PUT wire shape is camelCase (`contentId`, `salePrice`, `trackInventory`, `productContentId`, `updatedAt`) mirroring the PUT body.
+
+---
+
+```http
+POST /api/v1/public/cart
+```
+
+Mints a cart token with an empty cart. Served by the eCommerce edition's cart module (other editions return 404 — the route does not exist). The token rides the response body **and** the `X-Cart-Token` header; clients present it on every subsequent cart call. No authentication required.
+
+**Response** (`200`):
+
+```json
+{
+  "data": {
+    "token": "mYH7...",
+    "cart": { "id": 11, "currency": "IDR", "subtotal": 0, "itemCount": 0, "lines": [] }
+  },
+  "error": null,
+  "meta": { "timestamp": "2026-07-15T10:00:00Z" }
+}
+```
+
+---
+
+```http
+GET /api/v1/public/cart
+```
+
+Returns the live-priced cart for the presented token: resolved lines with effective unit prices, subtotal (integer minor units), item count, and display currency. Each line also carries the live product identity — `title`, `slug`, and `imageUrl` — resolved from the content service, so themes can render the cart without a second catalog fetch; fields are omitted when the product no longer resolves. Lines whose product or variant no longer resolves stay in the cart marked `available: false` and are excluded from totals.
+
+The token rides the `X-Cart-Token` header, falling back to a `token` field in a JSON body for headerless clients. Missing, unknown, or empty tokens return `401 INVALID_CART_TOKEN` — never a persistence leak.
+
+```json
+{
+  "data": {
+    "id": 11,
+    "currency": "IDR",
+    "subtotal": 847000,
+    "itemCount": 3,
+    "lines": [
+      { "id": 5, "productContentId": 7, "sku": "TSHIRT-S", "title": "Lesstruct Tshirt", "slug": "tshirt", "imageUrl": "/uploads/media/ee5596044963e8f6.webp", "quantity": 2, "unitPrice": 299000, "lineTotal": 598000, "inStock": true, "available": true }
+    ]
+  },
+  "error": null,
+  "meta": { "timestamp": "2026-07-15T10:00:00Z" }
+}
+```
+
+---
+
+```http
+POST /api/v1/public/cart/items
+```
+
+Resolves the sellable line and merges it into the cart: the same product and variant add up, capped at 99 per line.
+
+**Request body:**
+
+```json
+{ "productContentId": 7, "variantId": 3, "quantity": 1 }
+```
+
+`variantId` is optional (absent means the base product). Out-of-stock demand is refused with `409 OUT_OF_STOCK`; unknown products or variants with `404 NOT_FOUND`; quantities outside 1–99 with `400 VALIDATION_ERROR`. The response is the refreshed cart, shaped like `GET /api/v1/public/cart`.
+
+---
+
+```http
+PATCH /api/v1/public/cart/items/{itemId}
+```
+
+Replaces a line's quantity (1–99), re-checking the catalog posture: unknown lines return `404 NOT_FOUND`, out-of-stock demand `409 OUT_OF_STOCK`. The response is the refreshed cart.
+
+---
+
+```http
+DELETE /api/v1/public/cart/items/{itemId}
+```
+
+Drops one line; unknown lines are a no-op. The response is the refreshed cart.
+
+---
+
+```http
+DELETE /api/v1/public/cart
+```
+
+Empties and removes the cart; the token cannot be reused afterwards. Responds `{"data":{"deleted":true}}`.
+
+---
+
+## Orders (eCommerce edition)
+
+Orders snapshot the cart at checkout: every line freezes the product
+reference, SKU, title, unit price, and quantity, and the order carries the
+guest contact, the shipping address, the display currency, and the integer
+minor-unit subtotal — plus an admin-set shipping line (`shippingMinor`,
+also integer minor units, zero until an admin weighs the parcel). The
+payable total (`totalMinor`) is always subtotal + shipping, derived at
+read, never stored twice. Everything below is served by the orders module
+(other editions 404 — the routes do not exist). The display order number
+(`ORD-000042`) is derived from the row ID and never stored, so there is no
+mutable counter to collide.
+
+> **Shared path note.** The admin paths below are dual-realm: the server
+> dispatches by credential — an API-key Bearer runs the agent chain,
+> anything else the browser chain (JWT + CSRF) — with the same capability
+> checks on both. Agent clients (CLI, MCP servers) use them exactly as
+> documented here; only admin keys pass the gate (`403
+> INSUFFICIENT_PERMISSIONS` otherwise).
+
+The status lifecycle is: `pending → paid | cancelled | expired`,
+`paid → packed | cancelled | refunded`, `packed → shipped | cancelled | refunded`,
+`shipped → delivered | refunded`, `delivered → refunded`. `cancelled`,
+`refunded`, and `expired` are closed — no outgoing moves. A successful
+move emails the customer (best-effort: a mail failure never fails the
+transition).
+
+`paid` is reachable only through payment confirmation — the payments
+module's verified proof (admin verify) or the gateway webhook — never
+through this transition surface: `{"status": "paid"}` answers
+`409 INVALID_TRANSITION` by contract, so no surface can mint a payment.
+A cancellation or refund of an order that still holds its goods restocks
+line for line; shipment and delivery end the unwind.
+
+```json
+{
+  "data": {
+    "id": 42,
+    "orderNumber": "ORD-000042",
+    "status": "pending",
+    "customerEmail": "customer@example.com",
+    "customerName": "Customer Name",
+    "customerPhone": "+62 812 000 000",
+    "shipTo": {
+      "street": "Jl. Example No. 1",
+      "city": "Jakarta",
+      "province": "DKI Jakarta",
+      "postalCode": "10110"
+    },
+    "currency": "IDR",
+    "subtotal": 598000,
+    "shippingMinor": 15000,
+    "totalMinor": 613000,
+    "items": [
+      {
+        "id": 97,
+        "productContentId": 7,
+        "variantId": 3,
+        "sku": "TSHIRT-S-RED",
+        "title": "T-Shirt",
+        "unitPrice": 299000,
+        "quantity": 2,
+        "lineTotal": 598000
+      }
+    ],
+    "itemCount": 1,
+    "manualPayee": {
+      "bank": "BCA",
+      "account": "1234567890",
+      "name": "PT Lesstruct Demo"
+    },
+    "consent": {
+      "acceptedAt": "2026-10-18T10:00:00Z",
+      "terms": {
+        "page": "terms-of-service",
+        "pageId": 11,
+        "slug": "terms-of-service",
+        "language": "en",
+        "updatedAt": "2026-09-30T08:00:00Z"
+      },
+      "privacy": {
+        "page": "privacy-policy",
+        "pageId": 12,
+        "slug": "privacy-policy",
+        "language": "en",
+        "updatedAt": "2026-09-30T08:00:00Z"
+      }
+    },
+    "createdAt": "2026-10-18T10:00:00Z",
+    "updatedAt": "2026-10-18T10:00:00Z"
+  },
+  "error": null,
+  "meta": { "timestamp": "2026-10-18T10:00:00Z" }
+}
+```
+
+List reads leave `items` an empty array and carry the read-time `itemCount`
+aggregate; only the detail and tracking reads fill `items`. `customerPhone`
+is omitted when absent, as is `items[].variantId` on lines checked out from
+the base product. `trackingToken` appears only on the checkout response —
+the one moment the caller receives the order's guest key; later reads never
+return it (lookups must present it). `manualPayee` appears only on pending
+guest tracking reads
+when `[payments.manual]` is configured — absent means no payee section.
+`consent` appears only when the checkout carried an affirmative act: it
+records when the acceptance happened (`acceptedAt`) and the exact revision
+accepted for each document — `page`, `pageId`, `slug`, `language`, and
+`updatedAt`. Orders placed while no consent gate is active carry no
+`consent` object.
+
+```http
+POST /api/v1/public/checkout
+```
+
+Consumes the presented cart into a `pending` order. The cart token rides
+the `X-Cart-Token` header, falling back to a `token` field in a JSON body
+for headerless clients. No authentication required. Decoding is capped at
+a 1 MB body — the public router rate-limits requests, not bytes, and this
+read is anonymous.
+
+**Request body:**
+
+```json
+{
+  "email": "customer@example.com",
+  "name": "Customer Name",
+  "phone": "+62 812 000 000",
+  "shipTo": {
+    "street": "Jl. Example No. 1",
+    "city": "Jakarta",
+    "province": "DKI Jakarta",
+    "postalCode": "10110"
+  },
+  "consentAccepted": true
+}
+```
+
+`email`, `name`, and the full `shipTo` are required (guest checkout);
+`phone` is optional. When the `[legal]` checkout consent gate is active
+(see [configuration.md](configuration.md)), an affirmative
+`consentAccepted: true` is required — otherwise the checkout answers
+`400 CONSENT_REQUIRED` regardless of the client, so the browser checkbox
+is advisory. The acceptance is recorded on the order (`consent` above)
+against the resolved terms-of-service and privacy-policy revisions. The
+cart's live posture is enforced before the cart is claimed: an empty cart
+is `409 EMPTY_CART`, a line's product or variant vanished from the
+catalog `409 LINE_UNAVAILABLE`, demand beyond stock `409 OUT_OF_STOCK`.
+The claim itself is the atomic delete of the cart — a double submit or a
+parallel checkout on one token loses that delete and reads
+`409 CART_UNAVAILABLE`, so exactly one order can ever be born per token;
+the losing claimant sees no order. Contact violations
+(`VALIDATION_ERROR`), invalid or oversized bodies are `400`. Success
+returns the snapshotted `pending` order (shape above) and the cart is
+gone — its token never resolves again.
+
+```http
+GET /api/v1/public/orders/{orderNumber}?email=<address>&token=<tracking-token>
+```
+
+Guest tracking: the order whose derived number **and** the registered
+customer email **and** the per-order tracking token all match the request.
+The token is a 128-bit random secret minted at checkout — it rides the
+checkout response (`trackingToken`) exactly once and the confirmation
+email's "Track your order" link, and only its SHA-256 hash is stored.
+Sequential order numbers and knowable emails are deliberately not enough.
+Any mismatch — unknown number, wrong email, missing or wrong token — is a
+non-committal `404 NOT_FOUND`. Orders placed before the token existed are
+untrackable through the guest gate (they have no token to present).
+
+```http
+GET /api/v1/orders?status=<status>&cursor=<cursor>
+```
+
+Admin list, newest first, `items` empty on each row. Requires the admin
+capability (`403 INSUFFICIENT_PERMISSIONS` otherwise).
+
+**Query parameters:**
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `status` | *(all statuses)* | One lifecycle status (`pending`, `paid`, …); unknown values are `400 VALIDATION_ERROR`. |
+| `cursor` | *(first page)* | Keyset cursor from `meta.pagination.nextCursor`; malformed values are `400 VALIDATION_ERROR`. |
+| `limit` | server default | Max rows per page. |
+
+**Response `200`** — `data` is the array and `meta.pagination` carries
+`nextCursor` (omitted on the last page) and `hasMore`:
+
+```json
+{
+  "data": [{ "id": 42, "orderNumber": "ORD-000042", "status": "pending", "items": [] }],
+  "error": null,
+  "meta": { "timestamp": "2026-10-18T10:00:00Z", "pagination": { "nextCursor": "42", "hasMore": true } }
+}
+```
+
+```http
+GET /api/v1/orders/{orderID}
+```
+
+One order with its full item snapshot. Unknown IDs are `404 NOT_FOUND`;
+non-numeric ones `400 VALIDATION_ERROR`. Requires the admin capability.
+
+```http
+POST /api/v1/orders/{orderID}/status
+```
+
+One lifecycle move — `{"status": "cancelled"}`, `{"status": "shipped"}`,
+`{"status": "refunded"}`, … — against the transition map above, never
+`"paid"`: payment confirmation is the payments module's proof-gated path
+(see below), so this surface answers `409 INVALID_TRANSITION` for it by
+contract. Illegal moves are `409 INVALID_TRANSITION`; the resulting order
+is the response body. Non-numeric IDs `400 VALIDATION_ERROR`, unknown
+orders `404 NOT_FOUND`, unknown target statuses `400 VALIDATION_ERROR`,
+oversized bodies (1 MB, mirroring the checkout cap) `400 VALIDATION_ERROR`.
+Requires the admin capability.
+
+```http
+POST /api/v1/orders/{orderID}/shipping
+```
+
+Replaces the shipping line (`{"amount": 15000}`, integer minor units) and
+returns the refreshed order with its recomputed `totalMinor`. Only a
+`pending` order can carry shipping — settled, expired, or cancelled orders
+answer `409 INVALID_TRANSITION`, negative amounts `400 VALIDATION_ERROR`.
+No email rides the write: the customer learns the full total when the
+payment proof records it. Requires the admin capability.
+
+```http
+GET /api/v1/orders/{orderID}/invoice
+```
+
+Streams the order's invoice PDF (`Content-Type: application/pdf`,
+downloaded inline as `INV-000042.pdf`): frozen lines, the shipping line,
+and the display-only tax breakdown at the configured PPN rate beside an
+unchanged total (omitted entirely at rate 0). The document derives on demand from the stored record —
+nothing is persisted — so it always reflects the current order. Unknown
+orders are `404 NOT_FOUND`; non-numeric IDs `400 VALIDATION_ERROR`. A
+module without a renderer answers `503 INVOICE_UNAVAILABLE`. Requires the
+admin capability.
+
+```http
+GET /api/v1/orders/invoice-settings
+```
+
+The live `[invoice]` block — the seller identity and PPN rate every invoice
+renders with:
+
+```json
+{
+  "data": {
+    "sellerName": "PT Lesstruct Demo",
+    "sellerAddress": "Jl. Example No. 1, Jakarta",
+    "sellerTaxId": "01.234.567.8-901.234",
+    "taxRate": 12
+  },
+  "error": null,
+  "meta": { "timestamp": "2026-10-18T10:00:00Z" }
+}
+```
+
+Requires the admin capability. A module wired without a settings store
+answers `503 INVOICE_SETTINGS_UNAVAILABLE`.
+
+```http
+PUT /api/v1/orders/invoice-settings
+```
+
+Validates and saves the block, then adopts it for the next rendered
+invoice — no restart. The body carries all four fields;
+`taxRate` is **required** and must be a percentage between 0 and 100
+(an explicit `0` is valid for sellers charging no PPN):
+
+```json
+{
+  "sellerName": "PT Lesstruct Demo",
+  "sellerAddress": "Jl. Example No. 1, Jakarta",
+  "sellerTaxId": "01.234.567.8-901.234",
+  "taxRate": 12
+}
+```
+
+A missing/non-finite/out-of-range rate is `400 VALIDATION_ERROR`; a
+malformed body `400 INVALID_REQUEST`. The write rewrites only the
+`[invoice]` table of `config.toml` (atomic temp-file + rename, every other
+line preserved) — a failed write answers `500 INTERNAL_ERROR` and leaves
+the running settings untouched. Returns the saved block. Requires the
+admin capability.
+
+---
+
+## Payments (eCommerce edition)
+
+Payment records carry the proof text, the method that produced it, the
+verification status, and the amount snapshot taken with the submission —
+integer minor units, so a later price edit can never rewrite a proof.
+Resubmission after a rejection inserts a new row; history is append-only.
+Everything below is served by the payments module (other editions 404 —
+the routes do not exist).
+
+> **Shared path note.** The admin paths below are dual-realm like the
+> orders surface above: an API-key Bearer runs the agent chain, anything
+> else the browser chain, with the same capability checks on both.
+
+```json
+{
+  "data": {
+    "id": 7,
+    "orderId": 42,
+    "method": "manual",
+    "status": "pending",
+    "reference": "BR-12345",
+    "amount": 522500,
+    "verifiedBy": "",
+    "createdAt": "2026-10-18T10:00:00Z",
+    "updatedAt": "2026-10-18T10:00:00Z"
+  },
+  "error": null,
+  "meta": { "timestamp": "2026-10-18T10:00:00Z" }
+}
+```
+
+`status` is one of `pending`, `verified`, `rejected`. `verifiedBy` carries
+the deciding administrator (or `midtrans` for gateway-settled records) and
+is omitted while pending. The offered methods adopt from the `[payments]`
+config block — `manual` is the bank-transfer proof flow, `midtrans` the
+Snap hosted checkout (present only when the environment carries
+`MIDTRANS_SERVER_KEY`).
+
+```http
+GET /api/v1/public/payments/methods
+```
+
+The offered methods in configuration order, never merged from
+submissions: `{"data": {"methods": ["manual", "midtrans"]}}`. No
+authentication required.
+
+```http
+POST /api/v1/public/orders/{orderNumber}/payments
+```
+
+Records one manual transfer proof for a guest, gated on the order number,
+the registered customer email, **and** the per-order tracking token — the
+same gate as guest tracking, so lookups never enumerate: any mismatch is a
+non-committal `404 NOT_FOUND`. No authentication required. Bodies cap at
+1 MB.
+
+```json
+{
+  "email": "shopper@example.com",
+  "token": "the-tracking-token",
+  "method": "manual",
+  "reference": "BR-12345"
+}
+```
+
+The reference is stored verbatim (trimmed); blank or over-500-rune
+references are `400 VALIDATION_ERROR`, unoffered methods
+`400 VALIDATION_ERROR`, and an order that is no longer `pending` (already
+settled, expired, cancelled) `409 ORDER_NOT_PAYABLE`. Success returns the
+persisted record (shape above); the customer receives a received-email
+(best-effort). The expected amount snapshots from the order.
+
+```http
+POST /api/v1/public/orders/{orderNumber}/payments/session
+```
+
+Mints a hosted checkout session for a payable order, gated on the number,
+email, and tracking token like the proof submission:
+`{"email": "...", "token": "..."}` →
+`{"data": {"token": "...", "redirectUrl": "..."}}`. A store without a
+gateway driver answers `503 GATEWAY_UNAVAILABLE`; settled orders
+`409 ORDER_NOT_PAYABLE`. The session expiry mirrors the orders
+`[orders] pending_expiry` window, and the mint carries a finish callback
+pointing back at the order tracking view (`/orders/track?order=…&email=…&t=…`),
+so the buyer lands on their rendered paid order instead of the gateway
+default. An upstream gateway failure (bad server key, Midtrans down)
+answers `502 GATEWAY_UPSTREAM`.
+
+```http
+POST /api/v1/public/payments/midtrans/webhook
+```
+
+The gateway's event receiver. The SHA-512 server-key checksum over the
+order id, notification status code, gross-amount string, and server key
+is verified on the raw wire strings — a forged event answers
+`403 SIGNATURE_INVALID`, an unparseable or order-disagreeing amount
+`400 AMOUNT_MISMATCH`. Settlements (`settlement`; `capture` folds only
+with an accepted fraud verdict — a `challenge` acknowledges `200` and
+waits for the follow-up event) confirm the
+order through the payment-gated path — the inventory claim, the
+idempotent settle, and the flip arbitration live orders-side — then
+record a self-verifying row deduplicated on the transaction reference; a
+stock shortfall answers `409 OUT_OF_STOCK` and the order stays pending
+for fulfillment. Refunds (`refund`, `partial_refund`) transition the
+order refunded through the lifecycle (restock is the orders service's
+call: goods the customer received are not reclaimed). Unknown statuses
+and already-refunded orders acknowledge `200` so the gateway stops
+retrying.
+
+```http
+GET /api/v1/payments?status=<status>&cursor=<cursor>
+```
+
+Admin list, newest first. Requires the admin capability
+(`403 INSUFFICIENT_PERMISSIONS` otherwise). Query parameters match the
+orders list: `status` (one of the verification statuses; unknown values
+`400 VALIDATION_ERROR`), `cursor` (keyset token; malformed values
+`400 VALIDATION_ERROR`), `limit`. The pagination metadata rides
+`meta.pagination` (`nextCursor`, `hasMore`).
+
+`?orderId=<id>` narrows the read to one order's payment history, newest
+first, unpaginated (histories are a handful of proofs): the status and
+cursor filters do not apply, and the pagination metadata answers empty.
+Malformed ids are `400 VALIDATION_ERROR`.
+
+```http
+GET /api/v1/payments/{paymentID}
+```
+
+One record with its order context — the number, the order status the
+decision depends on, and the payable total the proof amount answers to.
+A stale proof (recorded before shipping was set) shows its amount
+against the current total:
+
+```json
+{
+  "data": {
+    "id": 7,
+    "orderId": 42,
+    "method": "manual",
+    "status": "pending",
+    "reference": "BR-12345",
+    "amount": 522500,
+    "order": {
+      "orderNumber": "ORD-000042",
+      "status": "pending",
+      "totalMinor": 537500
+    }
+  }
+}
+```
+
+Unknown IDs are `404 NOT_FOUND`; non-numeric ones
+`400 VALIDATION_ERROR`. Requires the admin capability.
+
+```http
+POST /api/v1/payments/{paymentID}/verify
+```
+
+Decides a pending proof for the positive: the order flips to paid
+through the payment-gated path (stock claimed; a shortfall answers
+`409 OUT_OF_STOCK` while the order waits for fulfillment; an order that
+left pending — paid through the gateway, expired, cancelled — answers
+`409 ORDER_NOT_PAYABLE`, so a paid order can never gain a second verified
+record), and the record carries
+the deciding administrator. Already-decided records answer
+`409 PAYMENT_NOT_PENDING`. Requires the admin capability.
+
+```http
+POST /api/v1/payments/{paymentID}/reject
+```
+
+Decides a pending proof for the negative: the order stays pending — the
+customer may correct and resubmit — and the record carries the
+rejection. An order that already left pending answers
+`409 ORDER_NOT_PAYABLE` instead (no rejection email goes out for a paid
+order). Already-decided records `409 PAYMENT_NOT_PENDING`. Requires
+the admin capability.
 
 ---
 
@@ -1018,6 +1689,62 @@ Returns published-content counts grouped by year and month, newest first — for
 | `url` | Absolute URL of the listing page for that month. When `post_type` is set, points to `/<post_type>?year=…&month=…`; otherwise points to `/?year=…&month=…`. |
 
 An empty result returns `"data": []`. On a server failure the endpoint returns `500` with `{"error":{"code":"internal_error","message":"Failed to list published archive"}}`.
+
+---
+
+## Users (admin, agent realm)
+
+The registration queue and account lifecycle over the agent realm, so the CLI (and other API-key clients) can triage registrations and moderate accounts without a browser session. Like export/ssg, these paths are **agent-only**: they require an API key belonging to an **Admin** role (`403 INSUFFICIENT_PERMISSIONS` otherwise). The same handlers serve the browser admin UI under `/api/admin/users` (JWT + CSRF) — both realms share the services and the mail side-effects. Account creation and role changes stay browser-only (admin panel).
+
+```http
+GET /api/v1/users?status=<status>&limit=<n>&offset=<n>
+```
+
+Users list, newest first. `status` filters (`pending`, `verified`, `suspended`, `soft_deleted`; unknown values are `400 INVALID_STATUS`); `limit` defaults to 100 and caps at 1000; `offset` defaults to 0. The response is a flat list: `data[]` carries the user projections (`id`, `username`, `name`, `email`, `status`, `role`, `createdAt`) and `meta` the count/total block (same envelope shape as every other list endpoint).
+
+```http
+GET /api/v1/users/pending
+```
+
+The registration queue: pending users newest first, each with its email-verification state. Approve only verified rows when the store requires admin approval: approving an unverified address then answers `409 EMAIL_NOT_VERIFIED` (with open registration, approval activates the account directly). A non-pending user answers `400 INVALID_USER_STATUS`.
+
+```http
+POST /api/v1/users/{id}/approve
+```
+
+Approves a pending registration (no body). The account activates immediately; best-effort emails notify the registrant.
+
+```http
+POST /api/v1/users/{id}/reject
+```
+
+Rejects a pending registration. Requires the confirmation body `{"confirmed": true}` — without it (or with `false`) the call answers `400 CONFIRMATION_REQUIRED` and nothing happens. The rejection deletes the user row: there is no rejected status to audit later. A rejection email goes out best-effort.
+
+```http
+POST /api/v1/users/{id}/mark-spam
+```
+
+Marks a registration as spam and blocks the address. Same confirmation-body contract as reject, and likewise deletes the user row (the email stays blocked; nothing remains to audit).
+
+```http
+POST /api/v1/users/{id}/suspend
+```
+
+Suspends an account. An optional `{"reason": "..."}` body is emailed to the user best-effort. Settled states refuse with `409`.
+
+```http
+POST /api/v1/users/{id}/unsuspend
+```
+
+Lifts a suspension (no body).
+
+```http
+POST /api/v1/users/{id}/soft-delete
+```
+
+Soft-deletes an account. Requires the confirmation body (`{"confirmed": true, "reason": "..."}` — reason optional); without confirmation the call answers `400 CONFIRMATION_REQUIRED`.
+
+Unknown IDs read `404 USER_NOT_FOUND`; non-numeric ones `400 INVALID_USER_ID`.
 
 ---
 
@@ -1258,7 +1985,7 @@ content/                     Hugo-compatible source files
 static/uploads/media/        Bundled media files
 ```
 
-Each content item becomes a `<postType>/<slug>.<language>.html` file with YAML frontmatter (`title`, `date`, `description`, `tags`, `url`, `language`, `aliases`, `draft`, `lastmod`, custom fields). TipTap body content is rendered to HTML before export. Referenced media files are bundled under `static/uploads/media/` with the HTML `src` attributes unchanged — Hugo serves `static/` at site root, matching Lesstruct's own `/uploads/media/` path.
+Each content item becomes a `<postType>/<slug>.<language>.html` file with YAML frontmatter (`title`, `date`, `description`, `tags`, `url`, `language`, `aliases`, `draft`, `lastmod`, custom fields). Bodies render to HTML before export — including markdown-authored rows, which are stored as tiptap JSON (the `format` column records the authoring format, not the stored shape). Referenced media files are bundled under `static/uploads/media/` with the HTML `src` attributes unchanged — Hugo serves `static/` at site root, matching Lesstruct's own `/uploads/media/` path.
 
 ## Static site generation (`/api/v1/ssg`)
 

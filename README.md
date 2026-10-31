@@ -17,23 +17,23 @@
     <td width="33.3%" align="center">
       <a href="https://lesstruct.dev/tour/">
         <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/admin-hero-dark.png">
-          <img alt="The Lesstruct admin panel" src="docs/assets/screenshots/admin-hero-light.png" width="100%">
+          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/admin-hero-dark.webp">
+          <img alt="The Lesstruct admin panel" src="docs/assets/screenshots/admin-hero-light.webp" width="100%">
         </picture>
       </a>
       <br><sub>Admin panel</sub>
     </td>
     <td width="33.3%" align="center">
       <a href="https://lesstruct.dev/tour/">
-        <img alt="The rendered content site" src="docs/assets/screenshots/content-site-hero-light.png" width="100%">
+        <img alt="The rendered content site" src="docs/assets/screenshots/content-site-hero-light.webp" width="100%">
       </a>
       <br><sub>Content site</sub>
     </td>
     <td width="33.3%" align="center">
       <a href="https://lesstruct.dev/docs/features/">
         <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dashboard-dark.png">
-          <img alt="The admin dashboard" src="docs/assets/screenshots/dashboard-light.png" width="100%">
+          <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/dashboard-dark.webp">
+          <img alt="The admin dashboard" src="docs/assets/screenshots/dashboard-light.webp" width="100%">
         </picture>
       </a>
       <br><sub>Dashboard</sub>
@@ -65,7 +65,7 @@ Open <http://localhost:8080/admin>, **sign in as `admin` / `admin`** and set a n
 
 ### Option A — Download a release binary (recommended)
 
-Grab the latest build for your platform from the [releases page](https://github.com/aristorinjuang/lesstruct/releases). Each release ships static binaries for `linux`, `darwin`, and `windows` on `amd64` and `arm64`:
+Grab the latest build for your platform from the [releases page](https://github.com/aristorinjuang/lesstruct/releases). Each release ships static binaries for `linux`, `darwin`, and `windows` on `amd64` and `arm64` — the default (blog) edition as `lesstruct-<os>-<arch>` and the Core edition (headless engine) as `lesstruct-core-<os>-<arch>`:
 
 | OS | amd64 | arm64 |
 |---|---|---|
@@ -84,7 +84,11 @@ lesstruct
 ### Option B — `go install`
 
 ```bash
+# The default (blog) edition — every module
 go install github.com/aristorinjuang/lesstruct@latest
+
+# The Core edition — the headless engine
+go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-core@latest
 ```
 
 ### Option C — Build from source
@@ -96,8 +100,20 @@ make install   # builds the admin panel (npm), the server, and the CLI into $GOB
 ```
 
 Two builds of one product: `go install` / `make install` ships Lesstruct
-with every module and every database driver. `make build-server` builds the
-same binary without the embedded SQLite driver (about 6 MB leaner, for
+with every module and every database driver — the **blog edition**, the
+default. `go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-core@latest`
+(or `make build-core`) builds the **Core edition**: the headless engine —
+identity, content, media, plugins; no comment system, no SSR theme engine,
+no AI text generation, no importers — for sites that render their own
+frontend against `/api/v1`. `go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-ecommerce@latest`
+(or `make build-ecommerce`) builds the **eCommerce edition**: the blog
+platform plus the commerce stack (catalog pricing and stock, guest carts,
+and orders with checkout), served by the embedded storefront theme —
+product pages, cart, checkout, and order tracking. Editions share
+the same `config.toml` and data directory; moving between them is
+installing the other binary.
+`make build-server` builds the default edition
+without the embedded SQLite driver (about 6 MB leaner, for
 PostgreSQL/MySQL deployments). `make build-cli` builds the Lesstruct CLI —
 the companion tool for AI agents.
 
@@ -152,7 +168,7 @@ Every first-party feature — users, auth, media, comments, SEO, and more — is
 
 ## Theme Development
 
-Themes are a `themes/<name>/` directory containing CSS, optional JS, and optional HTML template overrides — pointed at with `THEME_DIR=themes/<name>`. The default theme serves as a working starting point; the contract (CSS variables, layout/body blocks, JS DOM ids, CDN assets) is documented so a fork-and-modify workflow is safe.
+Themes are a `themes/<name>/` directory containing CSS, optional JS, and optional HTML template overrides — pointed at with `THEME_DIR=themes/<name>`. The embedded theme serves as a working starting point — the default blog theme, or the storefront theme in the eCommerce edition — and the contract (CSS variables, layout/body blocks, standalone commerce pages, JS DOM ids, CDN assets) is documented so a fork-and-modify workflow is safe.
 
 - Full contract: [`docs/theme-development.md`](docs/theme-development.md)
 - AI-assisted workflow: [`skills/lesstruct-theme-development/`](skills/lesstruct-theme-development/)
@@ -175,6 +191,8 @@ Point it at a running server and create an API key from the admin panel to get s
 ## Support this project
 
 Lesstruct is a spare-time project. I — Ari — design, build, test, and document it in the hours outside my day job. If it saves you time, the most helpful thing you can do is **[sponsor the work on GitHub Sponsors](https://github.com/sponsors/aristorinjuang)**. Sponsorship funds the small stuff that compounds: CI minutes, a real domain for documentation, and the occasional dedicated weekend for plugin/theme polish.
+
+And if you want to rep the brand, official merch is at **[merch.lesstruct.dev](https://merch.lesstruct.dev)**.
 
 Starring the repo, opening well-scoped issues, and sending PRs with a failing test are all just as valuable — and they cost nothing.
 

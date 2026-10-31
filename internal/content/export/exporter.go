@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 
-	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
-	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
 )
 
 const exportPageSize = 100
@@ -53,7 +53,12 @@ func (e *Exporter) writeContent(
 	writtenMedia map[string]bool,
 ) error {
 	body := c.Content
-	if c.Format == contentdomain.FormatTiptap {
+	// FormatMarkdown means "authored as markdown, converted to tiptap on
+	// write": the stored body is tiptap JSON exactly like a tiptap-authored
+	// row, so every non-HTML row renders through the same renderer. Only
+	// FormatHTML keeps its raw body. A row that fails to render is skipped
+	// with a recorded error by the Export loop — never shipped as raw JSON.
+	if c.Format != contentdomain.FormatHTML {
 		var err error
 		body, err = e.bodyToHTML(c.Content)
 		if err != nil {

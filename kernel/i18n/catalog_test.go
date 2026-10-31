@@ -190,3 +190,40 @@ func TestNewCatalog_EmbeddedFS(t *testing.T) {
 	// Fallback: fr missing → falls back to primary en
 	assert.Equal(t, "Login", c.T("fr", "ui.login"))
 }
+
+func TestEmbeddedFS_ListingAndCookieKeys(t *testing.T) {
+	c, err := i18n.NewCatalog(i18n.Embedded(), []string{"en", "id"})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name  string
+		lang  string
+		key   string
+		want  string
+		isFmt bool
+	}{
+		{name: "en browse posts", lang: "en", key: "ui.browse_posts", want: "Browse %s.", isFmt: true},
+		{name: "id browse posts", lang: "id", key: "ui.browse_posts", want: "Jelajahi %s.", isFmt: true},
+		{name: "en posts by", lang: "en", key: "ui.posts_by", want: "Posts by %s.", isFmt: true},
+		{name: "id posts by", lang: "id", key: "ui.posts_by", want: "Postingan oleh %s.", isFmt: true},
+		{name: "en posts tagged", lang: "en", key: "ui.posts_tagged", want: "Posts tagged %q.", isFmt: true},
+		{name: "id posts tagged", lang: "id", key: "ui.posts_tagged", want: "Postingan dengan tag %q.", isFmt: true},
+		{name: "en cookie notice", lang: "en", key: "ui.cookie_notice", want: "We use cookies", isFmt: false},
+		{name: "id cookie notice", lang: "id", key: "ui.cookie_notice", want: "Kami menggunakan cookie", isFmt: false},
+		{name: "en cookie accept", lang: "en", key: "ui.cookie_accept", want: "Accept", isFmt: false},
+		{name: "id cookie accept", lang: "id", key: "ui.cookie_accept", want: "Terima", isFmt: false},
+		{name: "en cookie decline", lang: "en", key: "ui.cookie_decline", want: "Decline", isFmt: false},
+		{name: "id cookie decline", lang: "id", key: "ui.cookie_decline", want: "Tolak", isFmt: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := c.T(tt.lang, tt.key)
+			if tt.isFmt {
+				assert.Equal(t, tt.want, got)
+			} else {
+				assert.Contains(t, got, tt.want)
+			}
+		})
+	}
+}

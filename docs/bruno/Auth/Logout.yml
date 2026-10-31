@@ -1,0 +1,20 @@
+info:
+  name: Logout
+  type: http
+  seq: 11
+  docs: >-
+    Ends the browser session: revokes every session server-side (previously
+    issued cookies and Bearer tokens stop validating) and clears the
+    `lesstruct_jwt` cookie. Requires the session cookie (or a valid Bearer
+    JWT) — anonymous calls are rejected.
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/auth/logout"
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

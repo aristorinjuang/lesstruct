@@ -1,7 +1,9 @@
 package sitessr_test
 
 import (
+	"context"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -447,7 +449,8 @@ func TestServeIndex_PostCardImage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, `<img src="https://example.com/photo.webp"`)
 	assert.Contains(t, body, `class="post-card__image"`)
-	assert.Contains(t, body, `loading="lazy"`)
+	assert.Contains(t, body, `loading="eager"`, "first post card is the LCP candidate and must load eagerly")
+	assert.Contains(t, body, `fetchpriority="high"`, "first post card is the LCP candidate and must be fetch-prioritized")
 	mockService.AssertExpectations(t)
 }
 
@@ -2222,7 +2225,26 @@ func TestStaticCSSContainsInterFont(t *testing.T) {
 
 	css := w.Body.String()
 	assert.Contains(t, css, "Inter", "should contain Inter font family")
-	assert.Contains(t, css, "fonts.googleapis.com/css2?family=Inter", "should import Inter from Google Fonts")
+	assert.NotContains(t, css, "@import", "webfont must load through a parallel layout stylesheet, not a serial @import")
+}
+
+func TestLayoutLoadsInterFontStylesheet(t *testing.T) {
+	mockService := newMockReader()
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]sitessr.ContentRef{
+		{Slug: "hello-world", Title: "Hello World", PostType: "post", Language: "en"},
+	}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandler(t, mockService)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, "fonts.googleapis.com/css2?family=Inter", "layout should load Inter through a parallel stylesheet")
+	mockService.AssertExpectations(t)
 }
 
 func TestAllPagesRenderWithCSS(t *testing.T) {
@@ -2393,6 +2415,49 @@ func TestServeIndex_SiteConfigLogoEmptyRendersNameAsText(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, `class="site-logo">My Site</a>`, "name should render as text when no logo is configured")
 	assert.NotContains(t, body, "<img", "no <img> should render when logo is empty")
+	mockService.AssertExpectations(t)
+}
+
+func TestServeIndex_SiteConfigFaviconRendersConfiguredLinks(t *testing.T) {
+	mockService := newMockReader()
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]sitessr.ContentRef{}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandlerWithSiteConfig(t, mockService, sitessr.SiteConfig{
+		Name:    "Astra Motor Kalbar",
+		Favicon: "/uploads/icon.png",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, `<link rel="icon" href="/uploads/icon.png">`, "configured favicon should drive rel=icon")
+	assert.Contains(t, body, `<link rel="apple-touch-icon" href="/uploads/icon.png">`, "configured favicon should drive apple-touch-icon")
+	assert.NotContains(t, body, "/static/favicon", "bundled favicon links should not render when a favicon is configured")
+	mockService.AssertExpectations(t)
+}
+
+func TestServeIndex_SiteConfigFaviconEmptyRendersBundledSet(t *testing.T) {
+	mockService := newMockReader()
+	mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]sitessr.ContentRef{}, nil)
+	setupNavMocks(mockService)
+
+	handler := setupHandlerWithSiteConfig(t, mockService, sitessr.SiteConfig{Name: "My Site"})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, `<link rel="icon" type="image/png" href="/static/favicon-96x96.png" sizes="96x96">`, "bundled PNG favicon should render")
+	assert.Contains(t, body, `<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">`, "bundled SVG favicon should render")
+	assert.Contains(t, body, `<link rel="shortcut icon" href="/static/favicon.ico">`, "bundled ICO shortcut should render")
+	assert.Contains(t, body, `<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">`, "bundled apple-touch icon should render")
+	assert.NotContains(t, body, `<link rel="icon" href=`, "no typeless configured icon should render when favicon is empty")
 	mockService.AssertExpectations(t)
 }
 
@@ -3375,8 +3440,42 @@ func TestResolvePostImage(t *testing.T) {
 					nil,
 				)
 			},
-			expectThumbURL: "http://localhost:8080/uploads/media/abc123_thumb.webp",
+			expectThumbURL: "http://localhost:8080/uploads/media/abc123_medium.webp",
 			expectSrcset:   "http://localhost:8080/uploads/media/abc123_thumb.webp 370w, http://localhost:8080/uploads/media/abc123_medium.webp 800w",
+			expectSizes:    "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
+		},
+		{
+			name:     "thumb fallback when no medium variant",
+			imageURL: "http://localhost:8080/uploads/media/abc123.webp",
+			setupMock: func(m *mediaMocks.MockRepository) {
+				m.On("FindByHashPrefix", mock.Anything, "abc123").Return(
+					&mediadomain.Media{
+						Variants: map[string]mediadomain.MediaVariant{
+							"_thumb": {URL: "http://localhost:8080/uploads/media/abc123_thumb.webp", Width: 370},
+						},
+					},
+					nil,
+				)
+			},
+			expectThumbURL: "http://localhost:8080/uploads/media/abc123_thumb.webp",
+			expectSrcset:   "http://localhost:8080/uploads/media/abc123_thumb.webp 370w",
+			expectSizes:    "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
+		},
+		{
+			name:     "large fallback when only large variant exists",
+			imageURL: "http://localhost:8080/uploads/media/abc123.webp",
+			setupMock: func(m *mediaMocks.MockRepository) {
+				m.On("FindByHashPrefix", mock.Anything, "abc123").Return(
+					&mediadomain.Media{
+						Variants: map[string]mediadomain.MediaVariant{
+							"_large": {URL: "http://localhost:8080/uploads/media/abc123_large.webp", Width: 616},
+						},
+					},
+					nil,
+				)
+			},
+			expectThumbURL: "http://localhost:8080/uploads/media/abc123_large.webp",
+			expectSrcset:   "http://localhost:8080/uploads/media/abc123_large.webp 616w",
 			expectSizes:    "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
 		},
 	}
@@ -3439,7 +3538,9 @@ func TestResolvePostImage(t *testing.T) {
 				assert.Contains(t, body, `sizes="`+tt.expectSizes+`"`)
 			} else {
 				assert.NotContains(t, body, "srcset")
-				assert.NotContains(t, body, "sizes")
+				// Icon links carry a fixed sizes attribute; only the responsive
+				// image sizes string is under test here.
+				assert.NotContains(t, body, `sizes="(min-width`)
 			}
 		})
 	}
@@ -3582,4 +3683,121 @@ func TestStaticFiles_PlainCSSStillWorks(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.NotEqual(t, "public, max-age=31536000, immutable", w.Header().Get("Cache-Control"))
 	assert.Contains(t, w.Body.String(), "site-header")
+}
+
+func TestServeIndex_FeaturedImageFirst(t *testing.T) {
+	textBody := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]}]}`
+	bodyWithImage := `{"type":"doc","content":[{"type":"image","attrs":{"src":"https://example.com/body.webp"}}]}`
+	htmlBodyWithImage := `<p>Hello</p><img src="https://example.com/html.webp" alt="H">`
+	tests := []struct {
+		name            string
+		ref             sitessr.ContentRef
+		wantCardSrc     string
+		wantOG          string
+		wantNoImageCard bool
+	}{
+		{
+			name: "success - featured image wins over text-only body",
+			ref: sitessr.ContentRef{
+				Slug: "featured-post", Title: "Featured Post", PostType: "post",
+				Content: textBody, Language: "en", FeaturedImage: "https://example.com/featured.webp",
+			},
+			wantCardSrc: "https://example.com/featured.webp",
+			wantOG:      "https://example.com/featured.webp",
+		},
+		{
+			name: "success - body image fallback when featured empty",
+			ref: sitessr.ContentRef{
+				Slug: "body-post", Title: "Body Post", PostType: "post",
+				Content: bodyWithImage, Language: "en",
+			},
+			wantCardSrc: "https://example.com/body.webp",
+			wantOG:      "https://example.com/body.webp",
+		},
+		{
+			name: "success - html body image fallback when featured empty",
+			ref: sitessr.ContentRef{
+				Slug: "html-post", Title: "HTML Post", PostType: "post", Format: sitessr.FormatHTML,
+				Content: htmlBodyWithImage, Language: "en",
+			},
+			wantCardSrc: "https://example.com/html.webp",
+			wantOG:      "https://example.com/html.webp",
+		},
+		{
+			name: "success - no image renders placeholder and no og image",
+			ref: sitessr.ContentRef{
+				Slug: "text-post", Title: "Text Post", PostType: "post",
+				Content: textBody, Language: "en",
+			},
+			wantNoImageCard: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := newMockReader()
+			mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 51, 0).Return([]sitessr.ContentRef{tt.ref}, nil)
+			setupNavMocks(mockService)
+
+			handler := setupHandler(t, mockService)
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			w := httptest.NewRecorder()
+
+			handler.ServeHTTP(w, req)
+
+			body := w.Body.String()
+			require.Equal(t, http.StatusOK, w.Code)
+			if tt.wantNoImageCard {
+				assert.NotContains(t, body, `class="post-card__image"`)
+				assert.NotContains(t, body, `og:image`)
+				return
+			}
+			assert.Contains(t, body, tt.wantCardSrc)
+			if tt.wantOG != "" {
+				assert.Contains(t, body, `<meta property="og:image" content="`+tt.wantOG+`">`)
+			}
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestDataAssembler_SiteConfigProductImageRatio(t *testing.T) {
+	tests := []struct {
+		name      string
+		ratio     template.CSS
+		wantRatio template.CSS
+		wantErr   bool
+	}{
+		{
+			name:      "success - configured ratio reaches layout data",
+			ratio:     "1 / 1",
+			wantRatio: "1 / 1",
+			wantErr:   false,
+		},
+		{
+			name:      "success - empty ratio stays empty",
+			ratio:     "",
+			wantRatio: "",
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := newMockReader()
+			mockService.On("GetPublishedByPostType", mock.Anything, "post", []string{"en"}, 0, 0, 11, 0).Return([]sitessr.ContentRef{}, nil)
+			setupNavMocks(mockService)
+
+			assembler := sitessr.NewDataAssembler(mockService, nil, nil, nil, nil, nil, []string{"en"}, nil, sitessr.SiteConfig{Name: "Test", ProductImageRatio: tt.ratio}, 10)
+			data, err := assembler.BuildHomeData(context.Background(), 1, 0, 0)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRatio, data.SiteConfig.ProductImageRatio)
+			mockService.AssertExpectations(t)
+		})
+	}
 }

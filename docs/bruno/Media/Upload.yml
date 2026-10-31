@@ -16,9 +16,7 @@ http:
       - name: alt_text
         type: text
         value: Logo
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

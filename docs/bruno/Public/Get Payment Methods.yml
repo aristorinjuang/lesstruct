@@ -1,0 +1,15 @@
+info:
+  name: Get Payment Methods
+  type: http
+  seq: 20
+
+http:
+  method: GET
+  url: "{{BASE_URL}}/api/v1/public/payments/methods"
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

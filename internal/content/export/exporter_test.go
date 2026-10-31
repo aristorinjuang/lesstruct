@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
-	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -256,4 +256,87 @@ func TestExporter_Export_WithMedia(t *testing.T) {
 
 	assert.True(t, foundContent, "content file should be in tar")
 	assert.True(t, foundMedia, "media file should be in tar")
+}
+
+func TestExporter_Export_MarkdownRowRendersAndBundlesMedia(t *testing.T) {
+	// Regression test for the round-11 feedback: rows authored as markdown
+	// store tiptap JSON (the format column records the authoring format, not
+	// the stored shape), so the exporter must render markdown rows through
+	// bodyToHTML exactly like tiptap rows. Before the fix the raw JSON
+	// shipped inside the .html file and no media was bundled (there is no
+	// <img> tag in JSON for the bundler to find).
+	mediaDir := t.TempDir()
+	mediaFile := filepath.Join(mediaDir, "hero.webp")
+	require.NoError(t, os.WriteFile(mediaFile, []byte("fake-image-data"), 0o644))
+
+	contentSvc := new(mockContentService)
+	aliasSvc := new(mockAliasService)
+
+	aliasSvc.On("FindByContentID", mock.Anything, 7).Return([]*aliasdomain.Alias{}, nil)
+
+	tiptapDoc := `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Hello"}]},{"type":"image","attrs":{"src":"/uploads/media/hero.webp","alt":"hero"}}]}`
+	contentSvc.On("GetAll", mock.Anything, 100, 0).Return([]*contentdomain.Content{
+		{
+			ID:        7,
+			Title:     "Markdown Page",
+			Slug:      "markdown-page",
+			Content:   tiptapDoc,
+			Format:    contentdomain.FormatMarkdown,
+			Status:    contentdomain.StatusPublished,
+			PostType:  "page",
+			Language:  "en",
+			CreatedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+		},
+	}, nil)
+	contentSvc.On("GetAll", mock.Anything, 100, 100).Return([]*contentdomain.Content{}, nil)
+
+	bodyToHTML := func(s string) (string, error) {
+		return "<p>Hello</p><p><img src=\"/uploads/media/hero.webp\" alt=\"hero\"></p>", nil
+	}
+
+	logger := util.NewLogger(io.Discard)
+	exporter := NewExporter(
+		contentSvc,
+		aliasSvc,
+		bodyToHTML,
+		mediaDir,
+		logger,
+	)
+
+	var buf bytes.Buffer
+	result, err := exporter.Export(context.Background(), &buf)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.ContentExported)
+	assert.Empty(t, result.Errors)
+	assert.Equal(t, 1, result.MediaBundled, "the rendered image must be bundled")
+
+	gzr, err := gzip.NewReader(&buf)
+	require.NoError(t, err)
+	defer func() { _ = gzr.Close() }()
+
+	tr := tar.NewReader(gzr)
+	foundContent := false
+	foundMedia := false
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+
+		switch header.Name {
+		case "content/page/markdown-page.en.html":
+			foundContent = true
+			data, err := io.ReadAll(tr)
+			require.NoError(t, err)
+			assert.Contains(t, string(data), "<p>Hello</p>")
+			assert.NotContains(t, string(data), `"type":"doc"`, "raw tiptap JSON must never ship in the .html file")
+		case "static/uploads/media/hero.webp":
+			foundMedia = true
+		}
+	}
+
+	assert.True(t, foundContent, "content file must be in tar")
+	assert.True(t, foundMedia, "rendered image must be bundled in tar")
 }

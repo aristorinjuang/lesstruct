@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"strings"
 
 	"github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -44,7 +47,12 @@ func newRootCmd() *cobra.Command {
 		&apiKey,
 		"api-key",
 		"",
-		"API key (lesstruct_<keyID>_<secret>); overrides LESSTRUCT_API_KEY and the config file",
+		"API key (lesstruct_<keyID>_<secret>); overrides LESSTRUCT_API_KEY and the config file. Visible in the process list — prefer the env var, the config file, or --api-key-stdin for interactive use",
+	)
+	root.PersistentFlags().Bool(
+		"api-key-stdin",
+		false,
+		"read the API key from stdin's first line instead of the command line (for scripts; cannot be combined with --api-key)",
 	)
 	root.PersistentFlags().StringVar(
 		&baseURL,
@@ -56,16 +64,121 @@ func newRootCmd() *cobra.Command {
 		&output,
 		"output",
 		"text",
-		"output format: text or json",
+		"output format: text or json (json also renders errors as a JSON envelope)",
 	)
 
 	root.AddCommand(newContentCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newMediaCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newCatalogCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newOrdersCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newPaymentsCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newUsersCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newInvoiceSettingsCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newCommentCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newImportCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newExportCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newSSGCmd(&apiKey, &baseURL, &output))
 	return root
+}
+
+// wantsStdinKey reports whether --api-key-stdin requests the API key from
+// stdin. Scanning stops at "--" so a positional value that happens to look
+// like the flag is never mistaken for it.
+func wantsStdinKey(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "--api-key-stdin" {
+			return true
+		}
+		if v, ok := strings.CutPrefix(a, "--api-key-stdin="); ok {
+			lowered := strings.ToLower(v)
+			return lowered != "" && lowered != "false" && lowered != "0" && lowered != "f"
+		}
+	}
+	return false
+}
+
+// hasExplicitAPIKey reports whether --api-key carries a value, which
+// conflicts with --api-key-stdin. A bare trailing --api-key counts as
+// present: cobra itself rejects the missing value as a usage error.
+func hasExplicitAPIKey(args []string) bool {
+	for i, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "--api-key" {
+			return i+1 >= len(args) || !strings.HasPrefix(args[i+1], "-")
+		}
+		if v, ok := strings.CutPrefix(a, "--api-key="); ok {
+			return v != ""
+		}
+	}
+	return false
+}
+
+// readAPIKeyStdin consumes the API key from the first stdin line and returns
+// a reader over the remainder, so commands that also read bodies from stdin
+// (e.g. `content create`) see everything after the key line. An empty first
+// line is a usage error, not a silent empty key.
+func readAPIKeyStdin(in io.Reader) (string, io.Reader, error) {
+	buf := bufio.NewReader(in)
+	line, err := buf.ReadString('\n')
+	if err != nil && len(line) == 0 {
+		return "", buf, fmt.Errorf("--api-key-stdin found no key on stdin")
+	}
+	if key := strings.TrimSpace(line); key != "" {
+		return key, buf, nil
+	}
+	return "", buf, fmt.Errorf("--api-key-stdin found no key on stdin")
+}
+
+// warnInsecureConfig warns once per invocation when the configured key file
+// is group/world-readable: any local user could read the key it holds.
+// This is a property of the file itself, not of this run's key source —
+// even when --api-key or LESSTRUCT_API_KEY takes precedence, a readable
+// key-bearing config.toml still leaks credentials to other local users.
+// The warning fires only when the file actually carries a key; a keyless
+// file (base URL only) is not worth nagging about. Skipped on Windows,
+// where Go synthesizes permissive-looking mode bits that would false-positive
+// on every file.
+func warnInsecureConfig(errOut io.Writer) {
+	path, ok := configFilePath()
+	if !ok {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if info.Mode().Perm()&0o077 == 0 {
+		return
+	}
+	cfg, err := loadConfigFile()
+	if err != nil || strings.TrimSpace(cfg.Default.APIKey) == "" {
+		return
+	}
+	_, _ = fmt.Fprintf(errOut, "lesstruct-cli: warning: config file %s is readable by other users (mode %04o); run `chmod 600 %s` to keep your API key private\n", path, info.Mode().Perm(), path)
+}
+
+// requestedOutput sniffs the --output flag from the raw args so failures
+// print in the requested mode. Cobra only binds the value on successful
+// parse, but failures are exactly when the mode matters; a missing or
+// malformed flag falls back to text.
+func requestedOutput(args []string) string {
+	for i, arg := range args {
+		if arg == "--output" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if value, ok := strings.CutPrefix(arg, "--output="); ok {
+			return value
+		}
+	}
+	return "text"
 }
 
 // Execute runs the CLI against os.Args and os.Stdin/Stdout/Stderr, returning
@@ -78,9 +191,34 @@ func Execute() int {
 // exit code. Exported so tests can drive a freshly-built command tree
 // deterministically. A *exitError yields its code (and its message to errOut);
 // any other cobra error (bad flags, unknown command) is treated as usage (2).
+// With --output json, failures print a JSON error envelope instead of plain
+// text, so pipelines parsing stdout-as-JSON do not break on the first
+// failure; the envelope carries the message and the process exit code.
+// With --api-key-stdin, the key is read from stdin's first line before any
+// command runs, so scripts need not put secrets on the command line.
 func ExecuteArgs(args []string, in io.Reader, out, errOut io.Writer) int {
 	root := newRootCmd()
 	root.SetArgs(args)
+
+	if wantsStdinKey(args) {
+		if hasExplicitAPIKey(args) {
+			_, _ = fmt.Fprintln(errOut, "lesstruct-cli: --api-key-stdin cannot be combined with --api-key")
+			return client.ExitUsage
+		}
+		key, rest, err := readAPIKeyStdin(in)
+		if err != nil {
+			_, _ = fmt.Fprintln(errOut, "lesstruct-cli: "+err.Error())
+			return client.ExitUsage
+		}
+		in = rest
+		if serr := root.PersistentFlags().Set("api-key", key); serr != nil {
+			_, _ = fmt.Fprintln(errOut, "lesstruct-cli: "+serr.Error())
+			return client.ExitUsage
+		}
+	}
+
+	warnInsecureConfig(errOut)
+
 	root.SetIn(in)
 	root.SetOut(out)
 	root.SetErr(errOut)
@@ -89,11 +227,20 @@ func ExecuteArgs(args []string, in io.Reader, out, errOut io.Writer) int {
 	if err == nil {
 		return client.ExitOK
 	}
+	jsonMode := requestedOutput(args) == "json"
 	if ee, ok := errors.AsType[*exitError](err); ok {
 		if ee.msg != "" {
-			_, _ = fmt.Fprintln(errOut, ee.msg)
+			if jsonMode {
+				_, _ = fmt.Fprintf(errOut, "{\"error\":{\"message\":%q,\"exitCode\":%d}}\n", ee.msg, ee.code)
+			} else {
+				_, _ = fmt.Fprintln(errOut, ee.msg)
+			}
 		}
 		return ee.code
+	}
+	if jsonMode {
+		_, _ = fmt.Fprintf(errOut, "{\"error\":{\"message\":%q,\"exitCode\":%d}}\n", err.Error(), client.ExitUsage)
+		return client.ExitUsage
 	}
 	_, _ = fmt.Fprintln(errOut, err)
 	return client.ExitUsage

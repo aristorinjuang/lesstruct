@@ -13,12 +13,6 @@ import (
 // import both sides.
 type UserCredentialPolicy struct{}
 
-// NewUserCredentialPolicy creates a UserCredentialPolicy. The concrete
-// value satisfies both the users and the auth CredentialPolicy seams.
-func NewUserCredentialPolicy() UserCredentialPolicy {
-	return UserCredentialPolicy{}
-}
-
 // ValidateEmail checks email format per platform rules, translating the
 // platform error to the module sentinel (same message, matchable without
 // importing internal packages).
@@ -62,4 +56,10 @@ func (UserCredentialPolicy) VerifyPassword(hash, password string) error {
 // NeedsRehash reports whether a hash uses outdated parameters.
 func (UserCredentialPolicy) NeedsRehash(hash string) bool {
 	return auth.NeedsRehash(hash)
+}
+
+// NewUserCredentialPolicy creates a UserCredentialPolicy. The concrete
+// value satisfies both the users and the auth CredentialPolicy seams.
+func NewUserCredentialPolicy() UserCredentialPolicy {
+	return UserCredentialPolicy{}
 }

@@ -48,7 +48,7 @@ func TestCommentatorMiddleware_CommentatorOnly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-			authMiddleware := NewAuthMiddleware(jwtManager)
+			authMiddleware := NewAuthMiddleware(jwtManager, stubUserLookup{})
 			commentatorMiddleware := NewCommentatorMiddleware(authMiddleware)
 
 			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ func TestCommentatorMiddleware_CommentatorOnly(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 
 			if tt.role != "" {
-				token, err := jwtManager.GenerateToken("123", "testuser", tt.role)
+				token, err := jwtManager.GenerateToken("123", "testuser", tt.role, 0)
 				require.NoError(t, err, "Failed to generate token")
 				req.Header.Set("Authorization", "Bearer "+token)
 			}
@@ -76,14 +76,14 @@ func TestCommentatorMiddleware_CommentatorOnly(t *testing.T) {
 // TestCommentatorMiddleware_RoleHierarchy tests that higher roles can access Commentator endpoints
 func TestCommentatorMiddleware_RoleHierarchy(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	authMiddleware := NewAuthMiddleware(jwtManager)
+	authMiddleware := NewAuthMiddleware(jwtManager, stubUserLookup{})
 	commentatorMiddleware := NewCommentatorMiddleware(authMiddleware)
 
 	roles := []string{RoleCommentator, RoleContributor, RoleAdmin}
 
 	for _, role := range roles {
 		t.Run(role+" can access Commentator endpoint", func(t *testing.T) {
-			token, err := jwtManager.GenerateToken("123", "testuser", role)
+			token, err := jwtManager.GenerateToken("123", "testuser", role, 0)
 			require.NoError(t, err, "Failed to generate token")
 
 			req := httptest.NewRequest(http.MethodGet, "/comments", nil)

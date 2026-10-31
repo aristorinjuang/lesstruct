@@ -1,0 +1,77 @@
+{{- define "body"}}
+<section class="container page-shell" data-checkout-page>
+	<header class="page-head">
+		<p class="eyebrow">{{if eq .Lang "id"}}Belanja{{else}}Shop{{end}}</p>
+		<h1>{{if eq .Lang "id"}}Checkout{{else}}Checkout{{end}}</h1>
+	</header>
+	<noscript><p class="alert alert--error">{{if eq .Lang "id"}}JavaScript diperlukan untuk checkout. Aktifkan JavaScript atau hubungi kami untuk memesan.{{else}}JavaScript is required to check out. Enable JavaScript or contact us to place your order.{{end}}</p></noscript>
+	<div class="form-error" id="checkout-error" role="alert" hidden></div>
+	<div class="checkout-layout" id="checkout-layout">
+		<form class="checkout-form" id="checkout-form">
+			<fieldset>
+				<legend>{{if eq .Lang "id"}}Kontak{{else}}Contact{{end}}</legend>
+				<div class="field">
+					<label for="checkout-email">{{t .Lang "ui.email_label"}}</label>
+					<input class="form-control" type="email" id="checkout-email" name="email" autocomplete="email" required>
+				</div>
+				<div class="field">
+					<label for="checkout-name">{{t .Lang "ui.name_label"}}</label>
+					<input class="form-control" type="text" id="checkout-name" name="name" autocomplete="name" required>
+				</div>
+				<div class="field">
+					<label for="checkout-phone">{{if eq .Lang "id"}}Nomor telepon{{else}}Phone number{{end}}</label>
+					<input class="form-control" type="tel" id="checkout-phone" name="phone" autocomplete="tel">
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>{{if eq .Lang "id"}}Alamat pengiriman{{else}}Shipping address{{end}}</legend>
+				<div class="field">
+					<label for="checkout-street">{{if eq .Lang "id"}}Alamat{{else}}Street address{{end}}</label>
+					<input class="form-control" type="text" id="checkout-street" name="street" autocomplete="street-address" required>
+				</div>
+				<div class="field-row">
+					<div class="field">
+						<label for="checkout-city">{{if eq .Lang "id"}}Kota{{else}}City{{end}}</label>
+						<input class="form-control" type="text" id="checkout-city" name="city" autocomplete="address-level2" required>
+					</div>
+					<div class="field">
+						<label for="checkout-province">{{if eq .Lang "id"}}Provinsi{{else}}Province{{end}}</label>
+						<input class="form-control" type="text" id="checkout-province" name="province" autocomplete="address-level1" required>
+					</div>
+				</div>
+				<div class="field">
+					<label for="checkout-postal">{{if eq .Lang "id"}}Kode pos{{else}}Postal code{{end}}</label>
+					<input class="form-control" type="text" id="checkout-postal" name="postalCode" autocomplete="postal-code" required>
+				</div>
+			</fieldset>
+			{{- if .Legal.CheckoutConsent}}
+			<div class="field field--consent">
+				<label class="consent-check" for="checkout-consent">
+					<input type="checkbox" id="checkout-consent" name="consentAccepted" value="true" required>
+					<span>{{if eq .Lang "id"}}Saya menyetujui{{else}}I agree to the{{end}}
+						{{- if .Legal.TermsOfServiceURL}} <a href="{{.Legal.TermsOfServiceURL}}" target="_blank" rel="noopener">{{t .Lang "ui.legal_terms"}}</a>
+						{{- else}} {{t .Lang "ui.legal_terms"}}{{end}}
+						{{- if eq .Lang "id"}} dan{{else}} and the{{end}}
+						{{- if .Legal.PrivacyPolicyURL}} <a href="{{.Legal.PrivacyPolicyURL}}" target="_blank" rel="noopener">{{t .Lang "ui.legal_privacy"}}</a>
+						{{- else}} {{t .Lang "ui.legal_privacy"}}{{end}}.</span>
+				</label>
+			</div>
+			{{- end}}
+			<button class="btn btn--block" type="submit" id="place-order">{{if eq .Lang "id"}}Buat Pesanan{{else}}Place order{{end}}</button>
+			<p class="checkout-form__note">{{if eq .Lang "id"}}Dengan memesan, kamu menyetujui pemrosesan data untuk pengiriman pesanan ini.{{else}}By placing this order you agree to the processing of your data for fulfilment.{{end}}</p>
+		</form>
+		<aside class="cart-summary" id="checkout-summary" aria-label="{{if eq .Lang "id"}}Pesananmu{{else}}Your order{{end}}">
+			<h2>{{if eq .Lang "id"}}Pesananmu{{else}}Your order{{end}}</h2>
+			<div class="cart-summary__lines" id="checkout-lines">
+				<p class="loading">{{if eq .Lang "id"}}Memuat&hellip;{{else}}Loading&hellip;{{end}}</p>
+			</div>
+			<dl class="cart-summary__rows">
+				<div><dt>{{if eq .Lang "id"}}Subtotal{{else}}Subtotal{{end}}</dt><dd data-cart-subtotal>&mdash;</dd></div>
+				<div><dt>{{if eq .Lang "id"}}Pengiriman{{else}}Shipping{{end}}</dt><dd class="muted">{{if eq .Lang "id"}}Dihitung oleh toko{{else}}Set by the store{{end}}</dd></div>
+				<div class="cart-summary__total"><dt>{{if eq .Lang "id"}}Perkiraan total{{else}}Estimated total{{end}}</dt><dd data-cart-total>&mdash;</dd></div>
+			</dl>
+			<a class="cart-summary__continue" href="/cart">&larr; {{if eq .Lang "id"}}Kembali ke keranjang{{else}}Back to cart{{end}}</a>
+		</aside>
+	</div>
+</section>
+{{- end}}

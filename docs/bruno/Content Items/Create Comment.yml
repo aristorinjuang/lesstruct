@@ -14,9 +14,7 @@ http:
       {
         "comment": "Great article!"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

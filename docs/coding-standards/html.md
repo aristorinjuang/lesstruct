@@ -1,9 +1,10 @@
 # GOHTML / Go Template Coding Standards
 
 > **Scope.** This standard governs formatting and readability for all Go
-> `html/template` files (`.gohtml`) in the Lesstruct default theme and in
-> user-authored theme overrides. It applies to `internal/api/template/pages/`
-> and to any `.gohtml` file under a `THEME_DIR/templates/` directory.
+> `html/template` files (`.gohtml`) in the Lesstruct themes and in
+> user-authored theme overrides. It applies to `modules/theme-default/pages/`,
+> `modules/theme-storefront/pages/`, and any `.gohtml` file under a
+> `THEME_DIR/templates/` directory.
 
 ---
 
@@ -163,8 +164,18 @@ If you do add a comment, use HTML comments:
 <input type="password" id="password" name="password" class="form-control" autocomplete="current-password" required>
 <button type="submit" class="btn">{{t .Lang "ui.login"}}</button>
 </form>
+<form id="mfa-form" class="auth-form" style="display:none">
+<p class="auth-hint">{{t .Lang "ui.mfa_code_sent"}} <strong id="mfa-email-hint"></strong></p>
+<label for="mfa-code">{{t .Lang "ui.verification_code"}}</label>
+<input type="text" id="mfa-code" name="code" class="form-control" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+<button type="submit" id="mfa-submit" class="btn">{{t .Lang "ui.verify_code"}}</button>
 <div class="auth-links">
-<p><a href="/register">{{t .Lang "ui.create_account"}}</a></p>
+<p><button type="button" id="mfa-resend" class="link-button" disabled>{{t .Lang "ui.resend_code"}}</button></p>
+<p><button type="button" id="mfa-back" class="link-button">{{t .Lang "ui.back_to_login"}}</button></p>
+</div>
+</form>
+<div class="auth-links" id="login-links">
+{{if .ShowRegister}}<p><a href="/register">{{t .Lang "ui.create_account"}}</a></p>{{end}}
 <p><a href="/forgot-password">{{t .Lang "ui.forgot_password_link"}}</a></p>
 </div>
 </div>
@@ -185,8 +196,22 @@ If you do add a comment, use HTML comments:
 		<input type="password" id="password" name="password" class="form-control" autocomplete="current-password" required>
 		<button type="submit" class="btn">{{t .Lang "ui.login"}}</button>
 	</form>
-	<div class="auth-links">
+	<form id="mfa-form" class="auth-form" style="display:none">
+		<p class="auth-hint">
+			{{t .Lang "ui.mfa_code_sent"}} <strong id="mfa-email-hint"></strong>
+		</p>
+		<label for="mfa-code">{{t .Lang "ui.verification_code"}}</label>
+		<input type="text" id="mfa-code" name="code" class="form-control" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+		<button type="submit" id="mfa-submit" class="btn">{{t .Lang "ui.verify_code"}}</button>
+		<div class="auth-links">
+			<p><button type="button" id="mfa-resend" class="link-button" disabled>{{t .Lang "ui.resend_code"}}</button></p>
+			<p><button type="button" id="mfa-back" class="link-button">{{t .Lang "ui.back_to_login"}}</button></p>
+		</div>
+	</form>
+	<div class="auth-links" id="login-links">
+		{{- if .ShowRegister}}
 		<p><a href="/register">{{t .Lang "ui.create_account"}}</a></p>
+		{{- end}}
 		<p><a href="/forgot-password">{{t .Lang "ui.forgot_password_link"}}</a></p>
 	</div>
 </div>
@@ -200,7 +225,7 @@ If you do add a comment, use HTML comments:
 
 After reformatting any `.gohtml` file:
 
-1. Run `go test ./internal/api/template/... -v` — all substring assertions
+1. Run `cd modules/site-ssr && go test ./... -v` — all substring assertions
    must still pass (especially `style="display:none"`, `href="/static/style.<hash>.css"`,
    `<p>Hello <strong>world</strong></p>`).
 2. Visually inspect rendered HTML output via `httptest` to confirm whitespace
@@ -219,6 +244,6 @@ and extra whitespace into rendered output. Strategic `{{- -}}` trimming
 lets us indent for humans **without** changing the output for browsers.
 
 The standard applies to both the default theme (embedded at
-`internal/api/template/pages/`) and user-authored theme overrides
+`modules/theme-default/pages/`) and user-authored theme overrides
 (`themes/<name>/templates/`), since both are parsed by the same Go template
 engine and rendered unminified.

@@ -2,6 +2,15 @@ info:
   name: Login
   type: http
   seq: 3
+  docs: >-
+    Step 1 of login: verifies the password and returns an MFA challenge
+    (`challengeToken`, `emailHint`, `expiresIn` in seconds). The `username`
+    field accepts either the account's username or its email address. No
+    session is issued here — run "Verify MFA" with the emailed 6-digit code
+    to receive the session cookie. In development (`DEV_MODE=true` with SMTP
+    unconfigured) the code is printed to the server log. The seeded admin
+    before first-login setup returns `{firstLoginRequired: true}` with no
+    session instead; complete setup, then log in again.
 
 http:
   method: POST
@@ -19,12 +28,9 @@ runtime:
   scripts:
     - type: after-response
       code: |-
-        if (res.body.data?.token) {
-          // Extract a token from the JSON response body
-          const token = res.body.data.token
-
-          // Save it as an environemnt variable
-          bru.setEnvVar("TOKEN", token)
+        if (res.body.data?.challengeToken) {
+          // Save the MFA challenge for Verify MFA / Resend MFA
+          bru.setEnvVar("MFA_CHALLENGE_TOKEN", res.body.data.challengeToken)
         }
 
 settings:

@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
+	"github.com/aristorinjuang/lesstruct/modules/users/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +17,19 @@ func NewMockUserDataExportRepo(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockUserDataExportRepo {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockUserDataExportRepo{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -39,23 +48,23 @@ func (_m *MockUserDataExportRepo) EXPECT() *MockUserDataExportRepo_Expecter {
 }
 
 // GetUserComments provides a mock function for the type MockUserDataExportRepo
-func (_mock *MockUserDataExportRepo) GetUserComments(ctx context.Context, userID int) ([]*userdomain.UserCommentItem, error) {
+func (_mock *MockUserDataExportRepo) GetUserComments(ctx context.Context, userID int) ([]*user.UserCommentItem, error) {
 	ret := _mock.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetUserComments")
 	}
 
-	var r0 []*userdomain.UserCommentItem
+	var r0 []*user.UserCommentItem
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*userdomain.UserCommentItem, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*user.UserCommentItem, error)); ok {
 		return returnFunc(ctx, userID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*userdomain.UserCommentItem); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*user.UserCommentItem); ok {
 		r0 = returnFunc(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*userdomain.UserCommentItem)
+			r0 = ret.Get(0).([]*user.UserCommentItem)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -96,34 +105,34 @@ func (_c *MockUserDataExportRepo_GetUserComments_Call) Run(run func(ctx context.
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserComments_Call) Return(userCommentItems []*userdomain.UserCommentItem, err error) *MockUserDataExportRepo_GetUserComments_Call {
+func (_c *MockUserDataExportRepo_GetUserComments_Call) Return(userCommentItems []*user.UserCommentItem, err error) *MockUserDataExportRepo_GetUserComments_Call {
 	_c.Call.Return(userCommentItems, err)
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserComments_Call) RunAndReturn(run func(ctx context.Context, userID int) ([]*userdomain.UserCommentItem, error)) *MockUserDataExportRepo_GetUserComments_Call {
+func (_c *MockUserDataExportRepo_GetUserComments_Call) RunAndReturn(run func(ctx context.Context, userID int) ([]*user.UserCommentItem, error)) *MockUserDataExportRepo_GetUserComments_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetUserContent provides a mock function for the type MockUserDataExportRepo
-func (_mock *MockUserDataExportRepo) GetUserContent(ctx context.Context, userID int) ([]*userdomain.UserContentItem, error) {
+func (_mock *MockUserDataExportRepo) GetUserContent(ctx context.Context, userID int) ([]*user.UserContentItem, error) {
 	ret := _mock.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetUserContent")
 	}
 
-	var r0 []*userdomain.UserContentItem
+	var r0 []*user.UserContentItem
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*userdomain.UserContentItem, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*user.UserContentItem, error)); ok {
 		return returnFunc(ctx, userID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*userdomain.UserContentItem); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*user.UserContentItem); ok {
 		r0 = returnFunc(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*userdomain.UserContentItem)
+			r0 = ret.Get(0).([]*user.UserContentItem)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -164,34 +173,34 @@ func (_c *MockUserDataExportRepo_GetUserContent_Call) Run(run func(ctx context.C
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserContent_Call) Return(userContentItems []*userdomain.UserContentItem, err error) *MockUserDataExportRepo_GetUserContent_Call {
+func (_c *MockUserDataExportRepo_GetUserContent_Call) Return(userContentItems []*user.UserContentItem, err error) *MockUserDataExportRepo_GetUserContent_Call {
 	_c.Call.Return(userContentItems, err)
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserContent_Call) RunAndReturn(run func(ctx context.Context, userID int) ([]*userdomain.UserContentItem, error)) *MockUserDataExportRepo_GetUserContent_Call {
+func (_c *MockUserDataExportRepo_GetUserContent_Call) RunAndReturn(run func(ctx context.Context, userID int) ([]*user.UserContentItem, error)) *MockUserDataExportRepo_GetUserContent_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetUserDataForExport provides a mock function for the type MockUserDataExportRepo
-func (_mock *MockUserDataExportRepo) GetUserDataForExport(ctx context.Context, userID int) (*userdomain.UserDataExport, error) {
+func (_mock *MockUserDataExportRepo) GetUserDataForExport(ctx context.Context, userID int) (*user.UserDataExport, error) {
 	ret := _mock.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetUserDataForExport")
 	}
 
-	var r0 *userdomain.UserDataExport
+	var r0 *user.UserDataExport
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*userdomain.UserDataExport, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*user.UserDataExport, error)); ok {
 		return returnFunc(ctx, userID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *userdomain.UserDataExport); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *user.UserDataExport); ok {
 		r0 = returnFunc(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*userdomain.UserDataExport)
+			r0 = ret.Get(0).(*user.UserDataExport)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -232,34 +241,34 @@ func (_c *MockUserDataExportRepo_GetUserDataForExport_Call) Run(run func(ctx con
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserDataForExport_Call) Return(userDataExport *userdomain.UserDataExport, err error) *MockUserDataExportRepo_GetUserDataForExport_Call {
+func (_c *MockUserDataExportRepo_GetUserDataForExport_Call) Return(userDataExport *user.UserDataExport, err error) *MockUserDataExportRepo_GetUserDataForExport_Call {
 	_c.Call.Return(userDataExport, err)
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserDataForExport_Call) RunAndReturn(run func(ctx context.Context, userID int) (*userdomain.UserDataExport, error)) *MockUserDataExportRepo_GetUserDataForExport_Call {
+func (_c *MockUserDataExportRepo_GetUserDataForExport_Call) RunAndReturn(run func(ctx context.Context, userID int) (*user.UserDataExport, error)) *MockUserDataExportRepo_GetUserDataForExport_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetUserMedia provides a mock function for the type MockUserDataExportRepo
-func (_mock *MockUserDataExportRepo) GetUserMedia(ctx context.Context, userID int) ([]*userdomain.UserMediaItem, error) {
+func (_mock *MockUserDataExportRepo) GetUserMedia(ctx context.Context, userID int) ([]*user.UserMediaItem, error) {
 	ret := _mock.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetUserMedia")
 	}
 
-	var r0 []*userdomain.UserMediaItem
+	var r0 []*user.UserMediaItem
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*userdomain.UserMediaItem, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*user.UserMediaItem, error)); ok {
 		return returnFunc(ctx, userID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*userdomain.UserMediaItem); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*user.UserMediaItem); ok {
 		r0 = returnFunc(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*userdomain.UserMediaItem)
+			r0 = ret.Get(0).([]*user.UserMediaItem)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -300,12 +309,12 @@ func (_c *MockUserDataExportRepo_GetUserMedia_Call) Run(run func(ctx context.Con
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserMedia_Call) Return(userMediaItems []*userdomain.UserMediaItem, err error) *MockUserDataExportRepo_GetUserMedia_Call {
+func (_c *MockUserDataExportRepo_GetUserMedia_Call) Return(userMediaItems []*user.UserMediaItem, err error) *MockUserDataExportRepo_GetUserMedia_Call {
 	_c.Call.Return(userMediaItems, err)
 	return _c
 }
 
-func (_c *MockUserDataExportRepo_GetUserMedia_Call) RunAndReturn(run func(ctx context.Context, userID int) ([]*userdomain.UserMediaItem, error)) *MockUserDataExportRepo_GetUserMedia_Call {
+func (_c *MockUserDataExportRepo_GetUserMedia_Call) RunAndReturn(run func(ctx context.Context, userID int) ([]*user.UserMediaItem, error)) *MockUserDataExportRepo_GetUserMedia_Call {
 	_c.Call.Return(run)
 	return _c
 }

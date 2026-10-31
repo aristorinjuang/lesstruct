@@ -7,7 +7,6 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/identity"
-	commentdomain "github.com/aristorinjuang/lesstruct/modules/comments/domain"
 )
 
 // handleError maps a content-domain error to the agent API envelope using
@@ -16,12 +15,12 @@ import (
 // via response.Error instead of the legacy lowercase codes. The auth-path errors
 // (UNAUTHORIZED/INVALID_API_KEY/REVOKED_KEY/EXPIRED_KEY/RATE_LIMITED) are emitted
 // by the middleware, not here — this mapper only handles the content domain's own
-// sentinels.
+// sentinels. Comment errors map in the comments module's agent handler
+// (handleCommentError), which owns that surface.
 //
 // Mapping (see story Dev Notes §Domain-error → envelope mapping):
 //   - ErrContentNotFound         → 404 NOT_FOUND
-//   - comments.ErrCommentNotFound → 404 NOT_FOUND
-//   - ErrUnauthorized (ownership) / comments.ErrCommentsDisabled → 403 FORBIDDEN
+//   - ErrUnauthorized (ownership) → 403 FORBIDDEN
 //   - ErrForbiddenPostType / ErrForbiddenPublish (role gates) → 403 FORBIDDEN
 //   - the validation sentinels   → 400 VALIDATION_ERROR
 //   - anything else              → 500 INTERNAL_ERROR
@@ -34,10 +33,7 @@ func handleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, contentdomain.ErrContentNotFound):
 		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Content not found", nil)
-	case errors.Is(err, commentdomain.ErrCommentNotFound):
-		response.Error(w, http.StatusNotFound, "NOT_FOUND", "Comment not found", nil)
-	case errors.Is(err, contentdomain.ErrUnauthorized),
-		errors.Is(err, commentdomain.ErrCommentsDisabled):
+	case errors.Is(err, contentdomain.ErrUnauthorized):
 		response.Error(w, http.StatusForbidden, "FORBIDDEN", "You do not have permission to access this content", nil)
 	case errors.Is(err, contentdomain.ErrForbiddenPostType),
 		errors.Is(err, contentdomain.ErrForbiddenPublish):
@@ -60,8 +56,6 @@ func handleError(w http.ResponseWriter, err error) {
 		errors.Is(err, contentdomain.ErrInvalidLanguage),
 		errors.Is(err, contentdomain.ErrTranslationGroupNotFound),
 		errors.Is(err, contentdomain.ErrTranslationAlreadyExists),
-		errors.Is(err, commentdomain.ErrInvalidCommentText),
-		errors.Is(err, commentdomain.ErrInvalidCommentStatus),
 		errors.Is(err, identity.ErrInvalidUserID):
 		response.Error(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), nil)
 	default:

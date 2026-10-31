@@ -253,23 +253,21 @@ func TestEmptyUserList(t *testing.T) {
 		t.Errorf("Expected status 200, got %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var wrapper struct {
-		Data api.GetAllUsersResponse `json:"data"`
-	}
+	var wrapper flatUsersPage
 	if err := json.NewDecoder(w.Body).Decode(&wrapper); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if wrapper.Data.Data == nil {
+	if wrapper.Data == nil {
 		t.Error("Expected empty array, got nil")
 	}
 
-	if len(wrapper.Data.Data) != 0 {
-		t.Errorf("Expected 0 users, got %d", len(wrapper.Data.Data))
+	if len(wrapper.Data) != 0 {
+		t.Errorf("Expected 0 users, got %d", len(wrapper.Data))
 	}
 
-	if wrapper.Data.Meta.Count != 0 {
-		t.Errorf("Expected count 0, got %d", wrapper.Data.Meta.Count)
+	if wrapper.Meta.Count != 0 {
+		t.Errorf("Expected count 0, got %d", wrapper.Meta.Count)
 	}
 }
 

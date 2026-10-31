@@ -70,12 +70,12 @@ func newStubRoles() *stubRoles {
 			"Journalist":  {"article"},
 		},
 		publish:  map[string]bool{"Contributor": true, "Journalist": true},
-		media:    map[string]bool{"Contributor": true, "Commentator": true, "Journalist": true},
+		media:    map[string]bool{"Contributor": true, "Journalist": true},
 		comments: map[string]bool{"Contributor": true, "Commentator": true, "Journalist": true},
 		roles: []api.Role{
 			{Name: "Admin", AllTypes: true, Publish: true, Media: true, Comments: true, IsAdmin: true},
 			{Name: "Contributor", AllTypes: true, Publish: true, Media: true, Comments: true},
-			{Name: "Commentator", Publish: false, Media: true, Comments: true},
+			{Name: "Commentator", Publish: false, Media: false, Comments: true},
 			{Name: "Journalist", PostTypes: []string{"article"}, Publish: true, Media: true, Comments: true},
 		},
 	}
@@ -393,6 +393,81 @@ func TestHandler_GetRoles_Anonymous(t *testing.T) {
 	require.True(t, ok, "me must be a map")
 	assert.Equal(t, "", me["role"])
 	assert.Empty(t, me["postTypes"])
+}
+
+func TestHandler_GetRoles_CommentatorGating(t *testing.T) {
+	tests := []struct {
+		name         string
+		comments     bool
+		registration *bool
+		wantNames    []string
+		notWant      []string
+	}{
+		{
+			name:      "success - comments enabled lists Commentator",
+			comments:  true,
+			wantNames: []string{"Admin", "Contributor", "Commentator", "Journalist"},
+		},
+		{
+			name:      "success - comments disabled hides Commentator",
+			comments:  false,
+			wantNames: []string{"Admin", "Contributor", "Journalist"},
+			notWant:   []string{"Commentator"},
+		},
+		{
+			name:         "success - registration enabled keeps Commentator hidden without comments",
+			comments:     false,
+			registration: func() *bool { v := true; return &v }(),
+			wantNames:    []string{"Admin", "Contributor", "Journalist"},
+			notWant:      []string{"Commentator"},
+		},
+		{
+			name:         "success - comments disabled refuses Commentator even with registration",
+			comments:     true,
+			registration: func() *bool { v := false; return &v }(),
+			wantNames:    []string{"Admin", "Contributor", "Journalist"},
+			notWant:      []string{"Commentator"},
+		},
+		{
+			name:         "success - comments and registration both enabled lists Commentator",
+			comments:     true,
+			registration: func() *bool { v := true; return &v }(),
+			wantNames:    []string{"Admin", "Contributor", "Commentator", "Journalist"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := api.New(newTestService(t), tt.comments, nil, newStubRoles())
+			if tt.registration != nil {
+				handler.SetRegistrationEnabled(*tt.registration)
+			}
+
+			w := httptest.NewRecorder()
+			handler.GetRoles(w, withPrincipal(
+				httptest.NewRequest(http.MethodGet, "/api/v1/roles", nil),
+				kernel.Principal{ID: "1", Username: "admin", Roles: []string{"Admin"}},
+			))
+
+			require.Equal(t, http.StatusOK, w.Code)
+			envelope := decodeEnvelope(t, w)
+			data, ok := envelope["data"].(map[string]any)
+			require.True(t, ok, "data must be a map")
+			roles, ok := data["roles"].([]any)
+			require.True(t, ok, "roles must be an array")
+			names := make([]string, 0, len(roles))
+			for _, r := range roles {
+				entry, ok := r.(map[string]any)
+				require.True(t, ok, "role must be an object")
+				name, _ := entry["name"].(string)
+				names = append(names, name)
+			}
+			assert.ElementsMatch(t, tt.wantNames, names)
+			for _, absent := range tt.notWant {
+				assert.NotContains(t, names, absent)
+			}
+		})
+	}
 }
 
 func TestHandler_GetUserFieldsEndpoint(t *testing.T) {

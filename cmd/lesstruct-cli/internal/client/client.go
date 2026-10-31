@@ -48,12 +48,19 @@ func codeForStatus(status int) string {
 	}
 }
 
-// stripAuthOnCrossHostRedirect is the client's CheckRedirect policy: it drops
-// the Authorization header when a redirect crosses to a different host, so the
-// API key is never forwarded to another origin (e.g. an http→https upgrade or a
-// vanity-domain redirect issued by a proxy).
-func stripAuthOnCrossHostRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) > 0 && req.URL.Hostname() != via[0].URL.Hostname() {
+// redirectPolicy is the client's CheckRedirect policy: it forwards the
+// Authorization header only when the redirect target has the exact same
+// origin — scheme *and* host (including port) — as the original request.
+// Anything else (cross-host, cross-port, scheme change in either direction)
+// drops the header, so an admin-equivalent API key is never forwarded to a
+// destination the operator did not address the original request to: not a
+// same-host sidecar, not a http downgrade carrying it in cleartext, and
+// not even an http→https upgrade (the destination would 401 loudly instead
+// of silently receiving the key on a different origin). Comparison is on
+// req.URL (the redirect target) against via[0].URL (the original request),
+// not the intermediate hops.
+func redirectPolicy(req *http.Request, via []*http.Request) error {
+	if len(via) > 0 && (req.URL.Scheme != via[0].URL.Scheme || req.URL.Host != via[0].URL.Host) {
 		req.Header.Del("Authorization")
 	}
 	return nil
@@ -196,6 +203,16 @@ type ImportJobStatus struct {
 	Errors        []string `json:"errors,omitempty"`
 	StartedAt     string   `json:"startedAt"`
 	FinishedAt    string   `json:"finishedAt,omitempty"`
+}
+
+// DownloadOptions bounds a tarball download. Timeout caps the whole
+// request (dial through body); MaxBytes caps the body size — a limit the
+// operator can raise with --max-download-size for genuinely huge sites.
+// Zero values mean unbounded (the historical behavior); prefer explicit
+// bounds against untrusted servers.
+type DownloadOptions struct {
+	Timeout  time.Duration
+	MaxBytes int64
 }
 
 // Client is a typed HTTP client over the /api/v1 surface. It depends only on
@@ -635,12 +652,18 @@ func (c *Client) UpdateCommentStatus(
 	return c.do(ctx, http.MethodPut, fmt.Sprintf("/api/v1/content/%d/comments/%d/status", contentID, commentID), nil, body)
 }
 
-// ExportContent streams the export tar.gz from GET /api/v1/export into output.
-// output receives the raw tar.gz bytes on success; any error is an *APIError.
-// Uses its own HTTP client without a hard timeout so large exports succeed;
-// the caller controls the overall deadline via ctx.
-func (c *Client) ExportContent(ctx context.Context, output io.Writer) error {
-	reqURL := c.baseURL.JoinPath("/api/v1/export")
+// downloadIntoBody streams a GET tarball into output with the redirect
+// policy, timeout, and size cap applied. A tripped cap or a timeout
+// surfaces as an *APIError so the caller can fail loudly instead of
+// writing a truncated archive.
+func (c *Client) downloadIntoBody(ctx context.Context, path string, output io.Writer, opts DownloadOptions) error {
+	if opts.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+		defer cancel()
+	}
+
+	reqURL := c.baseURL.JoinPath(path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
 	if err != nil {
 		return &APIError{StatusCode: 0, Code: "REQUEST_ERROR", Message: err.Error()}
@@ -648,7 +671,8 @@ func (c *Client) ExportContent(ctx context.Context, output io.Writer) error {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	downloadClient := &http.Client{
-		CheckRedirect: stripAuthOnCrossHostRedirect,
+		CheckRedirect: redirectPolicy,
+		Timeout:       opts.Timeout,
 	}
 
 	resp, err := downloadClient.Do(req)
@@ -666,49 +690,37 @@ func (c *Client) ExportContent(ctx context.Context, output io.Writer) error {
 		return &APIError{StatusCode: resp.StatusCode, Code: codeForStatus(resp.StatusCode), Message: msg}
 	}
 
-	if _, err := io.Copy(output, resp.Body); err != nil {
+	body := io.Reader(resp.Body)
+	if opts.MaxBytes > 0 {
+		// One byte past the cap distinguishes "exactly at the cap" (kept)
+		// from "over the cap" (refused).
+		body = io.LimitReader(resp.Body, opts.MaxBytes+1)
+	}
+	n, err := io.Copy(output, body)
+	if err != nil {
 		return &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: fmt.Sprintf("download failed: %s", err)}
+	}
+	if opts.MaxBytes > 0 && n > opts.MaxBytes {
+		return &APIError{StatusCode: 0, Code: "LIMIT_EXCEEDED", Message: fmt.Sprintf("download exceeded the %d byte limit", opts.MaxBytes)}
 	}
 
 	return nil
 }
 
+// ExportContent streams the export tar.gz from GET /api/v1/export into output.
+// output receives the raw tar.gz bytes on success; any error is an *APIError.
+// Bounds come from DownloadOptions; the caller controls the overall deadline
+// via ctx as well.
+func (c *Client) ExportContent(ctx context.Context, output io.Writer, opts DownloadOptions) error {
+	return c.downloadIntoBody(ctx, "/api/v1/export", output, opts)
+}
+
 // GenerateSite streams the SSG tar.gz from GET /api/v1/ssg into output.
 // output receives the raw tar.gz bytes on success; any error is an *APIError.
-// Uses its own HTTP client without a hard timeout so large sites succeed;
-// the caller controls the overall deadline via ctx.
-func (c *Client) GenerateSite(ctx context.Context, output io.Writer) error {
-	reqURL := c.baseURL.JoinPath("/api/v1/ssg")
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
-	if err != nil {
-		return &APIError{StatusCode: 0, Code: "REQUEST_ERROR", Message: err.Error()}
-	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	downloadClient := &http.Client{
-		CheckRedirect: stripAuthOnCrossHostRedirect,
-	}
-
-	resp, err := downloadClient.Do(req)
-	if err != nil {
-		return &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: err.Error()}
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			return &APIError{StatusCode: resp.StatusCode, Code: codeForStatus(resp.StatusCode), Message: fmt.Sprintf("request failed (status %d)", resp.StatusCode)}
-		}
-		return &APIError{StatusCode: resp.StatusCode, Code: codeForStatus(resp.StatusCode), Message: msg}
-	}
-
-	if _, err := io.Copy(output, resp.Body); err != nil {
-		return &APIError{StatusCode: 0, Code: "NETWORK_ERROR", Message: fmt.Sprintf("download failed: %s", err)}
-	}
-
-	return nil
+// Bounds come from DownloadOptions; the caller controls the overall deadline
+// via ctx as well.
+func (c *Client) GenerateSite(ctx context.Context, output io.Writer, opts DownloadOptions) error {
+	return c.downloadIntoBody(ctx, "/api/v1/ssg", output, opts)
 }
 
 // ImportWordPress sends POST /api/v1/wordpress/import as multipart/form-data
@@ -775,7 +787,7 @@ func (c *Client) ImportWordPress(
 	// Use a separate HTTP client without a hard timeout for the upload
 	// (the caller controls the deadline via ctx).
 	uploadClient := &http.Client{
-		CheckRedirect: stripAuthOnCrossHostRedirect,
+		CheckRedirect: redirectPolicy,
 	}
 
 	data, meta, apiErr := c.doRequestWithClient(uploadClient, ctx, http.MethodPost, "/api/v1/wordpress/import", nil, writer.FormDataContentType(), &body)
@@ -860,7 +872,7 @@ func (c *Client) ImportHugo(
 	// Use a separate HTTP client without a hard timeout for the upload
 	// (the caller controls the deadline via ctx).
 	uploadClient := &http.Client{
-		CheckRedirect: stripAuthOnCrossHostRedirect,
+		CheckRedirect: redirectPolicy,
 	}
 
 	data, meta, apiErr := c.doRequestWithClient(uploadClient, ctx, http.MethodPost, "/api/v1/hugo/import", nil, writer.FormDataContentType(), &body)
@@ -913,7 +925,7 @@ func New(baseURL, apiKey string) (*Client, error) {
 		baseURL: parsed,
 		apiKey:  apiKey,
 		http: &http.Client{
-			CheckRedirect: stripAuthOnCrossHostRedirect,
+			CheckRedirect: redirectPolicy,
 			Timeout:       30 * time.Second,
 		},
 	}, nil

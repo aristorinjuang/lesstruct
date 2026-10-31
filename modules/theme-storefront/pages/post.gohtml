@@ -1,0 +1,63 @@
+{{- define "body"}}
+<article class="container content-article">
+	<header class="content-article__head">
+		{{- if .Tags}}
+		<p class="eyebrow">{{range $i, $tag := .Tags}}{{if $i}} &middot; {{end}}<a href="/tags/{{$tag | urlpath}}">{{$tag}}</a>{{end}}</p>
+		{{- end}}
+		<h1>{{.Title}}</h1>
+		{{- if .CreatedAt}}<p class="content-meta"><time datetime="{{.CreatedAt.Format "2006-01-02"}}">{{formatDate .Lang .CreatedAt}}</time>{{if .Author}} &middot; {{.Author}}{{end}}</p>{{end}}
+		{{- if .LanguageLinks}}
+		<div class="content-languages">
+			{{- range .LanguageLinks}}<a href="{{.URL}}" hreflang="{{.Code}}" rel="alternate" class="lang-link{{if eq $.Lang .Code}} lang-link--active{{end}}">{{.Name}}</a>{{end}}
+		</div>
+		{{- end}}
+	</header>
+	{{- with .Body}}<div class="content-body content-wrapper">{{.}}</div>{{end}}
+	{{- if .CustomFieldsFormatted}}
+	<section class="custom-fields content-wrapper">
+		<dl class="custom-fields-list">
+			{{- range .CustomFieldsFormatted}}<dt>{{.Label}}</dt><dd>{{.Value}}</dd>{{end}}
+		</dl>
+	</section>
+	{{- end}}
+	{{- if .Related}}
+	<section class="related content-wrapper">
+		<h2>{{if eq .Lang "id"}}Baca Juga{{else}}Related{{end}}</h2>
+		<ul class="related-list">
+			{{- range .Related}}<li><a href="/{{.Slug}}">{{.Title}}</a></li>{{end}}
+		</ul>
+	</section>
+	{{- end}}
+	{{- if .AllowComments}}
+	<section class="comments content-wrapper" aria-label="{{t .Lang "ui.comments"}}">
+		<h2>{{t .Lang "ui.comments"}}</h2>
+		{{- if .Comments}}
+		<div class="comment-list">
+			{{- range .Comments}}
+			<div class="comment-item">
+				<div class="comment-item__head">
+					<span class="comment-item__author">{{.Author}}</span>
+					<time class="comment-item__date">{{formatDate $.Lang .CreatedAt}}</time>
+				</div>
+				<p class="comment-item__text">{{.Text}}</p>
+			</div>
+			{{- end}}
+		</div>
+		{{- else}}
+		<p class="comment-empty">{{t .Lang "ui.no_comments"}}</p>
+		{{- end}}
+		<div id="comment-login-link" class="comment-login" style="display:none;">
+			<a href="/login">{{t .Lang "ui.login_to_comment"}}</a>
+		</div>
+		<form id="comment-form" class="comment-form" data-slug="{{.Slug}}" style="display:none;">
+			<div id="comment-error" class="alert alert--error" role="alert" style="display:none;"></div>
+			<div id="comment-success" class="alert alert--success" role="status" style="display:none;"></div>
+			<textarea name="comment" class="form-control" aria-label="{{t .Lang "ui.add_comment_placeholder"}}" placeholder="{{t .Lang "ui.add_comment_placeholder"}}" rows="4" required maxlength="2000"></textarea>
+			<button type="submit" class="btn">{{t .Lang "ui.submit_comment"}}</button>
+		</form>
+	</section>
+	<script src="/static/comments.js" defer></script>
+	{{- end}}
+</article>
+{{.PostScripts}}
+{{- end}}

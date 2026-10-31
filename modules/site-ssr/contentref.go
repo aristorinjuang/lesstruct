@@ -32,11 +32,13 @@ type ContentRef struct {
 	Author             string
 	Username           string
 	CreatedAt          time.Time
+	UpdatedAt          time.Time
 	AllowComments      bool
 	CustomFields       map[string]any
 	MetaDescription    string
 	OGTitle            string
 	OGDescription      string
+	FeaturedImage      string
 }
 
 // ContentReader is the published-content source the assembler renders from.

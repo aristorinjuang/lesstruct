@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { getAuthStatus } from '@/composables/useAuth'
+import { refreshSession, ADMIN_BOOT_ROLES, homePathFor } from '@/composables/useAuth'
 import { useConfig } from '@/composables/useConfig'
 import request from '@/utils/request'
 import FullLayout from '@/layouts/FullLayout.vue'
@@ -67,6 +67,24 @@ const router = createRouter({
           meta: { title: 'User Management' },
         },
         {
+          path: 'orders',
+          name: 'admin-orders',
+          component: () => import('../views/OrdersView.vue'),
+          meta: { title: 'Orders' },
+        },
+        {
+          path: 'orders/:id',
+          name: 'admin-order-detail',
+          component: () => import('../views/OrderDetailView.vue'),
+          meta: { title: 'Order Detail' },
+        },
+        {
+          path: 'payments',
+          name: 'admin-payments',
+          component: () => import('../views/PaymentsView.vue'),
+          meta: { title: 'Payments' },
+        },
+        {
           path: 'import',
           name: 'import',
           component: () => import('../views/ImportView.vue'),
@@ -89,6 +107,12 @@ const router = createRouter({
           name: 'export',
           component: () => import('../views/ExportView.vue'),
           meta: { title: 'Export' },
+        },
+        {
+          path: 'settings/invoice',
+          name: 'settings-invoice',
+          component: () => import('../views/InvoiceSettingsView.vue'),
+          meta: { title: 'Invoice Settings' },
         },
       ],
     },
@@ -135,6 +159,15 @@ const router = createRouter({
       component: () => import('../views/FirstLoginSetupView.vue'),
       meta: { title: 'First Login Setup' },
     },
+    {
+      // Unknown sub-routes (e.g. /admin/content/2 — the edit route is
+      // /admin/content/6/edit) land on the dashboard instead of a blank
+      // shell. The guard below still applies to the target, so visitors
+      // without a session end up at login as usual.
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      redirect: '/dashboard',
+    },
   ],
 })
 
@@ -165,7 +198,36 @@ async function checkFirstLoginStatus(): Promise<boolean | null> {
 }
 
 router.beforeEach(async (to, from, next) => {
-  const isAuthenticated = getAuthStatus()
+  // The session lives in the HttpOnly cookie: probe the server identity
+  // (cached after the first navigation) instead of reading a token.
+  const sessionUser = await refreshSession()
+  const isAuthenticated = sessionUser !== null
+
+  // A storefront session shares the same cookie but must not boot the admin
+  // shell: bounce to the login view with a message instead of a broken
+  // dashboard.
+  if (isAuthenticated && to.meta.requiresAuth) {
+    const role = sessionUser?.role ?? null
+    if (role && !ADMIN_BOOT_ROLES.has(role)) {
+      next({ path: '/login', query: { reason: 'storefront-session' } })
+      return
+    }
+  }
+
+  // Role-aware home: `/` and unknown URLs redirect statically (route config
+  // cannot see the session), so resolve the landing page here from the
+  // session role instead of stranding non-admin roles on the dashboard or
+  // the content list they cannot use.
+  if (isAuthenticated) {
+    const home = homePathFor(sessionUser?.role ?? null)
+    if (
+      (to.redirectedFrom?.path === '/' || (to.redirectedFrom && to.path === '/dashboard')) &&
+      to.fullPath !== home
+    ) {
+      next(home)
+      return
+    }
+  }
 
   // Comment surfaces (my comments, per-content comments) require the comment
   // system; when disabled, bounce to the content list.
@@ -193,22 +255,24 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  // Redirect away from first-login page if setup is already complete
+  // First-login setup is a bootstrap page: the seeded admin has no email
+  // address yet, so it opens without a session. Once setup is complete it
+  // requires authentication like every other admin page.
   if (to.name === 'first-login') {
-    if (!isAuthenticated) {
-      next('/login')
-      return
-    }
     const setupComplete = await checkFirstLoginStatus()
     if (setupComplete === true) {
-      next('/dashboard')
+      next(isAuthenticated ? '/dashboard' : '/login')
       return
     }
   }
 
-  // Redirect to dashboard if already authenticated and trying to access login page
-  if (to.name === 'login' && isAuthenticated) {
-    next('/dashboard')
+  // Redirect to dashboard if already authenticated and trying to access login page.
+  // The storefront-session bounce landing is exempt: its navigation arrives
+  // authenticated (the stale token is still in storage) and must reach the
+  // login view so it can clear the stale session — otherwise the bounce
+  // loops back to the dashboard forever.
+  if (to.name === 'login' && isAuthenticated && to.query.reason !== 'storefront-session') {
+    next(homePathFor(sessionUser?.role ?? null))
     return
   }
 

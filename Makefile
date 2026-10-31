@@ -14,6 +14,13 @@ CLI_LDFLAGS := -X $(MODULE)/cmd/lesstruct-cli/cmd.version=$(VERSION)
 MODERNIZE_VERSION := v0.21.1
 MODERNIZE_PACKAGES := $(shell go list ./... | grep -v '/web/')
 
+# MOCKERY_VERSION pins the mock generator, run through the pinned toolchain:
+# a mockery binary built with an older Go cannot read the pinned toolchain's
+# export data ("package X without types") and fails mid-run after deleting
+# the mocks. `go run` at a tag keeps `make mock` reproducible like the lint
+# tools above.
+MOCKERY_VERSION := v3.8.1
+
 # GOTOOLCHAIN_VERSION pins the toolchain used to BUILD and RUN the pinned lint
 # tools. Some tool modules (golangci-lint) declare a lower go directive in
 # their own go.mod (latest-1 by their policy), so module-aware commands build
@@ -22,15 +29,15 @@ MODERNIZE_PACKAGES := $(shell go list ./... | grep -v '/web/')
 # `go run pkg@version` invocations below also bypass PATH entirely, so stale
 # tool binaries elsewhere on the system cannot shadow the pinned versions.
 # Keep the version in sync with the `toolchain` directive in go.mod.
-GOTOOLCHAIN_VERSION := go1.27.2
+GOTOOLCHAIN_VERSION := go1.27.3
 
 # SUBMODULES lists every nested Go module covered by the test/lint gates
 # alongside the root module. Add each new modules/<name> here on creation.
-SUBMODULES := kernel modules/posttypes-basic modules/media modules/comments modules/seo modules/theme-default modules/site-ssr modules/textgen modules/importers modules/adminpanel modules/users modules/auth
+SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/importers modules/adminpanel modules/users modules/auth
 
-lint: modernize depguard
+lint: modernize depguard stylecheck
 	GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
-	for m in $(SUBMODULES); do (cd $$m && GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run); done
+	for m in $(SUBMODULES); do (cd $$m && GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run) || exit 1; done
 
 # Fails when a nested module (including its tests) depends on the main
 # module's internal tree. The import-direction rule (modules import kernel
@@ -42,7 +49,7 @@ lint: modernize depguard
 # Each nested Go module is checked from its own directory.
 modernize:
 	go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@$(MODERNIZE_VERSION) -test $(MODERNIZE_PACKAGES)
-	for m in $(SUBMODULES); do (cd $$m && go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@$(MODERNIZE_VERSION) -test ./...); done
+	for m in $(SUBMODULES); do (cd $$m && go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@$(MODERNIZE_VERSION) -test ./...) || exit 1; done
 
 # Applies the modernize rewrites in place.
 modernize-apply:
@@ -50,18 +57,18 @@ modernize-apply:
 
 mock:
 	find . -type d -name "mocks" -prune -exec rm -rf {} +
-	mockery
+	GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 
 test:
 	go test ./...
-	for m in $(SUBMODULES); do (cd $$m && go test ./...); done
+	for m in $(SUBMODULES); do (cd $$m && go test ./...) || exit 1; done
 # NOTE: `go test -tags nosqlite` fails by design — the repository and
 # database suites are sqlite-backed. Test the default build; verify the
 # server edition with `go build -tags nosqlite ./...` instead.
 
 test-race:
 	go test ./... -race -cover
-	for m in $(SUBMODULES); do (cd $$m && go test ./... -race -cover); done
+	for m in $(SUBMODULES); do (cd $$m && go test ./... -race -cover) || exit 1; done
 
 test-verbose:
 	go test ./... -v
@@ -73,7 +80,7 @@ test-verbose:
 # the exit code, so the gate stays green without suppressing it.
 vulncheck:
 	GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-	for m in $(SUBMODULES); do (cd $$m && GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run golang.org/x/vuln/cmd/govulncheck@latest ./...); done
+	for m in $(SUBMODULES); do (cd $$m && GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run golang.org/x/vuln/cmd/govulncheck@latest ./...) || exit 1; done
 
 depguard:
 	@for m in $(SUBMODULES); do \
@@ -83,6 +90,13 @@ depguard:
 			exit 1; \
 		fi; \
 	done
+
+# Fails when the file-layout contract drifts: methods must stay with their
+# struct, constructors close their type, and package-level helpers precede
+# public declarations. Tests and generated files are skipped; the walk covers
+# the nested modules on disk, so no per-module loop is needed.
+stylecheck:
+	go run ./tools/stylecheck/cmd/stylecheck .
 
 build-admin:
 	cd web/admin && npm ci && npm run build-only
@@ -94,6 +108,17 @@ build-cli:
 # nosqlite build tag — postgres/mysql only, no embedded sqlite.
 build-server:
 	mkdir -p bin && go build -tags nosqlite -o bin/lesstruct-server .
+
+# build-core compiles the Core edition: the headless engine (identity,
+# content, media, plugins) without the SSR/theme/comment/textgen/importer
+# modules. Install path: ./cmd/lesstruct-core.
+build-core:
+	mkdir -p bin && go build -o bin/lesstruct-core ./cmd/lesstruct-core
+
+# build-ecommerce compiles the eCommerce edition: blog plus the catalog
+# module (pricing, variants, stock). Install path: ./cmd/lesstruct-ecommerce.
+build-ecommerce:
+	mkdir -p bin && go build -o bin/lesstruct-ecommerce ./cmd/lesstruct-ecommerce
 
 install: build-admin build-cli
 	go install
@@ -107,8 +132,8 @@ clean-static:
 
 css:
 	go install github.com/tdewolff/minify/v2/cmd/minify@latest
-	minify -o internal/api/template/static/base.css internal/api/template/static/base.src.css
-	minify -o internal/api/template/static/style.css internal/api/template/static/style.src.css
+	minify -o modules/theme-default/static/base.css modules/theme-default/static/base.src.css
+	minify -o modules/theme-default/static/style.css modules/theme-default/static/style.src.css
 
 test-cli:
 	go test -tags integration -race -v ./cmd/lesstruct-cli/...
@@ -131,4 +156,4 @@ screenshots:
 	cd scripts/screenshots && node capture.mjs
 
 screenshots-clean:
-	rm -f site/static/screenshots/*.png docs/assets/screenshots/*.png
+	rm -f site/static/screenshots/*.png site/static/screenshots/*.webp docs/assets/screenshots/*.png docs/assets/screenshots/*.webp

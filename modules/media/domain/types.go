@@ -31,6 +31,15 @@ var (
 	ErrImageReferencesNotSupported = errors.New("reference images are not supported by the configured AI model")
 )
 
+// getFileExtension extracts the file extension from a filename
+func getFileExtension(filename string) string {
+	idx := strings.LastIndex(filename, ".")
+	if idx == -1 {
+		return ""
+	}
+	return filename[idx:]
+}
+
 // DuplicateMediaError is returned when a media file with the same hash already exists
 type DuplicateMediaError struct {
 	Existing *Media
@@ -134,15 +143,6 @@ type Media struct {
 	UploadedBy       string                  `json:"uploadedBy"`
 	CreatedAt        time.Time               `json:"createdAt"`
 	UpdatedAt        time.Time               `json:"updatedAt"`
-}
-
-// getFileExtension extracts the file extension from a filename
-func getFileExtension(filename string) string {
-	idx := strings.LastIndex(filename, ".")
-	if idx == -1 {
-		return ""
-	}
-	return filename[idx:]
 }
 
 // ValidateMimeType validates if a mime type is supported

@@ -694,6 +694,11 @@ func TestProcessor_CropToOpenGraph(t *testing.T) {
 		wantErr   bool
 	}{
 		{
+			name:   "ultrawide 4:1 trims the sides",
+			width:  2000,
+			height: 500,
+		},
+		{
 			name:   "landscape 16:9 trims the sides",
 			width:  960,
 			height: 540,

@@ -19,9 +19,7 @@ http:
       - name: og
         type: text
         value: true
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

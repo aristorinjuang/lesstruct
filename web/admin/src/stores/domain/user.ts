@@ -30,10 +30,10 @@ export const useUserStore = defineStore('user', () => {
     usersError.value = null
 
     try {
-      const response = await api.get<UserApiResponse<{ data: User[]; meta: { total: number } }>>('/api/admin/users')
-      // Backend response structure: { data: { data: [...], meta: {...} } }
-      users.value = response.data.data?.data || []
-      total.value = response.data.data?.meta?.total ?? users.value.length
+      const response = await api.get<UserApiResponse<User[]>>('/api/admin/users')
+      // Flat list envelope: data is the items array, meta carries the totals.
+      users.value = response.data.data || []
+      total.value = response.data.meta?.total ?? users.value.length
     } catch (err) {
       usersError.value = err as Error
       throw err
@@ -47,9 +47,9 @@ export const useUserStore = defineStore('user', () => {
     pendingUsersError.value = null
 
     try {
-      const response = await api.get<UserApiResponse<{ data: User[]; meta: { total: number } }>>('/api/admin/pending-users')
-      // Backend response structure: { data: { data: [...], meta: {...} } }
-      pendingUsers.value = response.data.data?.data || []
+      const response = await api.get<UserApiResponse<User[]>>('/api/admin/pending-users')
+      // Flat list envelope: data is the items array.
+      pendingUsers.value = response.data.data || []
     } catch (err) {
       pendingUsersError.value = err as Error
       throw err

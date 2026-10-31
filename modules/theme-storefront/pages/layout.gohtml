@@ -1,0 +1,127 @@
+{{- define "layout"}}<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>{{.PageTitle}}</title>
+	{{- $desc := .Description}}{{- if not $desc}}{{- if eq .Lang "id"}}{{- $desc = print .SiteConfig.Name " — merchandise resmi: kaos, sweater, dan hoodie."}}{{- else}}{{- $desc = print .SiteConfig.Name " — official merchandise: tees, sweaters, and hoodies."}}{{- end}}{{- end}}
+	<meta name="description" content="{{$desc}}">
+	<meta property="og:title" content="{{.OGTitle}}">
+	<meta property="og:description" content="{{if .OGDesc}}{{.OGDesc}}{{else}}{{$desc}}{{end}}">
+	{{- if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
+	<meta property="og:type" content="website">
+	<meta property="og:site_name" content="{{.SiteConfig.Name}}">
+	<meta name="twitter:card" content="summary_large_image">
+	{{- if .OGImage}}<meta name="twitter:image" content="{{.OGImage}}">{{end}}
+	{{- if .NoIndex}}<meta name="robots" content="noindex">{{end}}
+	{{- if .SiteConfig.Favicon}}
+	<link rel="icon" href="{{.SiteConfig.Favicon}}">
+	<link rel="apple-touch-icon" href="{{.SiteConfig.Favicon}}">
+	{{- else}}
+	<link rel="icon" type="image/png" href="/static/favicon-96x96.png" sizes="96x96">
+	<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+	<link rel="shortcut icon" href="/static/favicon.ico">
+	<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+	{{- end}}
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+	<link rel="stylesheet" href="{{assetURL "base.css"}}">
+	<link rel="stylesheet" href="{{assetURL "style.css"}}">
+	{{- if .SiteConfig.ProductImageRatio}}<style>.product-card__media,.product-gallery__main,.cart-line__media{aspect-ratio: {{.SiteConfig.ProductImageRatio}}}</style>{{end}}
+</head>
+<body>
+	<a class="skip-link" href="#main">{{if eq .Lang "id"}}Langsung ke konten{{else}}Skip to content{{end}}</a>
+	<header class="site-header">
+		<div class="container site-header__inner">
+			<a href="/" class="brand" aria-label="{{.SiteConfig.Name}}">
+				{{- if .SiteConfig.Logo}}<img class="brand__logo" src="{{.SiteConfig.Logo}}" alt=""><span class="brand__name">{{.SiteConfig.Name}}</span>
+				{{- else}}<span class="brand__name">{{.SiteConfig.Name}}</span>{{end}}
+			</a>
+			<button class="nav-toggle" type="button" aria-label="{{t .Lang "ui.toggle_navigation"}}" aria-expanded="false" aria-controls="site-nav">
+				<span></span><span></span><span></span>
+			</button>
+			<nav class="site-nav" id="site-nav" aria-label="{{if eq .Lang "id"}}Navigasi utama{{else}}Main navigation{{end}}">
+				{{- range .NavigationItems}}
+				<a href="{{.URL}}"{{if .IsActive}} class="active" aria-current="page"{{end}}>{{.Title}}</a>
+				{{- end}}
+				<a class="site-nav__extra" href="/orders/track">{{if eq .Lang "id"}}Lacak Pesanan{{else}}Track order{{end}}</a>
+			</nav>
+			<div class="site-actions">
+				<a class="site-actions__link is-track" href="/orders/track">{{if eq .Lang "id"}}Lacak{{else}}Track order{{end}}</a>
+				<a class="cart-link" href="/cart" aria-label="{{if eq .Lang "id"}}Keranjang belanja{{else}}Shopping cart{{end}}">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+					<span class="cart-link__count" id="cart-count" hidden>0</span>
+				</a>
+				<select id="currency-select" class="currency-select" aria-label="Currency" hidden></select>
+				{{- if .Languages}}
+				<select id="language-select" class="language-select" aria-label="Language" hidden>
+					{{- range .Languages}}<option value="{{.URL}}"{{if eq .Code $.Lang}} selected{{end}}>{{upper .Code}}</option>{{end}}
+				</select>
+				<noscript><span class="lang-noscript">{{- range .Languages}} <a href="{{.URL}}" hreflang="{{.Code}}">{{upper .Code}}</a>{{end}}</span></noscript>
+				{{- end}}
+				<a class="site-actions__link is-account" href="/login" id="nav-login">{{t .Lang "ui.login"}}</a>
+				<a class="site-actions__link is-account" href="/" id="nav-logout" style="display:none">{{if eq .Lang "id"}}Keluar{{else}}Log out{{end}}</a>
+			</div>
+		</div>
+	</header>
+	<main id="main">
+		{{- template "body" .}}
+	</main>
+	<footer class="site-footer">
+		<div class="container site-footer__grid">
+			<div class="site-footer__brand">
+				<p class="brand brand--footer">
+					{{- if .SiteConfig.Logo}}<img class="brand__logo" src="{{.SiteConfig.Logo}}" alt=""><span class="brand__name">{{.SiteConfig.Name}}</span>
+					{{- else}}<span class="brand__name">{{.SiteConfig.Name}}</span>{{end}}
+				</p>
+				<p>{{if eq .Lang "id"}}Merchandise resmi Lesstruct — dibuat untuk dipakai, dirancang untuk bertahan.{{else}}Official Lesstruct merchandise — made to be worn, built to last.{{end}}</p>
+			</div>
+			<div class="site-footer__col">
+				<h2>{{if eq .Lang "id"}}Bantuan{{else}}Help{{end}}</h2>
+				<a href="/cart">{{if eq .Lang "id"}}Keranjang{{else}}Cart{{end}}</a>
+				<a href="/checkout">{{if eq .Lang "id"}}Checkout{{else}}Checkout{{end}}</a>
+				<a href="/orders/track">{{if eq .Lang "id"}}Lacak Pesanan{{else}}Track Order{{end}}</a>
+			</div>
+			<div class="site-footer__col">
+				<h2>Lesstruct</h2>
+				<a href="https://lesstruct.dev">lesstruct.dev</a>
+				{{- range .FooterItems}}<a href="{{.URL}}">{{.Title}}</a>{{end}}
+			</div>
+		</div>
+		<div class="container site-footer__bottom">
+			<p>&copy; {{.SiteConfig.Name}} &middot; {{if eq .Lang "id"}}Ditenagai oleh{{else}}Powered by{{end}} <a href="https://lesstruct.dev">Lesstruct</a></p>
+		</div>
+	</footer>
+	<script src="/static/nav-auth.js" defer></script>
+	<script src="/static/storefront.js" defer></script>
+	<div id="cookie-banner" class="cookie-banner" role="region" aria-label="{{t .Lang "ui.cookie_notice"}}" hidden>
+		<p>{{.Legal.CookieNotice.Before}}{{if .Legal.CookieNotice.LinkText}}{{if .Legal.CookieNotice.URL}}<a href="{{.Legal.CookieNotice.URL}}">{{.Legal.CookieNotice.LinkText}}</a>{{else}}{{.Legal.CookieNotice.LinkText}}{{end}}{{end}}{{.Legal.CookieNotice.After}}</p>
+		<div class="cookie-banner__actions">
+			<button type="button" id="cookie-accept">{{t .Lang "ui.cookie_accept"}}</button>
+			<button type="button" id="cookie-decline">{{t .Lang "ui.cookie_decline"}}</button>
+		</div>
+	</div>
+</body>
+</html>
+{{- end}}
+
+{{- define "product-card"}}
+<article class="product-card">
+	<a class="product-card__link" href="/{{.Slug}}">
+		<div class="product-card__media">
+			{{- if .ImageURL}}
+			<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" loading="lazy">
+			{{- else}}
+			<div class="product-card__placeholder" aria-hidden="true">{{.Title}}</div>
+			{{- end}}
+			{{- if .Tags}}{{with index .Tags 0}}<span class="product-card__tag">{{.}}</span>{{end}}{{end}}
+		</div>
+		<div class="product-card__body">
+			<h2 class="product-card__title">{{.Title}}</h2>
+			<p class="price" data-price data-product-slug="{{.Slug}}"><span class="price__value">&mdash;</span></p>
+			<p class="product-card__stock" data-stock hidden></p>
+		</div>
+	</a>
+</article>
+{{- end}}

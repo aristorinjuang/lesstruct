@@ -10,12 +10,6 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 )
 
-// APIKeyRepository persists API keys using SQLite syntax.
-// Implements apikey.Repository.
-type APIKeyRepository struct {
-	db *sql.DB
-}
-
 // scanAPIKey maps a single row's columns into a domain *apikey.APIKey, using
 // sql.NullTime/sql.NullString for nullable fields. It accepts the Scan method
 // value directly (*sql.Row.Scan or *sql.Rows.Scan) so no mockable interface is
@@ -53,6 +47,12 @@ func scanAPIKey(scan func(dest ...any) error) (*apikey.APIKey, error) {
 		key.RevokedAt = &revokedAt.Time
 	}
 	return &key, nil
+}
+
+// APIKeyRepository persists API keys using SQLite syntax.
+// Implements apikey.Repository.
+type APIKeyRepository struct {
+	db *sql.DB
 }
 
 // Create inserts a new API key record and populates key.ID with the assigned row ID.

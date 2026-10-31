@@ -20,11 +20,51 @@ func escapeAttr(s string) string {
 }
 
 // ImageResolver maps an image src to its sized variants for rendering.
+// largestVariantSize returns the dimensions of the widest variant, so the
+// emitted width/height describe the full rendition and the browser can
+// reserve the aspect ratio before the image loads. Zeroes when unknown.
+func largestVariantSize(variants []ImageVariant) (width, height int) {
+	for _, v := range variants {
+		if v.Width > width {
+			width, height = v.Width, v.Height
+		}
+	}
+	return width, height
+}
+
+// firstImageSrc walks the document depth-first and returns the src of the
+// first image node. The first content image is the LCP element on post and
+// page views, so the renderer prioritizes exactly that one.
+func firstImageSrc(doc document) string {
+	var walk func(nodes []node) string
+	walk = func(nodes []node) string {
+		for i := range nodes {
+			if nodes[i].Type == "image" {
+				if src, _ := nodes[i].Attrs["src"].(string); src != "" {
+					return src
+				}
+			}
+			if src := walk(nodes[i].Content); src != "" {
+				return src
+			}
+		}
+		return ""
+	}
+	return walk(doc.Content)
+}
+
 type ImageResolver func(src string) []ImageVariant
 
 // Renderer converts TipTap JSON documents to HTML.
 type Renderer struct {
 	imageResolver ImageResolver
+	// firstImageSrc is the src of the first content image in the document
+	// under render, set by Render before dispatch. renderImage treats that
+	// image as the LCP candidate (eager load); every later image stays
+	// lazy. It lives on the struct rather than in a parameter so the
+	// recursive render chain needs no signature changes: Render works on a
+	// copy, so concurrent renders never share it.
+	firstImageSrc string
 }
 
 func (r Renderer) renderNode(n node) string {
@@ -172,6 +212,9 @@ func (r Renderer) renderImage(n node) string {
 			}
 			sb.WriteString(`"`)
 			sb.WriteString(` sizes="100vw"`)
+			if w, h := largestVariantSize(variants); w > 0 && h > 0 {
+				fmt.Fprintf(&sb, ` width="%d" height="%d"`, w, h)
+			}
 		}
 	}
 
@@ -182,7 +225,11 @@ func (r Renderer) renderImage(n node) string {
 		fmt.Fprintf(&sb, ` title="%s"`, escapeAttr(title))
 	}
 
-	sb.WriteString(` loading="lazy">`)
+	if src == r.firstImageSrc {
+		sb.WriteString(` loading="eager" fetchpriority="high">`)
+	} else {
+		sb.WriteString(` loading="lazy">`)
+	}
 	sb.WriteString("</figure>")
 	return sb.String()
 }
@@ -276,6 +323,8 @@ func (r Renderer) Render(tiptapJSON string) (string, error) {
 	if doc.Type != "doc" {
 		return "", fmt.Errorf("invalid tiptap document: expected root type 'doc', got %q", doc.Type)
 	}
+
+	r.firstImageSrc = firstImageSrc(doc)
 
 	var sb strings.Builder
 	for _, child := range doc.Content {

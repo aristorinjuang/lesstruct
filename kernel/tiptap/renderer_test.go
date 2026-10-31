@@ -388,7 +388,7 @@ func TestRender_Image(t *testing.T) {
 		"content": [{"type": "image", "attrs": {"src": "/uploads/photo.webp", "alt": "A photo", "title": "My Photo"}}]
 	}`)
 	require.NoError(t, err)
-	assert.Equal(t, `<figure><img src="/uploads/photo.webp" alt="A photo" title="My Photo" loading="lazy"></figure>`, result)
+	assert.Equal(t, `<figure><img src="/uploads/photo.webp" alt="A photo" title="My Photo" loading="eager" fetchpriority="high"></figure>`, result)
 }
 
 func TestRender_ImageWithOnlySrc(t *testing.T) {
@@ -399,7 +399,7 @@ func TestRender_ImageWithOnlySrc(t *testing.T) {
 		"content": [{"type": "image", "attrs": {"src": "/uploads/photo.webp"}}]
 	}`)
 	require.NoError(t, err)
-	assert.Equal(t, `<figure><img src="/uploads/photo.webp" loading="lazy"></figure>`, result)
+	assert.Equal(t, `<figure><img src="/uploads/photo.webp" loading="eager" fetchpriority="high"></figure>`, result)
 }
 
 func TestRender_ImageWithoutSrc(t *testing.T) {
@@ -456,7 +456,7 @@ func TestRender_ComplexDocument(t *testing.T) {
 		`<p class="content-wrapper">This is <strong>bold</strong> and <em>italic</em> text.</p>` +
 		`<ul class="content-wrapper"><li><p class="content-wrapper">one</p></li><li><p class="content-wrapper">two</p></li></ul>` +
 		`<blockquote class="content-wrapper"><p class="content-wrapper">quote</p></blockquote>` +
-		`<figure><img src="/img/photo.webp" alt="photo" loading="lazy"></figure>`
+		`<figure><img src="/img/photo.webp" alt="photo" loading="eager" fetchpriority="high"></figure>`
 	assert.Equal(t, expected, result)
 }
 
@@ -675,4 +675,81 @@ func TestRender_YoutubeBetweenParagraphs(t *testing.T) {
 	assert.Contains(t, result, `<p class="content-wrapper">before</p>`)
 	assert.Contains(t, result, `<div class="embed-wrapper"><iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"`)
 	assert.Contains(t, result, `<p class="content-wrapper">after</p>`)
+}
+
+func TestRender_FirstImageEagerRestLazy(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "single image is eager",
+			input:    `{"type":"doc","content":[{"type":"image","attrs":{"src":"/uploads/a.webp"}}]}`,
+			expected: `<figure><img src="/uploads/a.webp" loading="eager" fetchpriority="high"></figure>`,
+		},
+		{
+			name:  "first of two images is eager, second stays lazy",
+			input: `{"type":"doc","content":[{"type":"image","attrs":{"src":"/uploads/a.webp"}},{"type":"image","attrs":{"src":"/uploads/b.webp"}}]}`,
+			expected: `<figure><img src="/uploads/a.webp" loading="eager" fetchpriority="high"></figure>` +
+				`<figure><img src="/uploads/b.webp" loading="lazy"></figure>`,
+		},
+		{
+			name:  "first image nested in a list is still the eager one",
+			input: `{"type":"doc","content":[{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"image","attrs":{"src":"/uploads/a.webp"}}]}]},{"type":"image","attrs":{"src":"/uploads/b.webp"}}]}`,
+			expected: `<ul class="content-wrapper"><li><figure><img src="/uploads/a.webp" loading="eager" fetchpriority="high"></figure></li></ul>` +
+				`<figure><img src="/uploads/b.webp" loading="lazy"></figure>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := tiptap.NewRenderer(nil)
+			result, err := r.Render(tt.input)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestRender_ImageDimensions(t *testing.T) {
+	tests := []struct {
+		name      string
+		variants  []tiptap.ImageVariant
+		wantWidth string
+	}{
+		{
+			name: "widest variant dimensions are emitted",
+			variants: []tiptap.ImageVariant{
+				{URL: "/uploads/photo_thumb.webp", Width: 370, Height: 231},
+				{URL: "/uploads/photo_large.webp", Width: 1080, Height: 675},
+			},
+			wantWidth: `width="1080" height="675"`,
+		},
+		{
+			name: "zero height omits dimensions",
+			variants: []tiptap.ImageVariant{
+				{URL: "/uploads/photo_thumb.webp", Width: 370},
+			},
+			wantWidth: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver := func(src string) []tiptap.ImageVariant {
+				return tt.variants
+			}
+			r := tiptap.NewRenderer(resolver)
+			result, err := r.Render(`{"type":"doc","content":[{"type":"image","attrs":{"src":"/uploads/photo.webp","alt":"A photo"}}]}`)
+			require.NoError(t, err)
+			assert.Contains(t, result, `srcset="/uploads/photo_thumb.webp 370w`)
+			if tt.wantWidth == "" {
+				assert.NotContains(t, result, "width=")
+				assert.NotContains(t, result, "height=")
+				return
+			}
+			assert.Contains(t, result, tt.wantWidth)
+		})
+	}
 }

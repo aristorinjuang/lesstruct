@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	appdatabase "github.com/aristorinjuang/lesstruct/internal/database"
@@ -20,6 +21,55 @@ func closeDB(db *appdatabase.Database) {
 // to satisfy errcheck linter for defer statements.
 func closeRows(rows *sql.Rows) {
 	_ = rows.Close()
+}
+
+// TestOpenSQLite_ConnectionPragmas proves every opened connection waits on
+// locks (busy_timeout) and runs WAL, so concurrent writers queue instead of
+// failing instantly with SQLITE_BUSY — the root cause of checkout races
+// surfacing as 500s.
+func TestOpenSQLite_ConnectionPragmas(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "pragmas.db")
+	db, err := appdatabase.Open("sqlite", dsn, 0)
+	require.NoError(t, err, "Failed to open database")
+	defer closeDB(db)
+
+	var busyTimeout int
+	require.NoError(t, db.DB().QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout))
+	assert.Equal(t, 5000, busyTimeout, "busy_timeout")
+
+	var journalMode string
+	require.NoError(t, db.DB().QueryRow("PRAGMA journal_mode").Scan(&journalMode))
+	assert.Equal(t, "wal", journalMode, "journal_mode")
+}
+
+// TestOpenSQLite_MemoryDSNKeepsPragmas proves the in-memory DSNs the test
+// suites use still get the busy_timeout pragma (journal_mode stays "memory"
+// there, which is expected).
+func TestOpenSQLite_MemoryDSNKeepsPragmas(t *testing.T) {
+	db, err := appdatabase.Open("sqlite", ":memory:", 0)
+	require.NoError(t, err, "Failed to open database")
+	defer closeDB(db)
+
+	var busyTimeout int
+	require.NoError(t, db.DB().QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout))
+	assert.Equal(t, 5000, busyTimeout, "busy_timeout")
+
+	var journalMode string
+	require.NoError(t, db.DB().QueryRow("PRAGMA journal_mode").Scan(&journalMode))
+	assert.Equal(t, "memory", journalMode, "in-memory databases have no journal file")
+}
+
+// TestOpenSQLite_OperatorPragmasWin proves a DSN that already carries pragmas
+// is passed through untouched instead of getting a second pragma set.
+func TestOpenSQLite_OperatorPragmasWin(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "operator.db") + "?_pragma=busy_timeout(250)"
+	db, err := appdatabase.Open("sqlite", dsn, 0)
+	require.NoError(t, err, "Failed to open database")
+	defer closeDB(db)
+
+	var busyTimeout int
+	require.NoError(t, db.DB().QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout))
+	assert.Equal(t, 250, busyTimeout, "operator busy_timeout must be preserved")
 }
 
 func setupTestDB(t *testing.T) *appdatabase.Database {

@@ -2,18 +2,18 @@ module github.com/aristorinjuang/lesstruct/modules/importers
 
 go 1.27
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/aristorinjuang/lesstruct/kernel v1.0.0
+	github.com/aristorinjuang/lesstruct/kernel v1.1.0
 	github.com/aristorinjuang/lesstruct/modules/media v0.0.0
 	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v0.0.0
 	github.com/aristorinjuang/lesstruct/modules/seo v0.0.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/image v0.45.0
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.62.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -49,9 +49,9 @@ require (
 	go.opentelemetry.io/otel v1.44.0 // indirect
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genai v1.59.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.83.1 // indirect

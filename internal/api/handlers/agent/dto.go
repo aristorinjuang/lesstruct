@@ -38,6 +38,7 @@ type ContentRequest struct {
 	Format             string         `json:"format,omitempty"`
 	PostType           string         `json:"postType,omitempty"`
 	Slug               string         `json:"slug,omitempty"`
+	FeaturedImage      *string        `json:"featuredImage,omitempty"`
 	CustomFields       map[string]any `json:"customFields,omitempty"`
 	IsPublished        bool           `json:"isPublished,omitempty"`
 	Tags               []string       `json:"tags,omitempty"`
@@ -49,20 +50,24 @@ type ContentRequest struct {
 // agent create/get endpoints. It deliberately excludes internal/admin-only fields the
 // raw contentdomain.Content carries (the numeric owner id, updatedBy/updatedByUsername,
 // translationGroupId, SEO metadata, allowComments) so the programmatic API surface
-// does not over-disclose to integrators or — via IDOR — to other tenants.
+// does not over-disclose to integrators or — via IDOR — to other tenants. Format
+// rides along so API clients can round-trip the stored body without guessing how
+// to interpret it.
 type ContentProjection struct {
-	ID           int            `json:"id"`
-	Title        string         `json:"title"`
-	Slug         string         `json:"slug"`
-	Body         string         `json:"body"`
-	Status       string         `json:"status"`
-	PostType     string         `json:"postType,omitempty"`
-	Language     string         `json:"language,omitempty"`
-	Tags         []string       `json:"tags,omitempty"`
-	CustomFields map[string]any `json:"customFields,omitempty"`
-	Author       string         `json:"author,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
+	ID            int            `json:"id"`
+	Title         string         `json:"title"`
+	Slug          string         `json:"slug"`
+	Body          string         `json:"body"`
+	Format        string         `json:"format,omitempty"`
+	Status        string         `json:"status"`
+	PostType      string         `json:"postType,omitempty"`
+	Language      string         `json:"language,omitempty"`
+	Tags          []string       `json:"tags,omitempty"`
+	FeaturedImage string         `json:"featuredImage,omitempty"`
+	CustomFields  map[string]any `json:"customFields,omitempty"`
+	Author        string         `json:"author,omitempty"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	UpdatedAt     time.Time      `json:"updatedAt"`
 }
 
 // ContentResponse wraps a projected content item for the agent create/get responses.
@@ -80,18 +85,20 @@ func NewContentResponse(c *contentdomain.Content) ContentResponse {
 	}
 	return ContentResponse{
 		Content: ContentProjection{
-			ID:           c.ID,
-			Title:        c.Title,
-			Slug:         c.Slug,
-			Body:         c.Content,
-			Status:       string(c.Status),
-			PostType:     c.PostType,
-			Language:     c.Language,
-			Tags:         c.Tags,
-			CustomFields: c.CustomFields,
-			Author:       c.Author,
-			CreatedAt:    c.CreatedAt,
-			UpdatedAt:    c.UpdatedAt,
+			ID:            c.ID,
+			Title:         c.Title,
+			Slug:          c.Slug,
+			Body:          c.Content,
+			Format:        string(c.Format),
+			Status:        string(c.Status),
+			PostType:      c.PostType,
+			Language:      c.Language,
+			Tags:          c.Tags,
+			FeaturedImage: c.FeaturedImage,
+			CustomFields:  c.CustomFields,
+			Author:        c.Author,
+			CreatedAt:     c.CreatedAt,
+			UpdatedAt:     c.UpdatedAt,
 		},
 	}
 }

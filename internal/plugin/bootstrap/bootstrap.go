@@ -14,14 +14,14 @@ import (
 )
 
 type PluginSystem struct {
-	runtime      runtime.Runtime
-	registry     *registry.Registry
-	loader       loader.Loader
-	hostFuncs    *hostfunctions.Registry
-	watcher      *devmode.Watcher
-	plugins      []plugin.Plugin
-	logger       func(string)
-	closeOnce    sync.Once
+	runtime   runtime.Runtime
+	registry  *registry.Registry
+	loader    loader.Loader
+	hostFuncs *hostfunctions.Registry
+	watcher   *devmode.Watcher
+	plugins   []loader.LoadedPlugin
+	logger    func(string)
+	closeOnce sync.Once
 }
 
 func (ps *PluginSystem) Close(ctx context.Context) error {
@@ -52,8 +52,14 @@ func (ps *PluginSystem) Registry() *registry.Registry {
 	return ps.registry
 }
 
+// Plugins returns the loaded plugins' metadata; the live WASM handles stay
+// inside the plugin runtime.
 func (ps *PluginSystem) Plugins() []plugin.Plugin {
-	return ps.plugins
+	plugins := make([]plugin.Plugin, len(ps.plugins))
+	for i := range ps.plugins {
+		plugins[i] = ps.plugins[i].Plugin
+	}
+	return plugins
 }
 
 func NewPluginSystem(

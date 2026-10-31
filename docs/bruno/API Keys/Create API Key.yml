@@ -12,9 +12,7 @@ http:
       {
         "name": "my-new-key"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

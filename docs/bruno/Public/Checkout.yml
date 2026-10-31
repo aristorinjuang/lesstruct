@@ -1,0 +1,34 @@
+info:
+  name: Checkout
+  type: http
+  seq: 9
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/public/checkout"
+  headers:
+    - name: X-Cart-Token
+      value: "{{CART_TOKEN}}"
+      disabled: false
+  body:
+    type: json
+    data: |-
+      {
+        "email": "{{CHECKOUT_EMAIL}}",
+        "name": "{{CHECKOUT_NAME}}",
+        "phone": "{{CHECKOUT_PHONE}}",
+        "consentAccepted": true,
+        "shipTo": {
+          "street": "Jl. Example No. 1",
+          "city": "Jakarta",
+          "province": "DKI Jakarta",
+          "postalCode": "10110"
+        }
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

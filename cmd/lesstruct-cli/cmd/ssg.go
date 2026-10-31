@@ -17,11 +17,13 @@ import (
 )
 
 type ssgOptions struct {
-	outputDir  string
-	extractDir string
-	apiKey     string
-	baseURL    string
-	output     string
+	outputDir       string
+	extractDir      string
+	timeout         string
+	maxDownloadSize string
+	apiKey          string
+	baseURL         string
+	output          string
 }
 
 func newSSGCmd(apiKey, baseURL, output *string) *cobra.Command {
@@ -64,6 +66,8 @@ Usage:
 
 	ssgCmd.Flags().StringVar(&opts.outputDir, "output-dir", ".", "Directory to write the site archive")
 	ssgCmd.Flags().StringVar(&opts.extractDir, "extract-dir", "", "Directory to extract the site files into instead of keeping the archive")
+	ssgCmd.Flags().StringVar(&opts.timeout, "timeout", "30m", "Overall download deadline (Go duration, e.g. 30m, 2h; 0 disables)")
+	ssgCmd.Flags().StringVar(&opts.maxDownloadSize, "max-download-size", "2GiB", "Download size cap (bytes, or K/M/G suffixes like 500MB; 0 disables)")
 
 	return ssgCmd
 }
@@ -103,19 +107,41 @@ func runSSG(cmd *cobra.Command, opts ssgOptions) error {
 	filename := fmt.Sprintf("lesstruct-site-%s.tar.gz", timestamp)
 	filePath := filepath.Join(opts.outputDir, filename)
 
-	f, err := os.Create(filePath)
+	// Download into a .part file and rename on success, so an interrupted
+	// or capped download never leaves a truncated archive masquerading as
+	// a complete site.
+	partPath := filePath + ".part"
+	f, err := os.Create(partPath)
 	if err != nil {
 		return &exitError{code: client.ExitGeneric, msg: fmt.Sprintf("failed to create file: %s", err)}
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := c.GenerateSite(cmd.Context(), f); err != nil {
-		_ = os.Remove(filePath)
-		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	// NOTE: derr is deliberately not err: parseDownloadOptions returns a
+	// *exitError, and assigning it into the error-typed err in scope would
+	// box a nil *exitError into a non-nil error interface.
+	downloadOpts, derr := parseDownloadOptions(opts.timeout, opts.maxDownloadSize)
+	if derr != nil {
+		_ = f.Close()
+		_ = os.Remove(partPath)
+		return derr
+	}
+
+	ctx, stop := signalContext(cmd.Context())
+	defer stop()
+	if err := c.GenerateSite(ctx, f, downloadOpts); err != nil {
+		_ = f.Close()
+		_ = os.Remove(partPath)
+		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
 	}
 
 	if err := f.Close(); err != nil {
+		_ = os.Remove(partPath)
 		return &exitError{code: client.ExitGeneric, msg: fmt.Sprintf("failed to close file: %s", err)}
+	}
+	if err := os.Rename(partPath, filePath); err != nil {
+		_ = os.Remove(partPath)
+		return &exitError{code: client.ExitGeneric, msg: fmt.Sprintf("failed to finalize archive: %s", err)}
 	}
 
 	writeSSGResult(cmd, opts.output, "site generation complete", filePath)
@@ -130,9 +156,20 @@ func runSSGExtract(cmd *cobra.Command, c *client.Client, opts ssgOptions) error 
 	tmpPath := tmpFile.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
 
-	if err := c.GenerateSite(cmd.Context(), tmpFile); err != nil {
+	// NOTE: derr is deliberately not err: parseDownloadOptions returns a
+	// *exitError, and assigning it into the error-typed err in scope would
+	// box a nil *exitError into a non-nil error interface.
+	downloadOpts, derr := parseDownloadOptions(opts.timeout, opts.maxDownloadSize)
+	if derr != nil {
 		_ = tmpFile.Close()
-		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+		return derr
+	}
+
+	ctx, stop := signalContext(cmd.Context())
+	defer stop()
+	if err := c.GenerateSite(ctx, tmpFile, downloadOpts); err != nil {
+		_ = tmpFile.Close()
+		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
 	}
 	if err := tmpFile.Close(); err != nil {
 		return &exitError{code: client.ExitGeneric, msg: fmt.Sprintf("failed to close temp file: %s", err)}

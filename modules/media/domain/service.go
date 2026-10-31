@@ -16,30 +16,25 @@ import (
 	thumbnail "github.com/aristorinjuang/lesstruct/modules/media/domain/thumbnail"
 )
 
-// ParseDateFilter converts a predefined date filter string to a time threshold
-func ParseDateFilter(dateFilter string) (time.Time, bool) {
-	now := time.Now()
-	switch dateFilter {
-	case "today":
-		return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()), true
-	case "this_week":
-		weekday := int(now.Weekday())
-		if weekday == 0 {
-			weekday = 7
-		}
-		return time.Date(now.Year(), now.Month(), now.Day()-weekday+1, 0, 0, 0, 0, now.Location()), true
-	case "this_month":
-		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()), true
-	default:
-		return time.Time{}, false
-	}
-}
-
 // adminRoleName is the reserved administrator role. It matches the users
 // module's reserved name; the two reconcile when that module lands.
 const adminRoleName = "Admin"
 
+// now is the clock seam: tests pin it to cover weekday and month boundaries.
+var now = time.Now
+
 // principalUserID parses the principal's decimal ID for repository calls.
+// adminScopeUserID resolves the list scope for a media library request:
+// admins manage the whole site's media (owner 0 = no filter), every other
+// role is scoped to their own library so one account cannot inventory
+// another's uploads, hashes, and original filenames.
+func adminScopeUserID(principal kernel.Principal) (int, error) {
+	if principal.HasRole(adminRoleName) {
+		return 0, nil
+	}
+	return principalUserID(principal)
+}
+
 func principalUserID(principal kernel.Principal) (int, error) {
 	id, err := strconv.Atoi(principal.ID)
 	if err != nil {
@@ -54,6 +49,88 @@ func principalRole(principal kernel.Principal) string {
 		return ""
 	}
 	return principal.Roles[0]
+}
+
+// ParseDateFilter converts a predefined date filter string to a time threshold
+func ParseDateFilter(dateFilter string) (time.Time, bool) {
+	at := now()
+	switch dateFilter {
+	case "today":
+		return time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, at.Location()), true
+	case "this_week":
+		weekday := int(at.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		return time.Date(at.Year(), at.Month(), at.Day()-weekday+1, 0, 0, 0, 0, at.Location()), true
+	case "this_month":
+		return time.Date(at.Year(), at.Month(), 1, 0, 0, 0, 0, at.Location()), true
+	default:
+		return time.Time{}, false
+	}
+}
+
+// persistMedia saves the WebP payload, generates every configured thumbnail
+// variant, and creates the media record. A failure at any step deletes the
+// files already written, so storage never keeps orphaned objects. The variant
+// source is a factory because uploaded files must be rewound between reads
+// while in-memory payloads start a fresh reader each time.
+func (s *Service) persistMedia(
+	ctx context.Context,
+	media *Media,
+	webpData []byte,
+	variantSource func() io.Reader,
+) error {
+	filePath, err := s.storage.Save(media.Filename, bytes.NewReader(webpData))
+	if err != nil {
+		return fmt.Errorf("failed to save file: %w", err)
+	}
+
+	variants := make(map[string]MediaVariant)
+	savedVariantPaths := make([]string, 0, 2)
+	if s.thumbnailService != nil {
+		for _, tc := range s.thumbnailService.GetAll() {
+			variantData, variantMeta, err := s.processor.Resize(variantSource(), tc.MaxWidth)
+			if err != nil {
+				s.discardSaved(filePath, savedVariantPaths)
+				return fmt.Errorf("failed to generate variant %s: %w", tc.Suffix, err)
+			}
+
+			variantFilename := media.Hash[:16] + tc.Suffix + ".webp"
+			variantPath, err := s.storage.Save(variantFilename, bytes.NewReader(variantData))
+			if err != nil {
+				s.discardSaved(filePath, savedVariantPaths)
+				return fmt.Errorf("failed to save variant %s: %w", tc.Suffix, err)
+			}
+			savedVariantPaths = append(savedVariantPaths, variantPath)
+
+			variants[tc.Suffix] = MediaVariant{
+				FilePath: variantPath,
+				URL:      s.storage.GetURL(variantPath),
+				Width:    variantMeta.Width,
+				Height:   variantMeta.Height,
+			}
+		}
+	}
+
+	media.FilePath = filePath
+	media.URL = s.storage.GetURL(filePath)
+	media.Variants = variants
+
+	if err := s.repo.Create(ctx, media); err != nil {
+		s.discardSaved(filePath, savedVariantPaths)
+		return fmt.Errorf("failed to create media record: %w", err)
+	}
+	return nil
+}
+
+// discardSaved best-effort deletes the files written before a failed save or
+// insert: the caller reports the original failure, not a cleanup miss.
+func (s *Service) discardSaved(filePath string, variantPaths []string) {
+	_ = s.storage.Delete(filePath)
+	for _, path := range variantPaths {
+		_ = s.storage.Delete(path)
+	}
 }
 
 // UploadRequest represents a request to upload media
@@ -88,12 +165,11 @@ func (s *Service) validateFile(file multipart.File, header *multipart.FileHeader
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
+	// ValidateFileContent already checks the magic-number signature of every
+	// supported format (including WebP, which DetectContentType cannot
+	// identify), so a second signature pass could never fail here.
 	if err := ValidateFileContent(buffer[:n]); err != nil {
 		return fmt.Errorf("file content does not match a supported image type: %w", err)
-	}
-
-	if err := ValidateFileSignature(buffer[:n]); err != nil {
-		return fmt.Errorf("file signature verification failed: %w", err)
 	}
 
 	_, err = file.Seek(0, 0)
@@ -128,15 +204,6 @@ func (s *Service) generateUniqueHash(ctx context.Context, hash string) (string, 
 	}
 }
 
-// GenerateDuplicateFilename appends -2 suffix before extension
-func GenerateDuplicateFilename(filename string) string {
-	idx := strings.LastIndex(filename, ".")
-	if idx == -1 {
-		return filename + "-2"
-	}
-	return filename[:idx] + "-2" + filename[idx:]
-}
-
 // Upload handles the complete media upload flow
 func (s *Service) Upload(ctx context.Context, req UploadRequest) (*Media, error) {
 	if err := s.validateFile(req.File, req.FileHeader); err != nil {
@@ -168,72 +235,24 @@ func (s *Service) Upload(ctx context.Context, req UploadRequest) (*Media, error)
 		return nil, fmt.Errorf("failed to convert to WebP: %w", err)
 	}
 
-	filename := s.generateFilename(hash)
-	filePath, err := s.storage.Save(filename, bytes.NewReader(webpData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to save file: %w", err)
-	}
-
-	originalFilename := SanitizeFilename(req.FileHeader.Filename)
-
-	variants := make(map[string]MediaVariant)
-	var savedVariantPaths []string
-	if s.thumbnailService != nil {
-		for _, tc := range s.thumbnailService.GetAll() {
-			_, _ = req.File.Seek(0, 0)
-
-			variantData, variantMeta, err := s.processor.Resize(req.File, tc.MaxWidth)
-			if err != nil {
-				for _, p := range savedVariantPaths {
-					_ = s.storage.Delete(p)
-				}
-				_ = s.storage.Delete(filePath)
-				return nil, fmt.Errorf("failed to generate variant %s: %w", tc.Suffix, err)
-			}
-
-			variantFilename := hash[:16] + tc.Suffix + ".webp"
-			variantPath, err := s.storage.Save(variantFilename, bytes.NewReader(variantData))
-			if err != nil {
-				for _, p := range savedVariantPaths {
-					_ = s.storage.Delete(p)
-				}
-				_ = s.storage.Delete(filePath)
-				return nil, fmt.Errorf("failed to save variant %s: %w", tc.Suffix, err)
-			}
-
-			savedVariantPaths = append(savedVariantPaths, variantPath)
-
-			variants[tc.Suffix] = MediaVariant{
-				FilePath: variantPath,
-				URL:      s.storage.GetURL(variantPath),
-				Width:    variantMeta.Width,
-				Height:   variantMeta.Height,
-			}
-		}
-	}
-
 	media := &Media{
 		UserID:           req.UserID,
-		Filename:         filename,
-		OriginalFilename: originalFilename,
+		Filename:         s.generateFilename(hash),
+		OriginalFilename: SanitizeFilename(req.FileHeader.Filename),
 		MimeType:         MimeTypeWebP,
 		FileSize:         int64(len(webpData)),
 		Width:            metadata.Width,
 		Height:           metadata.Height,
 		AltText:          strings.TrimSpace(req.AltText),
 		IsWebP:           true,
-		FilePath:         filePath,
-		URL:              s.storage.GetURL(filePath),
 		Hash:             hash,
-		Variants:         variants,
 	}
 
-	if err := s.repo.Create(ctx, media); err != nil {
-		_ = s.storage.Delete(filePath)
-		for _, p := range savedVariantPaths {
-			_ = s.storage.Delete(p)
-		}
-		return nil, fmt.Errorf("failed to create media record: %w", err)
+	if err := s.persistMedia(ctx, media, webpData, func() io.Reader {
+		_, _ = req.File.Seek(0, 0)
+		return req.File
+	}); err != nil {
+		return nil, err
 	}
 
 	return media, nil
@@ -270,73 +289,24 @@ func (s *Service) ForceUpload(ctx context.Context, req UploadRequest) (*Media, e
 		return nil, fmt.Errorf("failed to convert to WebP: %w", err)
 	}
 
-	filename := s.generateFilename(uniqueHash)
-	filePath, err := s.storage.Save(filename, bytes.NewReader(webpData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to save file: %w", err)
-	}
-
-	originalFilename := SanitizeFilename(req.FileHeader.Filename)
-	forceOriginalFilename := GenerateDuplicateFilename(originalFilename)
-
-	variants := make(map[string]MediaVariant)
-	var savedVariantPaths []string
-	if s.thumbnailService != nil {
-		for _, tc := range s.thumbnailService.GetAll() {
-			_, _ = req.File.Seek(0, 0)
-
-			variantData, variantMeta, err := s.processor.Resize(req.File, tc.MaxWidth)
-			if err != nil {
-				for _, p := range savedVariantPaths {
-					_ = s.storage.Delete(p)
-				}
-				_ = s.storage.Delete(filePath)
-				return nil, fmt.Errorf("failed to generate variant %s: %w", tc.Suffix, err)
-			}
-
-			variantFilename := uniqueHash[:16] + tc.Suffix + ".webp"
-			variantPath, err := s.storage.Save(variantFilename, bytes.NewReader(variantData))
-			if err != nil {
-				for _, p := range savedVariantPaths {
-					_ = s.storage.Delete(p)
-				}
-				_ = s.storage.Delete(filePath)
-				return nil, fmt.Errorf("failed to save variant %s: %w", tc.Suffix, err)
-			}
-
-			savedVariantPaths = append(savedVariantPaths, variantPath)
-
-			variants[tc.Suffix] = MediaVariant{
-				FilePath: variantPath,
-				URL:      s.storage.GetURL(variantPath),
-				Width:    variantMeta.Width,
-				Height:   variantMeta.Height,
-			}
-		}
-	}
-
 	media := &Media{
 		UserID:           req.UserID,
-		Filename:         filename,
-		OriginalFilename: forceOriginalFilename,
+		Filename:         s.generateFilename(uniqueHash),
+		OriginalFilename: GenerateDuplicateFilename(SanitizeFilename(req.FileHeader.Filename)),
 		MimeType:         MimeTypeWebP,
 		FileSize:         int64(len(webpData)),
 		Width:            metadata.Width,
 		Height:           metadata.Height,
 		AltText:          strings.TrimSpace(req.AltText),
 		IsWebP:           true,
-		FilePath:         filePath,
-		URL:              s.storage.GetURL(filePath),
 		Hash:             uniqueHash,
-		Variants:         variants,
 	}
 
-	if err := s.repo.Create(ctx, media); err != nil {
-		_ = s.storage.Delete(filePath)
-		for _, p := range savedVariantPaths {
-			_ = s.storage.Delete(p)
-		}
-		return nil, fmt.Errorf("failed to create media record: %w", err)
+	if err := s.persistMedia(ctx, media, webpData, func() io.Reader {
+		_, _ = req.File.Seek(0, 0)
+		return req.File
+	}); err != nil {
+		return nil, err
 	}
 
 	return media, nil
@@ -362,34 +332,40 @@ func (s *Service) ListByCursor(ctx context.Context, userID int, limit int, befor
 	return mediaList, nil
 }
 
-// SearchMediaByCursor retrieves ALL media (not user-scoped) with optional search and date
-// filters in newest-first (id DESC) order using keyset pagination (beforeID <= 0 means
-// first page). Global counterpart of ListByCursor for the browser admin media library;
-// all pagination/encoding intelligence lives in the browser handler.
+// SearchMediaByCursor retrieves media with optional search and date filters in
+// newest-first (id DESC) order using keyset pagination (beforeID <= 0 means
+// first page). Admins search every user's media; any other role is scoped to
+// their own library. All pagination/encoding intelligence lives in the browser
+// handler.
 func (s *Service) SearchMediaByCursor(
 	ctx context.Context,
+	principal kernel.Principal,
 	search string,
 	dateFilter string,
 	limit int,
 	beforeID int,
 ) ([]*Media, error) {
+	ownerID, err := adminScopeUserID(principal)
+	if err != nil {
+		return nil, err
+	}
+
 	trimmed := strings.TrimSpace(search)
 	hasSearch := trimmed != ""
 
 	since, hasDateFilter := ParseDateFilter(dateFilter)
 
 	var result []*Media
-	var err error
 
 	switch {
 	case hasSearch && hasDateFilter:
-		result, err = s.repo.FindAllByFilenameAndDateRangeByCursor(ctx, trimmed, since, limit, beforeID)
+		result, err = s.repo.FindAllByFilenameAndDateRangeByCursor(ctx, ownerID, trimmed, since, limit, beforeID)
 	case hasSearch:
-		result, err = s.repo.FindAllByFilenameByCursor(ctx, trimmed, limit, beforeID)
+		result, err = s.repo.FindAllByFilenameByCursor(ctx, ownerID, trimmed, limit, beforeID)
 	case hasDateFilter:
-		result, err = s.repo.FindAllByDateRangeByCursor(ctx, since, limit, beforeID)
+		result, err = s.repo.FindAllByDateRangeByCursor(ctx, ownerID, since, limit, beforeID)
 	default:
-		result, err = s.repo.FindAllByCursor(ctx, limit, beforeID)
+		result, err = s.repo.FindAllByCursor(ctx, ownerID, limit, beforeID)
 	}
 
 	if err != nil {
@@ -398,10 +374,16 @@ func (s *Service) SearchMediaByCursor(
 	return result, nil
 }
 
-// Count returns the total number of ALL media (not user-scoped) matching the given search
-// and date filters — the global counterpart of the search queries above, used to render
-// the total badge next to the browser admin media library's title.
-func (s *Service) Count(ctx context.Context, search string, dateFilter string) (int, error) {
+// Count returns the total number of media matching the given search and date
+// filters under the principal's scope — admins count the whole library, any
+// other role counts their own. Used to render the total badge next to the
+// browser admin media library's title.
+func (s *Service) Count(ctx context.Context, principal kernel.Principal, search string, dateFilter string) (int, error) {
+	ownerID, err := adminScopeUserID(principal)
+	if err != nil {
+		return 0, err
+	}
+
 	trimmed := strings.TrimSpace(search)
 
 	since, hasDateFilter := ParseDateFilter(dateFilter)
@@ -409,7 +391,7 @@ func (s *Service) Count(ctx context.Context, search string, dateFilter string) (
 		since = time.Time{}
 	}
 
-	total, err := s.repo.Count(ctx, trimmed, since)
+	total, err := s.repo.Count(ctx, ownerID, trimmed, since)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count media: %w", err)
 	}
@@ -439,80 +421,31 @@ func (s *Service) GenerateFromBytes(
 		return nil, fmt.Errorf("failed to convert to WebP: %w", err)
 	}
 
-	hash, err := s.processor.GenerateHash(bytes.NewReader(webpData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate hash: %w", err)
-	}
+	// The payload is already in memory, so hashing it cannot fail.
+	hash, _ := s.processor.GenerateHash(bytes.NewReader(webpData))
 
 	existing, err := s.repo.FindByHash(ctx, hash)
 	if err == nil && existing != nil {
 		return nil, &DuplicateMediaError{Existing: existing}
 	}
 
-	filename := s.generateFilename(hash)
-	filePath, err := s.storage.Save(filename, bytes.NewReader(webpData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to save file: %w", err)
-	}
-
-	variants := make(map[string]MediaVariant)
-	var savedVariantPaths []string
-	if s.thumbnailService != nil {
-		for _, tc := range s.thumbnailService.GetAll() {
-			variantData, variantMeta, err := s.processor.Resize(bytes.NewReader(webpData), tc.MaxWidth)
-			if err != nil {
-				for _, p := range savedVariantPaths {
-					_ = s.storage.Delete(p)
-				}
-				_ = s.storage.Delete(filePath)
-				return nil, fmt.Errorf("failed to generate variant %s: %w", tc.Suffix, err)
-			}
-
-			variantFilename := hash[:16] + tc.Suffix + ".webp"
-			variantPath, err := s.storage.Save(variantFilename, bytes.NewReader(variantData))
-			if err != nil {
-				for _, p := range savedVariantPaths {
-					_ = s.storage.Delete(p)
-				}
-				_ = s.storage.Delete(filePath)
-				return nil, fmt.Errorf("failed to save variant %s: %w", tc.Suffix, err)
-			}
-
-			savedVariantPaths = append(savedVariantPaths, variantPath)
-
-			variants[tc.Suffix] = MediaVariant{
-				FilePath: variantPath,
-				URL:      s.storage.GetURL(variantPath),
-				Width:    variantMeta.Width,
-				Height:   variantMeta.Height,
-			}
-		}
-	}
-
-	sanitized := SanitizeFilename(originalFilename)
-
 	media := &Media{
 		UserID:           userID,
-		Filename:         filename,
-		OriginalFilename: sanitized,
+		Filename:         s.generateFilename(hash),
+		OriginalFilename: SanitizeFilename(originalFilename),
 		MimeType:         MimeTypeWebP,
 		FileSize:         int64(len(webpData)),
 		Width:            metadata.Width,
 		Height:           metadata.Height,
 		AltText:          strings.TrimSpace(altText),
 		IsWebP:           true,
-		FilePath:         filePath,
-		URL:              s.storage.GetURL(filePath),
 		Hash:             hash,
-		Variants:         variants,
 	}
 
-	if err := s.repo.Create(ctx, media); err != nil {
-		_ = s.storage.Delete(filePath)
-		for _, p := range savedVariantPaths {
-			_ = s.storage.Delete(p)
-		}
-		return nil, fmt.Errorf("failed to create media record: %w", err)
+	if err := s.persistMedia(ctx, media, webpData, func() io.Reader {
+		return bytes.NewReader(webpData)
+	}); err != nil {
+		return nil, err
 	}
 
 	return media, nil
@@ -569,4 +502,13 @@ func NewService(
 		processor:        NewProcessor(),
 		thumbnailService: thumbnailService,
 	}
+}
+
+// GenerateDuplicateFilename appends -2 suffix before extension
+func GenerateDuplicateFilename(filename string) string {
+	idx := strings.LastIndex(filename, ".")
+	if idx == -1 {
+		return filename + "-2"
+	}
+	return filename[:idx] + "-2" + filename[idx:]
 }

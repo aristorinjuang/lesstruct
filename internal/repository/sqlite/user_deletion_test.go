@@ -38,7 +38,7 @@ func setupUserDeletionTestDB(t *testing.T) *sql.DB {
 		);
 		CREATE TABLE media_files (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			uploaded_by_user_id INTEGER NOT NULL
+			user_id INTEGER NOT NULL
 		);
 		CREATE TABLE verification_tokens (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

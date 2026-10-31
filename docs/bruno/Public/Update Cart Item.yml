@@ -1,0 +1,25 @@
+info:
+  name: Update Cart Item
+  type: http
+  seq: 4
+
+http:
+  method: PATCH
+  url: "{{BASE_URL}}/api/v1/public/cart/items/{{CART_ITEM_ID}}"
+  headers:
+    - name: X-Cart-Token
+      value: "{{CART_TOKEN}}"
+      disabled: false
+  body:
+    type: json
+    data: |-
+      {
+        "quantity": 2
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

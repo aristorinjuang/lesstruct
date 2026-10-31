@@ -66,6 +66,18 @@ func findImageRecursive(nodes []TipTapNode) string {
 	return ""
 }
 
+// isAcceptedImageSrc reports whether an <img> src should be returned by the
+// extractors. Absolute http(s) URLs and root-relative paths (the local storage
+// driver bakes "/uploads/..." into stored content) are accepted; callers
+// absolutize root-relative values with seo.BuildURL downstream.
+func isAcceptedImageSrc(src string) bool {
+	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+		return true
+	}
+
+	return strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "//")
+}
+
 // TipTapDocument represents a TipTap JSON document
 type TipTapDocument struct {
 	Type    string       `json:"type"`
@@ -135,18 +147,6 @@ func BuildURL(baseURL, path string) string {
 	}
 
 	return fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(path, "/"))
-}
-
-// isAcceptedImageSrc reports whether an <img> src should be returned by the
-// extractors. Absolute http(s) URLs and root-relative paths (the local storage
-// driver bakes "/uploads/..." into stored content) are accepted; callers
-// absolutize root-relative values with seo.BuildURL downstream.
-func isAcceptedImageSrc(src string) bool {
-	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-		return true
-	}
-
-	return strings.HasPrefix(src, "/") && !strings.HasPrefix(src, "//")
 }
 
 // ExtractImageURLFromHTML finds the first image URL in HTML content.

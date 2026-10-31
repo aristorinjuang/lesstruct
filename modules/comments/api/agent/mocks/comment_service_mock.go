@@ -8,7 +8,7 @@ import (
 	"context"
 
 	"github.com/aristorinjuang/lesstruct/kernel"
-	commentdomain "github.com/aristorinjuang/lesstruct/modules/comments/domain"
+	"github.com/aristorinjuang/lesstruct/modules/comments/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -18,10 +18,19 @@ func NewMockCommentService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockCommentService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockCommentService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -160,23 +169,23 @@ func (_c *MockCommentService_DeleteOwnComment_Call) RunAndReturn(run func(ctx co
 }
 
 // GetComment provides a mock function for the type MockCommentService
-func (_mock *MockCommentService) GetComment(ctx context.Context, commentID int) (*commentdomain.Comment, error) {
+func (_mock *MockCommentService) GetComment(ctx context.Context, commentID int) (*comments.Comment, error) {
 	ret := _mock.Called(ctx, commentID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetComment")
 	}
 
-	var r0 *commentdomain.Comment
+	var r0 *comments.Comment
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*commentdomain.Comment, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*comments.Comment, error)); ok {
 		return returnFunc(ctx, commentID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *commentdomain.Comment); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *comments.Comment); ok {
 		r0 = returnFunc(ctx, commentID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*commentdomain.Comment)
+			r0 = ret.Get(0).(*comments.Comment)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -217,34 +226,34 @@ func (_c *MockCommentService_GetComment_Call) Run(run func(ctx context.Context, 
 	return _c
 }
 
-func (_c *MockCommentService_GetComment_Call) Return(comment *commentdomain.Comment, err error) *MockCommentService_GetComment_Call {
+func (_c *MockCommentService_GetComment_Call) Return(comment *comments.Comment, err error) *MockCommentService_GetComment_Call {
 	_c.Call.Return(comment, err)
 	return _c
 }
 
-func (_c *MockCommentService_GetComment_Call) RunAndReturn(run func(ctx context.Context, commentID int) (*commentdomain.Comment, error)) *MockCommentService_GetComment_Call {
+func (_c *MockCommentService_GetComment_Call) RunAndReturn(run func(ctx context.Context, commentID int) (*comments.Comment, error)) *MockCommentService_GetComment_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetCommentsForContent provides a mock function for the type MockCommentService
-func (_mock *MockCommentService) GetCommentsForContent(ctx context.Context, contentID int) ([]*commentdomain.Comment, error) {
+func (_mock *MockCommentService) GetCommentsForContent(ctx context.Context, contentID int) ([]*comments.Comment, error) {
 	ret := _mock.Called(ctx, contentID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetCommentsForContent")
 	}
 
-	var r0 []*commentdomain.Comment
+	var r0 []*comments.Comment
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*commentdomain.Comment, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*comments.Comment, error)); ok {
 		return returnFunc(ctx, contentID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*commentdomain.Comment); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*comments.Comment); ok {
 		r0 = returnFunc(ctx, contentID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*commentdomain.Comment)
+			r0 = ret.Get(0).([]*comments.Comment)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -285,34 +294,34 @@ func (_c *MockCommentService_GetCommentsForContent_Call) Run(run func(ctx contex
 	return _c
 }
 
-func (_c *MockCommentService_GetCommentsForContent_Call) Return(comments []*commentdomain.Comment, err error) *MockCommentService_GetCommentsForContent_Call {
-	_c.Call.Return(comments, err)
+func (_c *MockCommentService_GetCommentsForContent_Call) Return(comments1 []*comments.Comment, err error) *MockCommentService_GetCommentsForContent_Call {
+	_c.Call.Return(comments1, err)
 	return _c
 }
 
-func (_c *MockCommentService_GetCommentsForContent_Call) RunAndReturn(run func(ctx context.Context, contentID int) ([]*commentdomain.Comment, error)) *MockCommentService_GetCommentsForContent_Call {
+func (_c *MockCommentService_GetCommentsForContent_Call) RunAndReturn(run func(ctx context.Context, contentID int) ([]*comments.Comment, error)) *MockCommentService_GetCommentsForContent_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetCommentsForModeration provides a mock function for the type MockCommentService
-func (_mock *MockCommentService) GetCommentsForModeration(ctx context.Context, contentID int) ([]*commentdomain.Comment, error) {
+func (_mock *MockCommentService) GetCommentsForModeration(ctx context.Context, contentID int) ([]*comments.Comment, error) {
 	ret := _mock.Called(ctx, contentID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetCommentsForModeration")
 	}
 
-	var r0 []*commentdomain.Comment
+	var r0 []*comments.Comment
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*commentdomain.Comment, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) ([]*comments.Comment, error)); ok {
 		return returnFunc(ctx, contentID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*commentdomain.Comment); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) []*comments.Comment); ok {
 		r0 = returnFunc(ctx, contentID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*commentdomain.Comment)
+			r0 = ret.Get(0).([]*comments.Comment)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -353,37 +362,37 @@ func (_c *MockCommentService_GetCommentsForModeration_Call) Run(run func(ctx con
 	return _c
 }
 
-func (_c *MockCommentService_GetCommentsForModeration_Call) Return(comments []*commentdomain.Comment, err error) *MockCommentService_GetCommentsForModeration_Call {
-	_c.Call.Return(comments, err)
+func (_c *MockCommentService_GetCommentsForModeration_Call) Return(comments1 []*comments.Comment, err error) *MockCommentService_GetCommentsForModeration_Call {
+	_c.Call.Return(comments1, err)
 	return _c
 }
 
-func (_c *MockCommentService_GetCommentsForModeration_Call) RunAndReturn(run func(ctx context.Context, contentID int) ([]*commentdomain.Comment, error)) *MockCommentService_GetCommentsForModeration_Call {
+func (_c *MockCommentService_GetCommentsForModeration_Call) RunAndReturn(run func(ctx context.Context, contentID int) ([]*comments.Comment, error)) *MockCommentService_GetCommentsForModeration_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // SubmitComment provides a mock function for the type MockCommentService
-func (_mock *MockCommentService) SubmitComment(ctx context.Context, contentID int, principal kernel.Principal, req commentdomain.CreateCommentRequest) (*commentdomain.Comment, error) {
+func (_mock *MockCommentService) SubmitComment(ctx context.Context, contentID int, principal kernel.Principal, req comments.CreateCommentRequest) (*comments.Comment, error) {
 	ret := _mock.Called(ctx, contentID, principal, req)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SubmitComment")
 	}
 
-	var r0 *commentdomain.Comment
+	var r0 *comments.Comment
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, commentdomain.CreateCommentRequest) (*commentdomain.Comment, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, comments.CreateCommentRequest) (*comments.Comment, error)); ok {
 		return returnFunc(ctx, contentID, principal, req)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, commentdomain.CreateCommentRequest) *commentdomain.Comment); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal, comments.CreateCommentRequest) *comments.Comment); ok {
 		r0 = returnFunc(ctx, contentID, principal, req)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*commentdomain.Comment)
+			r0 = ret.Get(0).(*comments.Comment)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int, kernel.Principal, commentdomain.CreateCommentRequest) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int, kernel.Principal, comments.CreateCommentRequest) error); ok {
 		r1 = returnFunc(ctx, contentID, principal, req)
 	} else {
 		r1 = ret.Error(1)
@@ -400,12 +409,12 @@ type MockCommentService_SubmitComment_Call struct {
 //   - ctx context.Context
 //   - contentID int
 //   - principal kernel.Principal
-//   - req commentdomain.CreateCommentRequest
+//   - req comments.CreateCommentRequest
 func (_e *MockCommentService_Expecter) SubmitComment(ctx any, contentID any, principal any, req any) *MockCommentService_SubmitComment_Call {
 	return &MockCommentService_SubmitComment_Call{Call: _e.mock.On("SubmitComment", ctx, contentID, principal, req)}
 }
 
-func (_c *MockCommentService_SubmitComment_Call) Run(run func(ctx context.Context, contentID int, principal kernel.Principal, req commentdomain.CreateCommentRequest)) *MockCommentService_SubmitComment_Call {
+func (_c *MockCommentService_SubmitComment_Call) Run(run func(ctx context.Context, contentID int, principal kernel.Principal, req comments.CreateCommentRequest)) *MockCommentService_SubmitComment_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -419,9 +428,9 @@ func (_c *MockCommentService_SubmitComment_Call) Run(run func(ctx context.Contex
 		if args[2] != nil {
 			arg2 = args[2].(kernel.Principal)
 		}
-		var arg3 commentdomain.CreateCommentRequest
+		var arg3 comments.CreateCommentRequest
 		if args[3] != nil {
-			arg3 = args[3].(commentdomain.CreateCommentRequest)
+			arg3 = args[3].(comments.CreateCommentRequest)
 		}
 		run(
 			arg0,
@@ -433,18 +442,18 @@ func (_c *MockCommentService_SubmitComment_Call) Run(run func(ctx context.Contex
 	return _c
 }
 
-func (_c *MockCommentService_SubmitComment_Call) Return(comment *commentdomain.Comment, err error) *MockCommentService_SubmitComment_Call {
+func (_c *MockCommentService_SubmitComment_Call) Return(comment *comments.Comment, err error) *MockCommentService_SubmitComment_Call {
 	_c.Call.Return(comment, err)
 	return _c
 }
 
-func (_c *MockCommentService_SubmitComment_Call) RunAndReturn(run func(ctx context.Context, contentID int, principal kernel.Principal, req commentdomain.CreateCommentRequest) (*commentdomain.Comment, error)) *MockCommentService_SubmitComment_Call {
+func (_c *MockCommentService_SubmitComment_Call) RunAndReturn(run func(ctx context.Context, contentID int, principal kernel.Principal, req comments.CreateCommentRequest) (*comments.Comment, error)) *MockCommentService_SubmitComment_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // UpdateCommentStatus provides a mock function for the type MockCommentService
-func (_mock *MockCommentService) UpdateCommentStatus(ctx context.Context, commentID int, status commentdomain.CommentStatus) error {
+func (_mock *MockCommentService) UpdateCommentStatus(ctx context.Context, commentID int, status comments.CommentStatus) error {
 	ret := _mock.Called(ctx, commentID, status)
 
 	if len(ret) == 0 {
@@ -452,7 +461,7 @@ func (_mock *MockCommentService) UpdateCommentStatus(ctx context.Context, commen
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, commentdomain.CommentStatus) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, comments.CommentStatus) error); ok {
 		r0 = returnFunc(ctx, commentID, status)
 	} else {
 		r0 = ret.Error(0)
@@ -468,12 +477,12 @@ type MockCommentService_UpdateCommentStatus_Call struct {
 // UpdateCommentStatus is a helper method to define mock.On call
 //   - ctx context.Context
 //   - commentID int
-//   - status commentdomain.CommentStatus
+//   - status comments.CommentStatus
 func (_e *MockCommentService_Expecter) UpdateCommentStatus(ctx any, commentID any, status any) *MockCommentService_UpdateCommentStatus_Call {
 	return &MockCommentService_UpdateCommentStatus_Call{Call: _e.mock.On("UpdateCommentStatus", ctx, commentID, status)}
 }
 
-func (_c *MockCommentService_UpdateCommentStatus_Call) Run(run func(ctx context.Context, commentID int, status commentdomain.CommentStatus)) *MockCommentService_UpdateCommentStatus_Call {
+func (_c *MockCommentService_UpdateCommentStatus_Call) Run(run func(ctx context.Context, commentID int, status comments.CommentStatus)) *MockCommentService_UpdateCommentStatus_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -483,9 +492,9 @@ func (_c *MockCommentService_UpdateCommentStatus_Call) Run(run func(ctx context.
 		if args[1] != nil {
 			arg1 = args[1].(int)
 		}
-		var arg2 commentdomain.CommentStatus
+		var arg2 comments.CommentStatus
 		if args[2] != nil {
-			arg2 = args[2].(commentdomain.CommentStatus)
+			arg2 = args[2].(comments.CommentStatus)
 		}
 		run(
 			arg0,
@@ -501,7 +510,7 @@ func (_c *MockCommentService_UpdateCommentStatus_Call) Return(err error) *MockCo
 	return _c
 }
 
-func (_c *MockCommentService_UpdateCommentStatus_Call) RunAndReturn(run func(ctx context.Context, commentID int, status commentdomain.CommentStatus) error) *MockCommentService_UpdateCommentStatus_Call {
+func (_c *MockCommentService_UpdateCommentStatus_Call) RunAndReturn(run func(ctx context.Context, commentID int, status comments.CommentStatus) error) *MockCommentService_UpdateCommentStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }

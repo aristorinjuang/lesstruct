@@ -45,7 +45,7 @@ func newStubRoleCapabilities() *stubRoleCapabilities {
 	return &stubRoleCapabilities{
 		admin:    map[string]bool{"Admin": true},
 		publish:  map[string]bool{"Admin": true, "Contributor": true},
-		media:    map[string]bool{"Admin": true, "Contributor": true, "Commentator": true},
+		media:    map[string]bool{"Admin": true, "Contributor": true},
 		comments: map[string]bool{"Admin": true, "Contributor": true, "Commentator": true},
 		manage: map[string]map[string]bool{
 			"Admin":       {"post": true, "page": true},
@@ -76,10 +76,10 @@ func TestCapabilityResolver(t *testing.T) {
 			expected:   true,
 		},
 		{
-			name:       "success - commentator uploads media",
+			name:       "denied - commentator uploads media",
 			principal:  kernel.Principal{ID: "3", Username: "cam", Roles: []string{"Commentator"}},
 			capability: "media",
-			expected:   true,
+			expected:   false,
 		},
 		{
 			name:       "success - contributor manages post",

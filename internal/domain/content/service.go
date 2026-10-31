@@ -22,6 +22,13 @@ import (
 	seo "github.com/aristorinjuang/lesstruct/modules/seo/domain"
 )
 
+const (
+	// defaultRelatedLimit is the number of related posts returned when no limit is requested.
+	defaultRelatedLimit = 4
+	// maxRelatedLimit caps the number of related posts to keep queries bounded.
+	maxRelatedLimit = 20
+)
+
 // hookData is the JSON structure sent to and received from plugin hooks.
 type hookData struct {
 	ContentID    int            `json:"contentId"`
@@ -138,6 +145,19 @@ func isEmpty(value any) bool {
 	return false
 }
 
+// normalizeFieldValue validates one custom-field value and returns its
+// canonical storage form. Array-type fields (multiselect, list, gallery)
+// coerce legacy single-string input and validate the items via the kernel;
+// every other type validates and passes through unchanged.
+func normalizeFieldValue(field customfield.FieldSchema, value any) (any, error) {
+	if field.Type == customfield.FieldTypeMultiselect ||
+		field.Type == customfield.FieldTypeList ||
+		field.Type == customfield.FieldTypeGallery {
+		return customfield.NormalizeValue(field, value)
+	}
+	return value, validateFieldValue(field, value)
+}
+
 // UpdateContentRequest represents a request to update content
 type UpdateContentRequest struct {
 	Title              string               `json:"title"`
@@ -150,6 +170,7 @@ type UpdateContentRequest struct {
 	MetaDescription    string               `json:"metaDescription,omitempty"`
 	OGTitle            string               `json:"ogTitle,omitempty"`
 	OGDescription      string               `json:"ogDescription,omitempty"`
+	FeaturedImage      *string              `json:"featuredImage,omitempty"`
 	AllowComments      *bool                `json:"allowComments,omitempty"`
 	CustomFields       map[string]any       `json:"customFields,omitempty"`
 	Language           string               `json:"language,omitempty"`
@@ -192,6 +213,16 @@ func WithDefaultLanguage(lang string) Option {
 	}
 }
 
+// WithLanguages sets the configured language list a create request is
+// validated against: an explicit language outside the list fails with
+// ErrInvalidLanguage. An empty list disables the check (legacy services
+// constructed without configuration accept any language).
+func WithLanguages(languages ...string) Option {
+	return func(s *Service) {
+		s.languages = append([]string{}, languages...)
+	}
+}
+
 // WithCommentsEnabled sets whether the comment system is active. When false,
 // new content always defaults to allowComments=false regardless of the request
 // (the comment routes are unmounted at the HTTP layer; this covers the data
@@ -228,6 +259,7 @@ type Service struct {
 	hookExecutor    HookExecutor
 	aliasDeleter    AliasDeleter
 	defaultLanguage string
+	languages       []string
 	commentsEnabled bool
 	roleChecker     RoleChecker
 }
@@ -253,9 +285,14 @@ func (s *Service) validateCustomFields(
 		if !exists {
 			continue
 		}
-		if err := validateFieldValue(field, value); err != nil {
+		// Array-type values are canonicalized in place (legacy single-string
+		// forms coerce; canonical arrays are validated), so the caller's map —
+		// and therefore storage — always converges to the canonical shape.
+		canonical, err := normalizeFieldValue(field, value)
+		if err != nil {
 			return fmt.Errorf("%s: %w", field.Name, err)
 		}
+		customFields[field.Slug] = canonical
 	}
 	return nil
 }
@@ -693,6 +730,7 @@ func (s *Service) generateSEOMetadata(
 		DateModified:  now,
 		AuthorName:    c.Author,
 		Tags:          c.Tags,
+		FeaturedImage: c.FeaturedImage,
 	}
 	if metaDescription != "" {
 		seoInput.MetaDescription = metaDescription
@@ -811,6 +849,13 @@ func (s *Service) Create(ctx context.Context, principal kernel.Principal, req co
 	if language == "" {
 		language = s.defaultLanguage
 	}
+	// An explicit language must belong to the configured list: otherwise the
+	// item would vanish from every language-scoped listing while existing
+	// under a code nothing negotiates. Services constructed without a list
+	// skip the check (legacy behavior).
+	if len(s.languages) > 0 && !slices.Contains(s.languages, language) {
+		return nil, contentdomain.ErrInvalidLanguage
+	}
 
 	// Validate translation group if provided
 	if req.TranslationGroupID != nil {
@@ -882,13 +927,12 @@ func (s *Service) Create(ctx context.Context, principal kernel.Principal, req co
 
 	s.stripSystemFields(postType, req.CustomFields)
 
-	// Merge plugin-set system field values back after stripping
-	if len(pluginSystemFields) > 0 {
-		if req.CustomFields == nil {
-			req.CustomFields = make(map[string]any)
-		}
-		maps.Copy(req.CustomFields, pluginSystemFields)
-	}
+	// Merge plugin-set system field values back after stripping. A BeforeSave
+	// hook result always assigns a non-nil custom-field map (applyHookResult
+	// ignores nil maps), so req.CustomFields is non-nil whenever
+	// pluginSystemFields holds values; when it is empty, maps.Copy writes
+	// nothing and a nil destination is safe.
+	maps.Copy(req.CustomFields, pluginSystemFields)
 
 	if err := s.validateCustomFields(postType, req.CustomFields); err != nil {
 		return nil, fmt.Errorf("%w: %w", contentdomain.ErrCustomFieldValidation, err)
@@ -903,6 +947,12 @@ func (s *Service) Create(ctx context.Context, principal kernel.Principal, req co
 		}
 	}
 
+	// Validate the explicit featured image up front so a bad reference fails
+	// the whole request (create) rather than surfacing at render time.
+	if err := contentdomain.ValidateFeaturedImage(req.FeaturedImage); err != nil {
+		return nil, err
+	}
+
 	content := &contentdomain.Content{
 		UserID:             userID,
 		Title:              strings.TrimSpace(req.Title),
@@ -915,6 +965,7 @@ func (s *Service) Create(ctx context.Context, principal kernel.Principal, req co
 		MetaDescription:    req.MetaDescription,
 		OGTitle:            req.OGTitle,
 		OGDescription:      req.OGDescription,
+		FeaturedImage:      req.FeaturedImage,
 		AllowComments:      allowComments,
 		CustomFields:       req.CustomFields,
 		Language:           language,
@@ -1268,19 +1319,23 @@ func (s *Service) SearchPublished(ctx context.Context, query string, limit int) 
 	if len(query) < 2 {
 		return []*contentdomain.Content{}, nil
 	}
-	contents, err := s.repo.SearchPublished(ctx, query, limit)
+	// The post-type registry scopes public search to visible types: registered
+	// and not hidden. Without a registry the search runs unscoped (legacy
+	// behavior); with one, a site that hides every type gets an honest empty
+	// result instead of a scan.
+	var postTypes []string
+	if s.postTypeService != nil {
+		postTypes = s.postTypeService.SearchableSlugs()
+		if len(postTypes) == 0 {
+			return []*contentdomain.Content{}, nil
+		}
+	}
+	contents, err := s.repo.SearchPublished(ctx, query, postTypes, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search published content: %w", err)
 	}
 	return contents, nil
 }
-
-const (
-	// defaultRelatedLimit is the number of related posts returned when no limit is requested.
-	defaultRelatedLimit = 4
-	// maxRelatedLimit caps the number of related posts to keep queries bounded.
-	maxRelatedLimit = 20
-)
 
 // GetRelated returns up to limit related posts for the content identified by id.
 // Related posts share at least one tag, the same post type, and the same language
@@ -1487,6 +1542,16 @@ func (s *Service) Update(ctx context.Context, id int, principal kernel.Principal
 	} else if !s.commentsEnabled {
 		// Comments globally disabled — no item may accept comments.
 		existing.AllowComments = false
+	}
+
+	// Featured image: nil keeps the stored reference, non-nil (including "")
+	// replaces it. An empty string clears the explicit image so presentation
+	// falls back to the body-derived one.
+	if req.FeaturedImage != nil {
+		if err := contentdomain.ValidateFeaturedImage(*req.FeaturedImage); err != nil {
+			return nil, err
+		}
+		existing.FeaturedImage = *req.FeaturedImage
 	}
 
 	// Auto-generate SEO metadata when transitioning to published status. A role

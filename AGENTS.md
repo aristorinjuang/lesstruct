@@ -19,7 +19,15 @@
 
 ## Code Style
 
-- Put all private structs or functions before all public structs or functions!
+- **File layout order (top to bottom):**
+  1. `const (...)` — all file-level constants, grouped in one block. A lone file-level constant may be written bare (`const maxCreateAttempts = 3`); from the second one on, group them.
+  2. `var (...)` — all file-level variables — exported test seams (`var Reader io.Reader = ...`) and sentinels included — grouped in one block. Compile-time interface witnesses (`var _ kernel.Module = (*Module)(nil)`) are the established exemption: they sit beside the type they assert and need not join the block.
+  3. Private structs and functions. Package-level unexported helpers live here even when their only callers are exported methods. Private sentinel/error types precede the `var (...)` block that uses them.
+  4. Public declarations — each struct followed by its methods (private methods first, then exported; the block is contiguous — no other declaration may interrupt it), then its constructor last, after all methods. Nothing of that type follows the constructor.
+- The file-layout rules above are enforced mechanically by `tools/stylecheck` (`make stylecheck`, wired into `make lint`): methods stay with their struct, constructors close their type, and package-level helpers precede public declarations.
+- Methods (functions with receivers) go immediately after the struct they belong to — including private structs.
+- Constructors are the final declaration of their type: private helpers never follow them. This applies to **every** type that has a constructor — HTTP handlers, seam adapters, and drivers included — not just domain services and modules.
+- Every exported symbol carries a godoc comment beginning with the symbol's name ("Create generates ...", never "This function generates ...").
 - Do not ever use `interface{}`, use `any`!
 - Always use constants instead of typed strings, especially to define HTTP methods! E.g., `http.MethodDelete` instead of `"DELETE"`.
 - **Write modern Go (the toolchain is Go 1.27).** The `modernize` analyzer (`make modernize`) enforces this in CI; write the modern form directly:
@@ -56,9 +64,38 @@ authHandler := handlers.NewAuthHandler(
 authHandler := handlers.NewAuthHandler(authService, jwtManager, logger, firstLoginService, registrationService, verificationService, loginService, userRepo, failedLoginRepo, notificationRepo, emailService)
 ```
 
+### Module & adapter file layout
+
+First-party `modules/<name>/` trees and edition adapter files follow this
+organization:
+
+- Adapters live one-seam-per-file in the edition package, named for the
+  module they feed (`cart.go`, `orders.go`): fields, seam methods in the
+  interface's declaration order, then the `New*` constructor. Wire steps
+  (`wire<Module>` methods on the composition `state`) never mix into
+  adapter files — they stay in the edition's main file beside their
+  sibling wires.
+- `embed.go` carries the migration FS with `//go:embed` written directly
+  on the spec *inside* the `var (...)` block; outside the block the
+  directive is misplaced and fails the build.
+- Any handler decoding a request body on the anonymous public router
+  caps it first with `r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)`
+  — the public router rate-limits requests, not bytes.
+
+### Domain package file grammar
+
+A domain package under `internal/domain/<name>/` uses a fixed file layout:
+
+- `types.go` — entity/DTO structs and ALL `Err*` sentinel errors (one grouped `var (...)` block).
+- `repository.go` — the repository interface.
+- `service.go` — the service "class": const → var → private helpers → struct → methods (private, then exported) → constructor last.
+- `service_test.go` — table-driven tests in the `<name>_test` package.
+
 ## Structs & Constructors
 
-- Treat `struct` like objects if they have function receivers (methods)! So, put constructors (functions that start with `New` in general) after all methods. Put function receivers (methods) right after their `struct`.
+- Treat `struct` like objects if they have function receivers (methods)! Put function receivers (methods) right after their `struct`, and constructors after all methods.
+- **Constructor definition:** a constructor is any function whose FIRST return value is the struct that owns the methods — the name is irrelevant. `New*` is common, but `Open`, `Load`, `LoadRoles`, and `LoadManifest` are equally constructors. Every constructor rule applies to them: methods first, constructor last, nothing follows.
+- **Receivers:** one style per type, never mixed. Services, handlers, adapters, and anything holding mutable state or dependencies use pointer receivers (`func (s *Service) ...`). Small immutable value types may use value receivers.
 
 ```go
 // Good example
@@ -233,13 +270,16 @@ The docs under `docs/` are contracts, not afterthoughts. When you change code th
 | If you touch... | Update... |
 |---|---|
 | `go.mod`, `internal/domain/`, `internal/api/`, `internal/repository/`, `internal/content/`, `internal/plugin/` (architecture-level), `web/admin/src/` (architecture-level), `cmd/lesstruct-cli/` (architecture-level) | `docs/project-context.md` |
+| A bounded context, domain-package layer boundary, aggregate, or value object | `docs/ddd/domain-context.md` (+ `docs/ddd/class-diagram.puml` for commerce) |
+| A domain term used in code, an API field, or UI copy | `docs/ddd/ubiquitous-language.md` |
+| `modules/orders/` (checkout, lifecycle, stock settlement, invoice) | `docs/ddd/orders-bounded-context.md` |
 | `internal/config/`, `config.toml`, `.env.example` | `docs/configuration.md` |
-| `internal/api/template/`, `internal/api/contentpage/`, theme CSS/JS contracts | `docs/theme-development.md` AND `skills/lesstruct-theme-development/references/theme-development.md` (user-facing snapshot) |
-| `internal/api/template/pages/*.gohtml` (formatting/whitespace) | `docs/coding-standards/html.md` |
+| `modules/site-ssr/`, `modules/theme-default/`, `modules/theme-storefront/`, theme CSS/JS contracts | `docs/theme-development.md` AND `skills/lesstruct-theme-development/references/theme-development.md` (user-facing snapshot) |
+| `modules/theme-default/pages/*.gohtml` (formatting/whitespace) | `docs/coding-standards/html.md` |
 | `internal/plugin/` (SDK/hooks/capabilities), `pkg/sdk/` | `docs/plugin-development.md`, `docs/plugin-capabilities.md` AND the matching snapshots under `skills/lesstruct-plugin-development/references/` |
 | `modules/<name>/` (new/changed module layout, seams, gating, wiring) | `docs/module-development.md` |
 | `modules/<name>/` (module added/removed, `Requires()` changed, admin manifest entries changed) | `docs/built-in-modules.md` |
-| A new development phase / work narrative (repo history) | `HISTORY.md` at the repo root — repo-only, never published to the docs site |
+| `cmd/lesstruct-cli/` (command, subcommand, or flag surface — not architecture-level wiring) | `docs/cli.md` |
 | `internal/api/handlers/agent/`, `internal/api/middleware/apikey.go`, `/api/v1` route shape, response envelope | `docs/api-reference.md` |
 | `internal/api/routes/routes.go`, `internal/api/handlers/` (new/removed/renamed endpoints, method changes, query/body param changes, auth-realm changes) | `docs/bruno/` — one `.yml` request per route; add new requests in the matching resource folder and update existing requests' body/query/path/auth in lockstep |
 | A user-facing feature added, removed, or behavior-changed (UI, CLI, or config) | `docs/features.md` (canonical catalog) AND, if it is in the homepage's curated subset, the card copy in `site/layouts/landing.html` |
@@ -258,12 +298,13 @@ The `site/` directory is the Hugo project that publishes the docs at `lesstruct.
 
 Before pushing changes that affect `docs/`, `skills/`, or `site/`, run `make docs-serve` locally to spot-check rendering. CI (`/.github/workflows/docs.yml`) builds and deploys the site on every push to `main` that touches the relevant paths.
 
-Screenshots in docs are rendered with the `screenshot` shortcode (`{{< screenshot src="name" alt="..." caption="..." >}}`), which emits a `<picture>` with light + dark variants. The PNGs live in `site/static/screenshots/` (served at `/screenshots/`), with a `docs/assets/screenshots/` mirror for the GitHub `README.md`. Regenerate them with `make screenshots` against a running instance (see `scripts/screenshots/README.md`). The shortcode fails the docs build if a referenced PNG is missing — so after any admin-UI or default-theme change, re-run `make screenshots` and commit the new PNGs in the same change.
+Screenshots in docs are rendered with the `screenshot` shortcode (`{{< screenshot src="name" alt="..." caption="..." >}}`), which emits a `<picture>` with light + dark variants. The WebP screenshots live in `site/static/screenshots/` (served at `/screenshots/`), with a `docs/assets/screenshots/` mirror for the GitHub `README.md`. `make screenshots` captures PNGs with Playwright and converts them to WebP (the social `og-card.png` stays PNG). Regenerate them with `make screenshots` against a running instance (see `scripts/screenshots/README.md`). The shortcode fails the docs build if a referenced WebP is missing — so after any admin-UI or default-theme change, re-run `make screenshots` and commit the new files in the same change.
 
 Do not edit files inside `site/themes/hugo-book/` — they are a vendored copy of [`alex-shpak/hugo-book`](https://github.com/alex-shpak/hugo-book) at tag `v12.0.0`. To upgrade the theme, replace the directory contents from a newer release tag.
 
 ## Git
 
+- **Use Git Conventional Commits** for every commit: `type: summary` or `type(scope): summary`, where type is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, or `ci`. The summary is lowercase, imperative, no trailing period. The body (blank line after the summary) explains the what and the why.
 - Never add a `Co-Authored-By` trailer — or any AI/assistant attribution — to Git commit messages. Write commit messages plainly, as if authored solely by the user.
 
 ## Language

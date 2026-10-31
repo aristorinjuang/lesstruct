@@ -59,6 +59,10 @@ export interface UserApiResponse<T> {
   meta: {
     timestamp: string
     requestId: string
+    count?: number
+    total?: number
+    limit?: number
+    offset?: number
   }
 }
 

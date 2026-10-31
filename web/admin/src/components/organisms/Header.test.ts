@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import { mount } from '@vue/test-utils'
 import type { Pinia } from 'pinia'
+import { clearAuth } from '@/composables/useAuth'
 import Header from './Header.vue'
 
 describe('Header', () => {
@@ -14,12 +15,17 @@ describe('Header', () => {
     setActivePinia(pinia)
     vi.clearAllMocks()
     localStorage.clear()
+    // The session is module-level state: reset it so role-specific tests
+    // cannot leak into suites that assume an anonymous visitor.
+    clearAuth()
 
     // Create a new router for each test
     router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/dashboard', component: { template: '<div>Dashboard</div>' } },
+        { path: '/profile', component: { template: '<div>Profile</div>' } },
+        { path: '/content', component: { template: '<div>Content</div>' } },
         { path: '/login', component: { template: '<div>Login</div>' } },
       ],
     })
@@ -79,7 +85,7 @@ describe('Header', () => {
 
     it('should render user section or login button', () => {
       // Set up authenticated state
-      localStorage.setItem('auth_token', 'dummy-token')
+      localStorage.setItem('lesstruct_admin_token', 'dummy-token')
 
       const wrapper = createWrapper()
 
@@ -100,17 +106,43 @@ describe('Header', () => {
   })
 
   describe('logo interaction', () => {
-    it('should navigate to dashboard when logo is clicked', async () => {
-      await router.push('/login')
+    // The logo click pushes asynchronously: flush past the navigation
+    // before asserting on the current route.
+    it('should navigate an admin to the dashboard when logo is clicked', async () => {
+      const { setSession } = await import('@/composables/useAuth')
+      setSession({ id: '1', username: 'admin', role: 'Admin' })
+      await router.push('/profile')
 
       const wrapper = createWrapper()
+      await wrapper.find('.header__logo').trigger('click')
+      await new Promise(resolve => setTimeout(resolve, 0))
 
-      const logo = wrapper.find('.header__logo')
-      await logo.trigger('click')
+      expect(router.currentRoute.value.path).toBe('/dashboard')
+    })
 
-      expect(router.currentRoute.value.path).toBe('/login')
-      // Note: In a real test, we would expect navigation to /dashboard
-      // but the router navigate might not work in test environment
+    it('should navigate a commentator to their profile when logo is clicked', async () => {
+      const { setSession } = await import('@/composables/useAuth')
+      setSession({ id: '7', username: 'cam', role: 'Commentator' })
+      await router.push('/dashboard')
+
+      const wrapper = createWrapper()
+      await wrapper.find('.header__logo').trigger('click')
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(router.currentRoute.value.path).toBe('/profile')
+    })
+
+    it('should navigate other roles to the content list when logo is clicked', async () => {
+      const { setSession } = await import('@/composables/useAuth')
+      setSession({ id: '2', username: 'ed', role: 'Contributor' })
+      await router.push('/dashboard')
+
+      const wrapper = createWrapper()
+      await wrapper.find('.header__logo').trigger('click')
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(router.currentRoute.value.path).toBe('/content')
+      expect(router.currentRoute.value.query.type).toBe('post')
     })
   })
 
@@ -157,7 +189,7 @@ describe('Header', () => {
   describe('user profile', () => {
     it('should show user initials when authenticated', () => {
       // Set token before creating wrapper
-      localStorage.setItem('auth_token', 'dummy-token')
+      localStorage.setItem('lesstruct_admin_token', 'dummy-token')
 
       const wrapper = createWrapper()
 
@@ -166,7 +198,7 @@ describe('Header', () => {
     })
 
     it('should navigate to settings when profile button is clicked', async () => {
-      localStorage.setItem('auth_token', 'dummy-token')
+      localStorage.setItem('lesstruct_admin_token', 'dummy-token')
       await router.push('/dashboard')
 
       const wrapper = createWrapper()
@@ -176,7 +208,7 @@ describe('Header', () => {
     })
 
     it('should have aria-label on user button', () => {
-      localStorage.setItem('auth_token', 'dummy-token')
+      localStorage.setItem('lesstruct_admin_token', 'dummy-token')
 
       const wrapper = createWrapper()
 
@@ -196,7 +228,7 @@ describe('Header', () => {
     })
 
     it('should not render login button when authenticated', () => {
-      localStorage.setItem('auth_token', 'dummy-token')
+      localStorage.setItem('lesstruct_admin_token', 'dummy-token')
 
       const wrapper = createWrapper()
 

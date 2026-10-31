@@ -17,10 +17,19 @@ func NewMockRepository(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockRepository {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockRepository{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -2028,8 +2037,8 @@ func (_c *MockRepository_ListByFilters_Call) RunAndReturn(run func(ctx context.C
 }
 
 // SearchPublished provides a mock function for the type MockRepository
-func (_mock *MockRepository) SearchPublished(ctx context.Context, query string, limit int) ([]*content.Content, error) {
-	ret := _mock.Called(ctx, query, limit)
+func (_mock *MockRepository) SearchPublished(ctx context.Context, query string, postTypes []string, limit int) ([]*content.Content, error) {
+	ret := _mock.Called(ctx, query, postTypes, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SearchPublished")
@@ -2037,18 +2046,18 @@ func (_mock *MockRepository) SearchPublished(ctx context.Context, query string, 
 
 	var r0 []*content.Content
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) ([]*content.Content, error)); ok {
-		return returnFunc(ctx, query, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int) ([]*content.Content, error)); ok {
+		return returnFunc(ctx, query, postTypes, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int) []*content.Content); ok {
-		r0 = returnFunc(ctx, query, limit)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []string, int) []*content.Content); ok {
+		r0 = returnFunc(ctx, query, postTypes, limit)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*content.Content)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int) error); ok {
-		r1 = returnFunc(ctx, query, limit)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []string, int) error); ok {
+		r1 = returnFunc(ctx, query, postTypes, limit)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -2063,12 +2072,13 @@ type MockRepository_SearchPublished_Call struct {
 // SearchPublished is a helper method to define mock.On call
 //   - ctx context.Context
 //   - query string
+//   - postTypes []string
 //   - limit int
-func (_e *MockRepository_Expecter) SearchPublished(ctx any, query any, limit any) *MockRepository_SearchPublished_Call {
-	return &MockRepository_SearchPublished_Call{Call: _e.mock.On("SearchPublished", ctx, query, limit)}
+func (_e *MockRepository_Expecter) SearchPublished(ctx any, query any, postTypes any, limit any) *MockRepository_SearchPublished_Call {
+	return &MockRepository_SearchPublished_Call{Call: _e.mock.On("SearchPublished", ctx, query, postTypes, limit)}
 }
 
-func (_c *MockRepository_SearchPublished_Call) Run(run func(ctx context.Context, query string, limit int)) *MockRepository_SearchPublished_Call {
+func (_c *MockRepository_SearchPublished_Call) Run(run func(ctx context.Context, query string, postTypes []string, limit int)) *MockRepository_SearchPublished_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -2078,14 +2088,19 @@ func (_c *MockRepository_SearchPublished_Call) Run(run func(ctx context.Context,
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 int
+		var arg2 []string
 		if args[2] != nil {
-			arg2 = args[2].(int)
+			arg2 = args[2].([]string)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -2096,7 +2111,7 @@ func (_c *MockRepository_SearchPublished_Call) Return(contents []*content.Conten
 	return _c
 }
 
-func (_c *MockRepository_SearchPublished_Call) RunAndReturn(run func(ctx context.Context, query string, limit int) ([]*content.Content, error)) *MockRepository_SearchPublished_Call {
+func (_c *MockRepository_SearchPublished_Call) RunAndReturn(run func(ctx context.Context, query string, postTypes []string, limit int) ([]*content.Content, error)) *MockRepository_SearchPublished_Call {
 	_c.Call.Return(run)
 	return _c
 }

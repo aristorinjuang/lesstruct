@@ -13,9 +13,7 @@ http:
         "content": "Write a short intro about web development.",
         "format": "html"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

@@ -1,0 +1,90 @@
+@startuml sequence-diagram
+title {{Scenario name}} — Scenario Walkthrough (optional, Model stage)
+
+' ============================================================
+' Optional tactical artifact (Vernon, Implementing Domain-Driven Design).
+' Purpose: validate aggregate boundaries against ONE key scenario.
+'
+' THE RULE a DDD-valid sequence diagram obeys
+' (Vernon, IDDD — aggregate rules of thumb #3 & #4):
+'   WITHIN one aggregate   -> synchronous method calls. One transaction.
+'   ACROSS aggregates      -> NEVER a direct call. The root publishes a
+'                             DOMAIN EVENT (past tense) onto the broker;
+'                             the other aggregate's POLICY reacts to it
+'                             asynchronously, in its OWN transaction.
+'   One transaction modifies exactly ONE aggregate.
+'
+' A step that calls Aggregate B from inside Aggregate A is a rule-#4
+' VIOLATION -- fix it by splitting at the boundary (publish an event,
+' subscribe a policy). Don't soften it; the diagram exists to expose these.
+' ============================================================
+
+skinparam maxMessageSize 160
+skinparam sequence {
+  ArrowColor Black
+  ParticipantBorderColor Black
+  ParticipantBackgroundColor White
+  LifeLineBorderColor Gray
+  LifeLineBackgroundColor WhiteSmoke
+}
+
+actor "Customer" as Customer
+
+box "Order Aggregate\n(1 consistency boundary = 1 transaction)" #LightYellow
+  participant "OrderAppService" as App
+  participant "Order\n(root)"    as Order
+end box
+
+' The broker is the ONLY thing permitted to cross an aggregate boundary.
+queue "Message Broker\n(domain / integration events)" as Broker #WhiteSmoke
+
+box "Inventory Aggregate\n(its own transaction)" #White
+  participant "ReservationPolicy\n(reacts to OrderPlaced)" as InvPolicy
+  participant "Inventory\n(root)"                          as Inventory
+end box
+
+box "Shipping Aggregate\n(its own transaction)" #White
+  participant "ShippingPolicy\n(reacts to OrderConfirmed)" as ShipPolicy
+end box
+
+' ============ WITHIN the Order aggregate: synchronous, one transaction ============
+Customer -> App : place(customerId, items)
+activate App
+App      -> Order : **place**(customerId, items)
+activate Order
+Order    --> App : ok  ' invariants enforced here; OrderPlaced saved WITH the aggregate
+deactivate Order
+App      -> Broker : publish(**OrderPlaced**)   ' after commit (outbox)
+deactivate App
+
+' ============ ACROSS aggregates: ALWAYS via the broker, NEVER a direct call ============
+Broker   -> InvPolicy : OrderPlaced
+activate InvPolicy
+note right of InvPolicy
+  A separate transaction. Inventory sees
+  only the event's public facts -- never
+  Order's internals.
+end note
+InvPolicy -> Inventory : reserve(orderId, items)
+activate Inventory
+Inventory --> InvPolicy : ok
+deactivate Inventory
+InvPolicy -> Broker : publish(**StockReserved** / **StockShort**)
+deactivate InvPolicy
+
+' A later event still crosses the boundary via the broker, not a call.
+Broker -> ShipPolicy : OrderConfirmed
+activate ShipPolicy
+ShipPolicy -> Broker : schedule(orderId)
+deactivate ShipPolicy
+
+' ============================================================
+' Legend
+'   solid arrow  -> a call or a broker message
+'   dashed arrow -> a reply / a published event emerging from a root
+'   box          -> an aggregate = ONE consistency boundary = ONE transaction
+'   queue        -> the ONLY channel allowed to cross an aggregate boundary
+'   **bold**     -> a domain event name (past tense, ubiquitous language)
+' ============================================================
+
+@enduml

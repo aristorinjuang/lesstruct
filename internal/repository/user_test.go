@@ -7,9 +7,9 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/database"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
 	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
-	_ "modernc.org/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 // closeUserTestDB is a helper function that explicitly ignores the error from Close()
@@ -421,11 +421,55 @@ func TestUpdatePasswordByUserID(t *testing.T) {
 	require.NoError(t, err, "UpdatePasswordByUserID failed")
 
 	var passwordHash string
+	var tokenVersion int
 	err = db.DB().QueryRow(`
-		SELECT password_hash FROM users WHERE id = ?
-	`, user.ID).Scan(&passwordHash)
+		SELECT password_hash, token_version FROM users WHERE id = ?
+	`, user.ID).Scan(&passwordHash, &tokenVersion)
 	require.NoError(t, err, "Failed to query password")
 	assert.Equal(t, newHash, passwordHash, "Expected password to be updated")
+	assert.Equal(t, 1, tokenVersion, "Expected the password update to bump token_version and revoke older sessions")
+}
+
+func TestRevokeSessions(t *testing.T) {
+	db := setupUserTestDB(t)
+	defer closeUserTestDB(db)
+
+	repo := repository.NewUserRepository(db.DB())
+
+	user := &userdomain.User{
+		Username:     "testuser",
+		PasswordHash: "$2a$12$oldHash",
+		Email:        "test@example.com",
+		Role:         "Author",
+		Status:       "verified",
+	}
+	err := repo.CreateUser(context.Background(), user)
+	require.NoError(t, err, "Failed to create user")
+
+	err = repo.RevokeSessions(context.Background(), user.ID)
+	require.NoError(t, err, "RevokeSessions failed")
+
+	var tokenVersion int
+	err = db.DB().QueryRow(`SELECT token_version FROM users WHERE id = ?`, user.ID).Scan(&tokenVersion)
+	require.NoError(t, err, "Failed to query token version")
+	assert.Equal(t, 1, tokenVersion, "Expected RevokeSessions to bump token_version and revoke older sessions")
+
+	err = repo.RevokeSessions(context.Background(), user.ID)
+	require.NoError(t, err, "Second RevokeSessions failed")
+
+	err = db.DB().QueryRow(`SELECT token_version FROM users WHERE id = ?`, user.ID).Scan(&tokenVersion)
+	require.NoError(t, err, "Failed to query token version")
+	assert.Equal(t, 2, tokenVersion, "Expected each revocation to bump token_version again")
+}
+
+func TestRevokeSessions_UserNotFound(t *testing.T) {
+	db := setupUserTestDB(t)
+	defer closeUserTestDB(db)
+
+	repo := repository.NewUserRepository(db.DB())
+
+	err := repo.RevokeSessions(context.Background(), 99999)
+	assert.Error(t, err, "Expected error for non-existing user")
 }
 
 func TestUpdatePasswordByUserID_UserNotFound(t *testing.T) {

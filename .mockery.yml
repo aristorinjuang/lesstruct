@@ -26,3 +26,9 @@ packages:
     config:
       recursive: true
       all: true
+      # The nested Go modules keep their own dependency sets: the kernel is
+      # the frozen contract module and posttypes-basic ships no mocks, so
+      # mock generation stays inside the root module's packages.
+      exclude-subpkg-regex:
+        - '^github\.com/aristorinjuang/lesstruct/kernel(/|$)'
+        - '^github\.com/aristorinjuang/lesstruct/modules/posttypes-basic(/|$)'

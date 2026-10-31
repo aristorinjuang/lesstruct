@@ -7,6 +7,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/domain/content"
 	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestPostTypeAdapter_GetBySlug(t *testing.T) {
@@ -248,5 +249,49 @@ func TestNewPostTypeAdapter(t *testing.T) {
 
 	if adapter == nil {
 		t.Errorf("NewPostTypeAdapter() returned nil")
+	}
+}
+
+func TestPostTypeAdapter_SearchableSlugs(t *testing.T) {
+	tests := []struct {
+		name      string
+		setupMock func(*posttype.Service)
+		expected  []string
+	}{
+		{
+			name: "returns the default non-hidden types sorted",
+			setupMock: func(s *posttype.Service) {
+			},
+			expected: []string{"comment", "media", "page", "post"},
+		},
+		{
+			name: "excludes hidden types and sorts the rest",
+			setupMock: func(s *posttype.Service) {
+				_ = s.Register(posttype.PostType{
+					Name:     "Product",
+					Slug:     "product",
+					Supports: []string{"title", "content"},
+				})
+				_ = s.Register(posttype.PostType{
+					Name:     "Archive",
+					Slug:     "archived",
+					Supports: []string{"title"},
+					Hidden:   true,
+				})
+			},
+			expected: []string{"comment", "media", "page", "post", "product"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := posttype.NewService()
+			tt.setupMock(service)
+
+			adapter := content.NewPostTypeAdapter(service)
+
+			result := adapter.SearchableSlugs()
+			assert.Equal(t, tt.expected, result)
+		})
 	}
 }

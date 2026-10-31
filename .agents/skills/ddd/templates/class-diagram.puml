@@ -1,0 +1,133 @@
+@startuml class-diagram
+title {{Bounded Context}} — Tactical Model (detailed)
+
+' ============================================================
+' Legend  (Vernon, Implementing Domain-Driven Design)
+'   (A) Aggregate Root  — sole entry point; enforces invariants
+'   (E) Entity          — internal to an aggregate; has identity
+'   (V) Value Object    — immutable, no identity, equality by value
+'   (D) Domain Event    — published on every state change
+'   (R) Repository      — one per root; interface in the domain
+' ============================================================
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+
+' --- Aggregate boundary: one consistency boundary, one transaction ---
+package "Order Aggregate" <<Aggregate>> {
+
+  class Order <<(A,orchid) Aggregate Root>> {
+    ' identity + references to OTHER aggregates (by identity only)
+    -id: OrderId
+    -customerId: CustomerId
+
+    ' owned state — PRIVATE; the root is the only entry point
+    -orderLines: Set<OrderLine>
+    -status: OrderStatus
+
+    ' factory: creation IS placing; enforces invariants on construction
+    +{static} place(customerId: CustomerId, items: Item[]): Order
+
+    ' command methods — state transitions, each enforces invariants
+    +confirm(): void
+    +cancel(reason: String): void
+
+    ' queries — no mutation
+    +total(): Money
+  }
+
+  class OrderLine <<(E,skyblue) Entity>> {
+    -lineId: OrderLineId
+    -productId: ProductId
+    -quantity: int
+    -unitPrice: Money
+    +subtotal(): Money
+  }
+
+  ' Value objects meaningful only inside this aggregate
+  class OrderId       <<(V,lightgreen) Value Object>> {
+    -value: String
+  }
+  class OrderLineId   <<(V,lightgreen) Value Object>> {
+    -value: String
+  }
+  class OrderStatus   <<(V,lightgreen) Value Object>> {
+    -value: { PLACED | CONFIRMED | CANCELLED }
+  }
+}
+
+' --- Value object passed INTO the aggregate (defines what Item[] means) ---
+class Item <<(V,lightgreen) Value Object>> {
+  -productId: ProductId
+  -quantity: int
+  -unitPrice: Money
+}
+
+class Money <<(V,lightgreen) Value Object>> {
+  -amount: int
+  -currency: String
+}
+
+' --- Identities of OTHER aggregates: referenced, never held as objects ---
+class CustomerId <<(V,lightgreen) Value Object>> {
+  -value: String
+}
+class ProductId   <<(V,lightgreen) Value Object>> {
+  -value: String
+}
+
+' --- Domain events published by the root (eventual consistency) ---
+class OrderPlaced    <<(D,gold) Domain Event>> {
+  +orderId: OrderId
+  +customerId: CustomerId
+  +occurredOn: DateTime
+}
+class OrderConfirmed <<(D,gold) Domain Event>> {
+  +orderId: OrderId
+  +occurredOn: DateTime
+}
+class OrderCancelled <<(D,gold) Domain Event>> {
+  +orderId: OrderId
+  +reason: String
+  +occurredOn: DateTime
+}
+
+' --- Repository: one per root; interface in domain, impl in infrastructure ---
+interface OrderRepository <<(R) Repository>> {
+  +findById(id: OrderId): Order
+  +save(order: Order): void
+  +nextIdentity(): OrderId
+}
+
+' ===================== Relationships =====================
+Order        "1" *-- "0..*" OrderLine : owns
+Order        ..> Item           : place(items)
+OrderLine    --> Money          : priced in
+Order        ..> OrderPlaced    : publishes
+Order        ..> OrderConfirmed : publishes
+Order        ..> OrderCancelled : publishes
+OrderRepository ..> Order       : manages
+Order        --> CustomerId     : references by identity
+OrderLine    --> ProductId      : references by identity
+Item         --> ProductId      : carries
+Item         --> Money          : carries
+
+note right of Order
+  <b>Aggregate rules (Vernon, IDDD):</b>
+  1. The root is the only entry point — internal parts
+     (e.g. OrderLine) are never handed out directly.
+  2. Reference OTHER aggregates (Customer, Product) by identity only.
+  3. One transaction modifies one aggregate.
+  4. Invariants enforced in place()/confirm()/cancel()
+     and on construction — reject invalid state, never "validate later".
+  5. Publish a domain event on every state change.
+end note
+
+note bottom of Item
+  <b>Item</b> is a <b>Value Object</b> — the facts the caller supplies
+  to place an order. The Order factory builds one OrderLine per Item and
+  enforces invariants (quantity &gt; 0, no duplicate productId, …).
+  Not an entity (no identity/lifecycle) and not an application-layer DTO —
+  it belongs to the domain. Rename/retype it to match your ubiquitous language.
+end note
+
+@enduml

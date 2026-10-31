@@ -1,0 +1,61 @@
+@startuml context-map
+!pragma teoz true
+title Context Map — {{System}}
+
+' Canonical DDD notation (Vernon, *Implementing DDD* / Socoli):
+'   U = Upstream (supplier),  D = Downstream (customer / consumer).
+'   Influence flows  U --> D.  The pattern name sits at the upstream end.
+'   Line style encodes the pattern (see legend). Edit names/relationships to fit the domain.
+
+skinparam rectangle {
+  BackgroundColor<<core>>        LightYellow
+  BackgroundColor<<supporting>>  White
+  BackgroundColor<<generic>>     WhiteSmoke
+  BackgroundColor<<mud>>         MistyRose
+  BorderColor<<core>>            GoldenRod
+  BorderColor<<mud>>             Crimson
+  BorderThickness<<core>>        2
+  BorderThickness<<mud>>         2
+}
+skinparam ArrowColor Black
+skinparam LegendBackgroundColor White
+
+' --- Contexts (stereotype = subdomain type; rename/replace to fit the domain) ---
+rectangle "Sales\n(Core)"                    as Sales     <<core>>
+rectangle "Catalog"                          as Catalog   <<supporting>>
+rectangle "Inventory"                        as Inventory <<supporting>>
+rectangle "Billing"                          as Billing   <<supporting>>
+rectangle "Legacy ERP\n(Big Ball of Mud)"    as ERP       <<mud>>
+
+' --- Relationships — Vernon's 9 patterns ---
+' Customer-Supplier: U (Sales) supplies D (Billing / Inventory).
+Sales     "U" --> "D"                  Billing    : Customer-Supplier
+Sales     "U" --> "D"                  Inventory  : Customer-Supplier
+
+' Conformist: D (Inventory) adopts U's (Catalog) model as-is. "C" marks the conformist end.
+Catalog   "U" --> "D (C)"              Inventory  : Conformist
+
+' Anticorruption Layer: D shields itself from a messy/legacy U. Dashed crimson, "ACL" at the D end.
+ERP       "U" -[#crimson,dashed]-> "D (ACL)" Sales     : Anticorruption Layer
+ERP       "U" -[#crimson,dashed]-> "D (ACL)" Catalog   : Anticorruption Layer
+
+' --- Patterns not used in this example — copy/paste when needed ---
+' Partnership (mutual, equal): gold double-headed arrow, "P" at both ends.
+'   Sales "P" <-[#gold]-> "P" Partner : Partnership
+' Shared Kernel (small shared subset): gold line, "SK" at both ends.
+'   A "SK" -[#gold]-> "SK" B : Shared Kernel
+' Open Host Service + Published Language: U exposes one open protocol + standard schema.
+'   Upstream "U (OHS+PL)" --> "D" Downstream : OHS + Published Language
+' Separate Ways: draw NO line — independence is the point. (Optionally add an "X" note.)
+
+legend right
+  |= Line style |= Pattern |
+  | <color:#000000>────►</color>            | Customer–Supplier / Conformist |
+  | <color:crimson>─ ─ ►</color>             | Anticorruption Layer (ACL) |
+  | <color:gold>────►</color>               | Shared Kernel / Partnership |
+  | (none)                                  | Separate Ways |
+  |--
+  Context box: <back:LightYellow> </back> Core  ·  <back:White> </back> Supporting  ·  <back:WhiteSmoke> </back> Generic  ·  <back:MistyRose> </back> Big Ball of Mud
+endlegend
+
+@enduml

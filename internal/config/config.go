@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strconv"
@@ -104,8 +105,14 @@ type Config struct {
 	// GetURL returns this prefix + object key. Read via STORAGE_S3_PUBLIC_BASE_URL.
 	StorageS3PublicBaseURL string
 
-	JWTSecret          string
-	LogLevel           string
+	JWTSecret string
+	LogLevel  string
+	// PIIMasterKey is the base64-encoded 32-byte master key for
+	// application-level commerce PII encryption (orders and payments
+	// customer fields). Read via PII_MASTER_KEY. Only the commerce
+	// edition requires it — wireOrders/wirePayments fail closed when it
+	// is missing or invalid — every other edition ignores it.
+	PIIMasterKey       string
 	SMTPHost           string
 	SMTPPort           int
 	SMTPUser           string
@@ -139,6 +146,20 @@ type Config struct {
 	RateLimitAuthPerMinute   int
 	RateLimitAPIPerMinute    int
 	RateLimitPublicPerMinute int
+
+	// AgentFailuresPerMinute is the per-IP budget of Bearer 401 responses
+	// before the outcome-based limiter refuses further Bearer requests
+	// with 429. Low enough to stop fake-key rotation, high enough to
+	// never touch legitimate use. Read via
+	// RATE_LIMIT_AGENT_FAILURES_PER_MINUTE.
+	AgentFailuresPerMinute int
+
+	// HSTSMaxAge is the Strict-Transport-Security max-age in seconds. It
+	// defaults to one year when SITE_URL is https:// and to 0 (header
+	// omitted) otherwise, so plain-HTTP local deployments keep working.
+	// Read via HSTS_MAX_AGE_SECONDS; set it to 0 to disable the header
+	// explicitly on an HTTPS origin.
+	HSTSMaxAge int
 
 	AIImageGenerationAPIKey      string
 	AIImageGenerationModel       string
@@ -202,11 +223,46 @@ func (c *Config) ParseCORSOrigins() []string {
 	return result
 }
 
+// ParsePIIMasterKey decodes the PII_MASTER_KEY value into the 32-byte
+// master key the commerce PII cipher needs: standard-base64 of exactly 32
+// random bytes (generate with `openssl rand -base64 32`). A missing value
+// or anything that is not 32 bytes fails closed — the commerce edition
+// aborts startup instead of serving customer PII in plaintext.
+func ParsePIIMasterKey(raw string) ([]byte, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("PII_MASTER_KEY is required for the commerce edition")
+	}
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("PII_MASTER_KEY must be base64-encoded: %w", err)
+	}
+	if len(key) != 32 {
+		return nil, fmt.Errorf("PII_MASTER_KEY must decode to 32 bytes, got %d", len(key))
+	}
+	return key, nil
+}
+
 // Load loads configuration from environment variables
 // It tries to load .env file first, then reads from actual environment
 func Load() (*Config, error) {
 	// Try to load .env file (ignore error if file doesn't exist)
 	_ = godotenv.Load()
+
+	// HSTS follows the public origin: an https SITE_URL opts in at one year,
+	// a plain-http origin leaves it off. HSTS_MAX_AGE_SECONDS overrides both.
+	siteURL := getEnv("SITE_URL", "http://localhost:8080")
+	defaultHSTSMaxAge := 0
+	if strings.HasPrefix(strings.ToLower(siteURL), "https://") {
+		defaultHSTSMaxAge = 31536000
+	}
+
+	// The Bearer auth-failure budget never drops below 1: values below 1
+	// fall back to the default instead of disabling the limiter (only
+	// RATE_LIMIT_ENABLED=false disables it).
+	agentFailuresPerMinute := getEnvInt("RATE_LIMIT_AGENT_FAILURES_PER_MINUTE", 15)
+	if agentFailuresPerMinute < 1 {
+		agentFailuresPerMinute = 15
+	}
 
 	cfg := &Config{
 		Host:                     getEnv("HOST", "0.0.0.0"),
@@ -225,6 +281,7 @@ func Load() (*Config, error) {
 		StorageS3PublicBaseURL:   getEnv("STORAGE_S3_PUBLIC_BASE_URL", ""),
 		JWTSecret:                getEnv("JWT_SECRET", ""),
 		LogLevel:                 getEnv("LOG_LEVEL", "info"),
+		PIIMasterKey:             getEnv("PII_MASTER_KEY", ""),
 		SMTPHost:                 getEnv("SMTP_HOST", ""),
 		SMTPPort:                 getEnvInt("SMTP_PORT", 587),
 		SMTPUser:                 getEnv("SMTP_USER", ""),
@@ -233,7 +290,7 @@ func Load() (*Config, error) {
 		ConfigDir:                getEnv("CONFIG_DIR", "."),
 		ConfigFile:               getEnv("CONFIG_FILE", "config.toml"),
 		CORSAllowedOrigins:       getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173"),
-		SiteURL:                  getEnv("SITE_URL", "http://localhost:8080"),
+		SiteURL:                  siteURL,
 		DevMode:                  getEnvBool("DEV_MODE", false),
 		AdminDevURL:              getEnv("ADMIN_DEV_URL", "http://localhost:5173"),
 		ThemeDir:                 getEnv("THEME_DIR", ""),
@@ -253,6 +310,8 @@ func Load() (*Config, error) {
 		RateLimitAuthPerMinute:   getEnvInt("RATE_LIMIT_AUTH_PER_MINUTE", 5),
 		RateLimitAPIPerMinute:    getEnvInt("RATE_LIMIT_API_PER_MINUTE", 100),
 		RateLimitPublicPerMinute: getEnvInt("RATE_LIMIT_PUBLIC_PER_MINUTE", 60),
+		AgentFailuresPerMinute:   agentFailuresPerMinute,
+		HSTSMaxAge:               getEnvInt("HSTS_MAX_AGE_SECONDS", defaultHSTSMaxAge),
 
 		AIImageGenerationAPIKey:      getEnv("AI_IMAGE_GENERATION_API_KEY", ""),
 		AIImageGenerationModel:       getEnv("AI_IMAGE_GENERATION_MODEL", "imagen-4.0-fast-"),

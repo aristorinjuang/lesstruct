@@ -1,0 +1,81 @@
+@startuml service-topology
+!pragma teoz true
+title Service Topology — {{System}}
+
+' Derived from context-map.puml. Produced ONLY when the project is going microservice.
+'   A service is a DEPLOYABLE unit. Default: one bounded context = one service.
+'   Co-deploying contexts (modular monolith) is valid; NEVER split a context across services.
+'   Each service owns its datastore — no shared DB across services.
+'   Transport is DERIVED from the context-map pattern, not invented:
+'     OHS+PL / Customer-Supplier / Conformist  -> synchronous (REST/gRPC)
+'     Domain event crossing a context boundary -> integration event on a broker (async)
+'     Anticorruption Layer                      -> translation adapter at the consumer edge
+'     Separate Ways                             -> no integration
+
+skinparam rectangle {
+  BackgroundColor<<core>>        LightYellow
+  BackgroundColor<<supporting>>  White
+  BackgroundColor<<generic>>     WhiteSmoke
+  BackgroundColor<<mud>>         MistyRose
+  BorderColor<<core>>            GoldenRod
+  BorderColor<<mud>>             Crimson
+  BorderThickness<<core>>        2
+  BorderThickness<<mud>>         2
+}
+skinparam database {
+  BackgroundColor WhiteSmoke
+  BorderColor Gray
+}
+skinparam ArrowColor Black
+skinparam LegendBackgroundColor White
+
+' --- Services: one deployable per bounded context by default ---
+' Stereotype = subdomain type of the hosted context. Owner label = team.
+rectangle "Orders Service\n(owns: Sales context)\nowner: Checkout team"        as Orders    <<core>>
+rectangle "Catalog Service\n(owns: Catalog context)\nowner: PIM team"          as Catalog   <<supporting>>
+rectangle "Inventory Service\n(owns: Inventory context)\nowner: Fulfilment team" as Inventory <<supporting>>
+rectangle "Billing Service\n(owns: Billing context)\nowner: Payments team"     as Billing   <<supporting>>
+rectangle "Legacy ERP Service\n(contains: Big Ball of Mud)"                   as ERP       <<mud>>
+
+' --- Datastore ownership: one DB per service, never shared across services ---
+database "Orders DB"    as OrdersDB
+database "Catalog DB"   as CatalogDB
+database "Inventory DB" as InventoryDB
+database "Billing DB"   as BillingDB
+
+Orders    --> OrdersDB    : owns
+Catalog   --> CatalogDB   : owns
+Inventory --> InventoryDB : owns
+Billing   --> BillingDB   : owns
+
+' --- Transport — DERIVED from the context-map pattern ---
+' Solid black  = synchronous (REST/gRPC).  Dashed royal-blue = async (integration event on a broker).
+' Dashed crimson = ACL translation adapter at the consuming edge.
+
+' Billing is a Customer (D) of Orders (U): sync call to the supplier's OHS.
+Orders    --> Billing    : sync (REST, OHS+PL)
+
+' Inventory reacts to OrderPlaced as an INTEGRATION EVENT (async, eventual consistency).
+Orders    -[#royalblue,dashed]-> Inventory : async\n(OrderPlaced -> ReserveStock)
+
+' ACL at the Orders edge shields it from the messy legacy ERP model.
+ERP       -[#crimson,dashed]-> "D (ACL)" Orders : sync via ACL\n(translates legacy model)
+
+' --- Patterns not used in this example — copy/paste when needed ---
+' Co-deployed contexts (modular monolith): one service box hosting several contexts.
+'   rectangle "Commerce Service\n(owns: Sales + Catalog contexts)\nowner: Commerce team" as Commerce <<core>>
+' Separate Ways: draw NO line — independence is the point.
+
+legend right
+  |= Line style |= Transport |
+  | <color:#000000>────►</color>        | Synchronous (REST / gRPC) — OHS+PL, Customer–Supplier, Conformist |
+  | <color:royalblue>─ ─ ►</color>      | Asynchronous (integration event on a broker) |
+  | <color:crimson>─ ─ ►</color>        | Anticorruption Layer (translation at the consumer edge) |
+  | (none)                              | Separate Ways — no integration |
+  |--
+  Each service owns its datastore (no shared DB across services).
+  Service box color = subdomain type of the hosted context:
+  <back:LightYellow> </back> Core · <back:White> </back> Supporting · <back:WhiteSmoke> </back> Generic · <back:MistyRose> </back> Big Ball of Mud
+endlegend
+
+@enduml

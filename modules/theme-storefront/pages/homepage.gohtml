@@ -1,0 +1,61 @@
+{{- define "body"}}
+<section class="hero">
+	<div class="container hero__inner">
+		<div class="hero__copy">
+			<p class="eyebrow">{{if eq .Lang "id"}}Merchandise Resmi{{else}}Official Merchandise{{end}}</p>
+			<h1 class="hero__title">{{if .SiteConfig.HeroTitle}}{{.SiteConfig.HeroTitle}}{{else}}{{if eq .Lang "id"}}Bawa Lesstruct ke dunia nyata.{{else}}Take Lesstruct into the real world.{{end}}{{end}}</h1>
+			<p class="hero__sub">{{if .SiteConfig.HeroSubtitle}}{{.SiteConfig.HeroSubtitle}}{{else}}{{if eq .Lang "id"}}Kaos, sweater, dan hoodie dengan bahan premium — untuk semua gender, ukuran S sampai XXXL.{{else}}Tees, sweaters, and hoodies in premium fabrics — for all genders, sizes S through XXXL.{{end}}{{end}}</p>
+			<div class="hero__cta">
+				<a class="btn" href="#collection">{{if eq .Lang "id"}}Belanja Sekarang{{else}}Shop the collection{{end}}</a>
+				<a class="btn btn--ghost" href="/orders/track">{{if eq .Lang "id"}}Lacak Pesanan{{else}}Track an order{{end}}</a>
+			</div>
+		</div>
+		{{- if .SiteConfig.HeroImage}}
+		<div class="hero__panel hero__panel--photo">
+			<img class="hero__photo" src="{{.SiteConfig.HeroImage}}" alt="{{.SiteConfig.Name}}" loading="eager">
+		</div>
+		{{- else}}
+		<div class="hero__panel" aria-hidden="true">
+			<span class="hero__monogram">L</span>
+			<span class="hero__panel-line"></span>
+			<span class="hero__panel-caption">LESSTRUCT<br>MERCH</span>
+		</div>
+		{{- end}}
+	</div>
+</section>
+
+{{- if .Tags}}
+<section class="container collection-nav" aria-label="{{if eq .Lang "id"}}Koleksi{{else}}Collections{{end}}">
+	<a class="chip" href="/product">{{if eq .Lang "id"}}Semua{{else}}All{{end}}</a>
+	{{- range .Tags}}<a class="chip" href="/tags/{{. | urlpath}}">{{.}}</a>{{end}}
+</section>
+{{- end}}
+
+<section class="container collection" id="collection">
+	{{- if .Sections}}
+	{{- range .Sections}}
+	<header class="section-head">
+		<h2>{{.Title}}</h2>
+		{{- if .Description}}<p>{{.Description}}</p>{{end}}
+	</header>
+	<div class="product-grid">
+		{{- range .Posts}}{{template "product-card" .}}{{else}}<p class="empty">{{t $.Lang "ui.no_posts"}}</p>{{end}}
+	</div>
+	{{- end}}
+	{{- else}}
+	<header class="section-head">
+		<h2>{{if eq .Lang "id"}}Koleksi{{else}}The collection{{end}}</h2>
+		<p>{{if eq .Lang "id"}}Semua produk merch resmi Lesstruct.{{else}}Every piece of official Lesstruct merch in one place.{{end}}</p>
+	</header>
+	<div class="product-grid">
+		{{- range .Posts}}{{template "product-card" .}}{{else}}<p class="empty">{{t .Lang "ui.no_posts"}}</p>{{end}}
+	</div>
+	{{- end}}
+	{{- if or .HasPrev .HasNext}}
+	<nav class="pagination" aria-label="Pagination">
+		{{- if .HasPrev}}<a rel="prev" href="{{.PrevURL}}">{{t .Lang "ui.prev_page"}}</a>{{end}}
+		{{- if .HasNext}}<a rel="next" href="{{.NextURL}}">{{t .Lang "ui.next_page"}}</a>{{end}}
+	</nav>
+	{{- end}}
+</section>
+{{- end}}

@@ -495,7 +495,7 @@ func TestUnload(t *testing.T) {
 	t.Run("returns error for nil module plugin", func(t *testing.T) {
 		l, _ := newTestLoader(t, t.TempDir())
 
-		plg := plugin.Plugin{Name: "empty", Module: nil}
+		plg := loader.LoadedPlugin{Plugin: plugin.Plugin{Name: "empty"}}
 		err := l.Unload(context.Background(), &plg)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "module is nil")

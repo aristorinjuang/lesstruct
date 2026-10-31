@@ -1,0 +1,29 @@
+{{- define "body"}}
+<section class="container page-shell" data-track-page>
+	<header class="page-head">
+		<p class="eyebrow">{{if eq .Lang "id"}}Pesanan{{else}}Orders{{end}}</p>
+		<h1>{{if eq .Lang "id"}}Lacak Pesanan{{else}}Track your order{{end}}</h1>
+		<p class="page-head__sub">{{if eq .Lang "id"}}Masukkan nomor pesanan, email, dan kode pelacakan dari email konfirmasi pesananmu.{{else}}Enter the order number, your email, and the tracking code from your order confirmation email.{{end}}</p>
+	</header>
+	<noscript><p class="alert alert--error">{{if eq .Lang "id"}}JavaScript diperlukan untuk melacak pesanan. Aktifkan JavaScript, atau balas email konfirmasi pesanan untuk mendapatkan kabar.{{else}}JavaScript is required to track your order. Enable JavaScript, or reply to your order confirmation email for an update.{{end}}</p></noscript>
+	<form class="track-form" id="track-form">
+		<div class="field">
+			<label for="track-order">{{if eq .Lang "id"}}Nomor pesanan{{else}}Order number{{end}}</label>
+			<input class="form-control" type="text" id="track-order" name="order" placeholder="ORD-000042" autocomplete="off" required>
+		</div>
+		<div class="field">
+			<label for="track-email">{{t .Lang "ui.email_label"}}</label>
+			<input class="form-control" type="email" id="track-email" name="email" autocomplete="email" required>
+		</div>
+		<div class="field">
+			<label for="track-token">{{if eq .Lang "id"}}Kode pelacakan{{else}}Tracking code{{end}}</label>
+			<input class="form-control" type="text" id="track-token" name="token" autocomplete="off" required>
+			<small class="muted">{{if eq .Lang "id"}}Kode ini ada di email konfirmasi pesananmu (tautan "Lacak Pesanan").{{else}}This code is in your order confirmation email (the "Track your order" link).{{end}}</small>
+		</div>
+		<button class="btn" type="submit">{{if eq .Lang "id"}}Lacak{{else}}Track order{{end}}</button>
+	</form>
+	<div class="form-error" id="track-error" role="alert" hidden></div>
+	<div class="order-root" id="order-root" hidden></div>
+	<div class="payment-root" id="payment-root" hidden></div>
+</section>
+{{- end}}

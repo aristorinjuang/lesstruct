@@ -21,11 +21,10 @@ http:
         "postType": "post",
         "metaDescription": "This description is for short.",
         "ogTitle": "My First Content SEO",
-        "ogDescription": "This description is for SEO."
+        "ogDescription": "This description is for SEO.",
+        "featuredImage": "/uploads/media/abc123.webp"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

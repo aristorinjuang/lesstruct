@@ -102,7 +102,7 @@ func (r *UserDataExportRepository) GetUserComments(ctx context.Context, userID i
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, content_item_id, content, created_at, updated_at
+		SELECT id, content_id, comment, created_at, updated_at
 		FROM comments
 		WHERE user_id = ?
 		ORDER BY created_at DESC
@@ -146,7 +146,7 @@ func (r *UserDataExportRepository) GetUserMedia(ctx context.Context, userID int)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, filename, original_filename, file_path, file_size, mime_type, created_at
 		FROM media_files
-		WHERE uploaded_by_user_id = ?
+		WHERE user_id = ?
 		ORDER BY created_at DESC
 	`, userID)
 	if err != nil {

@@ -1,0 +1,21 @@
+info:
+  name: Suspend User
+  type: http
+  seq: 6
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/users/{{USER_ID}}/suspend"
+  body:
+    type: json
+    data: |-
+      {"reason": "review"}
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

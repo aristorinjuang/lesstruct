@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	wordpress "github.com/aristorinjuang/lesstruct/modules/importers/wordpress"
 	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
-	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
-	"github.com/aristorinjuang/lesstruct/kernel"
 )
 
 func slugFromTitle(title string) string {
@@ -83,6 +83,50 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(runes[:max])
+}
+
+// scanUnresolvedRefs returns the root-relative href/src references in the body
+// that resolve to neither media, nor the theme static convention, nor a known
+// content target (URL or alias of an imported item), and carry a file
+// extension — i.e. likely dead references the operator should know about.
+func scanUnresolvedRefs(body string, knownTargets map[string]struct{}) []string {
+	var out []string
+	seen := make(map[string]struct{})
+	staticRefRe.ReplaceAllStringFunc(body, func(attr string) string {
+		idx := staticRefRe.FindStringSubmatchIndex(attr)
+		ref := attr[idx[6]:idx[7]]
+		if _, ok := seen[ref]; ok {
+			return attr
+		}
+		seen[ref] = struct{}{}
+
+		trimmed := strings.TrimPrefix(ref, "/")
+		if strings.HasPrefix(ref, "/static/") || strings.HasPrefix(ref, "/uploads/") {
+			return attr
+		}
+		if _, ok := knownTargets[trimmed]; ok {
+			return attr
+		}
+		if hasFileExtension(ref) {
+			out = append(out, ref)
+		}
+		return attr
+	})
+	return out
+}
+
+// hasFileExtension reports whether the reference's path looks like a file
+// (last segment contains a dot), as opposed to a bare permalink path.
+func hasFileExtension(ref string) bool {
+	path := ref
+	if parsed, err := url.Parse(ref); err == nil && parsed.Path != "" {
+		path = parsed.Path
+	}
+	base := path
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	return strings.Contains(base, ".")
 }
 
 type ContentCreator interface {
@@ -204,50 +248,6 @@ func (imp *Importer) appendFailures(result *ImportResult, mediaMapper *MediaMapp
 			fmt.Sprintf("warning: %q could not be migrated to media (%s); kept the original reference", f.Ref, f.Reason),
 		)
 	}
-}
-
-// scanUnresolvedRefs returns the root-relative href/src references in the body
-// that resolve to neither media, nor the theme static convention, nor a known
-// content target (URL or alias of an imported item), and carry a file
-// extension — i.e. likely dead references the operator should know about.
-func scanUnresolvedRefs(body string, knownTargets map[string]struct{}) []string {
-	var out []string
-	seen := make(map[string]struct{})
-	staticRefRe.ReplaceAllStringFunc(body, func(attr string) string {
-		idx := staticRefRe.FindStringSubmatchIndex(attr)
-		ref := attr[idx[6]:idx[7]]
-		if _, ok := seen[ref]; ok {
-			return attr
-		}
-		seen[ref] = struct{}{}
-
-		trimmed := strings.TrimPrefix(ref, "/")
-		if strings.HasPrefix(ref, "/static/") || strings.HasPrefix(ref, "/uploads/") {
-			return attr
-		}
-		if _, ok := knownTargets[trimmed]; ok {
-			return attr
-		}
-		if hasFileExtension(ref) {
-			out = append(out, ref)
-		}
-		return attr
-	})
-	return out
-}
-
-// hasFileExtension reports whether the reference's path looks like a file
-// (last segment contains a dot), as opposed to a bare permalink path.
-func hasFileExtension(ref string) bool {
-	path := ref
-	if parsed, err := url.Parse(ref); err == nil && parsed.Path != "" {
-		path = parsed.Path
-	}
-	base := path
-	if idx := strings.LastIndex(base, "/"); idx >= 0 {
-		base = base[idx+1:]
-	}
-	return strings.Contains(base, ".")
 }
 
 func (imp *Importer) importItem(

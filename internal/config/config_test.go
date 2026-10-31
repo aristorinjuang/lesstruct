@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"encoding/base64"
 	"os"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestLoad_DatabaseDriver(t *testing.T) {
 				_ = os.Unsetenv("DB_POOL_MAX_CONNS")
 			},
 			wantErr: true,
-			errMsg:   "DB_DSN is required when DB_DRIVER=postgres",
+			errMsg:  "DB_DSN is required when DB_DRIVER=postgres",
 		},
 		{
 			name: "postgres driver with invalid pool size",
@@ -65,7 +66,7 @@ func TestLoad_DatabaseDriver(t *testing.T) {
 				t.Setenv("DB_POOL_MAX_CONNS", "0")
 			},
 			wantErr: true,
-			errMsg:   "DB_POOL_MAX_CONNS must be at least 1",
+			errMsg:  "DB_POOL_MAX_CONNS must be at least 1",
 		},
 		{
 			name: "mysql driver with valid DSN",
@@ -89,7 +90,7 @@ func TestLoad_DatabaseDriver(t *testing.T) {
 				_ = os.Unsetenv("DB_POOL_MAX_CONNS")
 			},
 			wantErr: true,
-			errMsg:   "DB_DSN is required when DB_DRIVER=mysql",
+			errMsg:  "DB_DSN is required when DB_DRIVER=mysql",
 		},
 		{
 			name: "mysql driver without parseTime=true",
@@ -99,7 +100,7 @@ func TestLoad_DatabaseDriver(t *testing.T) {
 				t.Setenv("DB_POOL_MAX_CONNS", "20")
 			},
 			wantErr: true,
-			errMsg:   "DB_DSN must contain parseTime=true for MySQL driver",
+			errMsg:  "DB_DSN must contain parseTime=true for MySQL driver",
 		},
 		{
 			name: "mysql driver without multiStatements=true",
@@ -109,7 +110,7 @@ func TestLoad_DatabaseDriver(t *testing.T) {
 				t.Setenv("DB_POOL_MAX_CONNS", "20")
 			},
 			wantErr: true,
-			errMsg:   "DB_DSN must contain multiStatements=true for MySQL driver",
+			errMsg:  "DB_DSN must contain multiStatements=true for MySQL driver",
 		},
 		{
 			name: "mysql driver with invalid pool size",
@@ -119,7 +120,7 @@ func TestLoad_DatabaseDriver(t *testing.T) {
 				t.Setenv("DB_POOL_MAX_CONNS", "0")
 			},
 			wantErr: true,
-			errMsg:   "DB_POOL_MAX_CONNS must be at least 1",
+			errMsg:  "DB_POOL_MAX_CONNS must be at least 1",
 		},
 		{
 			name: "unsupported database driver",
@@ -129,7 +130,7 @@ func TestLoad_DatabaseDriver(t *testing.T) {
 				_ = os.Unsetenv("DB_POOL_MAX_CONNS")
 			},
 			wantErr: true,
-			errMsg:   `unsupported DB_DRIVER "mongodb": must be 'sqlite', 'postgres', or 'mysql'`,
+			errMsg:  `unsupported DB_DRIVER "mongodb": must be 'sqlite', 'postgres', or 'mysql'`,
 		},
 	}
 
@@ -178,6 +179,69 @@ func TestLoad_DevMode(t *testing.T) {
 			cfg, err := appconfig.Load()
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, cfg.DevMode)
+		})
+	}
+}
+
+func TestParsePIIMasterKey(t *testing.T) {
+	valid := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	short := base64.StdEncoding.EncodeToString(make([]byte, 16))
+
+	tests := []struct {
+		name    string
+		raw     string
+		wantLen int
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "success - 32 random bytes",
+			raw:     valid,
+			wantLen: 32,
+			wantErr: false,
+		},
+		{
+			name:    "success - surrounding whitespace is tolerated",
+			raw:     "  " + valid + "\n",
+			wantLen: 32,
+			wantErr: false,
+		},
+		{
+			name:    "error - missing key fails closed",
+			raw:     "",
+			wantErr: true,
+			errMsg:  "PII_MASTER_KEY is required",
+		},
+		{
+			name:    "error - blank key fails closed",
+			raw:     "   ",
+			wantErr: true,
+			errMsg:  "PII_MASTER_KEY is required",
+		},
+		{
+			name:    "error - non-base64 value",
+			raw:     "!!!not-base64!!!",
+			wantErr: true,
+			errMsg:  "must be base64-encoded",
+		},
+		{
+			name:    "error - short key",
+			raw:     short,
+			wantErr: true,
+			errMsg:  "must decode to 32 bytes",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, err := appconfig.ParsePIIMasterKey(tt.raw)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+				return
+			}
+			require.NoError(t, err)
+			assert.Len(t, key, tt.wantLen)
 		})
 	}
 }
@@ -244,6 +308,61 @@ func TestLoad(t *testing.T) {
 				_ = os.Unsetenv("JWT_SECRET")
 			},
 			wantErr: true,
+		},
+		{
+			name: "Agent failures budget defaults to fifteen",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				_ = os.Unsetenv("RATE_LIMIT_AGENT_FAILURES_PER_MINUTE")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, 15, cfg.AgentFailuresPerMinute, "AgentFailuresPerMinute default")
+			},
+		},
+		{
+			name: "Agent failures budget reads the environment",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("RATE_LIMIT_AGENT_FAILURES_PER_MINUTE", "7")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, 7, cfg.AgentFailuresPerMinute, "AgentFailuresPerMinute")
+			},
+		},
+		{
+			name: "Agent failures budget below one falls back to fifteen",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("RATE_LIMIT_AGENT_FAILURES_PER_MINUTE", "0")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, 15, cfg.AgentFailuresPerMinute, "AgentFailuresPerMinute floor")
+			},
+		},
+		{
+			name: "Agent failures budget rejects negatives",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("RATE_LIMIT_AGENT_FAILURES_PER_MINUTE", "-3")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, 15, cfg.AgentFailuresPerMinute, "AgentFailuresPerMinute floor")
+			},
+		},
+		{
+			name: "Agent failures budget ignores non-numeric input",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("RATE_LIMIT_AGENT_FAILURES_PER_MINUTE", "bogus")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, 15, cfg.AgentFailuresPerMinute, "AgentFailuresPerMinute default")
+			},
 		},
 	}
 

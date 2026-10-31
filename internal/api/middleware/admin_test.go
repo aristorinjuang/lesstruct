@@ -5,8 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
 	appmiddleware "github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,11 +15,11 @@ import (
 func TestAdminMiddleware_AdminOnly_ValidAdminToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 	adminMiddleware := appmiddleware.NewAdminMiddleware(authMiddleware)
 
 	// Generate a token with Admin role
-	token, err := jwtManager.GenerateToken("123", "admin", "Admin")
+	token, err := jwtManager.GenerateToken("123", "admin", "Admin", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,11 +45,11 @@ func TestAdminMiddleware_AdminOnly_ValidAdminToken(t *testing.T) {
 func TestAdminMiddleware_AdminOnly_NonAdminToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 	adminMiddleware := appmiddleware.NewAdminMiddleware(authMiddleware)
 
 	// Generate a token with Contributor role
-	token, err := jwtManager.GenerateToken("123", "contributor", "Contributor")
+	token, err := jwtManager.GenerateToken("123", "contributor", "Contributor", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +79,7 @@ func TestAdminMiddleware_AdminOnly_NonAdminToken(t *testing.T) {
 func TestAdminMiddleware_AdminOnly_MissingToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 	adminMiddleware := appmiddleware.NewAdminMiddleware(authMiddleware)
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +103,7 @@ func TestAdminMiddleware_AdminOnly_MissingToken(t *testing.T) {
 func TestAdminMiddleware_AdminOnly_InvalidToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 	adminMiddleware := appmiddleware.NewAdminMiddleware(authMiddleware)
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,11 +128,11 @@ func TestAdminMiddleware_AdminOnly_InvalidToken(t *testing.T) {
 func TestAdminMiddleware_AdminOnly_EditorRole(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 	adminMiddleware := appmiddleware.NewAdminMiddleware(authMiddleware)
 
 	// Generate a token with Editor role
-	token, err := jwtManager.GenerateToken("123", "editor", "Editor")
+	token, err := jwtManager.GenerateToken("123", "editor", "Editor", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -157,11 +157,11 @@ func TestAdminMiddleware_AdminOnly_EditorRole(t *testing.T) {
 func TestAdminMiddleware_AdminOnly_UserRole(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	authMiddleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 	adminMiddleware := appmiddleware.NewAdminMiddleware(authMiddleware)
 
 	// Generate a token with User role
-	token, err := jwtManager.GenerateToken("123", "user", "User")
+	token, err := jwtManager.GenerateToken("123", "user", "User", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

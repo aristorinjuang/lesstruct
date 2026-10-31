@@ -94,8 +94,8 @@ type MediaServiceInterface interface {
 	GenerateFromBytes(ctx context.Context, imageBytes []byte, principal kernel.Principal, altText string, originalFilename string) (*media.Media, error)
 	GetByID(ctx context.Context, id int) (*media.Media, error)
 	Delete(ctx context.Context, id int, principal kernel.Principal) error
-	SearchMediaByCursor(ctx context.Context, search string, dateFilter string, limit int, beforeID int) ([]*media.Media, error)
-	Count(ctx context.Context, search string, dateFilter string) (int, error)
+	SearchMediaByCursor(ctx context.Context, principal kernel.Principal, search string, dateFilter string, limit int, beforeID int) ([]*media.Media, error)
+	Count(ctx context.Context, principal kernel.Principal, search string, dateFilter string) (int, error)
 }
 
 // RoleCapabilities is the narrow role-registry seam this handler depends on.
@@ -304,13 +304,16 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	sendSuccessResponse(w, http.StatusCreated, uploadedMedia)
 }
 
-// GetMedia handles GET /api/v1/media (browser admin realm). It returns ALL media (admins
-// manage all site media) in newest-first (id DESC) order using opaque keyset (cursor)
-// pagination — the SAME contract as the agent media list (bare data array +
-// meta.pagination). It reuses the response package's cursor helpers and SuccessList/
+// GetMedia handles GET /api/v1/media (browser admin realm). Admins manage all
+// site media; every other role is scoped to their own library so one account
+// cannot inventory another's file paths, hashes, and original filenames. Rows
+// come newest-first (id DESC) using opaque keyset (cursor) pagination — the
+// SAME contract as the agent media list (bare data array + meta.pagination).
+// It reuses the response package's cursor helpers and SuccessList/
 // Pagination/ListMeta types so both auth realms share one envelope.
 func (h *MediaHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
-	if _, ok := kernel.PrincipalFromContext(r.Context()); !ok {
+	principal, ok := kernel.PrincipalFromContext(r.Context())
+	if !ok {
 		sendErrorResponse(w, http.StatusUnauthorized, "unauthorized", "User not authenticated", nil)
 		return
 	}
@@ -327,6 +330,7 @@ func (h *MediaHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
 
 	mediaList, err := h.mediaService.SearchMediaByCursor(
 		r.Context(),
+		principal,
 		search,
 		dateFilter,
 		limit+1,
@@ -347,7 +351,7 @@ func (h *MediaHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
 		nextCursor = httpx.EncodeCursor(mediaList[len(mediaList)-1].ID)
 	}
 
-	total, err := h.mediaService.Count(r.Context(), search, dateFilter)
+	total, err := h.mediaService.Count(r.Context(), principal, search, dateFilter)
 	if err != nil {
 		h.logger.Error("Failed to count media: %v", err)
 		handleMediaError(w, err)

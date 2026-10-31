@@ -262,3 +262,51 @@ func TestPasswordResetService_ResetPassword_DeleteTokenAfterReset(t *testing.T) 
 	require.NoError(t, err, "ResetPassword() should succeed even if DeleteUserTokens fails")
 	assert.True(t, result.Success, "Expected Success to be true")
 }
+
+func TestPasswordResetService_RequestPasswordReset_GenerateTokenFailure(t *testing.T) {
+	store := &stubUserStore{
+		byEmail: map[string]*userdomain.User{
+			"user@example.com": {
+				ID:     456,
+				Email:  "user@example.com",
+				Name:   "TestUser",
+				Status: "verified",
+			},
+		},
+	}
+	tokens := &stubResetStore{}
+
+	restore := authdomain.SetRandReaderForTest(&failAfterReader{err: errors.New("entropy failure")})
+	defer restore()
+
+	service := authdomain.NewPasswordResetService(store, tokens, stubPolicy{}, 1)
+
+	result, err := service.RequestPasswordReset(context.Background(), "user@example.com")
+
+	require.ErrorIs(t, err, authdomain.ErrResetFailed)
+	assert.Nil(t, result)
+}
+
+func TestPasswordResetService_ResetPassword_HashFailure(t *testing.T) {
+	store := &stubUserStore{}
+	tokens := &stubResetStore{
+		token: &authdomain.PasswordResetToken{
+			ID:        123,
+			UserID:    456,
+			TokenHash: "test-hash",
+			ExpiresAt: time.Now().Add(1 * time.Hour),
+		},
+	}
+
+	service := authdomain.NewPasswordResetService(
+		store,
+		tokens,
+		stubPolicy{hashErr: errors.New("hash failure")},
+		1,
+	)
+
+	result, err := service.ResetPassword(context.Background(), "test-token", "NewP@ssw0rd!12345")
+
+	require.ErrorIs(t, err, authdomain.ErrResetFailed)
+	assert.Nil(t, result)
+}

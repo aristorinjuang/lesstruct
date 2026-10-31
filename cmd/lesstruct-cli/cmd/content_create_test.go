@@ -624,3 +624,57 @@ func TestContentCreate_TiptapFormat(t *testing.T) {
 	assert.Equal(t, "tiptap", info.payload["format"])
 	assert.Equal(t, tiptapDoc, info.payload["body"])
 }
+
+func TestContentCreate_FieldJSONFlag(t *testing.T) {
+	// --field-json key='<json>' carries arrays and objects the auto-typed
+	// --field cannot express (e.g. gallery fields), and wins over --field
+	// on key conflict.
+	var info requestInfo
+	srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{
+			"content", "create", "# Hi",
+			"--field", "minutes=30",
+			"--field-json", `gallery=[{"url":"/uploads/media/x.webp"}]`,
+			"--base-url", srv.URL, "--api-key", "k",
+		},
+		strings.NewReader(""),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+
+	fields, ok := info.payload["customFields"].(map[string]any)
+	require.True(t, ok, "customFields must be a JSON object on the wire")
+	assert.Equal(t, float64(30), fields["minutes"], "--field still flows through")
+	gallery, ok := fields["gallery"].([]any)
+	require.True(t, ok, "gallery must arrive as an array, not a string")
+	require.Len(t, gallery, 1)
+	assert.Equal(t, "/uploads/media/x.webp", gallery[0].(map[string]any)["url"])
+}
+
+func TestContentCreate_FieldJSONAlone(t *testing.T) {
+	// --field-json without --field must not panic on a nil customFields map.
+	var info requestInfo
+	srv := newCreateServer(t, http.StatusOK, successEnvelope, &info)
+	defer srv.Close()
+
+	var out, errOut bytes.Buffer
+	code := cmd.ExecuteArgs(
+		[]string{
+			"content", "create", "# Hi",
+			"--field-json", `gallery=[{"url":"/uploads/media/x.webp"}]`,
+			"--base-url", srv.URL, "--api-key", "k",
+		},
+		strings.NewReader(""),
+		&out,
+		&errOut,
+	)
+	require.Equal(t, 0, code, "stderr: %s", errOut)
+	fields, ok := info.payload["customFields"].(map[string]any)
+	require.True(t, ok, "customFields must be a JSON object on the wire")
+	assert.Contains(t, fields, "gallery")
+}

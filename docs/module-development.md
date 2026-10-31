@@ -29,10 +29,34 @@ modules/<name>/
   module.go         # kernel.Module: options, Requires, handler accessors
   domain/           # services over narrow seam interfaces; 100% coverage bar
   api/              # HTTP handlers + seams.go; writes through kernel/httpx
+  store/            # SQL adapter(s) for the domain's repository port
+  infrastructure/   # external provider clients implementing a domain port
   admin/            # Manifest() + validation via kernel (see below)
   testutil/         # NewModule()/Kernel() fixture for module tests
   README.md         # what the module owns and its seams
 ```
+
+The layers have a strict direction:
+
+- `domain/` is the model: entities, value objects, sentinel errors, the
+  domain service (application layer), and the ports it needs. It imports
+  stdlib, `kernel/` published language, and — for a root-module context —
+  sibling supporting modules' domains; never HTTP, SQL, or a remote provider
+  client.
+- `api/` decodes transport, reads the principal, and maps domain errors to
+  the realm envelope. Business rules belong in the service.
+- `store/` implements the repository port on `*sql.DB` + `kernel.Dialect`;
+  it never leaks driver types upward.
+- `infrastructure/` implements an outbound port against an external client
+  (the textgen OpenAI client, the media image-generation clients). Cross-
+  context adapters do **not** live here — they live in
+  `internal/editions/<name>/`, the only layer that may import both sides.
+- `payments/midtrans` shows the other shape: a self-contained driver package
+  with its own protocol, kept out of both `domain/` and `infrastructure/`.
+
+The full model vocabulary, bounded contexts, and context map are in
+[ddd/domain-context.md](ddd/domain-context.md); read it before drawing a new
+module boundary or moving code between layers.
 
 `module.go` is options-built: the composition root supplies every
 collaborator via `WithXxx` options, `New` builds the handlers **once**, and
@@ -55,7 +79,7 @@ test/lint gates cover them alongside the root module.
 | `Capabilities[T]` | Discovering sibling modules instead of a service locator (theme providers, migrators, route providers, extension manifests). |
 | `Principal` + `PrincipalFromContext` / `ContextWithPrincipal` | Reading the acting identity in handlers and services. Parse the decimal ID with the `principalID` pattern (fail closed on `kernel.ErrInvalidPrincipalID`); never invent a second identity shape. |
 | `RouteProvider` / `PublicRouteProvider` | Mounting routes inside the existing protected/public groups. If your surface spans realms, body-limit groups, or per-route flags a single call cannot express, use a structural surface interface in `internal/api/routes` instead (the documented media/comments/auth/users deviation). |
-| `ContentTypeProvider`, `RoleProvider`, `ThemeProvider`, `AdminExtensionProvider`, `Migrator` | Contributing post types, capabilities, themes, admin UI, or versioned migrations. |
+| `ContentTypeProvider`, `RoleProvider`, `ThemeProvider`, `ThemePageProvider`, `AdminExtensionProvider`, `Migrator` | Contributing post types, capabilities, themes, theme-declared standalone pages, admin UI, or versioned migrations. |
 | `Logger` (nil degrades to discard) | All module logging. |
 | `Prune` | Never call directly — the composition root owns the disabled list. Know that it reads your `Requires()`. |
 
@@ -80,6 +104,18 @@ by contract), `content`, `customfield`, `database` (Driver/Dialect),
 - **Sentinels translate at the seam.** Handlers match module-domain errors
   with `errors.Is`; when a seam bridges two error vocabularies, mirror the
   message and pin it with a test asserting byte-equality.
+- **Never FK across module boundaries.** A module's schema may foreign-key
+  its own tables; the moment a constraint references another module's
+  table, migrations couple (ordering, drop order) and delete semantics
+  diverge per driver. Index the reference column instead — a proof's
+  history surviving an orders-table lifecycle is a feature, not an
+  orphan (see `modules/payments/migrations/*`).
+- **Webhook signatures compare in constant time.** Any endpoint
+  authenticating a caller by a keyed checksum (`crypto/hmac`,
+  `sha512(payload + key)`, …) compares digests with
+  `crypto/subtle.ConstantTimeCompare` — never `==` — so a forged event
+  cannot probe the expected signature byte by byte
+  (`modules/payments/midtrans` is the pattern).
 - **Envelopes are byte contracts.** All handlers write through
   `kernel/httpx`; the compat suite diffs both writers, so any drift fails a
   test before a client ever sees it.
@@ -114,13 +150,20 @@ by contract), `content`, `customfield`, `database` (Driver/Dialect),
 
 ## Composition-root wiring
 
-`internal/app/app.go` (`Run`) is the default composition: services are
+`internal/app` (`Run`) is the shared composition core: services are
 built, modules adopt them via options, candidates accumulate,
 `ApplyDisabled` prunes the `[modules] disabled` list (warn on drops and
 unknown names), kept modules register **before `InitAll`**, migrations run,
-handlers mount. (The blueprint calls a fixed module list compiled into one
-binary an *edition* — that word lives here and in history only.)
-Product-level mains stay thin (`main.go` calls `Run`); build variants like
+handlers mount. An **edition** is a fixed module list compiled into one
+binary: the concrete editions live in `internal/editions/<name>` as separate
+packages — `blog` (the default root main: every first-party module) and
+`core` (the headless engine, installed as `lesstruct-core`) — so a binary
+links only the modules its edition wires. Edition packages implement two
+hooks (`Wire` before the disabled cascade and `InitAll`, `Mount` after it)
+and their mains stay thin (`main.go`, `cmd/lesstruct-core/main.go`).
+(The blueprint calls a fixed module list compiled into one binary an
+*edition* — that word lives here, in the editions packages, and in history.)
+Product-level mains stay thin; build variants like
 `-tags nosqlite` are advanced compile options, not separate products.
 
 Headless stays a config of the default composition (`[headless]` suppresses
@@ -150,7 +193,7 @@ interfaces it can contribute any combination of:
 |---|---|---|
 | Protected routes | `RouteProvider` | Authenticated HTTP endpoints mounted in the admin/API group. |
 | Public routes | `PublicRouteProvider` | Anonymous HTTP endpoints (public API, SSR pages). |
-| Themes | `ThemeProvider` | Embedded layouts, CSS, template funcs, site-root files for the SSR engine. |
+| Themes | `ThemeProvider` + `ThemePageProvider` | Embedded layouts, CSS, template funcs, and site-root files for the SSR engine; optional standalone pages served at fixed public paths (`cart`, `checkout`, `orders/track`). |
 | Admin UI | `AdminExtensionProvider` | Manifest entries the admin shell renders: menu, settings, editor extensions. |
 | Post/content types | `ContentTypeProvider` | Registered types beyond `post`/`page`. |
 | Capabilities | `RoleProvider` | Capability strings for the permission registry. |
@@ -185,7 +228,8 @@ list, so this is four steps in a fork of the repository:
    migrations, the disabled cascade, and the admin manifest pick it up
    unchanged.
 4. Build your binary: `go build .` or your own main
-   package calling `app.Run()` under any build constraints.
+   package calling `app.Run(edition)` (or one of the shipped editions under
+   `internal/editions/`) under any build constraints.
 
 Nothing else changes: routes mount through your declared providers, the
 admin manifest lists your entries, `[modules] disabled = ["<yourname>"]`

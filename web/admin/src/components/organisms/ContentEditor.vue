@@ -13,6 +13,10 @@ import HtmlAiPromptModal from '@/components/molecules/HtmlAiPromptModal.vue'
 import MediaPanel from '@/components/organisms/MediaPanel.vue'
 import { useContentStore } from '@/stores/domain/content'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
+import GalleryField from '@/components/organisms/GalleryField.vue'
+import FeaturedImageField from '@/components/organisms/FeaturedImageField.vue'
+import CatalogPanel from '@/components/organisms/CatalogPanel.vue'
+import type { GalleryItem } from '@/types/customfield'
 import type { Content } from '@/types/content'
 import type { PostType } from '@/types/posttype'
 import type { FieldSchema } from '@/types/customfield'
@@ -41,7 +45,7 @@ const emit = defineEmits<Emits>()
 
 const contentStore = useContentStore()
 const { role } = useAuth()
-const { languages, commentsEnabled, fetchConfig, primaryLanguage } = useConfig()
+const { languages, commentsEnabled, catalog: catalogConfig, fetchConfig, primaryLanguage } = useConfig()
 const isAdmin = computed(() => role.value === 'Admin')
 
 // Whether the caller may publish content directly. Config-driven capabilities
@@ -92,6 +96,7 @@ const form = ref({
   metaDescription: '',
   ogTitle: '',
   ogDescription: '',
+  featuredImage: '',
   allowComments: true,
 })
 
@@ -245,6 +250,10 @@ watch(
 )
 
 const isNewContent = computed(() => savedContentId.value === null)
+const showCatalogPanel = computed(() => {
+  const cfg = catalogConfig.value
+  return cfg !== null && form.value.postType === cfg.postType && !isNewContent.value
+})
 const currentStatus = computed(() => form.value.status)
 const currentPostType = computed(() => (postTypes.value ?? []).find(pt => pt.slug === form.value.postType))
 
@@ -322,6 +331,7 @@ function loadContentIntoForm(c: Content) {
   form.value.metaDescription = c.metaDescription || ''
   form.value.ogTitle = c.ogTitle || ''
   form.value.ogDescription = c.ogDescription || ''
+  form.value.featuredImage = c.featuredImage || ''
   form.value.allowComments = c.allowComments ?? true
   customFields.value = c.customFields ?? {}
   slug.value = c.slug
@@ -386,6 +396,7 @@ async function switchLanguage(lang: string) {
     form.value.metaDescription = ''
     form.value.ogTitle = ''
     form.value.ogDescription = ''
+    form.value.featuredImage = ''
     customFields.value = {}
     slug.value = ''
     slugManuallyEdited.value = false
@@ -484,6 +495,7 @@ async function saveDraft(isAutoSave = false) {
         metaDescription: form.value.metaDescription || undefined,
         ogTitle: form.value.ogTitle || undefined,
         ogDescription: form.value.ogDescription || undefined,
+        featuredImage: form.value.featuredImage || undefined,
         allowComments: form.value.allowComments,
         customFields: getCustomFieldsOnly(),
       })
@@ -545,6 +557,7 @@ async function publish() {
         postType: form.value.postType,
         metaDescription: form.value.metaDescription || undefined,
         ogTitle: form.value.ogTitle || undefined,
+        featuredImage: form.value.featuredImage || undefined,
         allowComments: form.value.allowComments,
         customFields: getCustomFieldsOnly(),
       })
@@ -601,6 +614,7 @@ async function unpublish() {
       postType: form.value.postType,
       metaDescription: form.value.metaDescription || undefined,
       ogTitle: form.value.ogTitle || undefined,
+      featuredImage: form.value.featuredImage || undefined,
       allowComments: form.value.allowComments,
       customFields: getCustomFieldsOnly(),
     })
@@ -637,6 +651,7 @@ async function saveChanges() {
       metaDescription: form.value.metaDescription || undefined,
       ogTitle: form.value.ogTitle || undefined,
       ogDescription: form.value.ogDescription || undefined,
+      featuredImage: form.value.featuredImage || undefined,
       allowComments: form.value.allowComments,
       customFields: getCustomFieldsOnly(),
     })
@@ -1054,16 +1069,26 @@ function focusValidationField(slug: string) {
       v-if="currentFields.length > 0"
       class="content-editor__custom-fields"
     >
-      <CustomFieldRenderer
-        v-for="field in currentFields"
-        :key="field.slug"
-        :data-field-slug="field.slug"
-        :field="field"
-        :model-value="customFields[field.slug] ?? getDefaultFieldValue(field)"
-        :error="customFieldErrors[field.slug] ?? ''"
-        @update:model-value="(val: unknown) => { customFields[field.slug] = val; delete customFieldErrors[field.slug] }"
-        @blur="validateFieldOnBlur(field.slug)"
-      />
+      <template v-for="field in currentFields" :key="field.slug">
+        <GalleryField
+          v-if="field.type === 'gallery'"
+          :data-field-slug="field.slug"
+          :model-value="(customFields[field.slug] as GalleryItem[]) ?? []"
+          :max-items="field.maxItems"
+          :error="customFieldErrors[field.slug] ?? ''"
+          @update:model-value="(val: GalleryItem[]) => { customFields[field.slug] = val; delete customFieldErrors[field.slug] }"
+          @show-toast="(msg: string, type: string) => displayToast(msg, type === 'error' ? 'error' : 'success')"
+        />
+        <CustomFieldRenderer
+          v-else
+          :data-field-slug="field.slug"
+          :field="field"
+          :model-value="customFields[field.slug] ?? getDefaultFieldValue(field)"
+          :error="customFieldErrors[field.slug] ?? ''"
+          @update:model-value="(val: unknown) => { customFields[field.slug] = val; delete customFieldErrors[field.slug] }"
+          @blur="validateFieldOnBlur(field.slug)"
+        />
+      </template>
     </div>
 
     <div
@@ -1081,6 +1106,24 @@ function focusValidationField(slug: string) {
         @update:model-value="(val: unknown) => { customFields[field.slug] = val }"
       />
     </div>
+
+    <CatalogPanel
+      v-if="showCatalogPanel"
+      :content-id="savedContentId ?? 0"
+      :legacy-fields="getCustomFieldsOnly()"
+      :disabled="false"
+      @show-toast="(msg: string, type: string) => displayToast(msg, type === 'error' ? 'error' : 'success')"
+    />
+
+    <FormField label="Featured Image">
+      <FeaturedImageField
+        v-model="form.featuredImage"
+        @show-toast="(msg: string, type: string) => displayToast(msg, type === 'error' ? 'error' : 'success')"
+      />
+      <p class="content-editor__char-count">
+        Optional. Falls back to the first image in the content when unset.
+      </p>
+    </FormField>
 
     <FormField label="Excerpt" v-if="showExcerpt">
       <textarea

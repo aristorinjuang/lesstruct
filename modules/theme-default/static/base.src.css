@@ -14,7 +14,11 @@
    `make css`.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+/* The storefront and blog layouts load Inter with a parallel font
+   stylesheet in <head> (see layout.html). Keep webfont loading out of
+   this file: @import chains serialize stylesheet discovery and delay
+   first paint. To switch fonts, point the layout <link> at the new
+   family and override --font-sans below. */
 
 /* ============================================================
    1. Design tokens
@@ -38,6 +42,13 @@
   /* --- Status colors (tokenized from prior literals) --- */
   --color-danger: #dc2626;
   --color-success: #16a34a;
+
+  /* --- Text-safe link ink (derived layering, not a brand token) ---
+     --color-primary is too light for body text (1.8:1 on white), so
+     anchors use this darker cyan instead. Fills, borders, and focus
+     rings keep the locked --color-primary. */
+  --color-link: #0e7490;
+  --color-link-hover: #155e75;
 
   /* --- Layout --- */
   --max-width: 1200px;
@@ -95,12 +106,12 @@ body {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-link);
   text-decoration: none;
 }
 
 a:hover {
-  color: var(--color-primary-hover);
+  color: var(--color-link-hover);
   text-decoration: underline;
 }
 

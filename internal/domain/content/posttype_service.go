@@ -12,6 +12,10 @@ type PostTypeServiceInterface interface {
 	GetBySlug(slug string) (PostType, error)
 	GetFieldsByPostType(slug string) ([]customfield.FieldSchema, error)
 	GetSystemFieldsByPostType(slug string) ([]customfield.FieldSchema, error)
+	// SearchableSlugs returns the slugs of all registered post types that are
+	// not hidden — the scope public search runs over. Hidden types stay out of
+	// every presentation surface, search included.
+	SearchableSlugs() []string
 }
 
 // PostType represents a minimal post type for validation purposes

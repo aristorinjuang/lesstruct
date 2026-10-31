@@ -12,12 +12,17 @@ import (
 // HomepageSection is one [[homepage_section]] block from config.toml. It tells
 // the public homepage to render a per-post-type grouping in addition to (or
 // instead of relying on) the flat latest-posts list. PostType is the only
-// required field; Limit, Offset, and Title are optional overrides.
+// required field; Limit, Offset, and Title are optional overrides. TitleID and
+// DescriptionID carry the optional Indonesian display strings: when the
+// negotiated language is Indonesian they win, otherwise the base values apply.
 type HomepageSection struct {
-	PostType string `toml:"post_type"`
-	Limit    int    `toml:"limit"`
-	Offset   int    `toml:"offset"`
-	Title    string `toml:"title"`
+	PostType      string `toml:"post_type"`
+	Limit         int    `toml:"limit"`
+	Offset        int    `toml:"offset"`
+	Title         string `toml:"title"`
+	TitleID       string `toml:"title_id"`
+	Description   string `toml:"description"`
+	DescriptionID string `toml:"description_id"`
 }
 
 type homepageConfig struct {
@@ -61,11 +66,23 @@ func LoadHomepageSections(cfg *Config) ([]HomepageSection, error) {
 		if strings.TrimSpace(hs.PostType) == "" {
 			return nil, fmt.Errorf("homepage_section must have a post_type")
 		}
+		if trimmed := strings.TrimSpace(hs.TitleID); trimmed != "" && len([]rune(trimmed)) > 200 {
+			return nil, fmt.Errorf("homepage_section title_id must be between 1 and 200 characters")
+		}
+		if trimmed := strings.TrimSpace(hs.Description); trimmed != "" && len([]rune(trimmed)) > 500 {
+			return nil, fmt.Errorf("homepage_section description must be at most 500 characters")
+		}
+		if trimmed := strings.TrimSpace(hs.DescriptionID); trimmed != "" && len([]rune(trimmed)) > 500 {
+			return nil, fmt.Errorf("homepage_section description_id must be at most 500 characters")
+		}
 		sections = append(sections, HomepageSection{
-			PostType: hs.PostType,
-			Limit:    hs.Limit,
-			Offset:   hs.Offset,
-			Title:    hs.Title,
+			PostType:      hs.PostType,
+			Limit:         hs.Limit,
+			Offset:        hs.Offset,
+			Title:         hs.Title,
+			TitleID:       hs.TitleID,
+			Description:   hs.Description,
+			DescriptionID: hs.DescriptionID,
 		})
 	}
 	return sections, nil

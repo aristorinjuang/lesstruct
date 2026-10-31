@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
+	"github.com/aristorinjuang/lesstruct/modules/users/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +17,19 @@ func NewMockAdminCreateUserRepo(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockAdminCreateUserRepo {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockAdminCreateUserRepo{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -171,16 +180,16 @@ func (_c *MockAdminCreateUserRepo_CheckUsernameExists_Call) RunAndReturn(run fun
 }
 
 // CreateUser provides a mock function for the type MockAdminCreateUserRepo
-func (_mock *MockAdminCreateUserRepo) CreateUser(ctx context.Context, user *userdomain.User) error {
-	ret := _mock.Called(ctx, user)
+func (_mock *MockAdminCreateUserRepo) CreateUser(ctx context.Context, user1 *user.User) error {
+	ret := _mock.Called(ctx, user1)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateUser")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, *userdomain.User) error); ok {
-		r0 = returnFunc(ctx, user)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *user.User) error); ok {
+		r0 = returnFunc(ctx, user1)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -194,20 +203,20 @@ type MockAdminCreateUserRepo_CreateUser_Call struct {
 
 // CreateUser is a helper method to define mock.On call
 //   - ctx context.Context
-//   - user *userdomain.User
-func (_e *MockAdminCreateUserRepo_Expecter) CreateUser(ctx any, user any) *MockAdminCreateUserRepo_CreateUser_Call {
-	return &MockAdminCreateUserRepo_CreateUser_Call{Call: _e.mock.On("CreateUser", ctx, user)}
+//   - user1 *user.User
+func (_e *MockAdminCreateUserRepo_Expecter) CreateUser(ctx any, user1 any) *MockAdminCreateUserRepo_CreateUser_Call {
+	return &MockAdminCreateUserRepo_CreateUser_Call{Call: _e.mock.On("CreateUser", ctx, user1)}
 }
 
-func (_c *MockAdminCreateUserRepo_CreateUser_Call) Run(run func(ctx context.Context, user *userdomain.User)) *MockAdminCreateUserRepo_CreateUser_Call {
+func (_c *MockAdminCreateUserRepo_CreateUser_Call) Run(run func(ctx context.Context, user1 *user.User)) *MockAdminCreateUserRepo_CreateUser_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 *userdomain.User
+		var arg1 *user.User
 		if args[1] != nil {
-			arg1 = args[1].(*userdomain.User)
+			arg1 = args[1].(*user.User)
 		}
 		run(
 			arg0,
@@ -222,7 +231,7 @@ func (_c *MockAdminCreateUserRepo_CreateUser_Call) Return(err error) *MockAdminC
 	return _c
 }
 
-func (_c *MockAdminCreateUserRepo_CreateUser_Call) RunAndReturn(run func(ctx context.Context, user *userdomain.User) error) *MockAdminCreateUserRepo_CreateUser_Call {
+func (_c *MockAdminCreateUserRepo_CreateUser_Call) RunAndReturn(run func(ctx context.Context, user1 *user.User) error) *MockAdminCreateUserRepo_CreateUser_Call {
 	_c.Call.Return(run)
 	return _c
 }

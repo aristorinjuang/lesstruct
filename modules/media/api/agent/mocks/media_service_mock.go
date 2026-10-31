@@ -7,7 +7,8 @@ package mocks
 import (
 	"context"
 
-	media "github.com/aristorinjuang/lesstruct/modules/media/domain"
+	"github.com/aristorinjuang/lesstruct/kernel"
+	"github.com/aristorinjuang/lesstruct/modules/media/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +18,19 @@ func NewMockMediaService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockMediaService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockMediaService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -36,6 +46,69 @@ type MockMediaService_Expecter struct {
 
 func (_m *MockMediaService) EXPECT() *MockMediaService_Expecter {
 	return &MockMediaService_Expecter{mock: &_m.Mock}
+}
+
+// Delete provides a mock function for the type MockMediaService
+func (_mock *MockMediaService) Delete(ctx context.Context, id int, principal kernel.Principal) error {
+	ret := _mock.Called(ctx, id, principal)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Delete")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, kernel.Principal) error); ok {
+		r0 = returnFunc(ctx, id, principal)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockMediaService_Delete_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Delete'
+type MockMediaService_Delete_Call struct {
+	*mock.Call
+}
+
+// Delete is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id int
+//   - principal kernel.Principal
+func (_e *MockMediaService_Expecter) Delete(ctx any, id any, principal any) *MockMediaService_Delete_Call {
+	return &MockMediaService_Delete_Call{Call: _e.mock.On("Delete", ctx, id, principal)}
+}
+
+func (_c *MockMediaService_Delete_Call) Run(run func(ctx context.Context, id int, principal kernel.Principal)) *MockMediaService_Delete_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 kernel.Principal
+		if args[2] != nil {
+			arg2 = args[2].(kernel.Principal)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMediaService_Delete_Call) Return(err error) *MockMediaService_Delete_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockMediaService_Delete_Call) RunAndReturn(run func(ctx context.Context, id int, principal kernel.Principal) error) *MockMediaService_Delete_Call {
+	_c.Call.Return(run)
+	return _c
 }
 
 // GetByID provides a mock function for the type MockMediaService

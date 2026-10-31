@@ -7,13 +7,14 @@ import (
 	"strings"
 
 	"github.com/aristorinjuang/lesstruct/internal/domain/plugin"
+	"github.com/aristorinjuang/lesstruct/internal/plugin/loader"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/runtime"
 )
 
 const wasmBaseOffset = 65536
 
 func makeWasmHandler(
-	plg plugin.Plugin,
+	plg loader.LoadedPlugin,
 	funcName string,
 	rt runtime.Runtime,
 ) plugin.HookHandler {
@@ -54,7 +55,7 @@ func makeWasmHandler(
 }
 
 func wasmResultLen(
-	plg plugin.Plugin,
+	plg loader.LoadedPlugin,
 	rt runtime.Runtime,
 	ctx context.Context,
 	inputLen uint32,
@@ -74,7 +75,7 @@ func wasmResultLen(
 
 func DiscoverHooks(
 	ctx context.Context,
-	plg plugin.Plugin,
+	plg loader.LoadedPlugin,
 	reg *Registry,
 	rt runtime.Runtime,
 	logger func(string),

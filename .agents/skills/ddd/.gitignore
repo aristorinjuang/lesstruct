@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Agent install artifacts (if the repo is used locally as a project)
+.agents/
+.claude/
+.opencode/
+skills-lock.json

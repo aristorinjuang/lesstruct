@@ -4,12 +4,24 @@
 	<div id="auth-error" class="auth-error alert alert--error" style="display:none"></div>
 	<form id="login-form" class="auth-form">
 		<label for="username">{{t .Lang "ui.username_or_email"}}</label>
-		<input type="text" id="username" name="username" class="form-control" required>
+		<input type="text" id="username" name="username" class="form-control" autocomplete="username" required>
 		<label for="password">{{t .Lang "ui.password_label"}}</label>
 		<input type="password" id="password" name="password" class="form-control" autocomplete="current-password" required>
 		<button type="submit" class="btn">{{t .Lang "ui.login"}}</button>
 	</form>
-	<div class="auth-links">
+	<form id="mfa-form" class="auth-form" style="display:none">
+		<p class="auth-hint">
+			{{t .Lang "ui.mfa_code_sent"}} <strong id="mfa-email-hint"></strong>
+		</p>
+		<label for="mfa-code">{{t .Lang "ui.verification_code"}}</label>
+		<input type="text" id="mfa-code" name="code" class="form-control" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+		<button type="submit" id="mfa-submit" class="btn">{{t .Lang "ui.verify_code"}}</button>
+		<div class="auth-links">
+			<p><button type="button" id="mfa-resend" class="link-button" disabled>{{t .Lang "ui.resend_code"}}</button></p>
+			<p><button type="button" id="mfa-back" class="link-button">{{t .Lang "ui.back_to_login"}}</button></p>
+		</div>
+	</form>
+	<div class="auth-links" id="login-links">
 		{{- if .ShowRegister}}
 		<p><a href="/register">{{t .Lang "ui.create_account"}}</a></p>
 		{{- end}}

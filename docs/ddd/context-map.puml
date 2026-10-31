@@ -1,0 +1,83 @@
+@startuml Lesstruct Context Map
+title Lesstruct — bounded context map
+
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam arrowColor #4b5563
+skinparam noteBackgroundColor #f8fafc
+
+package "Content Publishing (core)" {
+  [Content\naggregate] as CONTENT
+  [Post Types] as POSTTYPES
+  [Comments] as COMMENTS
+  [SEO / Aliases] as SEO
+  [Importers] as IMPORTERS
+}
+
+package "Media Library (supporting)" {
+  [Media\naggregate] as MEDIA
+}
+
+package "AI Assist (supporting)" {
+  [Text Generation\nservice] as TEXTGEN
+}
+
+package "Identity & Access (supporting)" {
+  [Users\naggregate] as USERS
+  [Auth / MFA] as AUTH
+  [Roles &\nCapabilities] as ROLES
+  [API Keys] as APIKEYS
+}
+
+package "Commerce (core + supporting)" {
+  [Catalog\nProduct aggregate] as CATALOG
+  [Cart\nCart aggregate] as CART
+  [Orders\nOrder aggregate] as ORDERS
+  [Payments\nPayment aggregate] as PAYMENTS
+}
+
+package "External systems" {
+  [Midtrans Snap] as MIDTRANS
+}
+
+package "Shared kernel — kernel/ published language" {
+  [content, customfield,\ncapability, database,\nstorage, seo, sanitize,\ntiptap, i18n, posttype, httpx] as KERNEL
+}
+
+IMPORTERS ..> CONTENT : imports (ACL)
+CONTENT ..> SEO : publish-time metadata
+CONTENT ..> MEDIA : asset URLs
+TEXTGEN ..> MEDIA : media context (URLs)
+AUTH ..> USERS : credentials / sessions
+USERS ..> ROLES : capabilities
+APIKEYS ..> USERS : key owner
+
+CATALOG ..> CONTENT : content ID / post type\n(Published Language)
+CART ..> CATALOG : CatalogSource\n(Customer/Supplier)
+ORDERS ..> CART : CartSource\nSnapshot + Consume
+ORDERS ..> CONTENT : ContentSource\n(ACL: title snapshot)
+ORDERS ..> CATALOG : Inventory\n(ACL: conditional stock)
+PAYMENTS ..> ORDERS : Orders seam\nDetails / Confirm / Refund
+PAYMENTS ..> MIDTRANS : Gateway\n(ACL: checksum, notification)
+
+CONTENT ..> KERNEL
+MEDIA ..> KERNEL
+USERS ..> KERNEL
+CATALOG ..> KERNEL
+CART ..> KERNEL
+ORDERS ..> KERNEL
+PAYMENTS ..> KERNEL
+
+note bottom of ORDERS
+  Consume-before-store makes checkout
+  single-winner on a cart token.
+  ConfirmPaid is the only path into paid.
+end note
+
+note bottom of PAYMENTS
+  The gateway webhook is the only
+  self-verifying caller; manual proofs
+  are gated on order number + email.
+end note
+
+@enduml

@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
 	appmiddleware "github.com/aristorinjuang/lesstruct/internal/api/middleware"
+	appauth "github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,10 +16,10 @@ import (
 func TestAuthMiddleware_RequireAuth_ValidToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	// Generate a valid token
-	token, err := jwtManager.GenerateToken("123", "testuser", "Contributor")
+	token, err := jwtManager.GenerateToken("123", "testuser", "Contributor", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	// Create a test handler that checks user context
@@ -59,7 +59,7 @@ func TestAuthMiddleware_RequireAuth_ValidToken(t *testing.T) {
 func TestAuthMiddleware_RequireAuth_MissingToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -82,7 +82,7 @@ func TestAuthMiddleware_RequireAuth_MissingToken(t *testing.T) {
 func TestAuthMiddleware_RequireAuth_InvalidToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -106,7 +106,7 @@ func TestAuthMiddleware_RequireAuth_InvalidToken(t *testing.T) {
 func TestAuthMiddleware_RequireAuth_MalformedHeader(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -152,10 +152,10 @@ func TestAuthMiddleware_RequireAuth_MalformedHeader(t *testing.T) {
 func TestAuthMiddleware_OptionalAuth_ValidToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	// Generate a valid token
-	token, err := jwtManager.GenerateToken("123", "testuser", "Contributor")
+	token, err := jwtManager.GenerateToken("123", "testuser", "Contributor", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	// Create a test handler that checks user context
@@ -186,7 +186,7 @@ func TestAuthMiddleware_OptionalAuth_ValidToken(t *testing.T) {
 func TestAuthMiddleware_OptionalAuth_NoToken(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check that user context is NOT set
@@ -213,10 +213,10 @@ func TestAuthMiddleware_OptionalAuth_NoToken(t *testing.T) {
 func TestAuthMiddleware_RequireRole_ValidRole(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	// Generate a token with Admin role
-	token, err := jwtManager.GenerateToken("123", "admin", "Admin")
+	token, err := jwtManager.GenerateToken("123", "admin", "Admin", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -241,10 +241,10 @@ func TestAuthMiddleware_RequireRole_ValidRole(t *testing.T) {
 func TestAuthMiddleware_RequireRole_InvalidRole(t *testing.T) {
 	// Arrange
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
 	// Generate a token with Contributor role
-	token, err := jwtManager.GenerateToken("123", "testuser", "Contributor")
+	token, err := jwtManager.GenerateToken("123", "testuser", "Contributor", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -319,9 +319,9 @@ func TestGetRole(t *testing.T) {
 // TestPrincipalInjected verifies both auth paths attach the kernel identity.
 func TestPrincipalInjected(t *testing.T) {
 	jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
-	middleware := appmiddleware.NewAuthMiddleware(jwtManager)
+	middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
 
-	adminToken, err := jwtManager.GenerateToken("7", "alice", "Admin")
+	adminToken, err := jwtManager.GenerateToken("7", "alice", "Admin", 0)
 	require.NoError(t, err, "Failed to generate token")
 
 	tests := []struct {
@@ -402,4 +402,60 @@ func TestPrincipalAbsent(t *testing.T) {
 	_, ok := appmiddleware.Principal(req)
 
 	assert.False(t, ok, "Expected no principal without auth middleware")
+}
+
+func TestAuthMiddleware_APIKeyShapedTokenReturnsJWTRequired(t *testing.T) {
+	tests := []struct {
+		name  string
+		realm string
+		token string
+	}{
+		{
+			name:  "success - RequireAuth rejects API key with JWT_REQUIRED",
+			realm: "auth",
+			token: "Bearer lesstruct_abc123def456_secretsecretsecretsecret12",
+		},
+		{
+			name:  "success - RequireRole rejects API key with JWT_REQUIRED",
+			realm: "role",
+			token: "Bearer lesstruct_abc123def456_secretsecretsecretsecret12",
+		},
+		{
+			name:  "success - JWT-shaped bad token still returns INVALID_TOKEN",
+			realm: "auth",
+			token: "Bearer invalid-token-123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jwtManager := appauth.NewJWTManager("test-secret-key-for-testing-purposes-min-32-chars")
+			middleware := appmiddleware.NewAuthMiddleware(jwtManager, stubUserLookup{})
+
+			nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("OK"))
+			})
+
+			var handler http.Handler
+			if tt.realm == "auth" {
+				handler = middleware.RequireAuth(nextHandler)
+			} else {
+				handler = middleware.RequireRole("Admin")(nextHandler)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			req.Header.Set("Authorization", tt.token)
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			require.Equal(t, http.StatusUnauthorized, rr.Code)
+			if tt.token == "Bearer invalid-token-123" {
+				assert.Contains(t, rr.Body.String(), "INVALID_TOKEN")
+			} else {
+				assert.Contains(t, rr.Body.String(), "JWT_REQUIRED")
+			}
+		})
+	}
 }

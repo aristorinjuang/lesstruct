@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	media "github.com/aristorinjuang/lesstruct/modules/media/domain"
+	"github.com/aristorinjuang/lesstruct/modules/media/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +17,19 @@ func NewMockImageGenerationService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockImageGenerationService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockImageGenerationService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }

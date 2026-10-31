@@ -525,6 +525,116 @@ func TestMediaHandler_List(t *testing.T) {
 // role without the media capability gets FORBIDDEN before any service call;
 // without a role service every authenticated user may upload (legacy behavior,
 // covered by TestMediaHandler_Upload).
+func TestMediaHandler_Delete(t *testing.T) {
+	tests := []struct {
+		name        string
+		id          string
+		withUser    bool
+		userID      int
+		role        string
+		withRoleSvc bool
+		roleSvc     *stubRoles
+		setup       func(svc *agentmocks.MockMediaService)
+		wantStatus  int
+		wantCode    string
+	}{
+		{
+			name:     "success - role manages media",
+			id:       "5",
+			withUser: true,
+			userID:   testUserID,
+			role:     "Editor",
+			setup: func(svc *agentmocks.MockMediaService) {
+				svc.EXPECT().Delete(mock.Anything, 5, mock.Anything).Return(nil)
+			},
+			wantStatus: http.StatusNoContent,
+		},
+		{
+			name:        "role cannot manage media is forbidden",
+			id:          "5",
+			withUser:    true,
+			userID:      testUserID,
+			role:        "Editor",
+			withRoleSvc: true,
+			roleSvc:     &stubRoles{media: map[string]bool{}},
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "FORBIDDEN",
+		},
+		{
+			name:     "unknown id returns NOT_FOUND",
+			id:       "5",
+			withUser: true,
+			userID:   testUserID,
+			role:     "Editor",
+			setup: func(svc *agentmocks.MockMediaService) {
+				svc.EXPECT().Delete(mock.Anything, 5, mock.Anything).Return(mediadomain.ErrMediaNotFound)
+			},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "NOT_FOUND",
+		},
+		{
+			name:     "non-owner returns FORBIDDEN",
+			id:       "5",
+			withUser: true,
+			userID:   testUserID,
+			role:     "Editor",
+			setup: func(svc *agentmocks.MockMediaService) {
+				svc.EXPECT().Delete(mock.Anything, 5, mock.Anything).Return(mediadomain.ErrUnauthorized)
+			},
+			wantStatus: http.StatusForbidden,
+			wantCode:   "FORBIDDEN",
+		},
+		{
+			name:       "invalid id returns VALIDATION_ERROR",
+			id:         "abc",
+			withUser:   true,
+			userID:     testUserID,
+			role:       "Editor",
+			setup:      nil,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+		},
+		{
+			name:       "unauthenticated returns UNAUTHORIZED",
+			id:         "5",
+			withUser:   false,
+			setup:      nil,
+			wantStatus: http.StatusUnauthorized,
+			wantCode:   "UNAUTHORIZED",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := agentmocks.NewMockMediaService(t)
+			if tt.setup != nil {
+				tt.setup(svc)
+			}
+
+			var opts []mediaagent.MediaHandlerOption
+			if tt.withRoleSvc {
+				opts = append(opts, mediaagent.WithMediaRoleService(tt.roleSvc))
+			}
+			handler := mediaagent.NewMediaHandler(svc, nil, opts...)
+
+			var r *http.Request
+			if tt.withUser {
+				r = newAuthenticatedRequestAs(http.MethodDelete, "/api/v1/media/"+tt.id, "", tt.userID, tt.role)
+			} else {
+				r = httptest.NewRequest(http.MethodDelete, "/api/v1/media/"+tt.id, nil)
+			}
+			r.SetPathValue("id", tt.id)
+			w := httptest.NewRecorder()
+			handler.Delete(w, r)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantCode != "" {
+				assert.Equal(t, tt.wantCode, envelopeError(t, w))
+			}
+		})
+	}
+}
+
 func TestMediaHandler_Upload_RoleGate(t *testing.T) {
 	pngHeader := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 

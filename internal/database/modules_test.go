@@ -14,6 +14,8 @@ import (
 	"github.com/aristorinjuang/lesstruct/kernel"
 	commentmodule "github.com/aristorinjuang/lesstruct/modules/comments"
 	mediamodule "github.com/aristorinjuang/lesstruct/modules/media"
+	ordersmodule "github.com/aristorinjuang/lesstruct/modules/orders"
+	paymentsmodule "github.com/aristorinjuang/lesstruct/modules/payments"
 	seomodule "github.com/aristorinjuang/lesstruct/modules/seo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,6 +85,28 @@ func tableExists(t *testing.T, db *sql.DB, table string) bool {
 	}
 	require.NoError(t, err)
 	return true
+}
+
+func columnExists(t *testing.T, db *sql.DB, table, column string) bool {
+	t.Helper()
+	rows, err := db.QueryContext(
+		context.Background(),
+		`SELECT name FROM pragma_table_info(?)`,
+		table,
+	)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var name string
+		require.NoError(t, rows.Scan(&name))
+		if name == column {
+			require.NoError(t, rows.Close())
+			return true
+		}
+	}
+	require.NoError(t, rows.Err())
+	return false
 }
 
 func TestMigrateModules(t *testing.T) {
@@ -294,6 +318,152 @@ func TestMigrateModules_SEOUpgrade(t *testing.T) {
 	require.NoError(t, appdatabase.MigrateModules(db, "sqlite", registry))
 	assert.True(t, tableExists(t, db, "content_aliases"))
 	assert.True(t, tableExists(t, db, "schema_migrations_seo"))
+}
+
+func TestMigrateModules_OrdersPIIUpgrade(t *testing.T) {
+	db := openMemoryDB(t)
+
+	// Simulate a pre-encryption install: the 000001 order tables already
+	// exist without the 000002 shipping line or the blind-index column,
+	// and with no module version table. The module migrations apply the
+	// missing versions on top.
+	_, err := db.Exec(`CREATE TABLE orders_order (
+	    id INTEGER PRIMARY KEY AUTOINCREMENT,
+	    status TEXT NOT NULL DEFAULT 'pending',
+	    customer_email TEXT NOT NULL,
+	    customer_name TEXT NOT NULL,
+	    customer_phone TEXT NOT NULL DEFAULT '',
+	    ship_to TEXT NOT NULL DEFAULT '{}',
+	    currency TEXT NOT NULL DEFAULT '',
+	    subtotal INTEGER NOT NULL DEFAULT 0,
+	    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`CREATE TABLE orders_order_items (
+	    id INTEGER PRIMARY KEY AUTOINCREMENT,
+	    order_id INTEGER NOT NULL,
+	    product_content_id INTEGER NOT NULL,
+	    variant_id INTEGER NOT NULL DEFAULT 0,
+	    sku TEXT NOT NULL DEFAULT '',
+	    title TEXT NOT NULL DEFAULT '',
+	    unit_price INTEGER NOT NULL DEFAULT 0,
+	    quantity INTEGER NOT NULL DEFAULT 1,
+	    FOREIGN KEY (order_id) REFERENCES orders_order(id) ON DELETE CASCADE
+	)`)
+	require.NoError(t, err)
+
+	registry := kernel.NewRegistry()
+	require.NoError(t, registry.Register(ordersmodule.New()))
+	require.NoError(t, appdatabase.MigrateModules(db, "sqlite", registry))
+	assert.True(t, tableExists(t, db, "orders_order"))
+	assert.True(t, tableExists(t, db, "schema_migrations_orders"))
+	assert.True(t, columnExists(t, db, "orders_order", "shipping_minor"))
+	assert.True(t, columnExists(t, db, "orders_order", "customer_email_idx"))
+
+	// The encrypted write path runs against the migrated schema.
+	_, err = db.Exec(`INSERT INTO orders_order
+		(status, customer_email, customer_name, customer_phone, ship_to, customer_email_idx, currency, subtotal, shipping_minor)
+		VALUES ('pending', 'v1:c2VhbGVk', 'v1:bmFtZQ==', '', '{}', 'idx', 'IDR', 100000, 0)`)
+	require.NoError(t, err)
+
+	// Re-running is idempotent.
+	require.NoError(t, appdatabase.MigrateModules(db, "sqlite", registry))
+
+	tests := []struct {
+		name   string
+		driver string
+		file   string
+	}{
+		{
+			name:   "success - sqlite migration adds the blind-index column",
+			driver: "sqlite",
+			file:   "sqlite/000003_orders_pii.up.sql",
+		},
+		{
+			name:   "success - postgresql migration adds the blind-index column",
+			driver: "postgresql",
+			file:   "postgresql/000003_orders_pii.up.sql",
+		},
+		{
+			name:   "success - mysql migration adds the blind-index column",
+			driver: "mysql",
+			file:   "mysql/000003_orders_pii.up.sql",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := fs.ReadFile(ordersmodule.New().Migrations(), tt.file)
+			require.NoError(t, err, "expected %s migration for %s", tt.file, tt.driver)
+			assert.Contains(t, string(payload), "customer_email_idx")
+		})
+	}
+}
+
+func TestMigrateModules_PaymentsPIIUpgrade(t *testing.T) {
+	db := openMemoryDB(t)
+
+	// Simulate a pre-encryption install: the 000001 payment table already
+	// exists, with no blind-index column and no module version table.
+	_, err := db.Exec(`CREATE TABLE payments_payment (
+	    id INTEGER PRIMARY KEY AUTOINCREMENT,
+	    order_id INTEGER NOT NULL,
+	    method TEXT NOT NULL,
+	    status TEXT NOT NULL DEFAULT 'pending',
+	    reference TEXT NOT NULL DEFAULT '',
+	    amount INTEGER NOT NULL DEFAULT 0,
+	    verified_by TEXT NOT NULL DEFAULT '',
+	    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	require.NoError(t, err)
+
+	registry := kernel.NewRegistry()
+	require.NoError(t, registry.Register(paymentsmodule.New()))
+	require.NoError(t, appdatabase.MigrateModules(db, "sqlite", registry))
+	assert.True(t, tableExists(t, db, "payments_payment"))
+	assert.True(t, tableExists(t, db, "schema_migrations_payments"))
+	assert.True(t, columnExists(t, db, "payments_payment", "reference_idx"))
+
+	// The encrypted write path runs against the migrated schema.
+	_, err = db.Exec(`INSERT INTO payments_payment
+		(order_id, method, status, reference, amount, verified_by, reference_idx)
+		VALUES (42, 'manual', 'pending', 'v1:c2VhbGVk', 522500, '', 'idx')`)
+	require.NoError(t, err)
+
+	// Re-running is idempotent.
+	require.NoError(t, appdatabase.MigrateModules(db, "sqlite", registry))
+
+	tests := []struct {
+		name   string
+		driver string
+		file   string
+	}{
+		{
+			name:   "success - sqlite migration adds the blind-index column",
+			driver: "sqlite",
+			file:   "sqlite/000003_payments_pii.up.sql",
+		},
+		{
+			name:   "success - postgresql migration adds the blind-index column",
+			driver: "postgresql",
+			file:   "postgresql/000003_payments_pii.up.sql",
+		},
+		{
+			name:   "success - mysql migration adds the blind-index column",
+			driver: "mysql",
+			file:   "mysql/000003_payments_pii.up.sql",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := fs.ReadFile(paymentsmodule.New().Migrations(), tt.file)
+			require.NoError(t, err, "expected %s migration for %s", tt.file, tt.driver)
+			assert.Contains(t, string(payload), "reference_idx")
+		})
+	}
 }
 
 // liveTableExists reports whether table exists on a live server database.

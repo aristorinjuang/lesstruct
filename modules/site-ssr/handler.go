@@ -5,14 +5,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/kernel/customfield"
+	"github.com/aristorinjuang/lesstruct/kernel/i18n"
 	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 )
@@ -248,25 +247,32 @@ func trimToPage(items []ContentRef, perPage int) ([]ContentRef, bool) {
 	return items, false
 }
 
+func displayLanguage(code string) string {
+	if name, ok := languageNames[code]; ok {
+		return name
+	}
+	return code
+}
+
+// standalonePageTitle humanizes a theme page key for the document title:
+// "cart" -> "Cart", "orders/track" -> "Track".
+func standalonePageTitle(page string) string {
+	name := page
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	name = strings.ReplaceAll(name, "-", " ")
+	if name == "" {
+		return ""
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+// ExtractHashFromURL pulls the media hash out of a stored media URL. It
+// delegates to the media domain, which owns the variant-suffix vocabulary;
+// kept as a thin alias for the SSR-internal call sites.
 func ExtractHashFromURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	path, err := url.PathUnescape(u.Path)
-	if err != nil {
-		return ""
-	}
-	base := filepath.Base(path)
-	ext := filepath.Ext(base)
-	name := strings.TrimSuffix(base, ext)
-	for _, suffix := range []string{"_large", "_medium", "_thumb"} {
-		if rest, ok := strings.CutSuffix(name, suffix); ok {
-			name = rest
-			break
-		}
-	}
-	return name
+	return mediadomain.ExtractHashFromURL(rawURL)
 }
 
 type UserBasicInfo struct {
@@ -303,13 +309,6 @@ type BodyRenderer interface {
 	Render(tiptapJSON string) (string, error)
 }
 
-func displayLanguage(code string) string {
-	if name, ok := languageNames[code]; ok {
-		return name
-	}
-	return code
-}
-
 type ContentPageHandler struct {
 	assembler           *DataAssembler
 	templates           *Templates
@@ -322,11 +321,18 @@ func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) 
 	year := parseYear(r)
 	month := parseMonth(r)
 
-	data, err := h.assembler.BuildHomeData(r.Context(), page, year, month)
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	data, err := reqAss.BuildHomeData(r.Context(), page, year, month)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	data.Languages = h.assembler.siteLanguageLinks("/", r.URL.Query())
 
 	if err := h.templates.RenderHome(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -334,11 +340,43 @@ func (h *ContentPageHandler) serveIndex(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request, slug string) {
-	data, err := h.assembler.BuildContentData(r.Context(), slug)
+	ordered, display, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, display)
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	if setCookie {
+		if content, err := reqAss.contentService.GetPublishedBySlugAny(r.Context(), slug); err == nil {
+			if content.Language != "" && !strings.EqualFold(content.Language, display) {
+				groupID := content.ID
+				if content.TranslationGroupID != nil {
+					groupID = *content.TranslationGroupID
+				}
+				if translations, err := reqAss.contentService.GetTranslations(r.Context(), groupID, content.ID); err == nil {
+					for _, trans := range translations {
+						if strings.EqualFold(trans.Language, display) {
+							http.Redirect(w, r, redirectTarget(r, "/"+trans.Slug), http.StatusFound)
+							return
+						}
+					}
+				}
+				if primary, err := reqAss.contentService.GetPublishedByID(r.Context(), groupID); err == nil {
+					if strings.EqualFold(primary.Language, display) && primary.Slug != slug {
+						http.Redirect(w, r, redirectTarget(r, "/"+primary.Slug), http.StatusFound)
+						return
+					}
+				}
+			}
+		}
+	}
+
+	data, err := reqAss.BuildContentData(r.Context(), slug)
 	if err != nil {
 		h.serveNotFound(w, r)
 		return
 	}
+	data.Languages = h.assembler.siteLanguageLinks("/"+slug, r.URL.Query())
 
 	if err := h.templates.RenderContent(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -348,11 +386,18 @@ func (h *ContentPageHandler) serveContent(w http.ResponseWriter, r *http.Request
 func (h *ContentPageHandler) serveAuthor(w http.ResponseWriter, r *http.Request, username string) {
 	page := parsePage(r)
 
-	data, err := h.assembler.BuildAuthorData(r.Context(), username, page)
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	data, err := reqAss.BuildAuthorData(r.Context(), username, page)
 	if err != nil {
 		h.serveNotFound(w, r)
 		return
 	}
+	data.Languages = h.assembler.siteLanguageLinks("/authors/"+username, r.URL.Query())
 
 	if err := h.templates.RenderAuthor(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -369,11 +414,18 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 	year := parseYear(r)
 	month := parseMonth(r)
 
-	data, err := h.assembler.BuildTagData(r.Context(), tag, page, year, month)
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	data, err := reqAss.BuildTagData(r.Context(), tag, page, year, month)
 	if err != nil {
 		h.serveNotFound(w, r)
 		return
 	}
+	data.Languages = h.assembler.siteLanguageLinks("/tags/"+tag, r.URL.Query())
 
 	if err := h.templates.RenderTag(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -381,7 +433,19 @@ func (h *ContentPageHandler) serveTag(w http.ResponseWriter, r *http.Request, ta
 }
 
 func (h *ContentPageHandler) serveNotFound(w http.ResponseWriter, r *http.Request) {
-	data := h.assembler.BuildNotFoundData(r.Context(), "")
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	currentPath := r.URL.Path
+	if currentPath == "" {
+		currentPath = "/"
+	}
+	data := reqAss.BuildNotFoundData(r.Context(), currentPath)
+	data.Lang = ordered[0]
+	data.Languages = h.assembler.siteLanguageLinks(currentPath, r.URL.Query())
 
 	if err := h.templates.RenderNotFound(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -393,11 +457,18 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 	year := parseYear(r)
 	month := parseMonth(r)
 
-	data, err := h.assembler.BuildIndexData(r.Context(), postTypeSlug, page, year, month)
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	data, err := reqAss.BuildIndexData(r.Context(), postTypeSlug, page, year, month)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	data.Languages = h.assembler.siteLanguageLinks("/"+postTypeSlug, r.URL.Query())
 
 	if err := h.templates.RenderIndex(w, data); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -405,15 +476,25 @@ func (h *ContentPageHandler) servePostTypeListing(w http.ResponseWriter, r *http
 }
 
 func (h *ContentPageHandler) serveLogin(w http.ResponseWriter, r *http.Request) {
-	navItems := h.assembler.buildNavigationItems(r.Context(), "/login")
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	pageChrome := reqAss.buildChrome(r.Context(), "/login")
 	data := AuthPageData{
 		LayoutData: LayoutData{
 			Title:           "Login",
-			PageTitle:       fmt.Sprintf("Login - %s", h.assembler.siteConfig.Name),
-			NavigationItems: navItems,
+			PageTitle:       fmt.Sprintf("Login - %s", reqAss.siteConfig.Name),
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     "/login",
-			Lang:            h.assembler.PrimaryLanguage(),
-			SiteConfig:      h.assembler.siteConfig,
+			Lang:            ordered[0],
+			LanguageLinks:   nil,
+			Languages:       h.assembler.siteLanguageLinks("/login", r.URL.Query()),
+			SiteConfig:      reqAss.siteConfig,
 		},
 		ShowRegister: h.registrationEnabled,
 	}
@@ -430,15 +511,24 @@ func (h *ContentPageHandler) serveRegister(w http.ResponseWriter, r *http.Reques
 		http.NotFound(w, r)
 		return
 	}
-	navItems := h.assembler.buildNavigationItems(r.Context(), "/register")
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	pageChrome := reqAss.buildChrome(r.Context(), "/register")
 	data := AuthPageData{
 		LayoutData: LayoutData{
 			Title:           "Register",
-			PageTitle:       fmt.Sprintf("Register - %s", h.assembler.siteConfig.Name),
-			NavigationItems: navItems,
+			PageTitle:       fmt.Sprintf("Register - %s", reqAss.siteConfig.Name),
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     "/register",
-			Lang:            h.assembler.PrimaryLanguage(),
-			SiteConfig:      h.assembler.siteConfig,
+			Lang:            ordered[0],
+			Languages:       h.assembler.siteLanguageLinks("/register", r.URL.Query()),
+			SiteConfig:      reqAss.siteConfig,
 		},
 		ShowRegister: true,
 	}
@@ -448,15 +538,24 @@ func (h *ContentPageHandler) serveRegister(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *ContentPageHandler) serveForgotPassword(w http.ResponseWriter, r *http.Request) {
-	navItems := h.assembler.buildNavigationItems(r.Context(), "/forgot-password")
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	pageChrome := reqAss.buildChrome(r.Context(), "/forgot-password")
 	data := AuthPageData{
 		LayoutData: LayoutData{
 			Title:           "Forgot Password",
-			PageTitle:       fmt.Sprintf("Forgot Password - %s", h.assembler.siteConfig.Name),
-			NavigationItems: navItems,
+			PageTitle:       fmt.Sprintf("Forgot Password - %s", reqAss.siteConfig.Name),
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     "/forgot-password",
-			Lang:            h.assembler.PrimaryLanguage(),
-			SiteConfig:      h.assembler.siteConfig,
+			Lang:            ordered[0],
+			Languages:       h.assembler.siteLanguageLinks("/forgot-password", r.URL.Query()),
+			SiteConfig:      reqAss.siteConfig,
 		},
 	}
 	if err := h.templates.RenderForgotPassword(w, data); err != nil {
@@ -465,15 +564,24 @@ func (h *ContentPageHandler) serveForgotPassword(w http.ResponseWriter, r *http.
 }
 
 func (h *ContentPageHandler) serveVerifyEmail(w http.ResponseWriter, r *http.Request) {
-	navItems := h.assembler.buildNavigationItems(r.Context(), "/verify-email")
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	pageChrome := reqAss.buildChrome(r.Context(), "/verify-email")
 	data := VerifyEmailData{
 		LayoutData: LayoutData{
 			Title:           "Verify Email",
-			PageTitle:       fmt.Sprintf("Verify Email - %s", h.assembler.siteConfig.Name),
-			NavigationItems: navItems,
+			PageTitle:       fmt.Sprintf("Verify Email - %s", reqAss.siteConfig.Name),
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     "/verify-email",
-			Lang:            h.assembler.PrimaryLanguage(),
-			SiteConfig:      h.assembler.siteConfig,
+			Lang:            ordered[0],
+			Languages:       h.assembler.siteLanguageLinks("/verify-email", r.URL.Query()),
+			SiteConfig:      reqAss.siteConfig,
 		},
 	}
 	if err := h.templates.RenderVerifyEmail(w, data); err != nil {
@@ -482,15 +590,24 @@ func (h *ContentPageHandler) serveVerifyEmail(w http.ResponseWriter, r *http.Req
 }
 
 func (h *ContentPageHandler) serveResetPassword(w http.ResponseWriter, r *http.Request) {
-	navItems := h.assembler.buildNavigationItems(r.Context(), "/reset-password")
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+
+	pageChrome := reqAss.buildChrome(r.Context(), "/reset-password")
 	data := ResetPasswordData{
 		LayoutData: LayoutData{
 			Title:           "Reset Password",
-			PageTitle:       fmt.Sprintf("Reset Password - %s", h.assembler.siteConfig.Name),
-			NavigationItems: navItems,
+			PageTitle:       fmt.Sprintf("Reset Password - %s", reqAss.siteConfig.Name),
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     "/reset-password",
-			Lang:            h.assembler.PrimaryLanguage(),
-			SiteConfig:      h.assembler.siteConfig,
+			Lang:            ordered[0],
+			Languages:       h.assembler.siteLanguageLinks("/reset-password", r.URL.Query()),
+			SiteConfig:      reqAss.siteConfig,
 		},
 	}
 	if err := h.templates.RenderResetPassword(w, data); err != nil {
@@ -498,8 +615,46 @@ func (h *ContentPageHandler) serveResetPassword(w http.ResponseWriter, r *http.R
 	}
 }
 
+// serveStandalonePage renders a theme-declared app page (cart, checkout,
+// order tracking). The shell is server-rendered through the shared layout;
+// the page's data is fetched client-side by the theme's script.
+func (h *ContentPageHandler) serveStandalonePage(w http.ResponseWriter, r *http.Request, page string) {
+	currentPath := "/" + page
+	title := standalonePageTitle(page)
+
+	ordered, _, setCookie := negotiateLanguage(r, h.assembler.Languages())
+	if setCookie && !isConsentDeclined(r) {
+		setLangCookie(w, r, ordered[0])
+	}
+	reqAss := h.assembler.forRequest(ordered)
+	pageChrome := reqAss.buildChrome(r.Context(), currentPath)
+
+	data := StandalonePageData{
+		LayoutData: LayoutData{
+			Title:           title,
+			PageTitle:       fmt.Sprintf("%s - %s", title, reqAss.siteConfig.Name),
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
+			CurrentPath:     currentPath,
+			Lang:            ordered[0],
+			Languages:       h.assembler.siteLanguageLinks(currentPath, r.URL.Query()),
+			SiteConfig:      reqAss.siteConfig,
+			NoIndex:         true,
+		},
+		Page: page,
+	}
+	if err := h.templates.RenderPage(w, data); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
 func (h *ContentPageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(r.URL.Path, "/")
+
+	// Responses vary by negotiated language: tell shared caches that
+	// Accept-Language and the language cookie select the representation.
+	w.Header().Set("Vary", "Accept-Language, Cookie")
 
 	switch {
 	case path == "" || path == "/":
@@ -524,6 +679,10 @@ func (h *ContentPageHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.serveTag(w, r, tag)
 	default:
 		slug := strings.TrimRight(path, "/")
+		if h.templates.HasPage(slug) {
+			h.serveStandalonePage(w, r, slug)
+			return
+		}
 		if h.assembler.isPostTypeSlug(slug) {
 			h.servePostTypeListing(w, r, slug)
 			return
@@ -559,6 +718,13 @@ func (h *ContentPageHandler) WithIFrameHosts(hosts ...string) *ContentPageHandle
 // SEO meta tags. Returns the receiver for chaining at construction time.
 func (h *ContentPageHandler) WithBaseURL(baseURL string) *ContentPageHandler {
 	h.assembler.WithBaseURL(baseURL)
+	return h
+}
+
+// WithUICatalog attaches the i18n UI catalog for engine-generated listing
+// strings. Returns the receiver for chaining at construction time.
+func (h *ContentPageHandler) WithUICatalog(catalog *i18n.Catalog) *ContentPageHandler {
+	h.assembler.WithUICatalog(catalog)
 	return h
 }
 

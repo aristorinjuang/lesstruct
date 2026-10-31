@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
+	"github.com/aristorinjuang/lesstruct/modules/users/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +17,19 @@ func NewMockEmailUpdateTokenRepo(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockEmailUpdateTokenRepo {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockEmailUpdateTokenRepo{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -216,23 +225,23 @@ func (_c *MockEmailUpdateTokenRepo_DeleteToken_Call) RunAndReturn(run func(ctx c
 }
 
 // GetToken provides a mock function for the type MockEmailUpdateTokenRepo
-func (_mock *MockEmailUpdateTokenRepo) GetToken(ctx context.Context, token string) (*userdomain.EmailUpdateToken, error) {
+func (_mock *MockEmailUpdateTokenRepo) GetToken(ctx context.Context, token string) (*user.EmailUpdateToken, error) {
 	ret := _mock.Called(ctx, token)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetToken")
 	}
 
-	var r0 *userdomain.EmailUpdateToken
+	var r0 *user.EmailUpdateToken
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*userdomain.EmailUpdateToken, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (*user.EmailUpdateToken, error)); ok {
 		return returnFunc(ctx, token)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *userdomain.EmailUpdateToken); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) *user.EmailUpdateToken); ok {
 		r0 = returnFunc(ctx, token)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*userdomain.EmailUpdateToken)
+			r0 = ret.Get(0).(*user.EmailUpdateToken)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
@@ -273,12 +282,12 @@ func (_c *MockEmailUpdateTokenRepo_GetToken_Call) Run(run func(ctx context.Conte
 	return _c
 }
 
-func (_c *MockEmailUpdateTokenRepo_GetToken_Call) Return(emailUpdateToken *userdomain.EmailUpdateToken, err error) *MockEmailUpdateTokenRepo_GetToken_Call {
+func (_c *MockEmailUpdateTokenRepo_GetToken_Call) Return(emailUpdateToken *user.EmailUpdateToken, err error) *MockEmailUpdateTokenRepo_GetToken_Call {
 	_c.Call.Return(emailUpdateToken, err)
 	return _c
 }
 
-func (_c *MockEmailUpdateTokenRepo_GetToken_Call) RunAndReturn(run func(ctx context.Context, token string) (*userdomain.EmailUpdateToken, error)) *MockEmailUpdateTokenRepo_GetToken_Call {
+func (_c *MockEmailUpdateTokenRepo_GetToken_Call) RunAndReturn(run func(ctx context.Context, token string) (*user.EmailUpdateToken, error)) *MockEmailUpdateTokenRepo_GetToken_Call {
 	_c.Call.Return(run)
 	return _c
 }

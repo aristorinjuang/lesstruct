@@ -1,0 +1,34 @@
+{{- define "body"}}
+<header class="container listing-head author-head">
+	{{- if .AuthorAvatarURL}}<img class="author-avatar" src="{{.AuthorAvatarURL}}" alt="{{.AuthorName}}" loading="lazy">{{end}}
+	<p class="eyebrow">{{if eq .Lang "id"}}Penulis{{else}}Author{{end}}</p>
+	<h1>{{.AuthorName}}</h1>
+	{{- if .CustomFieldsFormatted}}
+	<dl class="author-meta">
+		{{- range .CustomFieldsFormatted}}<div><dt>{{.Label}}</dt><dd>{{.Value}}</dd></div>{{end}}
+	</dl>
+	{{- end}}
+</header>
+<section class="container">
+	<div class="post-grid">
+		{{- range .Posts}}
+		<article class="post-card">
+			<a href="/{{.Slug}}">
+				{{- if .ImageURL}}<img class="post-card__image" src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" loading="lazy">{{end}}
+				<h2>{{.Title}}</h2>
+				{{- if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
+				<time datetime="{{.CreatedAt.Format "2006-01-02"}}">{{formatDate $.Lang .CreatedAt}}</time>
+			</a>
+		</article>
+		{{- else}}
+		<p class="empty">{{t .Lang "ui.no_posts"}}</p>
+		{{- end}}
+	</div>
+	{{- if or .HasPrev .HasNext}}
+	<nav class="pagination" aria-label="Pagination">
+		{{- if .HasPrev}}<a rel="prev" href="{{.PrevURL}}">{{t .Lang "ui.prev_page"}}</a>{{end}}
+		{{- if .HasNext}}<a rel="next" href="{{.NextURL}}">{{t .Lang "ui.next_page"}}</a>{{end}}
+	</nav>
+	{{- end}}
+</section>
+{{- end}}

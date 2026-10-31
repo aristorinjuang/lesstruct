@@ -59,6 +59,15 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   `[modules] disabled = [...]` — dropping `comments` equals the comments
   toggle, and dependents cascade with a logged warning.
   See [configuration.md](configuration.md).
+- **Editions.** A fixed module list compiled into one binary. **Lesstruct**
+  (the default) carries every module except commerce — the blog platform;
+  **Lesstruct Core** is the headless engine (identity, content, media,
+  plugins) for API-first sites, installing as `lesstruct-core`;
+  **Lesstruct eCommerce** is the blog platform plus the commerce stack
+  (catalog, cart, orders, payments) with the storefront theme, installing as
+  `lesstruct-ecommerce`. Editions share one data dir and config; within an
+  edition, `[modules] disabled` still fine-tunes.
+  See [editions.md](editions.md).
 
 ## Content & authoring {#content-authoring}
 
@@ -75,6 +84,90 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Custom fields, built in.** Add typed fields to any post type (and to user
   profiles) in `config.toml`. The admin form renders them, the service validates
   them, and they are queryable. No code required.
+- **Array fields.** Three ordered, validated array types round out the
+  vocabulary: `multiselect` (strings from a configured options list),
+  `list` (free-form entries with per-item and item-count caps), and `gallery`
+  (ordered `{url, alt}` media references with a media-panel picker in the
+  admin). Legacy single-string values coerce on read and canonicalize to
+  arrays on save, so switching a field's type in `config.toml` never breaks
+  existing content.
+- **Explicit featured image.** Every content item can carry an explicit
+  featured image (set from the admin editor or the create/update APIs);
+  public responses, og:image, and SEO metadata prefer it and fall back to
+  the body-derived image when unset — existing sites render identically.
+- **Catalog (eCommerce edition).** Products with native pricing (integer
+  minor units), variant matrices, stock with low-stock thresholds, and SKUs
+  — served to themes and headless frontends via a public catalog payload
+  endpoint and managed from the product editor's Catalog panel (admin GET
+  returns camelCase `contentId`, `salePrice`, `productContentId`,
+  `updatedAt`). A tracked bucket crossing its threshold downward emails the
+  configured `notify_email` once, so the operator restocks before checkout
+  starts refusing. `[[catalog.display_currency]]` adds display-only
+  currencies for the storefront header toggle (checkout stays base-currency).
+  Translated products resolve through the translation group root when the row
+  carries no record of its own (own records keep priority), and variant
+  products derive in-stock/low-stock from the variant buckets — in stock when
+  any variant is in stock, low when the variant sum sits within the threshold.
+  The Catalog panel is a visibly separate form that saves apart from the
+  content (with load-error retry and refetch-after-save): once variants exist
+  the Stock field turns into a live read-only variant sum, variant images are
+  picked from the media library, and `imageUrl` values must be http(s) or
+  root-relative (a PUT otherwise fails 400 naming the field).
+- **Guest cart (eCommerce edition).** Token-keyed server-side carts with
+  live catalog pricing: no account required, prices resolve at read time
+  so edits apply immediately, and out-of-stock demand is refused while
+  quantities already in the cart may exceed stock.
+- **Orders (eCommerce edition).** Guest checkout claims the cart with an
+  atomic delete — one checkout per token, so parallel double submits can
+  never mint two orders — and stores it as a first-class order with
+  prices, SKUs, and titles frozen at the moment of sale; display numbers
+  ship free (`ORD-000042`). An admin-set shipping line joins the frozen
+  subtotal into the payable total while the order is pending — weigh the
+  parcel, then charge it — and the confirmation email renders subtotal,
+  shipping, total, and the order's tracking link. The domain-enforced
+  lifecycle (`pending → paid → packed → shipped → delivered`, with
+  cancel/refund/expiry branches) is managed from the admin orders screen
+  with best-effort customer emails on every move, and guests track their
+  order behind a three-factor gate — order number, checkout email, and a
+  128-bit per-order tracking token delivered in the checkout response and
+  the confirmation email (sequential numbers and knowable emails are
+  deliberately not enough; legacy email-only tracking is gone, so orders
+  placed before the token existed are untrackable through the guest gate).
+  Guest payment proofs and hosted sessions pass the same gate. The orders
+  list carries
+  a read-time `itemCount` aggregate so the column never reads zero. Stock is claimed at
+  payment (not checkout) and returns when paid or packed orders cancel or
+  refund; a background sweeper expires stale pendings on a configurable
+  window, and paid is reachable only through payment confirmation — no
+  surface can mint a payment. Any order streams an invoice PDF on
+  demand — frozen lines, shipping, and a display-only PPN breakdown
+  beside an unchanged total, with seller identity and PPN rate from the
+  `[invoice]` block, editable at runtime under **Settings → Invoice
+  settings** (the admin write-back rewrites only that table of
+  `config.toml`, atomically, and applies to the next invoice without a
+  restart). Money
+  renders per currency in the emails, payment instructions, and the
+  invoice — zero-decimal for IDR/JPY/KRW/VND, two-decimal minor units
+  otherwise; three-decimal currencies are unsupported — matching the
+  storefront. Customer PII (email, name, phone, shipping address) is
+  encrypted at rest (AES-256-GCM) at the store boundary and resolved for
+  guest tracking through a blind-index column; the commerce edition fails
+  startup closed without a valid `PII_MASTER_KEY`.
+- **Payments (eCommerce edition).** Bank-transfer proof flow out of the
+  box: guests submit a payment reference behind the order's tracking gate
+  (order number + email + per-order tracking token),
+  administrators verify or reject the pending proofs from the payments
+  admin surface, and the amount snapshots with the record so later price
+  edits never rewrite it. The optional `[payments.manual]` payee block
+  (bank/account/name, all-or-nothing) renders a "How to pay" section in the
+  confirmation email and the guest tracking panel. The Midtrans Snap driver (adopted when
+  `MIDTRANS_SERVER_KEY` is set and the method is listed) mints hosted
+  checkout sessions and folds signed webhook events — settlements confirm
+  the order and record the transaction, refunds transition it refunded,
+  forged signatures refuse. Rejection keeps the order open for a
+  corrected resubmission; both decisions email the customer. Proof reference
+and verifier identity are encrypted at rest (AES-256-GCM) at the store
+boundary, with webhook dedup resolving through a blind-index column.
 - **TipTap rich-text editor.** Tables, math (KaTeX), syntax-highlighted code
   blocks, emoji, YouTube embeds, links, images, and text alignment — all
   first-class. External links (`http://`, `https://`, `//`) always render
@@ -117,8 +210,8 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   subdomains only — YouTube works out of the box). Ideal for WordPress
   Elementor imports and hand-authored HTML pages.
 - **Markdown as first-class ingest.** The CLI and `/api/v1` accept Markdown
-  bodies; the server converts them to canonical TipTap JSON. Raw Markdown is
-  never persisted.
+  bodies; the server converts them to canonical TipTap JSON (CommonMark plus
+  GFM tables and strikethrough). Raw Markdown is never persisted.
 - **WordPress importer (async).** Upload a WordPress WXR export to migrate
   posts, pages, custom post types (and their custom fields), media, and authors
   into Lesstruct. The import runs in a background goroutine and returns `202
@@ -227,7 +320,10 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 
 {{< screenshot src="media-library" alt="The media library: a searchable grid of uploaded images with thumbnails and metadata." caption="The media library — search, filter, and manage uploads." >}}
 
-- **Media library.** Browse, search, and date-filter uploads from the admin panel.
+- **Media library.** Browse, search, and date-filter uploads from the admin
+  panel. Admins manage the whole library; every other role sees only their own
+  uploads, so one account cannot inventory another's file paths, hashes, and
+  original filenames.
 - **Automatic WebP conversion.** Every uploaded image is served as WebP:
   already-WebP uploads pass through without re-encoding (no generation loss,
   and their EXIF/XMP/ICC metadata chunks are stripped — the same privacy
@@ -235,14 +331,19 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   WebP (quality 80) on upload, so images never weigh down your content.
   Extended VP8X/alpha WebP files are fully supported; animated WebP is
   rejected with a clear error.
-- **Configurable thumbnail variants.** Defaults ship `_thumb` (370px),
-  `_medium` (800px), `_large` (1600px); all editable in `config.toml`. Post
+- **Configurable thumbnail variants.** Defaults ship `_thumb` (64px),
+  `_medium` (280px), `_large` (616px) — gallery thumbs, cards, gallery main —
+  all editable in `config.toml`. Post
   bodies emit a responsive `srcset` from the variants plus the original at its
   intrinsic width when it is larger than the largest variant — so wide/high-DPI
   viewports get the full-resolution image (matching the editor), while small
-  screens get appropriately sized variants. Post cards also expose an
+  screens get appropriately sized variants. Post cards resolve the `_medium`
+  rendition (`_thumb` fallback) and also expose an
   `ImageVariants` map (keyed by configured suffix) and an `OriginalURL` field
   for the unscaled original, enabling hero backgrounds and high-DPI layouts.
+  Gallery-typed custom fields resolve to per-image `_thumb`/`_large` renditions
+  (matched by suffix name with original-URL fallbacks) that themes prefer over
+  the legacy `lines` list.
 - **SHA-256 dedup.** Identical uploads are detected and rejected (with a
   force-upload escape hatch).
 - **AI image generation.** Generate images from the media library and the content
@@ -262,6 +363,17 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   author pages) show each translation group once, preferring your configured
   language order — a post without a primary-language version still appears via
   its translation instead of disappearing.
+- **Locale negotiation.** The live server negotiates per request: `?lang`
+  first (sets the `lesstruct_lang` cookie unless consent is declined and redirects a post to its
+  translation when one exists; bogus codes never error), then the cookie for
+  returning visitors, then `Accept-Language`, then the primary. Negotiated
+  listings render Indonesian-first with `<html lang="id">`, and both themes
+  ship a `?lang` dropdown showing the active code uppercased (`ID`/`EN`)
+  with links preserved and bogus codes ignored.
+- **Engine strings localized.** Listing descriptions come from the i18n catalog (`ui.browse_posts`, `ui.posts_by`, `ui.posts_tagged` in `kernel/i18n/translations/{en,id}.toml`): Indonesian listings render `Jelajahi …` / `Postingan oleh …` / `Postingan dengan tag …`, with English fallback when a key is missing.
+- **Localized config display strings.** Optional `[[post_type]] name_id`/`description_id` and `[[homepage_section]] title_id`/`description`/`description_id` override the base values when the negotiated language is Indonesian (base fallback otherwise). Homepage sections resolve via `buildHomeSections`; listing heads resolve via the post type.
+- **GDPR cookie consent.** Both themes render an Accept/Decline banner (`ui.cookie_notice`/`ui.cookie_accept`/`ui.cookie_decline`). When a cookie policy — or, failing that, a privacy policy — resolves, the banner switches to `ui.cookie_notice_policy` and links the page in the visitor's language; without one it renders the same plain notice as before. The copy follows the edition: the blog banner is neutral, while the storefront keeps naming its language, currency, and cart storage (`ui.cookie_notice_store` pair). `lesstruct_consent=accepted` (1yr, `Lax`, `Secure` on HTTPS) keeps current behavior; `lesstruct_consent=declined` renders `?lang=id` Indonesian with no `Set-Cookie` and keeps the currency picker view-scoped (nothing persisted). The consent cookie itself is exempt; the cart token/JWT always works (strictly necessary, no consent gate). The global NoCookie guard stays fail-closed (allowlists `lesstruct_lang` + `lesstruct_consent`, strips and logs everything else).
+- **Legal pages & server-enforced consent.** Legal documents stay ordinary bilingual `page` content: publish the conventional English slugs (`cookie-policy`, `privacy-policy`, `terms-of-service`, `returns-refunds`) and each translation group resolves in the visitor's language; `[legal]` URL overrides win where a page should live elsewhere. The footer always lists the full site map, and legal pages join the header only when `legal_nav = "header"`/`"both"`. With the terms and privacy documents resolving (or a `[legal]` flag forcing the gate), checkout and registration render a required terms/privacy checkbox **and** enforce it server-side — `400 CONSENT_REQUIRED` without an affirmative `consentAccepted`, JavaScript or not — recording the accepted revision (page ID + last-updated timestamp, plus slug and language) on the order or user row.
 - **Translation-aware SEO.** The sitemap declares `hreflang` alternates from
   translation groups.
 - **Localized date formatting.** Post dates follow each content item's
@@ -277,13 +389,13 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   (`AI_TEXT_GENERATION_BASE_URL`); images via Google or OpenAI. Nothing runs
   without your keys; `/api/health` honestly reports which features are enabled.
 - **Text enhancement and translation.** Refine rich-text (TipTap) post bodies from the editor — enhancement also rewrites the title and SEO meta description (mirrored to the OG title) — or translate between languages.
-- **AI-powered HTML/CSS authoring.** Describe what you want in plain language — the AI generates production-ready HTML & CSS with semantic markup, responsive layouts, and accessible design. Output is on-brand by default: the AI reuses your active theme's design tokens (`var(--color-primary)`, spacing, radius, fonts) and component classes rather than inventing arbitrary colors and fonts. Includes 9 quick-start presets (hero, pricing, testimonials, features, CTA, FAQ, stats, contact, newsletter) and iterative refinement — the AI can modify existing HTML based on your follow-up instructions. Your media library images are automatically surfaced as context. This replaces the need for a drag-and-drop page builder: describe, generate, refine, ship.
+- **AI-powered HTML/CSS authoring.** Describe what you want in plain language — the AI generates production-ready HTML & CSS with semantic markup, responsive layouts, and accessible design. Output is on-brand by default: the AI reuses your active theme's design tokens (`var(--color-primary)`, spacing, radius, fonts) and component classes rather than inventing arbitrary colors and fonts. Includes 9 quick-start presets (hero, pricing, testimonials, features, CTA, FAQ, stats, contact, newsletter) and iterative refinement — the AI can modify existing HTML based on your follow-up instructions. Your media library images are automatically surfaced as context. This replaces the need for a drag-and-drop page builder: describe, generate, refine, ship. Note: saving `format: html` content strips `<style>` blocks for every author (page CSS belongs in the theme; inline `style=""` attributes are unaffected).
 - **Image generation.** Generate images from the media library and the editor.
   Gemini and GPT-Image models accept optional reference images (uploaded or
   picked from the library) to guide the result. Open Graph mode produces an
   exact 1200x630 preview, auto-inserted at the top of the content it was
   generated from.
-- **Built for agents.** `lesstruct-cli` is a thin Cobra client over `/api/v1`
+- **Built for agents.** [`lesstruct-cli`](cli.md) is a thin Cobra client over `/api/v1`
   designed for AI agents and terminal-first humans. Markdown ingest, cursor
   pagination, and a standard response envelope make it easy to script.
 - **Agent skills.** Lesstruct ships installable skills for theme and plugin
@@ -298,8 +410,30 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 
 - **Server-rendered by default.** The content site is rendered server-side with
   Go `html/template` — fast and SEO-friendly.
-- **One default theme.** Lesstruct ships a single embedded default theme that is
-  the working starting point; it does not generate a new theme per release cycle.
+- **One embedded theme per edition.** The blog edition ships the default blog
+  theme; the eCommerce edition ships the storefront theme — brand-styled
+  product cards and product pages with cart, checkout, and order-tracking
+  shells. Neither generates a new theme per release cycle; both are the
+  working starting point for a `THEME_DIR` child theme.
+- **Commerce storefront.** The eCommerce edition's embedded storefront theme
+  carries the Lesstruct brand design and turns the content site into a
+  storefront: product cards hydrate price, sale price, and variant-derived
+  stock posture (in stock when any variant is in stock, low when the variant
+  sum sits within the threshold) from the public catalog API, product pages
+  render a multi-axis variant matrix (configured axis/value order, sticky
+  availability, combined price/stock/image/SKU)
+  and add-to-cart, and the standalone `/cart`, `/checkout`, and `/orders/track`
+  pages render through the same layout while `storefront.js` hydrates them
+  from the public cart, checkout, order, and payment APIs — static-page fast
+  and fully themeable. Content pages keep the comment section when comments
+  are enabled. Prices format per currency (zero-decimal for
+  IDR/JPY/KRW/VND, two-decimal minor units otherwise; three-decimal
+  currencies are unsupported). The header runs Cart → Currency → Language →
+  Log out: the currency toggle converts card and product prices through
+  `[[catalog.display_currency]]` (checkout stays base-currency) alongside a
+  language dropdown showing the active code uppercased, the hero
+  photo/title/subtitle come from `[site_config]`,
+  and the logo renders beside the site name when set.
 - **Customizable.** Point `THEME_DIR` at a `themes/<name>/` directory to override
   CSS, JS, and HTML templates. The contract (CSS variables, layout blocks, JS DOM
   ids, CDN assets) is documented so fork-and-modify is safe. See
@@ -336,12 +470,21 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   counts for building archive widgets; listing pages accept `?year=`/`?month=`
   for date filtering.
 - **Site identity from config.** An optional `[site_config]` block in
-  `config.toml` sets the site `name` and an optional `logo`, which drive the
-  browser-tab title suffix, `og:site_name`, the default logo text, and the
-  footer. This is the one branding surface a theme override cannot reach (the
-  name is baked into handler-side `PageTitle` strings); everything else
-  (social links, analytics, custom `<head>`, image/multi-logo layouts) stays a
-  `THEME_DIR` theme concern.
+  `config.toml` sets the site `name`, an optional `logo`, an optional
+  `favicon`, an optional `product_image_ratio`, and optional storefront hero
+  overrides (`hero_image`, `hero_title`, `hero_subtitle`). The name and logo drive
+  the browser-tab title suffix, `og:site_name`, the default logo text, and the
+  footer (the storefront header shows logo plus name together when a logo is
+  set); `favicon` replaces the embedded themes' bundled icon set with one
+  image for the tab, bookmarks, and home screen. `product_image_ratio`
+  (`"W:H"`/`"W/H"`, validated at load) overrides the storefront product
+  media aspect ratio via an inline `<style>` (unset keeps the hard-coded 4/5).
+  `hero_image` swaps the homepage monogram for a photo, while `hero_title`
+  and `hero_subtitle` replace the bilingual defaults.
+  This is the one branding surface a theme override cannot reach (the name is
+  baked into handler-side `PageTitle` strings); everything else (social links,
+  analytics, custom `<head>`, image/multi-logo layouts) stays a `THEME_DIR`
+  theme concern.
 - **Paginated listings.** Homepage, author, tag, and post-type listing pages
   accept `?page=N` and expose prev/next state to templates. Page size is tuned
   via `POSTS_PER_PAGE`.
@@ -375,9 +518,13 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   with bare-array lists and cursor pagination on list endpoints.
 - **API keys.** Personal `lesstruct_<keyID>_<secret>` Bearer tokens, scoped to the
   creating user, with revoke and expiry. Created from the admin profile.
-- **`lesstruct-cli`.** A Cobra client for the same API — `content`, `media`,
-  `comment`, and `config` subcommands; `--output text|json`; auth via `--api-key`,
-  env, or config file.
+- **[`lesstruct-cli`](cli.md).** A Cobra client for the same API — `content`, `media`,
+  `catalog`, `orders`, `payments`, `users`, `invoice-settings`, `comment`, and
+  `config` subcommands; `--output text|json` (errors also JSON); auth via `--api-key`,
+  env, or config file. On eCommerce builds the same Admin API key operates the store
+  (dual-realm commerce endpoints plus the agent user admin), so agents can run the operator loop —
+  upsert catalog data, list and transition orders, set shipping, decide payment proofs,
+  triage registrations, suspend accounts, and edit invoice settings — without a browser session.
 - **Public content & author APIs.** Unauthenticated `/api/v1/public/*` endpoints
   serve rendered content, search, post types, and a **published-authors listing**
   (`/v1/public/authors`) for author directories and "most active contributors"
@@ -402,9 +549,13 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   custom roles or override the built-ins via `[[role]]` entries in `config.toml`,
   each granting a per-post-type manage set plus publish, media, and comment
   capabilities. Content, media, and comment endpoints enforce these
-  capabilities, and the admin UI gates navigation and forms off the caller's
+  capabilities (Commentator is comments-only — no media — unless a site
+  re-enables it with a `[[role]]` override), and the admin UI gates navigation and forms off the caller's
   derived capabilities — the content editor hides its Publish button (and the
   Published status option) for roles without the `publish` capability.
+  The admin panel lands each role on a page it can use: Admins on the
+  dashboard, Commentators on their profile, everyone else on the content
+  list (the logo click returns there too).
 - **First-run setup.** A default `admin/admin` account is auto-created on first
   start; the first login forces a password change. Self-registration creates
   `pending` Commentators an admin approves (or a configurable default role;
@@ -416,23 +567,64 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
   before an admin can activate them (`409 EMAIL_NOT_VERIFIED` otherwise).
 - **Profiles.** Self-service profile (name, email, password, custom profile
   fields, avatar), self-service data export, and self-service account deletion.
-- **JWT auth (admin realm).** Bearer-JWT sessions for the admin SPA, with Argon2id
+- **Cookie sessions (admin realm).** Browser sessions travel in the
+  `lesstruct_jwt` HttpOnly cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`,
+  `Secure` exactly on HTTPS; lifetime matches the token expiry), set by
+  MFA-verify and cleared on logout — no token lives in `localStorage` or in
+  any login JSON. Bearer JWTs remain accepted for compatibility (a present
+  header wins over the cookie), but programmatic clients should use API keys —
+  no login endpoint returns a token to store. Argon2id
   password hashing and transparent rehash-on-login for legacy bcrypt hashes.
+  Sessions are revocable: every token carries the account's `token_version`, and
+  the middleware re-checks it (plus the account's existence and status) on every
+  authenticated request. A password change, reset, or logout bumps the version, so older
+  tokens and cookies stop working immediately instead of surviving until their 24-hour
+  expiry. Suspended and soft-deleted accounts lose access on the next request,
+  across both realms — API keys issued by such an account are rejected too.
+- **Username or email login.** The admin SPA and the storefront both accept
+  either the account's username or its unique email address in the login
+  field. Usernames cannot contain `@`, so an identifier containing `@` is
+  resolved as an email and everything else as a username.
+- **Mandatory email MFA.** Every login — admin SPA and storefront alike —
+  requires a 6-digit code emailed to the account's verified address after the
+  password step; the session cookie is set only after the code matches, and no
+  token is ever returned in a login body. Codes expire after
+  5 minutes, are single-use, allow 5 wrong attempts, and can be re-sent after
+  60 seconds. Without SMTP, login fails closed; in development only
+  (`DEV_MODE=true` with SMTP unconfigured) the code is printed to stdout. The
+  seeded admin before first-login setup is the sole bootstrap case: login
+  returns `firstLoginRequired` with no session so the setup page can set a real
+  password and email. See [SMTP](configuration.md#smtp).
 - **Failed-login lockout.** An account locks for 15 minutes after 3 failed
   attempts, with an email notification.
 - **Email verification and password reset.** Self-registration verifies via email
   token — verification is always mandatory — and with `admin_approval = true` the
   verified registrant stays `pending` until an administrator activates the
-  account; forgot-password / reset-password flows are built in.
+  account; forgot-password / reset-password flows are built in. Registration is
+  enumeration-safe: a duplicate username or email gets the exact same `200`
+  reply as a fresh registration (no account ID, no `ACCOUNT_EXISTS` error), and
+  the existing account's holder is the one who gets told — by a notice email
+  with no links and no token in it.
 - **Rate limiting.** Separate per-minute limits for auth, API, and public realms;
-  per-key limiting on the agent API.
+  per-key limiting on the agent API, plus an outcome-based per-IP budget on
+  Bearer 401s — rotating fake API keys trips `429 RATE_LIMITED` after 15
+  failures/min from one IP while valid keys never count.
 - **CSRF and security headers.** CSRF token validation plus CSP,
-  `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`. The CSP is
+  `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, and
+  `Permissions-Policy` (camera, microphone, geolocation, and browsing-topics
+  disabled). The deprecated `X-XSS-Protection` header is gone — CSP is the
+  XSS control. HSTS is derived from the public origin: an `https://` `SITE_URL`
+  emits `Strict-Transport-Security: max-age=31536000` (override or disable via
+  `HSTS_MAX_AGE_SECONDS`), plain-HTTP origins omit it. The CSP is
   [configurable from `config.toml`](configuration.md#csp) — operators append
   sources per directive, switch to Report-Only for safe rollout, add new
   directives, or override entirely (or disable when behind a CDN that manages
   its own CSP). Built-in defaults include `youtube-nocookie.com` (privacy-enhanced
-  YouTube) alongside the existing `unsafe-inline` / known CDN hosts. The same
+  YouTube) alongside the existing `unsafe-inline` / known CDN hosts, and
+  `img-src` is pinned to same-origin, `data:`, and `blob:` — off-site images
+  (and CSS tracking beacons) need an explicit `img_src` append, with the
+  S3/CDN storage origin added automatically when `STORAGE_S3_PUBLIC_BASE_URL`
+  is set. The same
   `frame-src` sources also govern which `<iframe>` embeds survive the HTML
   sanitizer in HTML-format content — a full `policy` override replaces the
   sanitizer allowlist too, while `disable`/`report_only` keep the built-in
@@ -452,7 +644,7 @@ exists (`configuration.md`, `plugin-development.md`, `api-reference.md`, etc.).
 - **Comments with moderation.** Per-content comments with a moderation queue
   (`pending` / `approved` / `rejected` / `spam`) and a per-content allow/deny
   toggle.
-- **Public search.** An on-site search box backed by `/api/v1/public/search`.
+- **Public search.** An on-site search box backed by `/api/v1/public/search`, spanning every published, non-hidden post type — so a product catalog (or any custom-post-type site) is searchable out of the box, with each result labeled by its type.
 - **Dashboard.** Published/draft counts, users, pending registrations, media
   stats, recent content, and a per-post-type content breakdown (each card links
   to that type's filtered list) in one view.

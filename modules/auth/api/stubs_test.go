@@ -3,8 +3,11 @@ package api_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
+	"github.com/aristorinjuang/lesstruct/kernel"
+	"github.com/aristorinjuang/lesstruct/modules/auth/api"
 	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
@@ -68,6 +71,7 @@ type stubUserStore struct {
 	byEmail        map[string]*userdomain.User
 	byID           map[int]*userdomain.User
 	admin          *userdomain.User
+	adminErr       error
 	getErr         error
 	updateErr      error
 	created        *userdomain.User
@@ -75,6 +79,7 @@ type stubUserStore struct {
 	usernameExists map[string]bool
 	emailExists    map[string]bool
 	statusUpdated  bool
+	revoked        []int
 }
 
 func (s *stubUserStore) GetUserByUsername(_ context.Context, username string) (*userdomain.User, error) {
@@ -102,8 +107,8 @@ func (s *stubUserStore) GetUserByID(_ context.Context, userID int) (*userdomain.
 }
 
 func (s *stubUserStore) GetAdminUser(_ context.Context) (*userdomain.User, error) {
-	if s.getErr != nil {
-		return nil, s.getErr
+	if s.adminErr != nil {
+		return nil, s.adminErr
 	}
 	return s.admin, nil
 }
@@ -117,6 +122,14 @@ func (s *stubUserStore) UpdateAdminPasswordAndEmail(_ context.Context, passwordH
 		s.admin.Email = email
 		s.admin.Status = "verified"
 	}
+	return nil
+}
+
+func (s *stubUserStore) RevokeSessions(_ context.Context, userID int) error {
+	if s.updateErr != nil {
+		return s.updateErr
+	}
+	s.revoked = append(s.revoked, userID)
 	return nil
 }
 
@@ -168,16 +181,17 @@ func (s *stubUserStore) UpdateLastLoginAt(_ context.Context, _ int) error {
 
 // stubFailedStore is a stateful test double for the failed-login seam.
 type stubFailedStore struct {
-	attempts     map[int]int
-	locked       map[int]bool
-	getErr       error
-	createErr    error
-	incrementErr error
-	lockErr      error
-	resetErr     error
-	isLockedErr  error
-	wasReset     bool
-	wasLocked    bool
+	attempts         map[int]int
+	locked           map[int]bool
+	getErr           error
+	createErr        error
+	incrementErr     error
+	lockErr          error
+	resetErr         error
+	isLockedErr      error
+	sendLockoutEmail bool
+	wasReset         bool
+	wasLocked        bool
 }
 
 func (s *stubFailedStore) GetByUserID(_ context.Context, userID int) (*authdomain.FailedLoginAttempt, error) {
@@ -233,8 +247,15 @@ func (s *stubFailedStore) ResetAttempts(_ context.Context, _ int) error {
 	return nil
 }
 
-func (s *stubFailedStore) IsLocked(_ context.Context, _ int) (bool, *time.Time, error) {
-	return false, nil, s.isLockedErr
+func (s *stubFailedStore) IsLocked(_ context.Context, userID int) (bool, *time.Time, error) {
+	if s.isLockedErr != nil {
+		return false, nil, s.isLockedErr
+	}
+	if !s.locked[userID] {
+		return false, nil, nil
+	}
+	until := time.Now().Add(15 * time.Minute)
+	return true, &until, nil
 }
 
 func (s *stubFailedStore) Delete(_ context.Context, _ int) error {
@@ -246,7 +267,7 @@ func (s *stubFailedStore) UpdateLastEmailSent(_ context.Context, _ int) error {
 }
 
 func (s *stubFailedStore) ShouldSendLockoutEmail(_ context.Context, _ int, _ time.Duration) (bool, error) {
-	return false, nil
+	return s.sendLockoutEmail, nil
 }
 
 // stubTokenStore is a test double for the verification token seam. Tokens
@@ -317,25 +338,43 @@ type sentMail struct {
 }
 
 // stubMailer is a test double for the Mailer seam. Every send is recorded
-// so tests prove notifications fire.
+// so tests prove notifications fire. The mutex keeps the asynchronous
+// lockout-email goroutine race-free under -race.
 type stubMailer struct {
+	mu   sync.Mutex
 	err  error
 	sent []sentMail
 }
 
-func (s *stubMailer) SendVerificationEmail(_ context.Context, to, username, token string) error {
-	s.sent = append(s.sent, sentMail{to: to, username: username, token: token})
+// record stores one send and returns the configured error.
+func (s *stubMailer) record(mail sentMail) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sent = append(s.sent, mail)
 	return s.err
+}
+
+// sentMails returns a copy of the recorded sends.
+func (s *stubMailer) sentMails() []sentMail {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]sentMail(nil), s.sent...)
+}
+
+func (s *stubMailer) SendVerificationEmail(_ context.Context, to, username, token string) error {
+	return s.record(sentMail{to: to, username: username, token: token})
 }
 
 func (s *stubMailer) SendPasswordResetEmail(_ context.Context, to, username, token string) error {
-	s.sent = append(s.sent, sentMail{to: to, username: username, token: token})
-	return s.err
+	return s.record(sentMail{to: to, username: username, token: token})
 }
 
 func (s *stubMailer) SendAccountLockoutEmail(_ context.Context, to, username string) error {
-	s.sent = append(s.sent, sentMail{to: to, username: username})
-	return s.err
+	return s.record(sentMail{to: to, username: username})
+}
+
+func (s *stubMailer) SendRegistrationAttemptEmail(_ context.Context, to, username string) error {
+	return s.record(sentMail{to: to, username: username})
 }
 
 // stubRecorder is a test double for the NotificationRecorder seam.
@@ -378,11 +417,15 @@ func (s *stubBlockedChecker) IsEmailBlocked(_ context.Context, email string) (bo
 
 // stubIssuer is a test double for the TokenIssuer seam.
 type stubIssuer struct {
-	token string
-	err   error
+	token        string
+	err          error
+	tokenVersion int
+	expiry       time.Time
+	expiryErr    error
 }
 
-func (s *stubIssuer) GenerateToken(_, _, _ string) (string, error) {
+func (s *stubIssuer) GenerateToken(_, _, _ string, tokenVersion int) (string, error) {
+	s.tokenVersion = tokenVersion
 	if s.err != nil {
 		return "", s.err
 	}
@@ -390,4 +433,210 @@ func (s *stubIssuer) GenerateToken(_, _, _ string) (string, error) {
 		return s.token, nil
 	}
 	return "test-jwt-token", nil
+}
+
+func (s *stubIssuer) ValidateTokenExpiry(_ string) (time.Time, error) {
+	if s.expiryErr != nil {
+		return time.Time{}, s.expiryErr
+	}
+	if !s.expiry.IsZero() {
+		return s.expiry, nil
+	}
+	return time.Now().Add(24 * time.Hour), nil
+}
+
+// stubMFARepo is an in-memory MFAChallengeRepo test double. It keeps issued
+// challenges keyed by token hash so verification and resend flows run without
+// mock choreography.
+type stubMFARepo struct {
+	challenges map[string]*authdomain.MFAChallenge
+	nextID     int
+	createErr  error
+	findErr    error
+	updateErr  error
+	deleteErr  error
+}
+
+func (s *stubMFARepo) Create(_ context.Context, challenge *authdomain.MFAChallenge) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
+	if s.challenges == nil {
+		s.challenges = map[string]*authdomain.MFAChallenge{}
+	}
+	s.nextID++
+	challenge.ID = s.nextID
+	s.challenges[challenge.TokenHash] = challenge
+	return nil
+}
+
+func (s *stubMFARepo) FindByTokenHash(_ context.Context, tokenHash string) (*authdomain.MFAChallenge, error) {
+	if s.findErr != nil {
+		return nil, s.findErr
+	}
+	return s.challenges[tokenHash], nil
+}
+
+func (s *stubMFARepo) IncrementAttempts(_ context.Context, id, maxAttempts int) (bool, error) {
+	if s.updateErr != nil {
+		return false, s.updateErr
+	}
+	for _, challenge := range s.challenges {
+		if challenge.ID == id {
+			if challenge.Attempts >= maxAttempts {
+				return false, nil
+			}
+			challenge.Attempts++
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *stubMFARepo) Consume(_ context.Context, id int) (bool, error) {
+	if s.deleteErr != nil {
+		return false, s.deleteErr
+	}
+	for token, challenge := range s.challenges {
+		if challenge.ID == id {
+			delete(s.challenges, token)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *stubMFARepo) Delete(_ context.Context, id int) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	for token, challenge := range s.challenges {
+		if challenge.ID == id {
+			delete(s.challenges, token)
+		}
+	}
+	return nil
+}
+
+func (s *stubMFARepo) DeleteUserChallenges(_ context.Context, userID int) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	for token, challenge := range s.challenges {
+		if challenge.UserID == userID {
+			delete(s.challenges, token)
+		}
+	}
+	return nil
+}
+
+func (s *stubMFARepo) DeleteExpired(_ context.Context) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	for token, challenge := range s.challenges {
+		if !time.Now().Before(challenge.ExpiresAt) {
+			delete(s.challenges, token)
+		}
+	}
+	return nil
+}
+
+// stubDeliverer is a test double for the MFACodeDeliverer seam. It records the
+// last delivery so tests can present the code to the verify endpoint.
+type stubDeliverer struct {
+	to   string
+	code string
+	err  error
+}
+
+func (s *stubDeliverer) DeliverMFACode(_ context.Context, to, _ string, code string) error {
+	s.to = to
+	s.code = code
+	return s.err
+}
+
+// newMFAFixture builds an MFA service wired to an in-memory repo plus the
+// deliverer that captures the emitted code.
+func newMFAFixture() (*authdomain.MFAService, *stubDeliverer) {
+	return authdomain.NewMFAService(
+		&stubMFARepo{},
+		5*time.Minute,
+		60*time.Second,
+		5,
+	), &stubDeliverer{}
+}
+
+// newAuthHandler builds the handler under test with the MFA collaborator
+// fixture. Tests that need the delivered code call newAuthHandlerWithMFA.
+func newAuthHandler(
+	authService *authdomain.AuthService,
+	issuer api.TokenIssuer,
+	logger kernel.Logger,
+	firstLoginService *authdomain.FirstLoginService,
+	registrationService *authdomain.RegistrationService,
+	verificationService *authdomain.VerificationService,
+	loginService *authdomain.LoginService,
+	passwordResetService *authdomain.PasswordResetService,
+	store api.UserStore,
+	failed authdomain.FailedLoginAttemptRepo,
+	recorder api.NotificationRecorder,
+	mailer api.Mailer,
+	blocked api.BlockedEmailChecker,
+) *api.AuthHandler {
+	handler, _ := newAuthHandlerWithMFA(
+		authService,
+		issuer,
+		logger,
+		firstLoginService,
+		registrationService,
+		verificationService,
+		loginService,
+		passwordResetService,
+		store,
+		failed,
+		recorder,
+		mailer,
+		blocked,
+	)
+
+	return handler
+}
+
+// newAuthHandlerWithMFA is newAuthHandler plus the deliverer holding the
+// emitted login code.
+func newAuthHandlerWithMFA(
+	authService *authdomain.AuthService,
+	issuer api.TokenIssuer,
+	logger kernel.Logger,
+	firstLoginService *authdomain.FirstLoginService,
+	registrationService *authdomain.RegistrationService,
+	verificationService *authdomain.VerificationService,
+	loginService *authdomain.LoginService,
+	passwordResetService *authdomain.PasswordResetService,
+	store api.UserStore,
+	failed authdomain.FailedLoginAttemptRepo,
+	recorder api.NotificationRecorder,
+	mailer api.Mailer,
+	blocked api.BlockedEmailChecker,
+) (*api.AuthHandler, *stubDeliverer) {
+	mfaService, deliverer := newMFAFixture()
+
+	return api.NewAuthHandler(
+		authService,
+		issuer,
+		logger,
+		firstLoginService,
+		registrationService,
+		verificationService,
+		loginService,
+		mfaService,
+		passwordResetService,
+		store,
+		failed,
+		recorder,
+		mailer,
+		deliverer,
+		blocked,
+	), deliverer
 }

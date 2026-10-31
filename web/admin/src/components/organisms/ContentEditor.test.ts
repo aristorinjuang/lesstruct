@@ -36,6 +36,9 @@ vi.mock('@/composables/useConfig', () => ({
     isLoaded: { value: false },
     fetchConfig: vi.fn(async () => mockLanguages.value),
     primaryLanguage: () => mockLanguages.value[0] ?? 'en',
+    commentsEnabled: { value: true },
+    headless: { value: false },
+    catalog: { value: null },
   }),
 }))
 

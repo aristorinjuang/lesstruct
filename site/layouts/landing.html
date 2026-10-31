@@ -3,7 +3,7 @@
 
    Inherited block structure from the theme's landing.html: the sidebar
    (menu-container), TOC, and footer are blanked; the header carries the home
-   nav. `main` renders the v1 landing: release band, hero, the "v1 is here"
+   nav. `main` renders the landing: release band, hero, the "what's new"
    spotlight, the curated Features grid (auto-fit — balanced at any count),
    and the page's markdown content (Quick start / CLI / Where to go next in
    site/content/_index.md).
@@ -31,42 +31,43 @@
 
 {{ define "main" }}
 <section class="landing-release">
-  <a href="/docs/built-in-modules/"><span class="landing-release-chip">v1</span> The modular release is here — everything is a module now.&nbsp;&rarr;</a>
+  <a href="/docs/getting-started-ecommerce/"><span class="landing-release-chip">v1.1</span> The eCommerce edition is here. Open your store today — manual transfer or Midtrans Snap.&nbsp;&rarr;</a>
 </section>
 
 <section class="landing-hero">
   <div class="landing-hero-inner">
-    <img class="landing-logo" src="/brand/lesstruct.webp" width="96" height="96" alt="Lesstruct logo">
-    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/built-in-modules/">v1</a></p>
+    <img class="landing-logo" src="/brand/lesstruct-320.webp" width="96" height="96" alt="Lesstruct logo">
+    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.1</a></p>
     <h1>{{ .Title | default .Site.Title }}</h1>
     <p class="landing-tagline">{{ .Description | default .Site.Params.description }}</p>
     <div class="landing-cta">
       <a class="landing-btn landing-btn--primary" href="#quick-start">Quick start</a>
       <a class="landing-btn" href="/docs/features/">Features</a>
       <a class="landing-btn" href="/tour/">See it in action</a>
+      <a class="landing-btn" href="https://merch.lesstruct.dev" target="_blank" rel="noopener">Merch</a>
     </div>
-    {{ partial "screenshot.html" (dict "src" "admin-hero" "alt" "The Lesstruct admin panel: rich-text editor with custom fields and an SEO panel." "class" "hero" "Page" .) }}
+    {{ partial "screenshot.html" (dict "src" "admin-hero" "alt" "The Lesstruct admin panel: rich-text editor with custom fields and an SEO panel." "class" "hero" "eager" true "Page" .) }}
   </div>
 </section>
 
 <section class="landing-spotlight" id="whats-new">
-  <h2>What&rsquo;s new in v1</h2>
+  <h2>What&rsquo;s new in v1.1</h2>
   <p class="landing-section-lede">
-    The 1.0 rewrite turned every feature into a first-class module with a frozen,
-    versioned contract at its center.
+    The eCommerce edition turns the CMS into a store: products, cart,
+    checkout, payments, and delivery in one binary.
   </p>
   <div class="landing-spotlight-grid">
-    <a class="spotlight-tile" href="/docs/built-in-modules/">
-      <span class="spotlight-kicker">Modular architecture</span>
-      <h3>Everything is a module</h3>
-      <p>Eleven first-party modules with a declared dependency graph. Disable what you don't need — dependents cascade with a logged warning.</p>
+    <a class="spotlight-tile" href="/docs/getting-started-ecommerce/">
+      <span class="spotlight-kicker">The eCommerce edition</span>
+      <h3>Open your store today</h3>
+      <p>Publish products, take manual-transfer orders, and work them through to delivery — with the storefront theme included.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/kernel/">
-      <span class="spotlight-kicker">The kernel</span>
-      <h3>A frozen, versioned contract</h3>
-      <p>One small Go module every feature compiles against: lifecycle, identity, envelope, discovery — semver-tagged and adversarially reviewed.</p>
+    <a class="spotlight-tile" href="/docs/features/#deploy-run">
+      <span class="spotlight-kicker">Catalog, orders &amp; payments</span>
+      <h3>Commerce that fits in config</h3>
+      <p>Minor-unit pricing with variant matrices, verified payment proofs, Midtrans Snap checkout, and per-order invoice PDFs.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/features/#api-automation">
+    <a class="spotlight-tile" href="/docs/cli/">
       <span class="spotlight-kicker">Lesstruct CLI</span>
       <h3>Built for AI agents</h3>
       <p>Agents live on command lines. The Lesstruct CLI drives content, media, and exports over the versioned API — no browser needed.</p>
@@ -145,7 +146,7 @@
     <a class="feature-card" href="/docs/features/#users-roles-security">
       <span class="feature-glyph" aria-hidden="true">🔐</span>
       <h3>Roles &amp; security</h3>
-      <p>JWT auth, failed-login lockout, Argon2id, rate limits, and security headers.</p>
+      <p>Cookie sessions with mandatory email MFA, email-or-username sign-in, failed-login lockout, Argon2id, rate limits, and security headers.</p>
     </a>
     <a class="feature-card" href="/docs/features/#users-roles-security">
       <span class="feature-glyph" aria-hidden="true">🎛️</span>

@@ -2,10 +2,12 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/aristorinjuang/lesstruct/kernel/legal"
 	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,6 +115,85 @@ func TestRegistrationService_RegisterUser_Success(t *testing.T) {
 	assert.Equal(t, "pending", store.created.Status)
 	assert.Equal(t, "Commentator", store.created.Role)
 	assert.NotEmpty(t, store.created.PasswordHash)
+}
+
+func TestRegistrationService_RegisterUser_Consent(t *testing.T) {
+	terms := legal.Document{Page: legal.PageTermsOfService, PageID: 3, Slug: "terms-of-service", Language: "en"}
+	privacy := legal.Document{Page: legal.PagePrivacyPolicy, PageID: 4, Slug: "privacy-policy", Language: "en"}
+	policy := authdomain.ConsentPolicy{Required: true, Terms: terms, Privacy: privacy}
+
+	tests := []struct {
+		name            string
+		policy          authdomain.ConsentPolicy
+		accepted        bool
+		wantErr         error
+		wantEvidence    bool
+		wantRepoQueries bool
+	}{
+		{
+			name:            "required consent refuses an unchecked registration before repository work",
+			policy:          policy,
+			accepted:        false,
+			wantErr:         authdomain.ErrConsentRequired,
+			wantEvidence:    false,
+			wantRepoQueries: false,
+		},
+		{
+			name:            "required consent stores the document evidence",
+			policy:          policy,
+			accepted:        true,
+			wantErr:         nil,
+			wantEvidence:    true,
+			wantRepoQueries: true,
+		},
+		{
+			name:            "a disabled gate ignores the flag and stores no evidence",
+			policy:          authdomain.ConsentPolicy{},
+			accepted:        false,
+			wantErr:         nil,
+			wantEvidence:    false,
+			wantRepoQueries: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubUserStore{}
+			service := authdomain.NewRegistrationService(store, stubPolicy{}, true)
+			service.SetConsentPolicy(tt.policy)
+
+			result, err := service.RegisterUser(context.Background(), authdomain.RegisterRequest{
+				Username:        "testuser",
+				Email:           "test@example.com",
+				Password:        "SecurePassword123!",
+				ConsentAccepted: tt.accepted,
+			})
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				assert.Nil(t, result)
+				assert.Nil(t, store.created, "a refused registration must not create a user")
+				assert.Equal(t, tt.wantRepoQueries, store.usernameChecked)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, store.created)
+			if !tt.wantEvidence {
+				assert.Nil(t, store.created.ConsentAt)
+				assert.Empty(t, store.created.ConsentEvidence)
+				return
+			}
+			require.NotNil(t, store.created.ConsentAt)
+			assert.False(t, store.created.ConsentAt.IsZero())
+			require.NotEmpty(t, store.created.ConsentEvidence)
+
+			var evidence legal.Consent
+			require.NoError(t, json.Unmarshal([]byte(store.created.ConsentEvidence), &evidence))
+			assert.Equal(t, terms, evidence.Terms)
+			assert.Equal(t, privacy, evidence.Privacy)
+			assert.Equal(t, *store.created.ConsentAt, evidence.AcceptedAt)
+		})
+	}
 }
 
 func TestRegistrationService_RegisterUser_InvalidUsername(t *testing.T) {

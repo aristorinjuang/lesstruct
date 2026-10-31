@@ -1,0 +1,38 @@
+info:
+  name: Resend MFA
+  type: http
+  seq: 10
+  docs: >-
+    Re-issues the login code after the 60-second cooldown. A resend replaces
+    the challenge, so the response returns a new `challengeToken`; the
+    after-response script keeps `MFA_CHALLENGE_TOKEN` current for the next
+    Verify MFA call. A request inside the cooldown returns 429
+    `MFA_RESEND_COOLDOWN`; an expired or already-consumed challenge returns
+    401 `MFA_CHALLENGE_EXPIRED` / `MFA_CHALLENGE_INVALID` and the user must
+    sign in again.
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/auth/mfa/resend"
+  body:
+    type: json
+    data: |-
+      {
+        "challengeToken": "{{MFA_CHALLENGE_TOKEN}}"
+      }
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        if (res.body.data?.challengeToken) {
+          // The resend rotates the challenge; keep the env var current
+          bru.setEnvVar("MFA_CHALLENGE_TOKEN", res.body.data.challengeToken)
+        }
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

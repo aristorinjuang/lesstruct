@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	migratedb "github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -22,12 +23,51 @@ var (
 	sqliteMigrationsFS embed.FS
 )
 
-func openSQLite(dsn string) (*sql.DB, error) {
-	dir := filepath.Dir(dsn)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create database directory: %w", err)
+// sqlitePragmas are the connection pragmas every SQLite connection opens
+// with. busy_timeout makes concurrent writers wait for the database file
+// instead of failing instantly with SQLITE_BUSY (the default is zero, which
+// is what turned parallel checkouts on one cart into 500s); journal_mode=WAL
+// lets readers proceed while a writer commits. They ride the DSN so every
+// pooled connection gets them.
+const sqlitePragmas = "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+
+// sqliteDSN appends the connection pragmas to a SQLite DSN unless the
+// operator already supplies pragmas of their own.
+func sqliteDSN(dsn string) string {
+	if strings.Contains(dsn, "_pragma=") {
+		return dsn
 	}
-	db, err := sql.Open("sqlite", dsn)
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + sqlitePragmas
+}
+
+// sqliteFilePath reduces a DSN to its on-disk path so the parent directory
+// can be created. ":memory:" and shared-cache memory DSNs have no file.
+func sqliteFilePath(dsn string) (string, bool) {
+	trimmed := dsn
+	if after, ok := strings.CutPrefix(trimmed, "file:"); ok {
+		trimmed = after
+	}
+	if before, _, ok := strings.Cut(trimmed, "?"); ok {
+		trimmed = before
+	}
+	if trimmed == ":memory:" || strings.HasPrefix(trimmed, "mode=memory") {
+		return "", false
+	}
+	return trimmed, true
+}
+
+func openSQLite(dsn string) (*sql.DB, error) {
+	if path, ok := sqliteFilePath(dsn); ok {
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create database directory: %w", err)
+		}
+	}
+	db, err := sql.Open("sqlite", sqliteDSN(dsn))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

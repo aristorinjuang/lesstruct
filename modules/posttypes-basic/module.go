@@ -83,13 +83,23 @@ func WithRoles(roles api.RoleCapabilities) Option {
 	}
 }
 
+// WithRegistrationEnabled adopts the registration gate consulted for the
+// Commentator role in GetRoles. When unset it defaults to the comments
+// flag, preserving the legacy coupling.
+func WithRegistrationEnabled(enabled bool) Option {
+	return func(m *Module) {
+		m.registrationEnabled = &enabled
+	}
+}
+
 // Module is the posttypes-basic kernel module.
 type Module struct {
-	service         *posttype.Service
-	handler         *api.Handler
-	resolve         kernel.CapabilityResolver
-	roles           api.RoleCapabilities
-	commentsEnabled bool
+	service             *posttype.Service
+	handler             *api.Handler
+	resolve             kernel.CapabilityResolver
+	roles               api.RoleCapabilities
+	commentsEnabled     bool
+	registrationEnabled *bool
 }
 
 // Name returns the registry key.
@@ -190,5 +200,8 @@ func New(opts ...Option) *Module {
 		m.resolve,
 		m.roles,
 	)
+	if m.registrationEnabled != nil {
+		m.handler.SetRegistrationEnabled(*m.registrationEnabled)
+	}
 	return m
 }

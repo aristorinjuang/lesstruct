@@ -109,7 +109,7 @@ func TestValidateUnique(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "empty slice",
+			name:    "empty slice",
 			configs: []thumbnail.ThumbnailConfig{},
 			wantErr: false,
 		},

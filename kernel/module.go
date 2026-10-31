@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -50,6 +51,35 @@ type RouteProvider interface {
 type PublicRouteProvider interface {
 	Module
 	RegisterPublicRoutes(router chi.Router)
+}
+
+// DualAuthRegistrar is the narrow route sink core passes to dual-realm
+// modules: only the flat verb registrations a shared admin path needs.
+// Core mounts every registration twice — once on the agent stack (Bearer
+// API key auth plus per-key rate limits) and once on the browser stack
+// (CSRF plus JWT auth) — dispatched by credential at the shared path,
+// exactly like the media co-owned paths. Chi routes by path, not auth
+// realm, so registering the same path twice would shadow instead of
+// dispatch; going through this sink keeps the two chains in one place.
+type DualAuthRegistrar interface {
+	Get(pattern string, h http.HandlerFunc)
+	Post(pattern string, h http.HandlerFunc)
+	Put(pattern string, h http.HandlerFunc)
+	Delete(pattern string, h http.HandlerFunc)
+	Patch(pattern string, h http.HandlerFunc)
+}
+
+// DualAuthProvider is implemented by modules whose admin surface both
+// realms must serve with the same handler methods — typically commerce
+// surfaces an AI agent operates with an API key while the admin SPA drives
+// them with a JWT cookie. Patterns must be full /api/v1/... paths (the
+// mount point carries no sub-router prefix) and must not collide with any
+// other registration. Handlers keep their in-handler capability checks,
+// which resolve API-key principals exactly like JWT ones — a non-admin key
+// answers 403 on both realms with no extra middleware.
+type DualAuthProvider interface {
+	Module
+	RegisterDualRoutes(r DualAuthRegistrar)
 }
 
 // Migrator ships namespaced migrations as an embedded filesystem.
@@ -130,6 +160,16 @@ type ThemeProvider interface {
 	Module
 	ThemeFiles() fs.FS
 	ThemeFuncs() template.FuncMap
+}
+
+// ThemePageProvider is implemented by themes that ship standalone pages the
+// site-ssr engine serves at fixed public paths. Keys are slash-separated
+// paths without a leading slash ("cart", "orders/track"); each maps to the
+// embedded page file named after the key with slashes replaced by hyphens
+// ("cart.gohtml", "orders-track.gohtml"). The optional interface keeps
+// existing themes source-compatible.
+type ThemePageProvider interface {
+	ThemePages() []string
 }
 
 // RoleProvider contributes capability strings to the permission registry.

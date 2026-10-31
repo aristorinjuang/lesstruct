@@ -56,6 +56,13 @@ func WithLoginService(service *authdomain.LoginService) Option {
 	}
 }
 
+// WithMFAService adopts the login MFA service.
+func WithMFAService(service *authdomain.MFAService) Option {
+	return func(m *Module) {
+		m.mfaService = service
+	}
+}
+
 // WithPasswordResetService adopts the password-reset service.
 func WithPasswordResetService(service *authdomain.PasswordResetService) Option {
 	return func(m *Module) {
@@ -99,6 +106,14 @@ func WithMailer(mailer api.Mailer) Option {
 	}
 }
 
+// WithMFADeliverer adopts the login-code deliverer (email in production, the
+// dev log sink only under DEV_MODE without SMTP).
+func WithMFADeliverer(deliverer api.MFACodeDeliverer) Option {
+	return func(m *Module) {
+		m.mfaDeliverer = deliverer
+	}
+}
+
 // WithBlockedEmailChecker adopts the blocked-email checker.
 func WithBlockedEmailChecker(checker api.BlockedEmailChecker) Option {
 	return func(m *Module) {
@@ -139,12 +154,14 @@ type Module struct {
 	registrationService   *authdomain.RegistrationService
 	verificationService   *authdomain.VerificationService
 	loginService          *authdomain.LoginService
+	mfaService            *authdomain.MFAService
 	passwordResetService  *authdomain.PasswordResetService
 	tokenIssuer           api.TokenIssuer
 	userStore             api.UserStore
 	failedLoginStore      authdomain.FailedLoginAttemptRepo
 	notificationRecorder  api.NotificationRecorder
 	mailer                api.Mailer
+	mfaDeliverer          api.MFACodeDeliverer
 	blockedEmailChecker   api.BlockedEmailChecker
 	credentialPolicy      authdomain.CredentialPolicy
 	logger                kernel.Logger
@@ -226,11 +243,13 @@ func New(opts ...Option) *Module {
 		m.registrationService,
 		m.verificationService,
 		m.loginService,
+		m.mfaService,
 		m.passwordResetService,
 		m.userStore,
 		m.failedLoginStore,
 		m.notificationRecorder,
 		m.mailer,
+		m.mfaDeliverer,
 		m.blockedEmailChecker,
 		authOpts...,
 	)

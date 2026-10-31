@@ -447,6 +447,7 @@ func TestValidateMaxLength(t *testing.T) {
 	}{
 		{"text with max_length", customfield.FieldTypeText, &validLen, nil},
 		{"textarea with max_length", customfield.FieldTypeTextarea, &validLen, nil},
+		{"list with max_length (per item)", customfield.FieldTypeList, &validLen, nil},
 		{"nil max_length is valid", customfield.FieldTypeText, nil, nil},
 		{"number with max_length rejected", customfield.FieldTypeNumber, &validLen, customfield.ErrMaxLengthInvalid},
 		{"date with max_length rejected", customfield.FieldTypeDate, &validLen, customfield.ErrMaxLengthInvalid},
@@ -455,6 +456,8 @@ func TestValidateMaxLength(t *testing.T) {
 		{"url with max_length rejected", customfield.FieldTypeUrl, &validLen, customfield.ErrMaxLengthInvalid},
 		{"select with max_length rejected", customfield.FieldTypeSelect, &validLen, customfield.ErrMaxLengthInvalid},
 		{"checkbox with max_length rejected", customfield.FieldTypeCheckbox, &validLen, customfield.ErrMaxLengthInvalid},
+		{"multiselect with max_length rejected", customfield.FieldTypeMultiselect, &validLen, customfield.ErrMaxLengthInvalid},
+		{"gallery with max_length rejected", customfield.FieldTypeGallery, &validLen, customfield.ErrMaxLengthInvalid},
 		{"zero max_length rejected", customfield.FieldTypeText, &zeroLen, customfield.ErrMaxLengthInvalid},
 		{"negative max_length rejected", customfield.FieldTypeText, &negLen, customfield.ErrMaxLengthInvalid},
 	}
@@ -462,6 +465,42 @@ func TestValidateMaxLength(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := customfield.ValidateMaxLength(tt.ftype, tt.maxLength)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateMaxItems(t *testing.T) {
+	valid := 10
+	zero := 0
+	neg := -1
+
+	tests := []struct {
+		name      string
+		ftype     customfield.FieldType
+		maxItems  *int
+		wantErr   error
+	}{
+		{"list with max_items", customfield.FieldTypeList, &valid, nil},
+		{"gallery with max_items", customfield.FieldTypeGallery, &valid, nil},
+		{"nil max_items is valid", customfield.FieldTypeList, nil, nil},
+		{"text with max_items rejected", customfield.FieldTypeText, &valid, customfield.ErrMaxItemsInvalid},
+		{"textarea with max_items rejected", customfield.FieldTypeTextarea, &valid, customfield.ErrMaxItemsInvalid},
+		{"number with max_items rejected", customfield.FieldTypeNumber, &valid, customfield.ErrMaxItemsInvalid},
+		{"select with max_items rejected", customfield.FieldTypeSelect, &valid, customfield.ErrMaxItemsInvalid},
+		{"multiselect with max_items rejected", customfield.FieldTypeMultiselect, &valid, customfield.ErrMaxItemsInvalid},
+		{"checkbox with max_items rejected", customfield.FieldTypeCheckbox, &valid, customfield.ErrMaxItemsInvalid},
+		{"zero max_items rejected", customfield.FieldTypeList, &zero, customfield.ErrMaxItemsInvalid},
+		{"negative max_items rejected", customfield.FieldTypeGallery, &neg, customfield.ErrMaxItemsInvalid},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := customfield.ValidateMaxItems(tt.ftype, tt.maxItems)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 			} else {

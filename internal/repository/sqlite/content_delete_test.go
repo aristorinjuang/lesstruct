@@ -41,6 +41,7 @@ func setupDeleteTestDB(t *testing.T) *sql.DB {
 			meta_description TEXT,
 			og_title TEXT,
 			og_description TEXT,
+			featured_image TEXT,
 			allow_comments INTEGER DEFAULT 1,
 			custom_fields TEXT,
 			updated_by INTEGER REFERENCES users(id),

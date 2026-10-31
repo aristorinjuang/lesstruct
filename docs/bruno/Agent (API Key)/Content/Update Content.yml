@@ -12,7 +12,8 @@ http:
       {
         "title": "Updated Agent Post",
         "body": "<p>This content was updated via the agent API.</p>",
-        "format": "html"
+        "format": "html",
+        "featuredImage": "/uploads/media/abc123.webp"
       }
   auth:
     type: bearer

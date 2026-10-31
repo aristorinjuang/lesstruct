@@ -1,20 +1,26 @@
 /**
  * Scene registry for the docs screenshot pipeline.
  *
- * Each scene becomes two PNGs — <name>-light.png and <name>-dark.png—written
- * to site/static/screenshots/ (served at /screenshots/ by the docs site) and,
- * when `readme: true`, mirrored to docs/assets/screenshots/ for the GitHub
- * README's raw-image URLs.
+ * Each scene becomes two WebP files — <name>-light.webp and <name>-dark.webp —
+ * written to site/static/screenshots/ (served at /screenshots/ by the docs
+ * site) and, when `readme: true`, mirrored to docs/assets/screenshots/ for the
+ * GitHub README's raw-image URLs. capture.mjs screenshots as PNG and converts
+ * each to WebP (see convert.mjs); the og-card scene stays PNG.
  *
  * `url` may be a string (a path on the running instance) or a function of the
- * discovered data `{ postSlug, pageSlug, customSlug, adminEditUrl }` that
- * capture.mjs collects before capturing. Adding a scene = adding an entry here.
+ * discovered data `{ postSlug, pageSlug, customSlug, adminEditUrl,
+ * productEditUrl }` that capture.mjs collects before capturing. Adding a
+ * scene = adding an entry here. `scrollSelector` scrolls the first matching
+ * element to the top of the viewport before the shot (for below-the-fold
+ * panels like the product editor's Catalog panel). `scrollOffset` shifts the
+ * viewport vertically after the scroll (negative reveals context above the
+ * element).
  *
  * `lightOnly: true` is for scenes whose target has no dark mode (the content
  * site's default theme is light-only). The light shot is captured once and
  * copied to the -dark filename so the screenshot shortcode still resolves.
  *
- * @typedef {{ postSlug: string, pageSlug: string, customSlug: string, adminEditUrl: string }} Discovered
+ * @typedef {{ postSlug: string, pageSlug: string, customSlug: string, adminEditUrl: string, productEditUrl: string }} Discovered
  */
 
 const ADMIN_VIEWPORT = { width: 1440, height: 900 }
@@ -65,6 +71,49 @@ export const scenes = [
     waitMs: 1500,
     url: '/admin/profile/api-keys',
     note: 'API keys management. features.md (api).',
+  },
+
+  {
+    name: 'orders',
+    kind: 'admin',
+    viewport: ADMIN_VIEWPORT,
+    fullPage: false,
+    waitMs: 1500,
+    url: '/admin/orders',
+    note: 'Orders list (status triage). getting-started-ecommerce.md (fulfillment).',
+  },
+
+  {
+    name: 'payments',
+    kind: 'admin',
+    viewport: ADMIN_VIEWPORT,
+    fullPage: false,
+    waitMs: 1500,
+    url: '/admin/payments',
+    note: 'Payments admin panel. features.md (payments); getting-started-ecommerce.md.',
+  },
+
+  {
+    name: 'invoice-settings',
+    kind: 'admin',
+    viewport: ADMIN_VIEWPORT,
+    fullPage: false,
+    waitMs: 1500,
+    url: '/admin/settings/invoice',
+    note: 'Invoice seller settings form. getting-started-ecommerce.md (fulfillment).',
+  },
+
+  {
+    name: 'product-catalog',
+    kind: 'admin',
+    viewport: ADMIN_VIEWPORT,
+    fullPage: false,
+    waitMs: 1500,
+    scrollSelector: '.catalog-panel',
+    scrollOffset: -140,
+    /** @param {Discovered} d */
+    url: (d) => d.productEditUrl,
+    note: 'Product editor with the Catalog panel. getting-started-ecommerce.md (products).',
   },
 
   // --- Public content-site scenes (unauthenticated; light-only theme) ------

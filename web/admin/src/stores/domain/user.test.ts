@@ -110,7 +110,8 @@ describe('useUserStore', () => {
       const store = useUserStore()
       vi.mocked(api.get).mockResolvedValue({
         data: {
-          data: { data: mockUsers, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123', total: 25 } },
+          data: mockUsers,
+          meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123', total: 25 },
         },
       })
 
@@ -146,7 +147,8 @@ describe('useUserStore', () => {
 
       resolveFetch!({
         data: {
-          data: { data: mockUsers, meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123', total: 25 } },
+          data: mockUsers,
+          meta: { timestamp: '2026-03-26T14:30:00Z', requestId: '123', total: 25 },
         },
       })
       await fetchCall
@@ -160,7 +162,7 @@ describe('useUserStore', () => {
       const store = useUserStore()
       const pendingUsers = [mockUsers[1]]
       vi.mocked(api.get).mockResolvedValue({
-        data: { data: { data: pendingUsers, meta: { timestamp: '2026-03-27T10:00:00Z', requestId: '124' } } },
+        data: { data: pendingUsers, meta: { timestamp: '2026-03-27T10:00:00Z', requestId: '124' } },
       })
 
       await store.fetchPendingUsers()

@@ -1,0 +1,26 @@
+info:
+  name: Midtrans Webhook
+  type: http
+  seq: 23
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/public/payments/midtrans/webhook"
+  body:
+    type: json
+    data: |-
+      {
+        "order_id": "{{ORDER_NUMBER}}",
+        "status_code": "200",
+        "gross_amount": "522500.00",
+        "signature_key": "<sha512(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)>",
+        "transaction_id": "T-1",
+        "transaction_status": "settlement"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

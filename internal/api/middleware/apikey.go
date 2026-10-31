@@ -11,8 +11,8 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/domain/apikey"
-	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/aristorinjuang/lesstruct/internal/util"
+	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
 // bearerScheme is the required Authorization scheme prefix for API-key requests.
@@ -116,15 +116,28 @@ func (m *APIKeyAuthMiddleware) Handler(next http.Handler) http.Handler {
 		}
 
 		user, err := m.userLookup.GetUserByID(r.Context(), key.UserID)
+		// A verified key whose owner is missing is a data-integrity problem.
+		// Log the internal detail but return 401 INVALID_API_KEY so we do not
+		// confirm the key was valid to the caller.
 		if err != nil || user == nil {
-			// A verified key whose owner is missing is a data-integrity problem.
-			// Log the internal detail but return 401 INVALID_API_KEY so we do not
-			// confirm the key was valid to the caller.
 			m.logger.Error(
 				"API key owner lookup failed: keyID=%s userID=%d err=%v",
 				key.KeyID,
 				key.UserID,
 				err,
+			)
+			response.Error(w, http.StatusUnauthorized, "INVALID_API_KEY", "Invalid API key", nil)
+			return
+		}
+
+		// A suspended or soft-deleted owner must not keep using API keys issued
+		// before the status change. Same generic 401 as an invalid key.
+		if user.Status != accountStatusVerified {
+			m.logger.Info(
+				"API key owner is not active: keyID=%s userID=%d status=%s",
+				key.KeyID,
+				user.ID,
+				user.Status,
 			)
 			response.Error(w, http.StatusUnauthorized, "INVALID_API_KEY", "Invalid API key", nil)
 			return

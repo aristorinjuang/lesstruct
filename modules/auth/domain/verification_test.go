@@ -163,3 +163,34 @@ func TestVerificationService_CleanupExpiredTokens(t *testing.T) {
 
 	assert.NoError(t, err, "CleanupExpiredTokens() should succeed")
 }
+
+func TestVerificationService_VerifyEmail_TokenLookupFailure(t *testing.T) {
+	store := &stubUserStore{}
+	tokens := &stubTokenStore{findErr: errors.New("database error")}
+
+	service := authdomain.NewVerificationService(store, tokens, 24)
+
+	result, err := service.VerifyEmail(context.Background(), "test-token")
+
+	require.ErrorIs(t, err, authdomain.ErrVerificationFailed)
+	assert.Nil(t, result)
+}
+
+func TestVerificationService_VerifyEmail_UpdateStatusFailure(t *testing.T) {
+	store := &stubUserStore{statusErr: errors.New("database error")}
+	tokens := &stubTokenStore{
+		token: &authdomain.VerificationToken{
+			ID:        123,
+			UserID:    456,
+			TokenHash: "test-hash",
+			ExpiresAt: time.Now().Add(1 * time.Hour),
+		},
+	}
+
+	service := authdomain.NewVerificationService(store, tokens, 24)
+
+	result, err := service.VerifyEmail(context.Background(), "test-token")
+
+	require.ErrorIs(t, err, authdomain.ErrVerificationFailed)
+	assert.Nil(t, result)
+}

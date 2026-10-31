@@ -1,11 +1,12 @@
-// Package app is the Lesstruct composition root: the default (blog)
-// edition wires every first-party module here and runs the server. An
-// edition is this list plus wiring — see cmd/ for alternate editions that
-// reuse Run with different build constraints.
+// Package app is the Lesstruct composition root: the shared platform —
+// config, database, identity, content engine, media stack, plugin system,
+// boot — that every edition wires its module list into. An edition is a
+// fixed module list plus wiring; the concrete editions live in
+// internal/editions/<name> (imported only by their thin mains) so a binary
+// links only the modules its edition carries.
 package app
 
 import (
-	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
@@ -16,7 +17,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -29,22 +29,11 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/aristorinjuang/lesstruct/internal/constants"
 	"github.com/aristorinjuang/lesstruct/internal/content/export"
-	hugo "github.com/aristorinjuang/lesstruct/modules/importers/hugo"
-	"github.com/aristorinjuang/lesstruct/modules/importers"
-	"github.com/aristorinjuang/lesstruct/internal/content/ssg"
-	"github.com/aristorinjuang/lesstruct/kernel/tiptap"
-	wordpress "github.com/aristorinjuang/lesstruct/modules/importers/wordpress"
 	appdatabase "github.com/aristorinjuang/lesstruct/internal/database"
 	apikeydomain "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
-	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	dashboarddomain "github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
-	usersmodule "github.com/aristorinjuang/lesstruct/modules/users"
-	"github.com/aristorinjuang/lesstruct/modules/users/domain/profilepicture"
-	textgendomain "github.com/aristorinjuang/lesstruct/modules/textgen/domain"
-	"github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/aristorinjuang/lesstruct/internal/email"
-	"github.com/aristorinjuang/lesstruct/kernel/i18n"
 	"github.com/aristorinjuang/lesstruct/internal/modules"
 	pluginadapter "github.com/aristorinjuang/lesstruct/internal/plugin"
 	"github.com/aristorinjuang/lesstruct/internal/plugin/bootstrap"
@@ -56,23 +45,23 @@ import (
 	appstorage "github.com/aristorinjuang/lesstruct/internal/storage"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/aristorinjuang/lesstruct/kernel"
-	"github.com/aristorinjuang/lesstruct/modules/comments"
-	commentdomain "github.com/aristorinjuang/lesstruct/modules/comments/domain"
-	authmodule "github.com/aristorinjuang/lesstruct/modules/auth"
-	commentstore "github.com/aristorinjuang/lesstruct/modules/comments/store"
+	"github.com/aristorinjuang/lesstruct/kernel/legal"
+	"github.com/aristorinjuang/lesstruct/kernel/tiptap"
 	"github.com/aristorinjuang/lesstruct/modules/adminpanel"
+	authmodule "github.com/aristorinjuang/lesstruct/modules/auth"
+	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
 	"github.com/aristorinjuang/lesstruct/modules/media"
 	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
+	mediainfra "github.com/aristorinjuang/lesstruct/modules/media/infrastructure"
 	mediastore "github.com/aristorinjuang/lesstruct/modules/media/store"
 	posttypesbasic "github.com/aristorinjuang/lesstruct/modules/posttypes-basic"
 	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
-	"github.com/aristorinjuang/lesstruct/modules/seo"
-	textgenmodule "github.com/aristorinjuang/lesstruct/modules/textgen"
-	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
-	themedefault "github.com/aristorinjuang/lesstruct/modules/theme-default"
 	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
 	seodomain "github.com/aristorinjuang/lesstruct/modules/seo/domain"
 	seostore "github.com/aristorinjuang/lesstruct/modules/seo/store"
+	usersmodule "github.com/aristorinjuang/lesstruct/modules/users"
+	"github.com/aristorinjuang/lesstruct/modules/users/domain"
+	"github.com/aristorinjuang/lesstruct/modules/users/domain/profilepicture"
 )
 
 // isValidUsername validates that a username contains only safe characters
@@ -80,6 +69,41 @@ import (
 func isValidUsername(username string) bool {
 	usernameRegex := regexp.MustCompile(`^[a-zA-Z0-9_-]{1,50}$`)
 	return usernameRegex.MatchString(username)
+}
+
+// resolveLegal projects the published page set onto the legal resolver's
+// vocabulary and resolves the conventional documents against the preference
+// chain. A read failure logs and resolves nothing: the consent gates then
+// follow the "pages absent" behavior instead of blocking the boot.
+func resolveLegal(ctx context.Context, contentService *contentdomain.Service, languages []string) legal.Resolution {
+	pages, err := contentService.GetPublishedPages(ctx)
+	if err != nil {
+		log.Printf("Warning: Failed to load published pages for legal resolution: %v", err)
+		return legal.Resolve(nil, languages)
+	}
+	candidates := make([]legal.Candidate, 0, len(pages))
+	for _, page := range pages {
+		candidates = append(candidates, legal.Candidate{
+			PageID:             page.ID,
+			Slug:               page.Slug,
+			Language:           page.Language,
+			TranslationGroupID: page.TranslationGroupID,
+			UpdatedAt:          page.UpdatedAt,
+		})
+	}
+	return legal.Resolve(candidates, languages)
+}
+
+// legalDocumentURL prefers the operator's explicit override over the resolved
+// page and returns an empty string when the document exists at neither.
+func legalDocumentURL(page legal.Page, overrides map[legal.Page]string, resolution legal.Resolution) string {
+	if override := strings.TrimSpace(overrides[page]); override != "" {
+		return override
+	}
+	if document, ok := resolution.Document(page); ok {
+		return document.URL()
+	}
+	return ""
 }
 
 // isGeminiModel returns true if the model name indicates a Gemini image model.
@@ -130,6 +154,16 @@ func newVerificationTokenRepo(driver string, db *sql.DB) authdomain.Verification
 		return mysqlrepository.NewVerificationTokenRepository(db)
 	}
 	return repository.NewVerificationTokenRepository(db)
+}
+
+func newMFAChallengeRepo(driver string, db *sql.DB) authdomain.MFAChallengeRepo {
+	if isPostgres(driver) {
+		return postgresqlrepository.NewMFAChallengeRepository(db)
+	}
+	if isMySQL(driver) {
+		return mysqlrepository.NewMFAChallengeRepository(db)
+	}
+	return repository.NewMFAChallengeRepository(db)
 }
 
 func newPasswordResetTokenRepo(driver string, db *sql.DB) authdomain.PasswordResetTokenRepo {
@@ -200,18 +234,6 @@ func newContentRepo(driver string, db *sql.DB) contentdomain.Repository {
 		return mysqlrepository.NewContentRepository(db)
 	}
 	return sqliterepository.NewContentRepository(db)
-}
-
-func newCommentRepo(driver string, db *sql.DB) commentdomain.CommentRepository {
-	drivers, err := appdatabase.Drivers()
-	if err != nil {
-		log.Fatalf("Failed to resolve database drivers: %v", err)
-	}
-	drv, err := drivers.Get(driver)
-	if err != nil {
-		log.Fatalf("Failed to resolve database driver %q: %v", driver, err)
-	}
-	return commentstore.New(db, drv.Dialect())
 }
 
 func newMediaRepo(driver string, db *sql.DB) mediadomain.Repository {
@@ -316,7 +338,8 @@ func startServer(
 	apiKeyHandler *handlers.APIKeyHandler,
 	hugoHandler routes.HugoSurface,
 	exportHandler *handlers.ExportHandler,
-	ssgHandler *handlers.SSGHandler,
+	ssgHandler routes.SSGSurface,
+	configExtras func() map[string]any,
 	apiKeyAuthMiddleware *middleware.APIKeyAuthMiddleware,
 	agentContentHandler *agent.ContentHandler,
 	agentMediaHandler routes.MediaAgentHandler,
@@ -327,7 +350,7 @@ func startServer(
 	csrfMiddleware *middleware.CSRFMiddleware,
 	rateLimitMiddleware *middleware.RateLimitMiddleware,
 	securityHeadersMiddleware *middleware.SecurityHeadersMiddleware,
-	jwtManager *auth.JWTManager,
+	authMiddleware *middleware.AuthMiddleware,
 	spaHandler routes.AdminPanelSurface,
 	staticHandler http.Handler,
 	imageGenEnabled bool,
@@ -360,6 +383,7 @@ func startServer(
 		hugoHandler,
 		exportHandler,
 		ssgHandler,
+		configExtras,
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		agentMediaHandler,
@@ -370,7 +394,7 @@ func startServer(
 		csrfMiddleware,
 		rateLimitMiddleware,
 		securityHeadersMiddleware,
-		jwtManager,
+		authMiddleware,
 		spaHandler,
 		staticHandler,
 		imageGenEnabled,
@@ -386,8 +410,7 @@ func startServer(
 		moduleRegistry,
 	)
 
-	// Create HTTP server with timeouts. ReadHeaderTimeout guards against
-	// Slowloris while ReadTimeout and WriteTimeout are zero (off) by default
+	// Create HTTP server with timeouts. ReadHeaderTimeout guards against	// Slowloris while ReadTimeout and WriteTimeout are zero (off) by default
 	// so large uploads (WordPress import, media upload) are not capped by a
 	// global deadline — per-handler body limiters and context deadlines apply.
 	server := &http.Server{
@@ -410,9 +433,20 @@ func startServer(
 	return server
 }
 
-// Run boots the default edition: loads config, wires services and modules,
-// runs migrations, and serves HTTP until shutdown.
-func Run() {
+// noCookieAllowlist names the only cookies allowed past the NoCookie guard:
+// the SSR engine's language preference, the GDPR consent choice, and the
+// browser session cookie. It exists so TestNoCookieAllowlistMatchesEngine can
+// pin the wiring against the engine's canonical constants (importing the
+// engine here would link the SSR stack into lean binaries like
+// lesstruct-core).
+func noCookieAllowlist() []string {
+	return []string{"lesstruct_lang", "lesstruct_consent", kernel.SessionCookieName}
+}
+
+// Run boots an edition: loads config, wires the shared platform services,
+// hands the edition its Wire and Mount hooks, runs migrations, and serves
+// HTTP until shutdown.
+func Run(edition Edition) {
 	// Initialize logger
 	utilLogger := util.NewLogger(os.Stdout)
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -449,8 +483,10 @@ func Run() {
 	}
 	// Back-compat: disabling the comments module is equivalent to the
 	// legacy [comments] toggle. Headless mode is independent (D4): it only
-	// suppresses public-surface mounting, never the module registry.
-	commentsEnabled := commentsConfig.IsEnabled() && !modulesConfig.IsDisabled("comments")
+	// suppresses public-surface mounting, never the module registry. An
+	// edition without the comment system folds the same way: no module,
+	// no comment routes, no comment surface in the content service.
+	commentsEnabled := commentsConfig.IsEnabled() && edition.Comments && !modulesConfig.IsDisabled("comments")
 	registrationEnabled := registrationConfig.IsEnabled(commentsEnabled)
 
 	// Ensure required directories exist
@@ -577,6 +613,14 @@ func Run() {
 	verificationService := authdomain.NewVerificationService(userRepo, tokenRepo, 24, verificationOpts...)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, credentialPolicy, modules.NewLogger(utilLogger))
 
+	mfaChallengeRepo := newMFAChallengeRepo(cfg.DBDriver, db.DB())
+	mfaService := authdomain.NewMFAService(
+		mfaChallengeRepo,
+		authdomain.MFACodeTTL,
+		authdomain.MFAResendCooldown,
+		authdomain.MFAMaxAttempts,
+	)
+
 	passwordResetTokenRepo := newPasswordResetTokenRepo(cfg.DBDriver, db.DB())
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, credentialPolicy, 1)
 
@@ -595,6 +639,12 @@ func Run() {
 	// behind reverse proxies and HTTPS (HOST/PORT only bind the listener).
 	baseURL := strings.TrimRight(cfg.SiteURL, "/")
 	emailService := email.NewService(smtpConfig, logger, cfg.SiteURL)
+	mfaDeliverer := modules.NewMFACodeDeliverer(
+		emailService,
+		modules.NewLogger(utilLogger),
+		cfg.DevMode,
+		emailService.IsEnabled(),
+	)
 
 	blockedEmailRepo := newBlockedEmailRepo(cfg.DBDriver, db.DB())
 
@@ -615,12 +665,14 @@ func Run() {
 		authmodule.WithRegistrationService(registrationService),
 		authmodule.WithVerificationService(verificationService),
 		authmodule.WithLoginService(loginService),
+		authmodule.WithMFAService(mfaService),
 		authmodule.WithPasswordResetService(passwordResetService),
-		authmodule.WithTokenIssuer(jwtManager),
+		authmodule.WithTokenIssuer(modules.NewJWTTokenIssuer(jwtManager)),
 		authmodule.WithUserStore(userRepo),
 		authmodule.WithFailedLoginStore(failedLoginRepo),
 		authmodule.WithNotificationRecorder(modules.NewAuthNotificationRecorder(notificationRepo)),
 		authmodule.WithMailer(emailService),
+		authmodule.WithMFADeliverer(mfaDeliverer),
 		authmodule.WithBlockedEmailChecker(blockedEmailRepo),
 		authmodule.WithCredentialPolicy(credentialPolicy),
 		authmodule.WithLogger(modules.NewLogger(utilLogger)),
@@ -704,7 +756,7 @@ func Run() {
 	// same media-join the SSR layer uses. Defined alongside the repo; the
 	// content handler adopts it below.
 	featuredImageResolver := func(imageURL string) string {
-		hash := sitessr.ExtractHashFromURL(imageURL)
+		hash := mediadomain.ExtractHashFromURL(imageURL)
 		if hash == "" {
 			return imageURL
 		}
@@ -722,20 +774,20 @@ func Run() {
 	if cfg.IsImageGenerationEnabled() {
 		switch {
 		case isGeminiModel(cfg.AIImageGenerationModel):
-			imageGenService = mediadomain.NewGoogleGeminiService(
+			imageGenService = mediainfra.NewGoogleGeminiService(
 				cfg.AIImageGenerationAPIKey,
 				cfg.AIImageGenerationModel,
 				cfg.AIImageGenerationSize,
 				cfg.AIImageGenerationAspectRatio,
 			)
 		case isGPTModel(cfg.AIImageGenerationModel):
-			imageGenService = mediadomain.NewGPTImageService(
+			imageGenService = mediainfra.NewGPTImageService(
 				cfg.AIImageGenerationAPIKey,
 				cfg.AIImageGenerationModel,
 				cfg.AIImageGenerationSize,
 			)
 		default:
-			imageGenService = mediadomain.NewGoogleImagen4Service(
+			imageGenService = mediainfra.NewGoogleImagen4Service(
 				cfg.AIImageGenerationAPIKey,
 				cfg.AIImageGenerationModel,
 				cfg.AIImageGenerationSize,
@@ -759,10 +811,10 @@ func Run() {
 	primaryLanguage := config.PrimaryLanguage(languages)
 
 	// Initialize content service (Story 2.1). Built here — ahead of module
-	// registration — so the comments module adopts the live services instead
-	// of nil placeholders.
+	// registration — so edition modules adopt the live services instead of
+	// nil placeholders. Comment repositories belong to the edition that
+	// carries the comment system; the content engine itself is comment-free.
 	contentRepo := newContentRepo(cfg.DBDriver, db.DB())
-	commentRepo := newCommentRepo(cfg.DBDriver, db.DB())
 	seoService := seodomain.NewService(baseURL, "Lesstruct")
 	postTypeAdapter := contentdomain.NewPostTypeAdapter(postTypeService)
 	// Initialize alias/redirect service before the content service so delete
@@ -775,21 +827,42 @@ func Run() {
 		postTypeAdapter,
 		pluginadapter.NewHookExecutorAdapter(pluginSys.Registry()),
 		contentdomain.WithDefaultLanguage(primaryLanguage),
+		contentdomain.WithLanguages(languages...),
 		contentdomain.WithCommentsEnabled(commentsEnabled),
 		contentdomain.WithRoleChecker(roleService),
 		contentdomain.WithAliasDeleter(aliasService),
 	)
 
-	// Comments live in their module since Phase 3.3b: the service is built on
-	// the per-driver comment repository with the content-backed AllowComments
-	// gate, and the adapter below serves every surface that needs both.
-	// Comments live in their module since Phase 3.3b: the service is built on
-	// the per-driver comment repository with the content-backed AllowComments
-	// gate, and the site-ssr reader (built below) reads comments through it.
-	commentService := commentdomain.NewService(
-		commentRepo,
-		commentdomain.WithAllowCommentsChecker(modules.NewAllowCommentsChecker(contentService)),
-	)
+	// Legal resolution (round 6): the conventional legal documents resolve
+	// once at boot so checkout/registration enforcement, the verification
+	// email footer, and rendering all refer to the same revision. A page
+	// added while the server runs shows up in links immediately (the SSR
+	// engine re-resolves per render) but the consent gates keep the boot
+	// snapshot until restart — the documented trading off for not querying
+	// legal pages on every checkout.
+	legalConfig, err := config.LoadLegal(cfg)
+	if err != nil {
+		log.Fatalf("Failed to load legal config: %v", err)
+	}
+	legalResolution := resolveLegal(context.Background(), contentService, languages)
+	legalDocumentsPresent := legalResolution.Has(legal.PageTermsOfService) && legalResolution.Has(legal.PagePrivacyPolicy)
+	checkoutConsent := legalConfig.CheckoutConsentEnabled(legalDocumentsPresent)
+	registrationConsent := legalConfig.RegistrationConsentEnabled(legalDocumentsPresent)
+	legalOverrides := legalConfig.Overrides()
+
+	termsDocument, _ := legalResolution.Document(legal.PageTermsOfService)
+	privacyDocument, _ := legalResolution.Document(legal.PagePrivacyPolicy)
+	registrationService.SetConsentPolicy(authdomain.ConsentPolicy{
+		Required: registrationConsent,
+		Terms:    termsDocument,
+		Privacy:  privacyDocument,
+	})
+	if privacyURL := legalDocumentURL(legal.PagePrivacyPolicy, legalOverrides, legalResolution); privacyURL != "" {
+		if strings.HasPrefix(privacyURL, "/") {
+			privacyURL = baseURL + privacyURL
+		}
+		emailService.SetPrivacyPolicyURL(privacyURL)
+	}
 
 	// v1 module system (Phase 3.1): the real posttypes-basic module adopts the
 	// config-built registry and replaces its transitional wrapper. Remaining
@@ -798,6 +871,7 @@ func Run() {
 		posttypesbasic.WithService(postTypeService),
 		posttypesbasic.WithCapabilityResolver(authorize),
 		posttypesbasic.WithCommentsEnabled(commentsEnabled),
+		posttypesbasic.WithRegistrationEnabled(registrationEnabled),
 		posttypesbasic.WithRoles(modules.NewRoleCapabilities(roleService)),
 	)
 	for _, module := range modules.DefaultEdition() {
@@ -821,119 +895,54 @@ func Run() {
 		media.WithLogger(modules.NewLogger(utilLogger)),
 	)
 	candidates = append(candidates, mediaModule)
-	commentsModule := comments.New(
-		comments.WithService(commentService),
-		comments.WithContentResolver(modules.NewBrowserContentResolver(contentService)),
-		comments.WithAgentContentLookup(modules.NewAgentContentLookup(contentService)),
-		comments.WithRoles(modules.NewCommentRoleCapabilities(roleService)),
-		comments.WithAgentRoles(modules.NewAgentCommentRoleCapabilities(roleService)),
-		comments.WithLogger(modules.NewLogger(utilLogger)),
-	)
-	candidates = append(candidates, commentsModule)
-	seoModule := seo.New(
-		seo.WithPages(modules.NewSEOPublishedPages(contentService)),
-		seo.WithBaseURL(baseURL),
-		seo.WithHeadless(headlessEnabled),
-		seo.WithLogger(modules.NewLogger(utilLogger)),
-	)
-	candidates = append(candidates, seoModule)
-	// v1 module system (Phase 3.5a): the default theme ships its layouts and
-	// static assets as the ThemeProvider artifact. The module takes no
-	// options — the artifact is static.
-	themeModule := themedefault.New()
-	candidates = append(candidates, themeModule)
-	// The artifact installs immediately (not only in the ThemeProvider loop
-	// after InitAll): code below — ReadThemeStyles for the textgen service —
-	// needs the embedded filesystem long before the registry transition.
-	sitessr.SetEmbeddedFS(themeModule.ThemeFiles())
-	// v1 module system (Phase 3.5c): the site-ssr engine registers its
-	// lifecycle and content seam. The assembler and handler attach in later
-	// slices (3.5d/3.5e).
-	siteSSRModule := sitessr.New()
-	candidates = append(candidates, siteSSRModule)
 
-	// Initialize theme for content site (templates and static files).
-	// Built here — ahead of module registration — so the textgen module
-	// adopts the active theme's styles instead of a nil placeholder.
-	var theme *sitessr.Theme
-	if cfg.ThemeDir != "" {
-		theme = &sitessr.Theme{Dir: cfg.ThemeDir}
+	// Edition hand-off: the platform services are up; the edition constructs
+	// its own modules on top of them and fills its optional handler set.
+	// Platform modules that register after the edition's (the admin shell
+	// and the users module, below) keep the historical candidate order.
+	drivers, err := appdatabase.Drivers()
+	if err != nil {
+		log.Fatalf("Failed to resolve database drivers: %v", err)
 	}
-
-	// Read the active theme's minified base.css + style.css so AI-generated
-	// HTML/CSS reuses the site's design tokens and component classes instead
-	// of inventing off-brand styles.
-	themeBaseCSS, themeStyleCSS := sitessr.ReadThemeStyles(theme)
-
-	// Initialize AI text generation service
-	var textGenService textgendomain.TextGenerationService
-	if cfg.IsTextGenerationEnabled() {
-		textGenService = textgendomain.NewOpenAITextService(
-			cfg.AITextGenerationAPIKey,
-			cfg.AITextGenerationBaseURL,
-			cfg.AITextGenerationModel,
-			themeBaseCSS,
-			themeStyleCSS,
-		)
+	dialect, err := drivers.Get(cfg.DBDriver)
+	if err != nil {
+		log.Fatalf("Failed to resolve database driver %q: %v", cfg.DBDriver, err)
 	}
-	// v1 module system (Phase 3.6b): the real textgen module adopts the
-	// OpenAI-compatible service and the media library for context injection.
-	// Core mounts the handler explicitly (see Module.Handler): the
-	// textGenEnabled feature flag gates mounting.
-	textgenModule := textgenmodule.New(
-		textgenmodule.WithService(textGenService),
-		textgenmodule.WithMediaLister(mediaService),
-		textgenmodule.WithLogger(modules.NewLogger(utilLogger)),
-	)
-	candidates = append(candidates, textgenModule)
-	textGenHandler := textgenModule.Handler()
-
-	// Initialize WordPress importer (admin-only content migration)
-	wordpressDownloader := wordpress.NewMediaDownloader(
-		&http.Client{Timeout: 30 * time.Second},
-		mediaService,
-	)
-	wordpressResolver := wordpress.NewUserResolver(
-		modules.NewWordPressUserProvisioner(userRepo),
-		modules.NewLogger(utilLogger),
-	)
-	wordpressImporter := wordpress.NewImporter(
-		contentService,
-		wordpressDownloader,
-		wordpressResolver,
-		postTypeService,
-		primaryLanguage,
-		utilLogger,
-	)
-
-	// Initialize Hugo importer (admin-only content migration)
-	hugoImporter := hugo.NewImporter(
-		contentService,
-		aliasService,
-		contentService,
-		mediaService,
-		wordpressDownloader,
-		primaryLanguage,
-		utilLogger,
-	)
-
-	// v1 module system (Phase 3.7d): the real importers module adopts both
-	// importers and builds the handlers once, so the browser and agent
-	// realms share the same instances and job stores. Core mounts the
-	// handlers explicitly (see Module.WordPressHandler/HugoHandler): the
-	// surface spans the browser admin group and the agent realm, which a
-	// single RegisterRoutes call cannot express.
-	importersModule := importers.New(
-		importers.WithWordPressImporter(wordpressImporter),
-		importers.WithHugoImporter(hugoImporter),
-		importers.WithMaxImportBytes(cfg.ImportMaxSize()),
-		importers.WithWordPressTimeout(cfg.WordPressImportTimeout),
-		importers.WithHugoTimeout(cfg.HugoImportTimeout),
-		importers.WithLogger(modules.NewLogger(utilLogger)),
-	)
-	candidates = append(candidates, importersModule)
-	wordPressHandler := importersModule.WordPressHandler()
-	hugoHandler := importersModule.HugoHandler()
+	core := &Core{
+		Cfg:                 cfg,
+		Logger:              utilLogger,
+		DB:                  db.DB(),
+		Dialect:             dialect.Dialect(),
+		Registry:            moduleRegistry,
+		RoleService:         roleService,
+		PostTypeService:     postTypeService,
+		PostTypeSlugs:       postTypeSlugs,
+		Authorize:           authorize,
+		ContentService:      contentService,
+		MediaService:        mediaService,
+		MediaRepo:           mediaRepo,
+		AliasService:        aliasService,
+		SEOService:          seoService,
+		UserRepo:            userRepo,
+		EmailService:        emailService,
+		CommentsEnabled:     commentsEnabled,
+		RegistrationEnabled: registrationEnabled,
+		HeadlessEnabled:     headlessEnabled,
+		Languages:           languages,
+		PrimaryLanguage:     primaryLanguage,
+		BaseURL:             baseURL,
+		LegalResolution:     legalResolution,
+		LegalOverrides:      legalOverrides,
+		LegalNav:            legalConfig.Nav(),
+		CheckoutConsent:     checkoutConsent,
+		RegistrationConsent: registrationConsent,
+		handlers:            &HandlerSet{},
+	}
+	if edition.Wire != nil {
+		if err := edition.Wire(core); err != nil {
+			log.Fatalf("Failed to wire %s edition: %v", edition.Name, err)
+		}
+	}
 
 	// v1 module system (Phase 3.8b): the real adminpanel module serves the
 	// admin SPA (embedded production build, dev-server proxy when enabled).
@@ -966,6 +975,7 @@ func Run() {
 	if err != nil {
 		log.Fatalf("Failed to initialize profile picture storage: %v", err)
 	}
+	core.ProfilePicture = profilePictureStorage
 
 	// Initialize profile picture service (Story 12.8)
 	profilePictureService := profilepicture.NewService(
@@ -975,12 +985,12 @@ func Run() {
 	)
 
 	// Initialize user management service and handler
-	userManagementOpts := []user.UserManagementOption{user.WithManagementRoleService(roleService)}
+	userManagementOpts := []user.UserManagementOption{user.WithManagementRoleService(roleService), user.WithManagementRegistrationEnabled(registrationEnabled)}
 	if registrationConfig.AdminApproval {
 		userManagementOpts = append(userManagementOpts, user.WithApprovalEmailRequired())
 	}
 	userManagementService := user.NewUserManagementService(userRepo, blockedEmailRepo, credentialPolicy, commentsEnabled, userManagementOpts...)
-	adminCreateUserService := user.NewAdminCreateUserService(userRepo, blockedEmailRepo, credentialPolicy, commentsEnabled, user.WithRoleService(roleService))
+	adminCreateUserService := user.NewAdminCreateUserService(userRepo, blockedEmailRepo, credentialPolicy, commentsEnabled, user.WithRoleService(roleService), user.WithRegistrationEnabled(registrationEnabled))
 	usersModule := usersmodule.New(
 		usersmodule.WithUserManagementService(userManagementService),
 		usersmodule.WithAdminCreateUserService(adminCreateUserService),
@@ -998,6 +1008,11 @@ func Run() {
 	userManagementHandler := usersModule.UserManagementHandler()
 	profileHandler := usersModule.ProfileHandler()
 	profilePictureHandler := usersModule.ProfilePictureHandler()
+
+	// The edition's Wire appended its modules to core.Candidates; fold them
+	// into the candidate list so registration, InitAll, migrations, and the
+	// admin manifest cover them exactly like the platform's own modules.
+	candidates = append(candidates, core.Candidates...)
 
 	// v1 module system (Phase 4.1): prune the [modules] disabled list plus
 	// every transitive Requires dependent (cascade), warn on each drop and
@@ -1023,9 +1038,10 @@ func Run() {
 	// registered ThemeProvider wins (registry order is by name); THEME_DIR
 	// overrides resolve over it. Without a provider only on-disk files
 	// resolve — headless editions never render, so they are unaffected.
-	for _, provider := range kernel.Capabilities[kernel.ThemeProvider](moduleRegistry) {
-		sitessr.SetEmbeddedFS(provider.ThemeFiles())
-		break
+	// The install hook is set by the edition that carries the SSR engine;
+	// platform code never imports a theme or the engine directly.
+	if providers := kernel.Capabilities[kernel.ThemeProvider](moduleRegistry); len(providers) > 0 && core.ThemeInstaller != nil {
+		core.ThemeInstaller(providers[0].ThemeFiles())
 	}
 
 	// Module migrations run after the core sequence: each Migrator versions
@@ -1033,16 +1049,6 @@ func Run() {
 	if err := appdatabase.MigrateModules(db.DB(), cfg.DBDriver, moduleRegistry); err != nil {
 		log.Fatalf("Failed to run module migrations: %v", err)
 	}
-
-	// Agent (Bearer) content handler — the streamlined API surface for
-	// programmatic publishing (Story 2.1). Reuses the same contentService so custom
-	// field validation and plugin hooks fire identically to the admin path.
-	agentContentHandler := agent.NewContentHandler(contentService, postTypeService, utilLogger)
-
-	// Public content handler — resolves featured images (thumbnail variants) for the
-	// public API content-items list via the media-join resolver defined above
-	// alongside the media stack.
-	contentHandler := handlers.NewContentHandler(contentService, utilLogger, baseURL, profilePictureStorage.GetURL, featuredImageResolver)
 
 	// Load the public-field allowlist that gates /api/v1/public/* cf_*/sort_by
 	// queries. A missing or invalid block yields an empty registry, which fails
@@ -1054,11 +1060,42 @@ func Run() {
 		log.Printf("Warning: Failed to load public_field config, continuing with closed registry: %v", err)
 		publicFieldRegistry = &config.PublicFieldRegistry{}
 	}
-	contentHandler = contentHandler.WithPublicFieldRegistry(publicFieldRegistry)
 
-	// Agent (Bearer) comment endpoints come from the comments module, which
-	// reuses the adopted comment service.
-	agentCommentHandler := commentsModule.AgentHandler()
+	// CSP-derived security headers (platform — every edition serves them) and
+	// the sanitizer iframe allowlist derived from the same frame-src directive.
+	cspConfig, err := config.LoadCSPConfig(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to load CSP config, continuing with defaults: %v", err)
+		cspConfig = config.CSPConfig{}
+	}
+	cspHeaderName, cspHeaderValue := cspConfig.Build()
+	securityHeadersMiddleware := middleware.NewSecurityHeadersMiddleware(cspHeaderName, cspHeaderValue, cspConfig.XFrameOptions(), cfg.HSTSMaxAge)
+	iframeHosts := cspConfig.IFrameHosts()
+
+	// The disabled cascade may have dropped the comment system transitively;
+	// refresh the effective flags before the edition mounts its handlers.
+	commentsEnabled = modules.EffectiveCommentsEnabled(commentsEnabled, modulesConfig.Disabled, kept)
+	core.CommentsEnabled = commentsEnabled
+	core.RegistrationEnabled = registrationEnabled
+	core.IFrameHosts = iframeHosts
+	core.PublicFieldRegistry = publicFieldRegistry
+	if edition.Mount != nil {
+		if err := edition.Mount(core); err != nil {
+			log.Fatalf("Failed to mount %s edition: %v", edition.Name, err)
+		}
+	}
+	hs := core.Handlers()
+
+	// Agent (Bearer) content handler — the streamlined API surface for
+	// programmatic publishing (Story 2.1). Reuses the same contentService so custom
+	// field validation and plugin hooks fire identically to the admin path.
+	agentContentHandler := agent.NewContentHandler(contentService, postTypeService, utilLogger)
+
+	// Public content handler — resolves featured images (thumbnail variants) for the
+	// public API content-items list via the media-join resolver defined above
+	// alongside the media stack.
+	contentHandler := handlers.NewContentHandler(contentService, utilLogger, baseURL, profilePictureStorage.GetURL, featuredImageResolver)
+	contentHandler = contentHandler.WithPublicFieldRegistry(publicFieldRegistry)
 
 	// Initialize dashboard service and handler (Story 2.8)
 	dashboardRepo := newDashboardRepo(cfg.DBDriver, db.DB())
@@ -1067,15 +1104,8 @@ func Run() {
 
 	notificationHandler := handlers.NewNotificationHandler(utilLogger, notificationRepo)
 
-	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
+	authMiddleware := middleware.NewAuthMiddleware(jwtManager, userRepo)
 	adminMiddleware := middleware.NewAdminMiddleware(authMiddleware)
-
-	// SEO discovery surfaces come from the seo module, which projects
-	// published content through the adapter above.
-	seoHandler := seoModule.Handler()
-
-	// Browser comment endpoints come from the comments module.
-	commentHandler := commentsModule.BrowserHandler()
 
 	// Initialize API key service and handler (Story 1.1)
 	apiKeyRepo := newAPIKeyRepo(cfg.DBDriver, db.DB())
@@ -1097,8 +1127,12 @@ func Run() {
 	// Initialize CORS middleware with allowed origins from config
 	corsMiddleware := middleware.NewCORSMiddleware(cfg.ParseCORSOrigins(), utilLogger)
 
-	// Initialize no-cookie enforcement middleware (Story 6.1)
-	noCookieMiddleware := middleware.NewNoCookieMiddleware(utilLogger)
+	// Initialize no-cookie enforcement middleware (Story 6.1). The guard stays
+	// fail-closed: only the language preference and the GDPR consent choice
+	// pass through; every other Set-Cookie is stripped and logged. Platform
+	// code never imports the engine, so the names live in noCookieAllowlist
+	// (pinned against the engine constants by TestNoCookieAllowlistMatchesEngine).
+	noCookieMiddleware := middleware.NewNoCookieMiddleware(utilLogger, noCookieAllowlist()...)
 
 	// Initialize CSRF middleware (Story 5.2)
 	csrfMiddleware := middleware.NewCSRFMiddleware(utilLogger, cfg.ParseCORSOrigins(), jwtManager)
@@ -1110,148 +1144,23 @@ func Run() {
 		cfg.RateLimitAPIPerMinute,
 		cfg.RateLimitPublicPerMinute,
 	)
+	// Outcome-based Bearer limiter: refuse an IP once its Bearer 401s
+	// exceed the configured budget (finding-10 remediation).
+	rateLimitMiddleware.SetAgentFailuresPerMinute(cfg.AgentFailuresPerMinute)
 
 	// (#13) Reduce logging exposure
 	utilLogger.Info("Admin credentials configured. Please change password after first login.")
 
-	// Load UI translation catalog from translations/ directory
-	uiCatalog, err := i18n.NewCatalog(i18n.Embedded(), languages)
-	if err != nil {
-		log.Fatalf("Failed to load UI translations: %v", err)
-	}
-
-	// Initialize content site templates and renderer
-	contentTemplates, err := sitessr.NewTemplates(theme, uiCatalog, postTypeSlugs...)
-	if err != nil {
-		log.Fatalf("Failed to load content templates: %v", err)
-	}
-	tiptapRenderer := tiptap.NewRenderer(func(src string) []tiptap.ImageVariant {
-		hash := sitessr.ExtractHashFromURL(src)
-		if hash == "" {
-			return nil
-		}
-		m, err := mediaRepo.FindByHashPrefix(context.Background(), hash)
-		if err != nil {
-			log.Printf("WARNING: FindByHashPrefix failed for hash %q: %v", hash, err)
-			return nil
-		}
-		if m == nil {
-			return nil
-		}
-		variants := m.Variants
-		if len(variants) == 0 {
-			return nil
-		}
-		result := make([]tiptap.ImageVariant, 0, len(variants))
-		for _, v := range variants {
-			result = append(result, tiptap.ImageVariant{
-				URL:   v.URL,
-				Width: v.Width,
-			})
-		}
-		slices.SortFunc(result, func(a, b tiptap.ImageVariant) int {
-			return cmp.Compare(a.Width, b.Width)
-		})
-		if m.URL != "" && m.Width > 0 && m.Width > result[len(result)-1].Width {
-			result = append(result, tiptap.ImageVariant{
-				URL:   m.URL,
-				Width: m.Width,
-			})
-		}
-		return result
-	})
-	userProvider := sitessr.NewUserRepoAdapter(func(ctx context.Context, username string) (*sitessr.UserBasicInfo, error) {
-		user, err := userRepo.GetUserByUsername(ctx, username)
-		if err != nil {
-			return nil, err
-		}
-		if user == nil {
-			return nil, nil
-		}
-		var avatarURL string
-		if user.ProfilePicture != "" {
-			avatarURL = profilePictureStorage.GetURL(user.ProfilePicture)
-		}
-		return &sitessr.UserBasicInfo{
-			Name:           user.Name,
-			Username:       user.Username,
-			CustomFields:   user.CustomFields,
-			ProfilePicture: avatarURL,
-		}, nil
-	})
-
-	homepageSections, err := config.LoadHomepageSections(cfg)
-	if err != nil {
-		log.Printf("Warning: Failed to load homepage sections config, continuing without sections: %v", err)
-		homepageSections = nil
-	}
-	ssrSections := make([]sitessr.HomepageSection, 0, len(homepageSections))
-	for _, hs := range homepageSections {
-		ssrSections = append(ssrSections, sitessr.HomepageSection{
-			PostType: hs.PostType,
-			Limit:    hs.Limit,
-			Offset:   hs.Offset,
-			Title:    hs.Title,
-		})
-	}
-
-	siteConfig, err := config.LoadSiteConfig(cfg)
-	if err != nil {
-		log.Printf("Warning: Failed to load site config, continuing with defaults: %v", err)
-		siteConfig = config.SiteConfig{}
-	}
-	ssrSiteConfig := sitessr.SiteConfig{Name: siteConfig.Name, Logo: siteConfig.Logo}
-
-	cspConfig, err := config.LoadCSPConfig(cfg)
-	if err != nil {
-		log.Printf("Warning: Failed to load CSP config, continuing with defaults: %v", err)
-		cspConfig = config.CSPConfig{}
-	}
-	cspHeaderName, cspHeaderValue := cspConfig.Build()
-	securityHeadersMiddleware := middleware.NewSecurityHeadersMiddleware(cspHeaderName, cspHeaderValue, cspConfig.XFrameOptions())
-
-	ssrReader := modules.NewSiteSSRContentReader(contentService, commentService)
-	contentPageHandler := sitessr.NewContentPageHandler(
-		ssrReader,
-		postTypeService,
-		postTypeService,
-		userProvider,
-		contentTemplates,
-		tiptapRenderer,
-		mediaRepo,
-		languages,
-		ssrSections,
-		ssrSiteConfig,
-		cfg.PostPerPage,
-		commentsEnabled,
-		registrationEnabled,
-	)
-	contentPageHandler = contentPageHandler.WithPublicFieldRegistry(publicFieldRegistry)
-	contentPageHandler = contentPageHandler.WithBaseURL(baseURL)
-
 	// The sanitizer's iframe allowlist mirrors the CSP frame-src directive
 	// (defaults + operator appends) so embeds the CSP allows to be framed are
-	// also allowed through the HTML sanitizer on every path.
-	iframeHosts := cspConfig.IFrameHosts()
-	contentPageHandler = contentPageHandler.WithIFrameHosts(iframeHosts...)
+	// also allowed through the HTML sanitizer on every path. The SSR edition
+	// applies the same hosts to its content-page handler in Mount.
 	contentHandler = contentHandler.WithIFrameHosts(iframeHosts...)
 	agentContentHandler = agentContentHandler.WithIFrameHosts(iframeHosts...)
 
-	// Static file handler for content site (uses theme from above)
-	staticHandler := sitessr.StaticFiles(theme)
-
-	// Alias redirect handler wraps the content site catch-all to serve 301s.
-	// Theme root files (theme's root/ directory, e.g. webpushr-sw.js) sit
-	// between the alias lookup and the content renderer so they are served at
-	// the site root on the dynamic server too.
-	aliasRedirectHandler := handlers.NewAliasRedirectHandler(
-		aliasService,
-		contentService,
-		sitessr.RootFilesHandler(theme, contentPageHandler),
-	)
-
 	// Initialize content exporter (Phase 2) — exports all content as Hugo-compatible
-	// source files with bundled media.
+	// source files with bundled media. Engine-level: every edition can hand its
+	// content back as portable source files.
 	exporter := export.NewExporter(
 		contentService,
 		aliasService,
@@ -1262,19 +1171,6 @@ func Run() {
 		utilLogger,
 	)
 	exportHandler := handlers.NewExportHandler(exporter, utilLogger)
-
-	// Initialize static site generator (Phase 3) — generates a fully rendered
-	// static site with AMP variants as a tar.gz archive. Aliases are attached
-	// so legacy URLs ship as meta-refresh redirect pages.
-	ssgGenerator := ssg.NewGenerator(
-		contentPageHandler.Assembler(),
-		contentTemplates,
-		ssrReader,
-		filepath.Join("data", "uploads", "media"),
-		theme,
-		cfg.SiteURL,
-	).WithAliases(aliasService)
-	ssgHandler := handlers.NewSSGHandler(ssgGenerator, utilLogger)
 
 	// Start HTTP server
 	server := startServer(
@@ -1288,33 +1184,34 @@ func Run() {
 		contentHandler,
 		mediaModule.BrowserHandler(),
 		dashboardHandler,
-		seoHandler,
-		commentHandler,
+		hs.SEO,
+		hs.CommentBrowser,
 		profilePictureHandler,
-		wordPressHandler,
+		hs.WordPress,
 		apiKeyHandler,
-		hugoHandler,
+		hs.Hugo,
 		exportHandler,
-		ssgHandler,
+		hs.SSG,
+		hs.ConfigExtras,
 		apiKeyAuthMiddleware,
 		agentContentHandler,
 		mediaModule.AgentHandler(),
-		agentCommentHandler,
+		hs.CommentAgent,
 		adminMiddleware,
 		corsMiddleware,
 		noCookieMiddleware,
 		csrfMiddleware,
 		rateLimitMiddleware,
 		securityHeadersMiddleware,
-		jwtManager,
+		authMiddleware,
 		spaHandler,
-		staticHandler,
+		hs.Static,
 		cfg.IsImageGenerationEnabled(),
 		imageReferenceEnabled,
-		cfg.IsTextGenerationEnabled(),
-		textGenHandler,
+		cfg.IsTextGenerationEnabled() && hs.TextGen != nil,
+		hs.TextGen,
 		languages,
-		aliasRedirectHandler,
+		hs.AliasRedirect,
 		headlessEnabled,
 		commentsEnabled,
 		cfg.StorageDriver,

@@ -14,9 +14,13 @@ import (
 func TestNewService(t *testing.T) {
 	svc := thumbnail.NewService()
 	configs := svc.GetAll()
-	require.Len(t, configs, 1)
-	assert.Equal(t, 370, configs[0].MaxWidth)
+	require.Len(t, configs, 3)
+	assert.Equal(t, 64, configs[0].MaxWidth)
 	assert.Equal(t, "_thumb", configs[0].Suffix)
+	assert.Equal(t, 280, configs[1].MaxWidth)
+	assert.Equal(t, "_medium", configs[1].Suffix)
+	assert.Equal(t, 616, configs[2].MaxWidth)
+	assert.Equal(t, "_large", configs[2].Suffix)
 }
 
 func TestGetAll(t *testing.T) {
@@ -24,9 +28,13 @@ func TestGetAll(t *testing.T) {
 
 	t.Run("returns default configs", func(t *testing.T) {
 		configs := svc.GetAll()
-		require.Len(t, configs, 1)
-		assert.Equal(t, 370, configs[0].MaxWidth)
+		require.Len(t, configs, 3)
+		assert.Equal(t, 64, configs[0].MaxWidth)
 		assert.Equal(t, "_thumb", configs[0].Suffix)
+		assert.Equal(t, 280, configs[1].MaxWidth)
+		assert.Equal(t, "_medium", configs[1].Suffix)
+		assert.Equal(t, 616, configs[2].MaxWidth)
+		assert.Equal(t, "_large", configs[2].Suffix)
 	})
 }
 
@@ -36,7 +44,7 @@ func TestGetBySuffix(t *testing.T) {
 	t.Run("found", func(t *testing.T) {
 		cfg, err := svc.GetBySuffix("_thumb")
 		require.NoError(t, err)
-		assert.Equal(t, 370, cfg.MaxWidth)
+		assert.Equal(t, 64, cfg.MaxWidth)
 		assert.Equal(t, "_thumb", cfg.Suffix)
 	})
 
@@ -85,7 +93,7 @@ suffix = "_large"
 		require.NoError(t, err)
 
 		configs := svc.GetAll()
-		require.Len(t, configs, 1)
+		require.Len(t, configs, 3)
 		assert.Equal(t, "_thumb", configs[0].Suffix)
 	})
 
@@ -153,7 +161,7 @@ suffix = "_thumb"
 		require.NoError(t, err)
 
 		configs := svc.GetAll()
-		require.Len(t, configs, 1)
+		require.Len(t, configs, 3)
 		assert.Equal(t, "_thumb", configs[0].Suffix)
 	})
 }

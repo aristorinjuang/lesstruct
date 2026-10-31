@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/config"
@@ -124,4 +125,93 @@ func TestLoadHomepageSections_PathTraversalRejected(t *testing.T) {
 	_, err := config.LoadHomepageSections(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "path separators")
+}
+
+func TestLoadHomepageSections_Localized(t *testing.T) {
+	tests := []struct {
+		name        string
+		configTOML  string
+		wantTitle   string
+		wantTitleID string
+		wantDesc    string
+		wantDescID  string
+		wantErr     bool
+	}{
+		{
+			name: "success - localized title and description load",
+			configTOML: `[[homepage_section]]
+post_type = "article"
+title = "Featured"
+title_id = "Unggulan"
+description = "Base desc"
+description_id = "Deskripsi ID"
+`,
+			wantTitle:   "Featured",
+			wantTitleID: "Unggulan",
+			wantDesc:    "Base desc",
+			wantDescID:  "Deskripsi ID",
+			wantErr:     false,
+		},
+		{
+			name: "success - missing localized falls back to empty",
+			configTOML: `[[homepage_section]]
+post_type = "article"
+title = "Featured"
+`,
+			wantTitle:   "Featured",
+			wantTitleID: "",
+			wantDesc:    "",
+			wantDescID:  "",
+			wantErr:     false,
+		},
+		{
+			name: "error - title_id too long",
+			configTOML: `[[homepage_section]]
+post_type = "article"
+title_id = "` + strings.Repeat("a", 201) + `"
+`,
+			wantErr: true,
+		},
+		{
+			name: "error - description too long",
+			configTOML: `[[homepage_section]]
+post_type = "article"
+description = "` + strings.Repeat("a", 501) + `"
+`,
+			wantErr: true,
+		},
+		{
+			name: "error - description_id too long",
+			configTOML: `[[homepage_section]]
+post_type = "article"
+description_id = "` + strings.Repeat("a", 501) + `"
+`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			configPath := filepath.Join(tempDir, "config.toml")
+			require.NoError(t, os.WriteFile(configPath, []byte(tt.configTOML), 0644))
+
+			cfg := &config.Config{
+				ConfigDir:  tempDir,
+				ConfigFile: "config.toml",
+			}
+
+			sections, err := config.LoadHomepageSections(cfg)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, sections, 1)
+			assert.Equal(t, tt.wantTitle, sections[0].Title)
+			assert.Equal(t, tt.wantTitleID, sections[0].TitleID)
+			assert.Equal(t, tt.wantDesc, sections[0].Description)
+			assert.Equal(t, tt.wantDescID, sections[0].DescriptionID)
+		})
+	}
 }

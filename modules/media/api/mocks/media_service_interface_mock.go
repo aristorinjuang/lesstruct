@@ -7,8 +7,8 @@ package mocks
 import (
 	"context"
 
-	media "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	"github.com/aristorinjuang/lesstruct/kernel"
+	"github.com/aristorinjuang/lesstruct/modules/media/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -18,10 +18,19 @@ func NewMockMediaServiceInterface(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockMediaServiceInterface {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockMediaServiceInterface{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -40,8 +49,8 @@ func (_m *MockMediaServiceInterface) EXPECT() *MockMediaServiceInterface_Expecte
 }
 
 // Count provides a mock function for the type MockMediaServiceInterface
-func (_mock *MockMediaServiceInterface) Count(ctx context.Context, search string, dateFilter string) (int, error) {
-	ret := _mock.Called(ctx, search, dateFilter)
+func (_mock *MockMediaServiceInterface) Count(ctx context.Context, principal kernel.Principal, search string, dateFilter string) (int, error) {
+	ret := _mock.Called(ctx, principal, search, dateFilter)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Count")
@@ -49,16 +58,16 @@ func (_mock *MockMediaServiceInterface) Count(ctx context.Context, search string
 
 	var r0 int
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (int, error)); ok {
-		return returnFunc(ctx, search, dateFilter)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, string, string) (int, error)); ok {
+		return returnFunc(ctx, principal, search, dateFilter)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) int); ok {
-		r0 = returnFunc(ctx, search, dateFilter)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, string, string) int); ok {
+		r0 = returnFunc(ctx, principal, search, dateFilter)
 	} else {
 		r0 = ret.Get(0).(int)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
-		r1 = returnFunc(ctx, search, dateFilter)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, kernel.Principal, string, string) error); ok {
+		r1 = returnFunc(ctx, principal, search, dateFilter)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -72,30 +81,36 @@ type MockMediaServiceInterface_Count_Call struct {
 
 // Count is a helper method to define mock.On call
 //   - ctx context.Context
+//   - principal kernel.Principal
 //   - search string
 //   - dateFilter string
-func (_e *MockMediaServiceInterface_Expecter) Count(ctx any, search any, dateFilter any) *MockMediaServiceInterface_Count_Call {
-	return &MockMediaServiceInterface_Count_Call{Call: _e.mock.On("Count", ctx, search, dateFilter)}
+func (_e *MockMediaServiceInterface_Expecter) Count(ctx any, principal any, search any, dateFilter any) *MockMediaServiceInterface_Count_Call {
+	return &MockMediaServiceInterface_Count_Call{Call: _e.mock.On("Count", ctx, principal, search, dateFilter)}
 }
 
-func (_c *MockMediaServiceInterface_Count_Call) Run(run func(ctx context.Context, search string, dateFilter string)) *MockMediaServiceInterface_Count_Call {
+func (_c *MockMediaServiceInterface_Count_Call) Run(run func(ctx context.Context, principal kernel.Principal, search string, dateFilter string)) *MockMediaServiceInterface_Count_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 kernel.Principal
 		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg1 = args[1].(kernel.Principal)
 		}
 		var arg2 string
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -106,7 +121,7 @@ func (_c *MockMediaServiceInterface_Count_Call) Return(n int, err error) *MockMe
 	return _c
 }
 
-func (_c *MockMediaServiceInterface_Count_Call) RunAndReturn(run func(ctx context.Context, search string, dateFilter string) (int, error)) *MockMediaServiceInterface_Count_Call {
+func (_c *MockMediaServiceInterface_Count_Call) RunAndReturn(run func(ctx context.Context, principal kernel.Principal, search string, dateFilter string) (int, error)) *MockMediaServiceInterface_Count_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -397,8 +412,8 @@ func (_c *MockMediaServiceInterface_GetByID_Call) RunAndReturn(run func(ctx cont
 }
 
 // SearchMediaByCursor provides a mock function for the type MockMediaServiceInterface
-func (_mock *MockMediaServiceInterface) SearchMediaByCursor(ctx context.Context, search string, dateFilter string, limit int, beforeID int) ([]*media.Media, error) {
-	ret := _mock.Called(ctx, search, dateFilter, limit, beforeID)
+func (_mock *MockMediaServiceInterface) SearchMediaByCursor(ctx context.Context, principal kernel.Principal, search string, dateFilter string, limit int, beforeID int) ([]*media.Media, error) {
+	ret := _mock.Called(ctx, principal, search, dateFilter, limit, beforeID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SearchMediaByCursor")
@@ -406,18 +421,18 @@ func (_mock *MockMediaServiceInterface) SearchMediaByCursor(ctx context.Context,
 
 	var r0 []*media.Media
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) ([]*media.Media, error)); ok {
-		return returnFunc(ctx, search, dateFilter, limit, beforeID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, string, string, int, int) ([]*media.Media, error)); ok {
+		return returnFunc(ctx, principal, search, dateFilter, limit, beforeID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, int) []*media.Media); ok {
-		r0 = returnFunc(ctx, search, dateFilter, limit, beforeID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, kernel.Principal, string, string, int, int) []*media.Media); ok {
+		r0 = returnFunc(ctx, principal, search, dateFilter, limit, beforeID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*media.Media)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, int) error); ok {
-		r1 = returnFunc(ctx, search, dateFilter, limit, beforeID)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, kernel.Principal, string, string, int, int) error); ok {
+		r1 = returnFunc(ctx, principal, search, dateFilter, limit, beforeID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -431,35 +446,40 @@ type MockMediaServiceInterface_SearchMediaByCursor_Call struct {
 
 // SearchMediaByCursor is a helper method to define mock.On call
 //   - ctx context.Context
+//   - principal kernel.Principal
 //   - search string
 //   - dateFilter string
 //   - limit int
 //   - beforeID int
-func (_e *MockMediaServiceInterface_Expecter) SearchMediaByCursor(ctx any, search any, dateFilter any, limit any, beforeID any) *MockMediaServiceInterface_SearchMediaByCursor_Call {
-	return &MockMediaServiceInterface_SearchMediaByCursor_Call{Call: _e.mock.On("SearchMediaByCursor", ctx, search, dateFilter, limit, beforeID)}
+func (_e *MockMediaServiceInterface_Expecter) SearchMediaByCursor(ctx any, principal any, search any, dateFilter any, limit any, beforeID any) *MockMediaServiceInterface_SearchMediaByCursor_Call {
+	return &MockMediaServiceInterface_SearchMediaByCursor_Call{Call: _e.mock.On("SearchMediaByCursor", ctx, principal, search, dateFilter, limit, beforeID)}
 }
 
-func (_c *MockMediaServiceInterface_SearchMediaByCursor_Call) Run(run func(ctx context.Context, search string, dateFilter string, limit int, beforeID int)) *MockMediaServiceInterface_SearchMediaByCursor_Call {
+func (_c *MockMediaServiceInterface_SearchMediaByCursor_Call) Run(run func(ctx context.Context, principal kernel.Principal, search string, dateFilter string, limit int, beforeID int)) *MockMediaServiceInterface_SearchMediaByCursor_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 kernel.Principal
 		if args[1] != nil {
-			arg1 = args[1].(string)
+			arg1 = args[1].(kernel.Principal)
 		}
 		var arg2 string
 		if args[2] != nil {
 			arg2 = args[2].(string)
 		}
-		var arg3 int
+		var arg3 string
 		if args[3] != nil {
-			arg3 = args[3].(int)
+			arg3 = args[3].(string)
 		}
 		var arg4 int
 		if args[4] != nil {
 			arg4 = args[4].(int)
+		}
+		var arg5 int
+		if args[5] != nil {
+			arg5 = args[5].(int)
 		}
 		run(
 			arg0,
@@ -467,6 +487,7 @@ func (_c *MockMediaServiceInterface_SearchMediaByCursor_Call) Run(run func(ctx c
 			arg2,
 			arg3,
 			arg4,
+			arg5,
 		)
 	})
 	return _c
@@ -477,7 +498,7 @@ func (_c *MockMediaServiceInterface_SearchMediaByCursor_Call) Return(medias []*m
 	return _c
 }
 
-func (_c *MockMediaServiceInterface_SearchMediaByCursor_Call) RunAndReturn(run func(ctx context.Context, search string, dateFilter string, limit int, beforeID int) ([]*media.Media, error)) *MockMediaServiceInterface_SearchMediaByCursor_Call {
+func (_c *MockMediaServiceInterface_SearchMediaByCursor_Call) RunAndReturn(run func(ctx context.Context, principal kernel.Principal, search string, dateFilter string, limit int, beforeID int) ([]*media.Media, error)) *MockMediaServiceInterface_SearchMediaByCursor_Call {
 	_c.Call.Return(run)
 	return _c
 }

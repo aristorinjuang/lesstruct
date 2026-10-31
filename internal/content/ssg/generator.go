@@ -19,8 +19,8 @@ import (
 
 	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
 
-	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
 	"github.com/aristorinjuang/lesstruct/kernel/seo"
+	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
 )
 
 const (
@@ -192,6 +192,58 @@ func targzDir(sourceDir string, w io.Writer) error {
 		return err
 	}
 	return gw.Close()
+}
+
+// copyEmbeddedAssets copies the embedded static layer into the export, keeping
+// only assets referenced by rendered pages. Stylesheets are always exported
+// (see alwaysExportedAssets) and unminified dev sources never are.
+func copyEmbeddedAssets(fsys fs.FS, destDir string, referenced map[string]bool) error {
+	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+
+		name := path.Base(p)
+		if strings.HasSuffix(name, ".src.css") {
+			return nil
+		}
+		if !alwaysExportedAssets[p] && !referenced[p] {
+			return nil
+		}
+
+		data, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", p, err)
+		}
+
+		destPath := filepath.Join(destDir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(destPath, data, 0644); err != nil {
+			return fmt.Errorf("write %s: %w", p, err)
+		}
+
+		return nil
+	})
+}
+
+func aliasRedirectPage(target string) string {
+	var b strings.Builder
+	b.WriteString("<!DOCTYPE html>\n<html>\n<head>\n")
+	b.WriteString("\t<meta charset=\"UTF-8\">\n")
+	b.WriteString("\t<meta name=\"robots\" content=\"noindex, follow\">\n")
+	fmt.Fprintf(&b, "\t<title>Redirecting&hellip;</title>\n")
+	fmt.Fprintf(&b, "\t<link rel=\"canonical\" href=\"%s\">\n", html.EscapeString(target))
+	fmt.Fprintf(&b, "\t<meta http-equiv=\"refresh\" content=\"0; url=%s\">\n", html.EscapeString(target))
+	b.WriteString("</head>\n<body>\n")
+	fmt.Fprintf(&b, "\t<p>Page moved. Continue to <a href=\"%s\">%s</a>.</p>\n", html.EscapeString(target), html.EscapeString(target))
+	b.WriteString("</body>\n</html>\n")
+
+	return b.String()
 }
 
 type renderTask struct {
@@ -477,43 +529,6 @@ func (g *Generator) enumerateAllContent(ctx context.Context) ([]sitessr.ContentR
 	return all, nil
 }
 
-// copyEmbeddedAssets copies the embedded static layer into the export, keeping
-// only assets referenced by rendered pages. Stylesheets are always exported
-// (see alwaysExportedAssets) and unminified dev sources never are.
-func copyEmbeddedAssets(fsys fs.FS, destDir string, referenced map[string]bool) error {
-	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() || !d.Type().IsRegular() {
-			return nil
-		}
-
-		name := path.Base(p)
-		if strings.HasSuffix(name, ".src.css") {
-			return nil
-		}
-		if !alwaysExportedAssets[p] && !referenced[p] {
-			return nil
-		}
-
-		data, err := fs.ReadFile(fsys, p)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", p, err)
-		}
-
-		destPath := filepath.Join(destDir, filepath.FromSlash(p))
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(destPath, data, 0644); err != nil {
-			return fmt.Errorf("write %s: %w", p, err)
-		}
-
-		return nil
-	})
-}
-
 func (g *Generator) writeStaticFiles(ctx context.Context, publicDir string, referencedAssets map[string]bool) error {
 	staticDir := filepath.Join(publicDir, "static")
 	if err := os.MkdirAll(staticDir, 0755); err != nil {
@@ -630,21 +645,6 @@ func (g *Generator) writeAliasRedirects(ctx context.Context, publicDir string, t
 	}
 
 	return nil
-}
-
-func aliasRedirectPage(target string) string {
-	var b strings.Builder
-	b.WriteString("<!DOCTYPE html>\n<html>\n<head>\n")
-	b.WriteString("\t<meta charset=\"UTF-8\">\n")
-	b.WriteString("\t<meta name=\"robots\" content=\"noindex, follow\">\n")
-	fmt.Fprintf(&b, "\t<title>Redirecting&hellip;</title>\n")
-	fmt.Fprintf(&b, "\t<link rel=\"canonical\" href=\"%s\">\n", html.EscapeString(target))
-	fmt.Fprintf(&b, "\t<meta http-equiv=\"refresh\" content=\"0; url=%s\">\n", html.EscapeString(target))
-	b.WriteString("</head>\n<body>\n")
-	fmt.Fprintf(&b, "\t<p>Page moved. Continue to <a href=\"%s\">%s</a>.</p>\n", html.EscapeString(target), html.EscapeString(target))
-	b.WriteString("</body>\n</html>\n")
-
-	return b.String()
 }
 
 func (g *Generator) writeSitemap(ctx context.Context, publicDir string, tasks []renderTask) error {

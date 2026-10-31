@@ -13,8 +13,6 @@ vi.mock('@/composables/useAuth', () => ({
     isAuthenticated: computed(() => mockUserId.value !== null),
     token: ref('mock-token'),
   })),
-  setAuthToken: vi.fn(),
-  getAuthStatus: vi.fn(() => true),
 }))
 
 // Mock vue-router

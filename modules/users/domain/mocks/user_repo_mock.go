@@ -7,7 +7,7 @@ package mocks
 import (
 	"context"
 
-	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
+	"github.com/aristorinjuang/lesstruct/modules/users/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -17,10 +17,19 @@ func NewMockUserRepo(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockUserRepo {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockUserRepo{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -234,23 +243,23 @@ func (_c *MockUserRepo_DeleteUser_Call) RunAndReturn(run func(ctx context.Contex
 }
 
 // GetAllUsers provides a mock function for the type MockUserRepo
-func (_mock *MockUserRepo) GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*userdomain.User, error) {
+func (_mock *MockUserRepo) GetAllUsers(ctx context.Context, status string, limit int, offset int) ([]*user.User, error) {
 	ret := _mock.Called(ctx, status, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetAllUsers")
 	}
 
-	var r0 []*userdomain.User
+	var r0 []*user.User
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) ([]*userdomain.User, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) ([]*user.User, error)); ok {
 		return returnFunc(ctx, status, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) []*userdomain.User); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) []*user.User); ok {
 		r0 = returnFunc(ctx, status, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*userdomain.User)
+			r0 = ret.Get(0).([]*user.User)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, int) error); ok {
@@ -303,34 +312,34 @@ func (_c *MockUserRepo_GetAllUsers_Call) Run(run func(ctx context.Context, statu
 	return _c
 }
 
-func (_c *MockUserRepo_GetAllUsers_Call) Return(users []*userdomain.User, err error) *MockUserRepo_GetAllUsers_Call {
+func (_c *MockUserRepo_GetAllUsers_Call) Return(users []*user.User, err error) *MockUserRepo_GetAllUsers_Call {
 	_c.Call.Return(users, err)
 	return _c
 }
 
-func (_c *MockUserRepo_GetAllUsers_Call) RunAndReturn(run func(ctx context.Context, status string, limit int, offset int) ([]*userdomain.User, error)) *MockUserRepo_GetAllUsers_Call {
+func (_c *MockUserRepo_GetAllUsers_Call) RunAndReturn(run func(ctx context.Context, status string, limit int, offset int) ([]*user.User, error)) *MockUserRepo_GetAllUsers_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetPendingUsers provides a mock function for the type MockUserRepo
-func (_mock *MockUserRepo) GetPendingUsers(ctx context.Context, limit int, offset int) ([]*userdomain.User, error) {
+func (_mock *MockUserRepo) GetPendingUsers(ctx context.Context, limit int, offset int) ([]*user.User, error) {
 	ret := _mock.Called(ctx, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetPendingUsers")
 	}
 
-	var r0 []*userdomain.User
+	var r0 []*user.User
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) ([]*userdomain.User, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) ([]*user.User, error)); ok {
 		return returnFunc(ctx, limit, offset)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) []*userdomain.User); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int) []*user.User); ok {
 		r0 = returnFunc(ctx, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*userdomain.User)
+			r0 = ret.Get(0).([]*user.User)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int, int) error); ok {
@@ -377,34 +386,34 @@ func (_c *MockUserRepo_GetPendingUsers_Call) Run(run func(ctx context.Context, l
 	return _c
 }
 
-func (_c *MockUserRepo_GetPendingUsers_Call) Return(users []*userdomain.User, err error) *MockUserRepo_GetPendingUsers_Call {
+func (_c *MockUserRepo_GetPendingUsers_Call) Return(users []*user.User, err error) *MockUserRepo_GetPendingUsers_Call {
 	_c.Call.Return(users, err)
 	return _c
 }
 
-func (_c *MockUserRepo_GetPendingUsers_Call) RunAndReturn(run func(ctx context.Context, limit int, offset int) ([]*userdomain.User, error)) *MockUserRepo_GetPendingUsers_Call {
+func (_c *MockUserRepo_GetPendingUsers_Call) RunAndReturn(run func(ctx context.Context, limit int, offset int) ([]*user.User, error)) *MockUserRepo_GetPendingUsers_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // GetUserByID provides a mock function for the type MockUserRepo
-func (_mock *MockUserRepo) GetUserByID(ctx context.Context, userID int) (*userdomain.User, error) {
+func (_mock *MockUserRepo) GetUserByID(ctx context.Context, userID int) (*user.User, error) {
 	ret := _mock.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetUserByID")
 	}
 
-	var r0 *userdomain.User
+	var r0 *user.User
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*userdomain.User, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) (*user.User, error)); ok {
 		return returnFunc(ctx, userID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *userdomain.User); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int) *user.User); ok {
 		r0 = returnFunc(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*userdomain.User)
+			r0 = ret.Get(0).(*user.User)
 		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, int) error); ok {
@@ -445,12 +454,12 @@ func (_c *MockUserRepo_GetUserByID_Call) Run(run func(ctx context.Context, userI
 	return _c
 }
 
-func (_c *MockUserRepo_GetUserByID_Call) Return(user *userdomain.User, err error) *MockUserRepo_GetUserByID_Call {
-	_c.Call.Return(user, err)
+func (_c *MockUserRepo_GetUserByID_Call) Return(user1 *user.User, err error) *MockUserRepo_GetUserByID_Call {
+	_c.Call.Return(user1, err)
 	return _c
 }
 
-func (_c *MockUserRepo_GetUserByID_Call) RunAndReturn(run func(ctx context.Context, userID int) (*userdomain.User, error)) *MockUserRepo_GetUserByID_Call {
+func (_c *MockUserRepo_GetUserByID_Call) RunAndReturn(run func(ctx context.Context, userID int) (*user.User, error)) *MockUserRepo_GetUserByID_Call {
 	_c.Call.Return(run)
 	return _c
 }

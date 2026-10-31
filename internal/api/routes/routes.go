@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/agent"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
-	"github.com/aristorinjuang/lesstruct/internal/auth"
 	apikey "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 	"github.com/aristorinjuang/lesstruct/kernel"
 	adminpanelapi "github.com/aristorinjuang/lesstruct/modules/adminpanel/api"
@@ -54,6 +54,37 @@ func dispatchByAuth(agentChain, browserChain http.Handler) http.HandlerFunc {
 	}
 }
 
+// dualAuthRegistrar implements kernel.DualAuthRegistrar by mounting every
+// registration twice — once per realm stack — dispatched by credential at
+// the shared path. It exists because Chi routes by path: registering the
+// same path in both realm groups would silently shadow the nested one,
+// so the two chains meet in a single dispatchByAuth registration instead.
+type dualAuthRegistrar struct {
+	root    chi.Router
+	agent   func(http.Handler) http.Handler
+	browser func(http.Handler) http.Handler
+}
+
+func (d dualAuthRegistrar) Get(pattern string, h http.HandlerFunc) {
+	d.root.Get(pattern, dispatchByAuth(d.agent(h), d.browser(h)))
+}
+
+func (d dualAuthRegistrar) Post(pattern string, h http.HandlerFunc) {
+	d.root.Post(pattern, dispatchByAuth(d.agent(h), d.browser(h)))
+}
+
+func (d dualAuthRegistrar) Put(pattern string, h http.HandlerFunc) {
+	d.root.Put(pattern, dispatchByAuth(d.agent(h), d.browser(h)))
+}
+
+func (d dualAuthRegistrar) Delete(pattern string, h http.HandlerFunc) {
+	d.root.Delete(pattern, dispatchByAuth(d.agent(h), d.browser(h)))
+}
+
+func (d dualAuthRegistrar) Patch(pattern string, h http.HandlerFunc) {
+	d.root.Patch(pattern, dispatchByAuth(d.agent(h), d.browser(h)))
+}
+
 // agentAdminOnly is a middleware for the agent (Bearer API key) realm that rejects
 // non-admin users. The decision delegates to the capability resolver so the
 // meaning of "admin" stays in one place (the users module); the response is
@@ -90,6 +121,7 @@ type MediaAgentHandler interface {
 	Upload(http.ResponseWriter, *http.Request)
 	List(http.ResponseWriter, *http.Request)
 	Get(http.ResponseWriter, *http.Request)
+	Delete(http.ResponseWriter, *http.Request)
 }
 
 // CommentBrowserHandler is the browser-realm (JWT/CSRF) comment surface the
@@ -162,17 +194,21 @@ type AdminPanelSurface interface {
 	ServeAdmin(http.ResponseWriter, *http.Request)
 }
 
-// AuthSurface is the public auth surface the routes mount: login,
-// registration, verification, and password reset. It is satisfied by the
-// auth module's handler; the structural seam keeps routes.go from importing
-// the module so the surface stays removable.
+// AuthSurface is the public auth surface the routes mount: login (including
+// the emailed-code second step), registration, verification, password
+// reset, and session logout. It is satisfied by the auth module's handler;
+// the structural seam keeps routes.go from importing the module so the
+// surface stays removable.
 type AuthSurface interface {
 	Login(http.ResponseWriter, *http.Request)
+	VerifyMFA(http.ResponseWriter, *http.Request)
+	ResendMFA(http.ResponseWriter, *http.Request)
 	RegisterUser(http.ResponseWriter, *http.Request)
 	VerifyEmail(http.ResponseWriter, *http.Request)
 	ResendVerificationEmail(http.ResponseWriter, *http.Request)
 	ForgotPassword(http.ResponseWriter, *http.Request)
 	ResetPassword(http.ResponseWriter, *http.Request)
+	Logout(http.ResponseWriter, *http.Request)
 }
 
 // FirstLoginSurface is the first-login bootstrap surface the routes mount.
@@ -226,6 +262,14 @@ type ProfilePictureSurface interface {
 	AdminDeleteUserPicture(http.ResponseWriter, *http.Request)
 }
 
+// SSGSurface is the static-site-generation surface the routes mount. It is
+// satisfied by the blog edition's SSG handler; the structural seam keeps
+// routes.go from importing the generator so editions without the SSR engine
+// (nil surface) unmount the export endpoints.
+type SSGSurface interface {
+	Generate(http.ResponseWriter, *http.Request)
+}
+
 // Setup configures and returns the HTTP router
 func Setup(
 	authHandler AuthSurface,
@@ -243,7 +287,8 @@ func Setup(
 	apiKeyHandler *handlers.APIKeyHandler,
 	hugoHandler HugoSurface,
 	exportHandler *handlers.ExportHandler,
-	ssgHandler *handlers.SSGHandler,
+	ssgHandler SSGSurface,
+	configExtras func() map[string]any,
 	apiKeyAuthMiddleware *middleware.APIKeyAuthMiddleware,
 	agentContentHandler *agent.ContentHandler,
 	agentMediaHandler MediaAgentHandler,
@@ -254,7 +299,7 @@ func Setup(
 	csrfMiddleware *middleware.CSRFMiddleware,
 	rateLimitMiddleware *middleware.RateLimitMiddleware,
 	securityHeadersMiddleware *middleware.SecurityHeadersMiddleware,
-	jwtManager *auth.JWTManager,
+	authMiddleware *middleware.AuthMiddleware,
 	spaHandler AdminPanelSurface,
 	staticHandler http.Handler,
 	imageGenEnabled bool,
@@ -277,9 +322,6 @@ func Setup(
 	// No-Cookie enforcement middleware (strips any accidental Set-Cookie headers)
 	r.Use(noCookieMiddleware.Handler)
 
-	// Create authentication middleware for protected routes
-	authMiddleware := middleware.NewAuthMiddleware(jwtManager)
-
 	// Security headers middleware
 	r.Use(securityHeadersMiddleware.Handler)
 
@@ -294,9 +336,12 @@ func Setup(
 	// find them at the canonical paths: /sitemap.xml (XML sitemap, advertised by
 	// robots.txt) and /robots.txt. They are registered before the /* content-site
 	// catchall so they win over it. The JSON sitemap at /api/v1/sitemap (below,
-	// for programmatic callers) stays where it is.
-	r.Get("/sitemap.xml", seoHandler.GetSitemapXML)
-	r.Get("/robots.txt", seoHandler.GetRobotsTxt)
+	// for programmatic callers) stays where it is. Editions without the seo
+	// module (nil surface) mount neither.
+	if seoHandler != nil {
+		r.Get("/sitemap.xml", seoHandler.GetSitemapXML)
+		r.Get("/robots.txt", seoHandler.GetRobotsTxt)
+	}
 
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -310,9 +355,10 @@ func Setup(
 	})
 
 	// Config endpoint (public) — exposes languages and feature flags to the
-	// frontend (admin SPA and public content site).
+	// frontend (admin SPA and public content site). Editions may contribute
+	// extra keys (e.g. the catalog block); the base payload's bytes are
+	// unchanged when no extras are configured.
 	r.Get("/api/v1/config", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		langJSON := []byte{'['}
 		for i, lang := range languages {
 			if i > 0 {
@@ -323,7 +369,19 @@ func Setup(
 			langJSON = append(langJSON, '"')
 		}
 		langJSON = append(langJSON, ']')
-		if _, err := fmt.Fprintf(w, `{"data":{"languages":%s,"commentsEnabled":%v,"headless":%v},"error":null}`, langJSON, commentsEnabled, headlessEnabled); err != nil {
+
+		data := fmt.Sprintf(`{"languages":%s,"commentsEnabled":%v,"headless":%v}`, langJSON, commentsEnabled, headlessEnabled)
+		if configExtras != nil {
+			if extras := configExtras(); len(extras) > 0 {
+				extraJSON, err := json.Marshal(extras)
+				if err != nil {
+					log.Printf("Failed to marshal config extras: %v", err)
+				} else if len(extraJSON) > 2 {
+					data = data[:len(data)-1] + "," + string(extraJSON[1:]) // merge into the data object
+				}
+			}
+		}
+		if _, err := fmt.Fprintf(w, `{"data":%s,"error":null}`, data); err != nil {
 			log.Printf("Failed to write config response: %v", err)
 		}
 	})
@@ -344,6 +402,16 @@ func Setup(
 	// keyID (see keyByAPIKeyOrIP) so brute-force attempts are counted even when the key
 	// never verifies.
 	r.Group(func(r chi.Router) {
+		// Outcome-based limiter outermost: it must wrap the whole chain
+		// INCLUDING auth to observe the final 401. An attacker rotating
+		// DISTINCT fake keyIDs gets every forgery counted against one
+		// shared per-IP failure budget, while successful keys never
+		// increment it.
+		r.Use(rateLimitMiddleware.AgentAuthFailureHandler)
+		// Per-IP ceiling: an attacker rotating DISTINCT fake keyIDs
+		// cannot buy a fresh budget per keyID, because every request from one
+		// IP also spends the same per-IP bucket.
+		r.Use(rateLimitMiddleware.AgentIPHandler)
 		r.Use(rateLimitMiddleware.APIKeyHandler)
 		r.Use(apiKeyAuthMiddleware.Handler)
 
@@ -387,43 +455,115 @@ func Setup(
 		r.With(maxBodySizeMiddleware(10<<20)).Post("/api/v1/media", agentMediaHandler.Upload)
 
 		// Content export (agent-only) — streams a tar.gz of all content as
-		// Hugo-compatible source files with bundled media.
-		r.Get("/api/v1/export", exportHandler.Export)
+		// Hugo-compatible source files with bundled media. Admin-only: the
+		// archive includes unpublished drafts, so a valid API key belonging
+		// to a non-admin role must not reach it.
+		r.With(agentAdminOnly(authorize)).Get("/api/v1/export", exportHandler.Export)
+
+		// User lifecycle (agent-only) — the registration queue and account
+		// administration over the same UserManagementHandler the browser
+		// admin drives at /api/admin/users. Admin-only like export/ssg:
+		// the list surfaces emails and roles, and every mutation moves
+		// accounts. Account creation and role changes stay browser-only
+		// (admin panel); the agent surface covers the operator loop —
+		// triage the pending queue, suspend/unsuspend, and soft-delete.
+		r.With(agentAdminOnly(authorize)).Get("/api/v1/users", userManagementHandler.GetAllUsers)
+		r.With(agentAdminOnly(authorize)).Get("/api/v1/users/pending", userManagementHandler.GetPendingUsers)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/users/{id}/approve", userManagementHandler.ApproveUser)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/users/{id}/reject", userManagementHandler.RejectUser)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/users/{id}/mark-spam", userManagementHandler.MarkUserAsSpam)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/users/{id}/suspend", userManagementHandler.SuspendUser)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/users/{id}/unsuspend", userManagementHandler.UnsuspendUser)
+		r.With(agentAdminOnly(authorize)).Post("/api/v1/users/{id}/soft-delete", userManagementHandler.SoftDeleteUser)
 
 		// Static site generation (agent-only) — streams a tar.gz of the
-		// fully rendered static site with AMP variants.
-		r.Get("/api/v1/ssg", ssgHandler.Generate)
+		// fully rendered static site with AMP variants. Editions without the
+		// site-ssr engine (nil handler) unmount it. Admin-only for the same
+		// reason as the content export.
+		if ssgHandler != nil {
+			r.With(agentAdminOnly(authorize)).Get("/api/v1/ssg", ssgHandler.Generate)
+		}
 
 		// WordPress import — large upload, no body-size middleware (handler applies
 		// its own MaxBytesReader at IMPORT_MAX_SIZE_MB). Admin-only (only administrators
 		// may import content via API key). Reuses the same handler and in-memory job
 		// store as the browser realm, so a CLI-started job is visible in the admin UI.
-		r.With(agentAdminOnly(authorize)).Post("/api/v1/wordpress/import", wordPressHandler.Import)
-		r.With(agentAdminOnly(authorize)).Get("/api/v1/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
-		r.With(agentAdminOnly(authorize)).Get("/api/v1/wordpress/import/status", wordPressHandler.ImportStatus)
+		// Editions without the importers module (nil surfaces) unmount both.
+		if wordPressHandler != nil {
+			r.With(agentAdminOnly(authorize)).Post("/api/v1/wordpress/import", wordPressHandler.Import)
+			r.With(agentAdminOnly(authorize)).Get("/api/v1/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
+			r.With(agentAdminOnly(authorize)).Get("/api/v1/wordpress/import/status", wordPressHandler.ImportStatus)
+		}
 
 		// Hugo import — same contract as WordPress: admin-only, agent realm, and
 		// shares the browser realm's handler and job store.
-		r.With(agentAdminOnly(authorize)).Post("/api/v1/hugo/import", hugoHandler.Import)
-		r.With(agentAdminOnly(authorize)).Get("/api/v1/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
-		r.With(agentAdminOnly(authorize)).Get("/api/v1/hugo/import/status", hugoHandler.ImportStatus)
+		if hugoHandler != nil {
+			r.With(agentAdminOnly(authorize)).Post("/api/v1/hugo/import", hugoHandler.Import)
+			r.With(agentAdminOnly(authorize)).Get("/api/v1/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
+			r.With(agentAdminOnly(authorize)).Get("/api/v1/hugo/import/status", hugoHandler.ImportStatus)
+		}
 	})
 
 	// Shared /api/v1/media GET routes — co-owned by the agent (Bearer API key) and browser
 	// admin (JWT/CSRF) realms at the SAME path. Chi routes by path, not auth realm, so the
 	// two realms cannot each register the path; a single registration dispatches by the
 	// presented credential (Authorization: Bearer lesstruct_… → agent; otherwise → browser).
-	// POST /api/v1/media (upload) stays Bearer-only above; browser POST /media/upload,
-	// /media/generate and DELETE /media/{id} stay in the /api/v1 subrouter — those paths do
+	// POST /api/v1/media (upload) stays Bearer-only above; browser POST /media/upload and
+	// /media/generate stay in the /api/v1 subrouter — those paths do
 	// not collide. Each branch runs its OWN auth stack (agent: per-key rate limit + API-key
 	// auth; browser: per-IP rate limit + CSRF + JWT) so both realms work end-to-end.
 	r.Get("/api/v1/media", dispatchByAuth(
-		rateLimitMiddleware.APIKeyHandler(apiKeyAuthMiddleware.Handler(http.HandlerFunc(agentMediaHandler.List))),
+		rateLimitMiddleware.AgentAuthFailureHandler(rateLimitMiddleware.APIKeyHandler(apiKeyAuthMiddleware.Handler(http.HandlerFunc(agentMediaHandler.List)))),
 		rateLimitMiddleware.Handler(csrfMiddleware.Handler(authMiddleware.RequireAuth(http.HandlerFunc(mediaHandler.GetMedia)))),
 	))
 	r.Get("/api/v1/media/{id}", dispatchByAuth(
-		rateLimitMiddleware.APIKeyHandler(apiKeyAuthMiddleware.Handler(http.HandlerFunc(agentMediaHandler.Get))),
+		rateLimitMiddleware.AgentAuthFailureHandler(rateLimitMiddleware.APIKeyHandler(apiKeyAuthMiddleware.Handler(http.HandlerFunc(agentMediaHandler.Get)))),
 		rateLimitMiddleware.Handler(csrfMiddleware.Handler(authMiddleware.RequireAuth(http.HandlerFunc(mediaHandler.GetMediaByID)))),
+	))
+
+	// Dual-realm commerce admin surface — one registration per path serves
+	// both the API-key agent and the JWT browser, dispatched by credential
+	// like the co-owned media paths above. Same handlers both ways; their
+	// in-handler capability checks gate non-admin keys on either realm.
+	// The registry only yields kept modules, so disabling commerce unmounts
+	// the whole surface. Each branch mirrors its realm group's stack —
+	// agent per-key rate limits plus API-key auth, browser global API rate
+	// limit plus CSRF plus JWT auth, both capped at the 1MB JSON body limit
+	// the two groups enforce.
+	if moduleRegistry != nil {
+		dual := dualAuthRegistrar{
+			root: r,
+			agent: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.AgentAuthFailureHandler(
+					rateLimitMiddleware.AgentIPHandler(
+						rateLimitMiddleware.APIKeyHandler(
+							apiKeyAuthMiddleware.Handler(
+								maxBodySizeMiddleware(1 << 20)(next)))))
+			},
+			browser: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.Handler(
+					csrfMiddleware.Handler(
+						authMiddleware.RequireAuth(
+							maxBodySizeMiddleware(1 << 20)(next))))
+			},
+		}
+		for _, provider := range kernel.Capabilities[kernel.DualAuthProvider](moduleRegistry) {
+			provider.RegisterDualRoutes(dual)
+		}
+	}
+
+	// Shared /api/v1/media/{id} DELETE — co-owned like the GET pair above:
+	// the browser admin's delete and the agent delete share one path.
+	r.Delete("/api/v1/media/{id}", dispatchByAuth(
+		rateLimitMiddleware.AgentAuthFailureHandler(
+			rateLimitMiddleware.AgentIPHandler(
+				rateLimitMiddleware.APIKeyHandler(
+					apiKeyAuthMiddleware.Handler(
+						maxBodySizeMiddleware(1<<20)(http.HandlerFunc(agentMediaHandler.Delete)))))),
+		rateLimitMiddleware.Handler(
+			csrfMiddleware.Handler(
+				authMiddleware.RequireAuth(
+					maxBodySizeMiddleware(1<<20)(http.HandlerFunc(mediaHandler.DeleteMedia))))),
 	))
 
 	// API routes (highest priority) — all rate-limited
@@ -432,18 +572,33 @@ func Setup(
 		r.Use(rateLimitMiddleware.Handler)
 
 		r.Route("/auth", func(r chi.Router) {
-			// Stricter rate limit for auth endpoints
+			// Stricter rate limit for auth endpoints. The verify-email link
+			// is opened after auth traffic (login/register bursts), so it
+			// rides the public limiter — otherwise a burst of logins
+			// exhausts the auth bucket and the verification click 429s.
 			r.Use(rateLimitMiddleware.AuthHandler)
 			r.Post("/login", authHandler.Login)
+			// MFA-verify sets the session cookie, so it runs behind CSRF
+			// like every other state-changing browser endpoint.
+			r.With(csrfMiddleware.Handler).Post("/mfa/verify", authHandler.VerifyMFA)
+			r.Post("/mfa/resend", authHandler.ResendMFA)
 			r.Post("/register", authHandler.RegisterUser)
-			r.Get("/verify-email", authHandler.VerifyEmail)
 			r.Post("/resend-verification", authHandler.ResendVerificationEmail)
 			r.Post("/forgot-password", authHandler.ForgotPassword)
 			r.Post("/reset-password", authHandler.ResetPassword)
+			// Logout revokes the session server-side and clears the cookie:
+			// a state-changing endpoint behind CSRF plus the session it
+			// revokes.
+			r.With(csrfMiddleware.Handler, authMiddleware.RequireAuth).Post("/logout", authHandler.Logout)
 			r.Get("/first-login", firstLoginHandler.GetStatus)
 			r.Post("/first-login", firstLoginHandler.CompleteSetup)
 		})
-		r.Get("/notifications", notificationHandler.GetNotifications)
+		// Email verification link: public limiter, not the stricter auth
+		// bucket (see above). Path stays /api/auth/verify-email.
+		r.With(rateLimitMiddleware.PublicHandler).Get("/auth/verify-email", authHandler.VerifyEmail)
+		// Notification feed — admin-only. Messages carry registration usernames
+		// and email addresses, so the feed must never be anonymously readable.
+		r.With(adminMiddleware.AdminOnly).Get("/notifications", notificationHandler.GetNotifications)
 
 		// Admin user management routes (require Admin role)
 		r.Route("/admin", func(r chi.Router) {
@@ -477,19 +632,26 @@ func Setup(
 			// applies MaxBytesReader at IMPORT_MAX_SIZE_MB, so no route-level
 			// wrapper is needed here. Status polling endpoints let the admin UI
 			// or the caller track progress of a running import job.
-			r.Post("/wordpress/import", wordPressHandler.Import)
-			r.Get("/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
-			r.Get("/wordpress/import/status", wordPressHandler.ImportStatus)
+			if wordPressHandler != nil {
+				r.Post("/wordpress/import", wordPressHandler.Import)
+				r.Get("/wordpress/import/status/{jobId}", wordPressHandler.ImportStatus)
+				r.Get("/wordpress/import/status", wordPressHandler.ImportStatus)
+			}
 			// Hugo import (admin only) — same import ceiling as WordPress.
-			r.Post("/hugo/import", hugoHandler.Import)
-			r.Get("/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
-			r.Get("/hugo/import/status", hugoHandler.ImportStatus)
+			if hugoHandler != nil {
+				r.Post("/hugo/import", hugoHandler.Import)
+				r.Get("/hugo/import/status/{jobId}", hugoHandler.ImportStatus)
+				r.Get("/hugo/import/status", hugoHandler.ImportStatus)
+			}
 			// Content export (admin only) — streams a tar.gz of all content as
 			// Hugo-compatible source files with bundled media.
 			r.Get("/export", exportHandler.Export)
 			// Static site generation (admin only) — streams a tar.gz of the
-			// fully rendered static site with AMP variants.
-			r.Get("/ssg", ssgHandler.Generate)
+			// fully rendered static site with AMP variants. Editions without
+			// the site-ssr engine (nil handler) unmount it.
+			if ssgHandler != nil {
+				r.Get("/ssg", ssgHandler.Generate)
+			}
 			// Admin manifest aggregation (admin only) — the frozen
 			// extensions contract: every registered AdminExtensionProvider
 			// in registry name order, versioned JSON. Aggregation reads
@@ -559,9 +721,12 @@ func Setup(
 			r.Get("/archive", contentHandler.ListPublishedArchive)
 		})
 
-		// SEO routes (public, no authentication) - Story 4.2
-		r.Get("/v1/sitemap", seoHandler.GetSitemapData)
-		r.Get("/robots.txt", seoHandler.GetRobotsTxt)
+		// SEO routes (public, no authentication) - Story 4.2. Editions without
+		// the seo module (nil surface) unmount the JSON sitemap and robots.txt.
+		if seoHandler != nil {
+			r.Get("/v1/sitemap", seoHandler.GetSitemapData)
+			r.Get("/robots.txt", seoHandler.GetRobotsTxt)
+		}
 
 		// Content routes (require authentication) - Story 2.1
 		r.Route("/v1", func(r chi.Router) {
@@ -591,9 +756,9 @@ func Setup(
 					}
 				}
 
-				// GET /media (list) and GET /media/{id} are served by the shared dual-auth
-				// dispatch at the root (above) — the agent and browser admin co-own these paths.
-				r.Delete("/media/{id}", mediaHandler.DeleteMedia)
+				// GET /media (list), GET /media/{id}, and DELETE /media/{id} are
+				// served by the shared dual-auth dispatch at the root (above) —
+				// the agent and browser admin co-own these paths.
 
 				// Dashboard routes (require authentication + admin role) - Story 2.8
 				r.With(adminMiddleware.AdminOnly).Get("/dashboard/stats", dashboardHandler.GetStats)
@@ -647,9 +812,16 @@ func Setup(
 	}
 
 	// Serve content site static assets (CSS, etc.) — only when the content site
-	// itself is enabled (i.e. not in headless mode).
-	if !headlessEnabled {
+	// itself is enabled (i.e. not in headless mode) and the edition ships a
+	// static handler at all (editions without the site-ssr engine pass nil).
+	if !headlessEnabled && staticHandler != nil {
 		r.Handle("/static/*", http.StripPrefix("/static/", staticHandler))
+		// Browsers request /favicon.ico at the root by default; the theme
+		// ships it under /static/. Redirect there so the root never 404s
+		// in console noise and the theme set stays the single source.
+		r.Get("/favicon.ico", func(w http.ResponseWriter, req *http.Request) {
+			http.Redirect(w, req, "/static/favicon.ico", http.StatusFound)
+		})
 	}
 
 	// Admin SPA (serves embedded Vue 3 app or proxies to dev server)
@@ -661,8 +833,9 @@ func Setup(
 		// wrapping. In headless mode the catch-all is NOT mounted — the instance
 		// serves only the admin panel and the REST API. (The content page handler
 		// and alias handler are still constructed for the SSG generator; they are
-		// simply unreachable over HTTP.)
-		if !headlessEnabled {
+		// simply unreachable over HTTP.) Editions without the site-ssr engine
+		// (nil alias handler) never mount the catch-all either.
+		if !headlessEnabled && aliasRedirectHandler != nil {
 			r.Handle("/*", aliasRedirectHandler)
 		}
 	}

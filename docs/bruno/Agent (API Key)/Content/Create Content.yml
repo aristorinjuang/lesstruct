@@ -16,7 +16,8 @@ http:
         "format": "html",
         "postType": "post",
         "isPublished": false,
-        "tags": ["api", "test"]
+        "tags": ["api", "test"],
+        "featuredImage": "/uploads/media/abc123.webp"
       }
   auth:
     type: bearer

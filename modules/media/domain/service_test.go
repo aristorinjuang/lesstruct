@@ -974,90 +974,102 @@ func createTestWebPImage(t *testing.T) []byte {
 }
 
 func TestParseDateFilter(t *testing.T) {
+	wednesday := time.Date(2026, time.October, 21, 15, 30, 0, 0, time.UTC)
+	sunday := time.Date(2026, time.October, 25, 9, 0, 0, 0, time.UTC)
+
 	tests := []struct {
 		name      string
 		filter    string
+		now       time.Time
 		wantValid bool
-		checkFunc func(t *testing.T, result time.Time)
+		expected  time.Time
 	}{
 		{
 			name:      "today returns start of day",
 			filter:    "today",
+			now:       wednesday,
 			wantValid: true,
-			checkFunc: func(t *testing.T, result time.Time) {
-				now := time.Now()
-				assert.Equal(t, now.Year(), result.Year())
-				assert.Equal(t, now.Month(), result.Month())
-				assert.Equal(t, now.Day(), result.Day())
-				assert.Equal(t, 0, result.Hour())
-				assert.Equal(t, 0, result.Minute())
-			},
+			expected:  time.Date(2026, time.October, 21, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			name:      "this_week returns start of week",
+			name:      "this_week returns monday of the current week",
 			filter:    "this_week",
+			now:       wednesday,
 			wantValid: true,
-			checkFunc: func(t *testing.T, result time.Time) {
-				assert.Equal(t, time.Monday, result.Weekday())
-				assert.Equal(t, 0, result.Hour())
-			},
+			expected:  time.Date(2026, time.October, 19, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:      "this_week on a sunday returns the preceding monday",
+			filter:    "this_week",
+			now:       sunday,
+			wantValid: true,
+			expected:  time.Date(2026, time.October, 19, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:      "this_month returns start of month",
 			filter:    "this_month",
+			now:       wednesday,
 			wantValid: true,
-			checkFunc: func(t *testing.T, result time.Time) {
-				now := time.Now()
-				assert.Equal(t, 1, result.Day())
-				assert.Equal(t, now.Year(), result.Year())
-				assert.Equal(t, now.Month(), result.Month())
-			},
+			expected:  time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:      "invalid filter returns false",
 			filter:    "invalid",
+			now:       wednesday,
 			wantValid: false,
-			checkFunc: func(t *testing.T, result time.Time) {
-				assert.True(t, result.IsZero())
-			},
+			expected:  time.Time{},
 		},
 		{
 			name:      "empty filter returns false",
 			filter:    "",
+			now:       wednesday,
 			wantValid: false,
-			checkFunc: func(t *testing.T, result time.Time) {
-				assert.True(t, result.IsZero())
-			},
+			expected:  time.Time{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			restore := media.SetNowForTest(func() time.Time { return tt.now })
+			defer restore()
+
 			result, valid := media.ParseDateFilter(tt.filter)
 			assert.Equal(t, tt.wantValid, valid)
-			if tt.wantValid {
-				tt.checkFunc(t, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
 func TestDuplicateMediaError(t *testing.T) {
-	existing := &media.Media{
-		ID:               42,
-		UserID:           1,
-		OriginalFilename: "sunset.jpg",
-		Hash:             "abc123",
+	tests := []struct {
+		name     string
+		existing *media.Media
+		expected string
+	}{
+		{
+			name:     "names the existing file",
+			existing: &media.Media{ID: 42, UserID: 1, OriginalFilename: "sunset.jpg", Hash: "abc123"},
+			expected: "media already exists: sunset.jpg",
+		},
+		{
+			name:     "falls back when the existing file is unknown",
+			existing: nil,
+			expected: "media already exists",
+		},
 	}
 
-	dupErr := &media.DuplicateMediaError{Existing: existing}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dupErr := &media.DuplicateMediaError{Existing: tt.existing}
 
-	require.Contains(t, dupErr.Error(), "media already exists: sunset.jpg")
-	assert.Equal(t, existing, dupErr.Existing)
+			assert.Equal(t, tt.expected, dupErr.Error())
+			assert.Equal(t, tt.existing, dupErr.Existing)
 
-	var target *media.DuplicateMediaError
-	require.True(t, errors.As(dupErr, &target))
-	assert.Equal(t, "sunset.jpg", target.Existing.OriginalFilename)
+			var target *media.DuplicateMediaError
+			require.True(t, errors.As(dupErr, &target))
+			assert.Equal(t, tt.existing, target.Existing)
+		})
+	}
 }
 
 func TestService_ForceUpload(t *testing.T) {
@@ -1198,8 +1210,12 @@ func TestGenerateDuplicateFilename(t *testing.T) {
 }
 
 func TestService_SearchMediaByCursor(t *testing.T) {
+	admin := kernel.Principal{ID: "1", Username: "admin", Roles: []string{"Admin"}}
+	buyer := kernel.Principal{ID: "7", Username: "buyer", Roles: []string{"Commentator"}}
+
 	tests := []struct {
 		name        string
+		principal   kernel.Principal
 		search      string
 		dateFilter  string
 		limit       int
@@ -1209,53 +1225,69 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			name:       "no filters falls back to FindAllByCursor",
+			name:       "success - admin scope searches every user's media",
+			principal:  admin,
 			search:     "",
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByCursor", mock.Anything, 0, 50, 0).Return([]*media.Media{}, nil)
+			},
+		},
+		{
+			name:       "success - non-admin scope is pinned to the caller's library",
+			principal:  buyer,
+			search:     "",
+			dateFilter: "",
+			limit:      50,
+			beforeID:   0,
+			setupMock: func(repo *mediamocks.MockRepository) {
+				repo.On("FindAllByCursor", mock.Anything, 7, 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
 			name:       "search only calls FindAllByFilenameByCursor",
+			principal:  admin,
 			search:     "sunset",
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("FindAllByFilenameByCursor", mock.Anything, "sunset", 50, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByFilenameByCursor", mock.Anything, 0, "sunset", 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
 			name:       "date filter only calls FindAllByDateRangeByCursor",
+			principal:  buyer,
 			search:     "",
 			dateFilter: "today",
 			limit:      50,
 			beforeID:   0,
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("FindAllByDateRangeByCursor", mock.Anything, mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByDateRangeByCursor", mock.Anything, 7, mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
 			name:       "both filters calls FindAllByFilenameAndDateRangeByCursor",
+			principal:  admin,
 			search:     "sunset",
 			dateFilter: "this_week",
 			limit:      50,
 			beforeID:   0,
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("FindAllByFilenameAndDateRangeByCursor", mock.Anything, "sunset", mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByFilenameAndDateRangeByCursor", mock.Anything, 0, "sunset", mock.AnythingOfType("time.Time"), 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
 			name:       "next page passes beforeID through",
+			principal:  admin,
 			search:     "",
 			dateFilter: "",
 			limit:      50,
 			beforeID:   100,
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("FindAllByCursor", mock.Anything, 50, 100).Return([]*media.Media{
+				repo.On("FindAllByCursor", mock.Anything, 0, 50, 100).Return([]*media.Media{
 					{ID: 99, UserID: 1},
 					{ID: 98, UserID: 1},
 				}, nil)
@@ -1264,24 +1296,35 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 		},
 		{
 			name:       "whitespace search is treated as no search",
+			principal:  admin,
 			search:     "   ",
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media{}, nil)
+				repo.On("FindAllByCursor", mock.Anything, 0, 50, 0).Return([]*media.Media{}, nil)
 			},
 		},
 		{
 			name:       "repository error - wrapped as failed to search media",
+			principal:  admin,
 			search:     "",
 			dateFilter: "",
 			limit:      50,
 			beforeID:   0,
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("FindAllByCursor", mock.Anything, 50, 0).Return([]*media.Media(nil), errors.New("database error"))
+				repo.On("FindAllByCursor", mock.Anything, 0, 50, 0).Return([]*media.Media(nil), errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to search media"),
+		},
+		{
+			name:        "error - principal without a usable user ID",
+			principal:   kernel.Principal{ID: "not-a-number", Username: "ghost"},
+			search:      "",
+			dateFilter:  "",
+			limit:       50,
+			beforeID:    0,
+			expectedErr: errors.New("invalid principal ID"),
 		},
 	}
 
@@ -1289,11 +1332,13 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockRepo := mediamocks.NewMockRepository(t)
 			mockStorage := newStubStorage()
-			tt.setupMock(mockRepo)
+			if tt.setupMock != nil {
+				tt.setupMock(mockRepo)
+			}
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
 
-			got, err := svc.SearchMediaByCursor(context.Background(), tt.search, tt.dateFilter, tt.limit, tt.beforeID)
+			got, err := svc.SearchMediaByCursor(context.Background(), tt.principal, tt.search, tt.dateFilter, tt.limit, tt.beforeID)
 
 			if tt.expectedErr != nil {
 				require.Error(t, err, "Service.SearchMediaByCursor() expected error, got nil")
@@ -1313,8 +1358,12 @@ func TestService_SearchMediaByCursor(t *testing.T) {
 }
 
 func TestService_Count(t *testing.T) {
+	admin := kernel.Principal{ID: "1", Username: "admin", Roles: []string{"Admin"}}
+	buyer := kernel.Principal{ID: "7", Username: "buyer", Roles: []string{"Commentator"}}
+
 	tests := []struct {
 		name        string
+		principal   kernel.Principal
 		search      string
 		dateFilter  string
 		setupMock   func(*mediamocks.MockRepository)
@@ -1322,56 +1371,72 @@ func TestService_Count(t *testing.T) {
 		expectedErr error
 	}{
 		{
-			name:       "no filters passes zero time to Count",
+			name:       "success - admin counts the whole library",
+			principal:  admin,
 			search:     "",
 			dateFilter: "",
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("Count", mock.Anything, "", time.Time{}).Return(12, nil)
+				repo.On("Count", mock.Anything, 0, "", time.Time{}).Return(12, nil)
 			},
 			expected: 12,
 		},
 		{
+			name:       "success - non-admin counts only their own media",
+			principal:  buyer,
+			search:     "",
+			dateFilter: "",
+			setupMock: func(repo *mediamocks.MockRepository) {
+				repo.On("Count", mock.Anything, 7, "", time.Time{}).Return(2, nil)
+			},
+			expected: 2,
+		},
+		{
 			name:       "search only is forwarded",
+			principal:  admin,
 			search:     "sunset",
 			dateFilter: "",
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("Count", mock.Anything, "sunset", time.Time{}).Return(3, nil)
+				repo.On("Count", mock.Anything, 0, "sunset", time.Time{}).Return(3, nil)
 			},
 			expected: 3,
 		},
 		{
 			name:       "date filter only passes a non-zero since",
+			principal:  admin,
 			search:     "",
 			dateFilter: "today",
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("Count", mock.Anything, "", mock.AnythingOfType("time.Time")).Return(5, nil)
+				repo.On("Count", mock.Anything, 0, "", mock.AnythingOfType("time.Time")).Return(5, nil)
 			},
 			expected: 5,
 		},
 		{
 			name:       "both filters are forwarded",
+			principal:  admin,
 			search:     "sunset",
 			dateFilter: "this_week",
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("Count", mock.Anything, "sunset", mock.AnythingOfType("time.Time")).Return(2, nil)
+				repo.On("Count", mock.Anything, 0, "sunset", mock.AnythingOfType("time.Time")).Return(2, nil)
 			},
 			expected: 2,
 		},
 		{
 			name:       "whitespace search is treated as no search",
+			principal:  admin,
 			search:     "   ",
 			dateFilter: "",
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("Count", mock.Anything, "", time.Time{}).Return(0, nil)
+				repo.On("Count", mock.Anything, 0, "", time.Time{}).Return(0, nil)
 			},
 			expected: 0,
 		},
 		{
 			name:       "repository error - wrapped as failed to count media",
+			principal:  admin,
 			search:     "",
 			dateFilter: "",
 			setupMock: func(repo *mediamocks.MockRepository) {
-				repo.On("Count", mock.Anything, "", time.Time{}).Return(0, errors.New("database error"))
+				repo.On("Count", mock.Anything, 0, "", time.Time{}).Return(0, errors.New("database error"))
 			},
 			expectedErr: errors.New("failed to count media"),
 		},
@@ -1385,7 +1450,7 @@ func TestService_Count(t *testing.T) {
 
 			svc := media.NewService(mockRepo, mockStorage, nil)
 
-			got, err := svc.Count(context.Background(), tt.search, tt.dateFilter)
+			got, err := svc.Count(context.Background(), tt.principal, tt.search, tt.dateFilter)
 
 			if tt.expectedErr != nil {
 				require.Error(t, err, "Service.Count() expected error, got nil")
@@ -1400,7 +1465,6 @@ func TestService_Count(t *testing.T) {
 		})
 	}
 }
-
 func TestService_Upload_WithThumbnailService(t *testing.T) {
 	thumbSvc := thumbnail.NewService()
 
@@ -1597,8 +1661,14 @@ func TestService_Upload_VariantDimensionsCorrect(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	require.Contains(t, got.Variants, "_thumb")
-	assert.Equal(t, 370, got.Variants["_thumb"].Width)
-	assert.Equal(t, 277, got.Variants["_thumb"].Height)
+	assert.Equal(t, 64, got.Variants["_thumb"].Width)
+	assert.Equal(t, 48, got.Variants["_thumb"].Height)
+	require.Contains(t, got.Variants, "_medium")
+	assert.Equal(t, 280, got.Variants["_medium"].Width)
+	assert.Equal(t, 210, got.Variants["_medium"].Height)
+	require.Contains(t, got.Variants, "_large")
+	assert.Equal(t, 616, got.Variants["_large"].Width)
+	assert.Equal(t, 462, got.Variants["_large"].Height)
 }
 func TestService_ForceUpload_VariantsNilWhenThumbnailServiceNil(t *testing.T) {
 	mockRepo := mediamocks.NewMockRepository(t)

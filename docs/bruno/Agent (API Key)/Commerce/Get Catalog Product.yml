@@ -1,0 +1,17 @@
+info:
+  name: Get Catalog Product (Agent)
+  type: http
+  seq: 8
+
+http:
+  method: GET
+  url: "{{BASE_URL}}/api/v1/catalog/products/{{CONTENT_ID}}"
+  auth:
+    type: bearer
+    token: "{{API_KEY}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

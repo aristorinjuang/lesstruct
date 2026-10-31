@@ -5,9 +5,11 @@
   "type": "module",
   "description": "Captures Lesstruct admin and content-site screenshots (light + dark) for the docs site and README.",
   "scripts": {
-    "capture": "node capture.mjs"
+    "capture": "node capture.mjs",
+    "convert": "node convert.mjs"
   },
   "dependencies": {
-    "playwright": "^1.49.0"
+    "playwright": "^1.49.0",
+    "sharp": "^0.34.5"
   }
 }

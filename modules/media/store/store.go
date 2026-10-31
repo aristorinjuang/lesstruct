@@ -27,26 +27,6 @@ const (
 	mediaFrom = `FROM media_files m LEFT JOIN users u ON m.user_id = u.id`
 )
 
-// MediaFile represents a media file in the database
-type MediaFile struct {
-	ID               int            `json:"id"`
-	UserID           int            `json:"userId"`
-	Filename         string         `json:"filename"`
-	OriginalFilename string         `json:"originalFilename"`
-	MimeType         string         `json:"mimeType"`
-	FileSize         int64          `json:"fileSize"`
-	Width            int            `json:"width"`
-	Height           int            `json:"height"`
-	AltText          string         `json:"altText"`
-	IsWebP           bool           `json:"isWebp"`
-	FilePath         string         `json:"filePath"`
-	URL              string         `json:"url"`
-	Hash             string         `json:"hash"`
-	Variants         sql.NullString `json:"variants"`
-	CreatedAt        time.Time      `json:"createdAt"`
-	UpdatedAt        time.Time      `json:"updatedAt"`
-}
-
 // escapeLike escapes SQL LIKE wildcard characters in a search string
 func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
@@ -175,6 +155,106 @@ func scanMediaRows(rows *sql.Rows) ([]*mediadomain.Media, error) {
 	}
 
 	return items, nil
+}
+
+// mediaListWhere builds the WHERE clause shared by the media-list queries and
+// their Count mirror, so a list's total always matches its rows. ownerID > 0
+// scopes every clause to that user's library; 0 (the admin scope) leaves the
+// list global. The placeholder function is called once per clause, in order.
+func mediaListWhere(next func() string, ownerID int, filename string, since time.Time) (string, []any) {
+	var (
+		clauses []string
+		args    []any
+	)
+	if ownerID > 0 {
+		clauses = append(clauses, "m.user_id = "+next())
+		args = append(args, ownerID)
+	}
+	if filename != "" {
+		clauses = append(clauses, "LOWER(m.original_filename) LIKE LOWER("+next()+`) ESCAPE '\'`)
+		args = append(args, "%"+escapeLike(filename)+"%")
+	}
+	if !since.IsZero() {
+		clauses = append(clauses, "m.created_at >= "+next())
+		args = append(args, since)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// listMedia is the shared keyset-paged media list: owner scope (0 = all),
+// optional filename search, optional creation-time floor, newest-first
+// (id DESC), beforeID <= 0 means first page. Every exported FindAll* variant
+// funnels through here so the scopes and filters stay in one place.
+func (r *Repository) listMedia(
+	ctx context.Context,
+	ownerID int,
+	filename string,
+	since time.Time,
+	limit int,
+	beforeID int,
+) ([]*mediadomain.Media, error) {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	if err := r.db.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("database connection lost: %w", err)
+	}
+
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	next := r.placeholders()
+	where, args := mediaListWhere(next, ownerID, filename, since)
+	if beforeID > 0 {
+		if where == "" {
+			where = " WHERE m.id < " + next()
+		} else {
+			where += " AND m.id < " + next()
+		}
+		args = append(args, beforeID)
+	}
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, `
+			SELECT `+mediaColumns+`
+			`+mediaFrom+where+`
+			ORDER BY m.id DESC
+			LIMIT `+next(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list media by cursor: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanMediaRows(rows)
+}
+
+// MediaFile represents a media file in the database
+type MediaFile struct {
+	ID               int            `json:"id"`
+	UserID           int            `json:"userId"`
+	Filename         string         `json:"filename"`
+	OriginalFilename string         `json:"originalFilename"`
+	MimeType         string         `json:"mimeType"`
+	FileSize         int64          `json:"fileSize"`
+	Width            int            `json:"width"`
+	Height           int            `json:"height"`
+	AltText          string         `json:"altText"`
+	IsWebP           bool           `json:"isWebp"`
+	FilePath         string         `json:"filePath"`
+	URL              string         `json:"url"`
+	Hash             string         `json:"hash"`
+	Variants         sql.NullString `json:"variants"`
+	CreatedAt        time.Time      `json:"createdAt"`
+	UpdatedAt        time.Time      `json:"updatedAt"`
 }
 
 // Repository implements mediadomain.Repository for every driver.
@@ -343,48 +423,14 @@ func (r *Repository) FindByHashPrefix(ctx context.Context, prefix string) (*medi
 	return scanMediaRow(row)
 }
 
-// FindAllByCursor returns ALL media (not user-scoped) in newest-first (id DESC) order using
-// keyset pagination (beforeID <= 0 means first page; otherwise only rows with id < beforeID).
-// Global counterpart of ListByCursor, used by the browser admin media library. The SELECT
-// column list + row scan are reused via mediaColumns/mediaFrom/scanMediaRows.
-func (r *Repository) FindAllByCursor(ctx context.Context, limit int, beforeID int) ([]*mediadomain.Media, error) {
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-
-	next := r.placeholders()
-	var rows *sql.Rows
-	var err error
-	if beforeID > 0 {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			WHERE m.id < `+next()+`
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, beforeID, limit)
-	} else {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, limit)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all media by cursor: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	return scanMediaRows(rows)
+// FindAllByCursor returns media in newest-first (id DESC) order using keyset
+// pagination (beforeID <= 0 means first page; otherwise only rows with
+// id < beforeID). ownerID > 0 scopes the list to that user's library; 0 (the
+// admin scope) returns every user's media. Used by the browser admin media
+// library. The SELECT column list + row scan are reused via
+// mediaColumns/mediaFrom/scanMediaRows.
+func (r *Repository) FindAllByCursor(ctx context.Context, ownerID int, limit int, beforeID int) ([]*mediadomain.Media, error) {
+	return r.listMedia(ctx, ownerID, "", time.Time{}, limit, beforeID)
 }
 
 // ListByCursor returns the caller's media in newest-first (id DESC) order using keyset
@@ -432,169 +478,55 @@ func (r *Repository) ListByCursor(ctx context.Context, userID int, limit int, be
 	return scanMediaRows(rows)
 }
 
-// FindAllByFilenameByCursor returns ALL media matching a filename query in newest-first
-// (id DESC) order using keyset pagination (beforeID <= 0 means first page).
+// FindAllByFilenameByCursor returns media matching a filename query in
+// newest-first (id DESC) order using keyset pagination (beforeID <= 0 means
+// first page). ownerID > 0 scopes the search to that user's library; 0 (the
+// admin scope) searches every user's media.
 func (r *Repository) FindAllByFilenameByCursor(
 	ctx context.Context,
+	ownerID int,
 	filename string,
 	limit int,
 	beforeID int,
 ) ([]*mediadomain.Media, error) {
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-
-	if err := r.db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("database connection lost: %w", err)
-	}
-
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-
-	next := r.placeholders()
-	var rows *sql.Rows
-	var err error
-	if beforeID > 0 {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			WHERE LOWER(m.original_filename) LIKE LOWER(`+next()+`) ESCAPE '\' AND m.id < `+next()+`
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, "%"+escapeLike(filename)+"%", beforeID, limit)
-	} else {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			WHERE LOWER(m.original_filename) LIKE LOWER(`+next()+`) ESCAPE '\'
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, "%"+escapeLike(filename)+"%", limit)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to search media by filename by cursor: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	return scanMediaRows(rows)
+	return r.listMedia(ctx, ownerID, filename, time.Time{}, limit, beforeID)
 }
 
-// FindAllByDateRangeByCursor returns ALL media created since the given time in newest-first
-// (id DESC) order using keyset pagination (beforeID <= 0 means first page).
+// FindAllByDateRangeByCursor returns media created since the given time in
+// newest-first (id DESC) order using keyset pagination (beforeID <= 0 means
+// first page). ownerID > 0 scopes the list to that user's library; 0 (the
+// admin scope) returns every user's media.
 func (r *Repository) FindAllByDateRangeByCursor(
 	ctx context.Context,
+	ownerID int,
 	since time.Time,
 	limit int,
 	beforeID int,
 ) ([]*mediadomain.Media, error) {
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-
-	if err := r.db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("database connection lost: %w", err)
-	}
-
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-
-	next := r.placeholders()
-	var rows *sql.Rows
-	var err error
-	if beforeID > 0 {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			WHERE m.created_at >= `+next()+` AND m.id < `+next()+`
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, since, beforeID, limit)
-	} else {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			WHERE m.created_at >= `+next()+`
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, since, limit)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get media by date range by cursor: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	return scanMediaRows(rows)
+	return r.listMedia(ctx, ownerID, "", since, limit, beforeID)
 }
 
-// FindAllByFilenameAndDateRangeByCursor returns ALL media matching a filename query and
-// created since the given time in newest-first (id DESC) order using keyset pagination
-// (beforeID <= 0 means first page).
+// FindAllByFilenameAndDateRangeByCursor returns media matching a filename
+// query and created since the given time in newest-first (id DESC) order using
+// keyset pagination (beforeID <= 0 means first page). ownerID > 0 scopes the
+// search to that user's library; 0 (the admin scope) searches every user's.
 func (r *Repository) FindAllByFilenameAndDateRangeByCursor(
 	ctx context.Context,
+	ownerID int,
 	filename string,
 	since time.Time,
 	limit int,
 	beforeID int,
 ) ([]*mediadomain.Media, error) {
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-
-	if err := r.db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("database connection lost: %w", err)
-	}
-
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-
-	next := r.placeholders()
-	var rows *sql.Rows
-	var err error
-	if beforeID > 0 {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			WHERE LOWER(m.original_filename) LIKE LOWER(`+next()+`) ESCAPE '\' AND m.created_at >= `+next()+` AND m.id < `+next()+`
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, "%"+escapeLike(filename)+"%", since, beforeID, limit)
-	} else {
-		rows, err = r.db.QueryContext(ctx, `
-			SELECT `+mediaColumns+`
-			`+mediaFrom+`
-			WHERE LOWER(m.original_filename) LIKE LOWER(`+next()+`) ESCAPE '\' AND m.created_at >= `+next()+`
-			ORDER BY m.id DESC
-			LIMIT `+next()+`
-		`, "%"+escapeLike(filename)+"%", since, limit)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to search media by filename and date range by cursor: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	return scanMediaRows(rows)
+	return r.listMedia(ctx, ownerID, filename, since, limit, beforeID)
 }
 
-// Count returns the total number of ALL media (not user-scoped) matching the given
-// filename query and creation-time threshold (zero time means no date filter). It mirrors
-// the WHERE clauses of the FindAll*ByCursor methods so a list's total always matches its
-// rows.
-func (r *Repository) Count(ctx context.Context, search string, since time.Time) (int, error) {
+// Count returns the total number of media matching the given owner scope,
+// filename query, and creation-time threshold (zero time means no date
+// filter). ownerID > 0 counts only that user's media; 0 (the admin scope)
+// counts all. It mirrors the WHERE clauses of the FindAll*ByCursor methods so
+// a list's total always matches its rows.
+func (r *Repository) Count(ctx context.Context, ownerID int, search string, since time.Time) (int, error) {
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
@@ -606,22 +538,7 @@ func (r *Repository) Count(ctx context.Context, search string, since time.Time) 
 	}
 
 	next := r.placeholders()
-	var (
-		where string
-		args  []any
-	)
-	if search != "" {
-		where = ` WHERE LOWER(m.original_filename) LIKE LOWER(` + next() + `) ESCAPE '\'`
-		args = append(args, "%"+escapeLike(search)+"%")
-	}
-	if !since.IsZero() {
-		if where != "" {
-			where += ` AND m.created_at >= ` + next()
-		} else {
-			where = ` WHERE m.created_at >= ` + next()
-		}
-		args = append(args, since)
-	}
+	where, args := mediaListWhere(next, ownerID, strings.TrimSpace(search), since)
 
 	var total int
 	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM media_files m`+where, args...).Scan(&total)

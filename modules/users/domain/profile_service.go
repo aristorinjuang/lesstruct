@@ -20,22 +20,6 @@ var (
 	ErrProfileUserNotFound = errors.New("user not found")
 )
 
-// systemFieldProvider returns slugs of user system fields that must not be written by non-admin users
-type systemFieldProvider interface {
-	GetUserSystemFieldSlugs() []string
-}
-
-// ProfileServiceInterface defines the interface for profile service operations
-type ProfileServiceInterface interface {
-	GetProfile(ctx context.Context, principal kernel.Principal) (*Profile, error)
-	UpdateEmail(ctx context.Context, principal kernel.Principal, newEmail, currentPasswordHash string) error
-	UpdateName(ctx context.Context, principal kernel.Principal, name string) error
-	ChangePassword(ctx context.Context, principal kernel.Principal, currentPassword, newPassword string) error
-	ExportUserData(ctx context.Context, principal kernel.Principal) (*UserDataExport, error)
-	VerifyEmailUpdate(ctx context.Context, token string) (int, string, error)
-	UpdateCustomFields(ctx context.Context, principal kernel.Principal, customFields map[string]any, isAdmin bool) error
-}
-
 // generateSecureToken generates a cryptographically secure random token
 func generateSecureToken() (string, error) {
 	b := make([]byte, 32)
@@ -60,6 +44,22 @@ func principalID(principal kernel.Principal) (int, error) {
 		return 0, fmt.Errorf("%w: %q", kernel.ErrInvalidPrincipalID, principal.ID)
 	}
 	return id, nil
+}
+
+// systemFieldProvider returns slugs of user system fields that must not be written by non-admin users
+type systemFieldProvider interface {
+	GetUserSystemFieldSlugs() []string
+}
+
+// ProfileServiceInterface defines the interface for profile service operations
+type ProfileServiceInterface interface {
+	GetProfile(ctx context.Context, principal kernel.Principal) (*Profile, error)
+	UpdateEmail(ctx context.Context, principal kernel.Principal, newEmail, currentPasswordHash string) error
+	UpdateName(ctx context.Context, principal kernel.Principal, name string) error
+	ChangePassword(ctx context.Context, principal kernel.Principal, currentPassword, newPassword string) error
+	ExportUserData(ctx context.Context, principal kernel.Principal) (*UserDataExport, error)
+	VerifyEmailUpdate(ctx context.Context, token string) (int, string, error)
+	UpdateCustomFields(ctx context.Context, principal kernel.Principal, customFields map[string]any, isAdmin bool) error
 }
 
 // Profile represents user profile information

@@ -2,7 +2,6 @@
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
-import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -111,7 +110,6 @@ const editor = useEditor({
         class: 'tiptap-code-block',
       },
     }),
-    Underline,
     NonInclusiveLink.configure({
       openOnClick: false,
       HTMLAttributes: {

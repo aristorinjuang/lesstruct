@@ -15,11 +15,6 @@ type ProfilePictureUserRepo struct {
 	repo repository.UserRepo
 }
 
-// NewProfilePictureUserRepo creates a ProfilePictureUserRepo.
-func NewProfilePictureUserRepo(repo repository.UserRepo) *ProfilePictureUserRepo {
-	return &ProfilePictureUserRepo{repo: repo}
-}
-
 // GetUserByID returns the profile picture filename for a user.
 func (r *ProfilePictureUserRepo) GetUserByID(ctx context.Context, userID int) (string, error) {
 	user, err := r.repo.GetUserByID(ctx, userID)
@@ -37,6 +32,11 @@ func (r *ProfilePictureUserRepo) UpdateProfilePicture(ctx context.Context, userI
 // DeleteProfilePicture clears a user's profile picture.
 func (r *ProfilePictureUserRepo) DeleteProfilePicture(ctx context.Context, userID int) error {
 	return r.repo.DeleteProfilePicture(ctx, userID)
+}
+
+// NewProfilePictureUserRepo creates a ProfilePictureUserRepo.
+func NewProfilePictureUserRepo(repo repository.UserRepo) *ProfilePictureUserRepo {
+	return &ProfilePictureUserRepo{repo: repo}
 }
 
 var _ profilepicture.UserRepo = (*ProfilePictureUserRepo)(nil)

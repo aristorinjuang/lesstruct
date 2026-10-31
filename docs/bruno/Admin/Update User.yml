@@ -14,9 +14,7 @@ http:
         "email": "updated@example.com",
         "role": "Commentator"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

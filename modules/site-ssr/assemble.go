@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 
 	"html/template"
 
 	"github.com/aristorinjuang/lesstruct/kernel/customfield"
+	"github.com/aristorinjuang/lesstruct/kernel/i18n"
+	"github.com/aristorinjuang/lesstruct/kernel/legal"
 	"github.com/aristorinjuang/lesstruct/kernel/sanitize"
 	"github.com/aristorinjuang/lesstruct/kernel/seo"
 	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
@@ -24,15 +27,6 @@ import (
 // ResourceUser is the [[public_field]] resource name for user fields, matching
 // the config registry's vocabulary.
 const ResourceUser = "user"
-
-// HomepageSection mirrors one [homepage_section] block from config.toml. Core
-// maps its config type onto this at construction.
-type HomepageSection struct {
-	PostType string
-	Limit    int
-	Offset   int
-	Title    string
-}
 
 // primaryLanguage returns the first configured language, defaulting to "en".
 func primaryLanguage(languages []string) string {
@@ -56,6 +50,88 @@ func declaresPostScript(pt posttype.PostType) bool {
 	return false
 }
 
+// galleryEntry is one coerced gallery item before media resolution.
+type galleryEntry struct {
+	url string
+	alt string
+}
+
+// coerceGalleryEntries normalizes a stored gallery value into URL/alt pairs:
+// the canonical []any of {url, alt} objects, a single {url, alt} object, a
+// legacy newline-separated string, or a plain []string. Blank URLs and
+// malformed items are dropped.
+func coerceGalleryEntries(raw any) []galleryEntry {
+	switch v := raw.(type) {
+	case string:
+		var out []galleryEntry
+		for line := range strings.SplitSeq(v, "\n") {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				out = append(out, galleryEntry{url: trimmed})
+			}
+		}
+		return out
+	case []string:
+		var out []galleryEntry
+		for _, line := range v {
+			if trimmed := strings.TrimSpace(line); trimmed != "" {
+				out = append(out, galleryEntry{url: trimmed})
+			}
+		}
+		return out
+	case map[string]any:
+		rawURL, ok := v["url"].(string)
+		if !ok || strings.TrimSpace(rawURL) == "" {
+			return nil
+		}
+		alt, _ := v["alt"].(string)
+		return []galleryEntry{{url: strings.TrimSpace(rawURL), alt: alt}}
+	case map[string]string:
+		if strings.TrimSpace(v["url"]) == "" {
+			return nil
+		}
+		return []galleryEntry{{url: strings.TrimSpace(v["url"]), alt: v["alt"]}}
+	case []any:
+		var out []galleryEntry
+		for _, item := range v {
+			switch entry := item.(type) {
+			case string:
+				if trimmed := strings.TrimSpace(entry); trimmed != "" {
+					out = append(out, galleryEntry{url: trimmed})
+				}
+			case map[string]any:
+				rawURL, ok := entry["url"].(string)
+				if !ok || strings.TrimSpace(rawURL) == "" {
+					continue
+				}
+				alt, _ := entry["alt"].(string)
+				out = append(out, galleryEntry{url: strings.TrimSpace(rawURL), alt: alt})
+			case map[string]string:
+				if strings.TrimSpace(entry["url"]) == "" {
+					continue
+				}
+				out = append(out, galleryEntry{url: strings.TrimSpace(entry["url"]), alt: entry["alt"]})
+			default:
+				continue
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// HomepageSection mirrors one [homepage_section] block from config.toml. Core
+// maps its config type onto this at construction.
+type HomepageSection struct {
+	PostType      string
+	Limit         int
+	Offset        int
+	Title         string
+	TitleID       string
+	Description   string
+	DescriptionID string
+}
+
 type DataAssembler struct {
 	contentService      ContentReader
 	postTypeResolver    PostTypeResolver
@@ -70,6 +146,12 @@ type DataAssembler struct {
 	publicFieldRegistry PublicFieldLookup
 	iframeHosts         []string
 	baseURL             string
+	uiCatalog           *i18n.Catalog
+	legalOverrides      map[legal.Page]string
+	legalNav            legal.NavPlacement
+	checkoutConsent     bool
+	registrationConsent bool
+	cookieNotice        legal.NoticeCopy
 }
 
 func (a *DataAssembler) absoluteImageURL(imageURL string) string {
@@ -105,8 +187,17 @@ func (a *DataAssembler) resolvePostImage(imageURL string) (thumbURL, srcset, siz
 	srcset = buildImageSrcset(m.Variants)
 	if srcset != "" {
 		sizes = postCardSizes
-		if thumb, ok := m.Variants["_thumb"]; ok {
+		// Cards prefer the medium variant when the thumbnail pipeline
+		// generated one: at 64/280/616 defaults the medium (280) fits the
+		// card frame better than the 64px thumb. The thumb stays the
+		// fallback, then large for medium-less configs; without any
+		// variant, the stored URL renders as-is.
+		if medium, ok := m.Variants["_medium"]; ok && medium.URL != "" {
+			thumbURL = medium.URL
+		} else if thumb, ok := m.Variants["_thumb"]; ok && thumb.URL != "" {
 			thumbURL = thumb.URL
+		} else if large, ok := m.Variants["_large"]; ok && large.URL != "" {
+			thumbURL = large.URL
 		} else {
 			thumbURL = imageURL
 		}
@@ -114,6 +205,67 @@ func (a *DataAssembler) resolvePostImage(imageURL string) (thumbURL, srcset, siz
 		thumbURL = imageURL
 	}
 	return thumbURL, srcset, sizes, variants, originalURL
+}
+
+// resolveGalleryImage resolves one gallery entry against the media
+// repository. Variant URLs are matched by suffix name (_thumb/_medium/_large)
+// so they adapt to any [[thumbnail]] config; each falls back to the original
+// URL when the record is missing or lacks that variant, and external URLs
+// (unresolvable hashes) render as-is.
+func (a *DataAssembler) resolveGalleryImage(rawURL, alt string) GalleryImage {
+	original := rawURL
+	fallback := GalleryImage{
+		URL: original, Alt: alt,
+		Thumb: original, Medium: original, Large: original,
+		Original: original,
+	}
+	if a.mediaRepo == nil || rawURL == "" {
+		return fallback
+	}
+	hash := ExtractHashFromURL(rawURL)
+	if hash == "" {
+		return fallback
+	}
+	m, err := a.mediaRepo.FindByHashPrefix(context.Background(), hash)
+	if err != nil {
+		log.Printf("WARNING: resolveGalleryImage FindByHashPrefix failed for hash %q: %v", hash, err)
+		return fallback
+	}
+	if m == nil {
+		return fallback
+	}
+	if m.URL != "" {
+		original = m.URL
+	}
+	at := func(suffix string) string {
+		if v, ok := m.Variants[suffix]; ok && v.URL != "" {
+			return v.URL
+		}
+		return original
+	}
+	return GalleryImage{
+		URL:      original,
+		Alt:      alt,
+		Thumb:    at("_thumb"),
+		Medium:   at("_medium"),
+		Large:    at("_large"),
+		Srcset:   buildImageSrcset(m.Variants),
+		Original: original,
+	}
+}
+
+// resolveGalleryField coerces a stored gallery value and resolves every
+// entry. It returns nil when the value carries no usable URLs.
+func (a *DataAssembler) resolveGalleryField(raw any) []GalleryImage {
+	entries := coerceGalleryEntries(raw)
+	if len(entries) == 0 {
+		return nil
+	}
+	images := make([]GalleryImage, 0, len(entries))
+	for _, e := range entries {
+		images = append(images, a.resolveGalleryImage(e.url, e.alt))
+	}
+	return images
 }
 
 func (a *DataAssembler) isPostTypeSlug(slug string) bool {
@@ -139,71 +291,25 @@ func (a *DataAssembler) preferredPages(pages []ContentRef) []ContentRef {
 		rank[lang] = i
 	}
 
-	groupKey := func(page ContentRef) int {
-		if page.TranslationGroupID != nil {
-			return *page.TranslationGroupID
-		}
-		return page.ID
-	}
-
 	best := make(map[int]ContentRef, len(pages))
 	for _, page := range pages {
 		pageRank, ok := rank[page.Language]
 		if !ok {
 			continue
 		}
-		current, ok := best[groupKey(page)]
+		current, ok := best[pageGroupKey(page)]
 		if !ok || pageRank < rank[current.Language] {
-			best[groupKey(page)] = page
+			best[pageGroupKey(page)] = page
 		}
 	}
 
 	chosen := make([]ContentRef, 0, len(best))
 	for _, page := range pages {
-		if best[groupKey(page)].ID == page.ID && best[groupKey(page)].Language == page.Language {
+		if best[pageGroupKey(page)].ID == page.ID && best[pageGroupKey(page)].Language == page.Language {
 			chosen = append(chosen, page)
 		}
 	}
 	return chosen
-}
-
-func (a *DataAssembler) buildNavigationItems(ctx context.Context, currentPath string) []NavigationItem {
-	items := []NavigationItem{
-		{Title: "Home", URL: "/", IsActive: currentPath == "/"},
-	}
-
-	pages, err := a.contentService.GetPublishedPages(ctx)
-	if err == nil {
-		for _, page := range a.preferredPages(pages) {
-			items = append(items, NavigationItem{
-				Title:    page.Title,
-				URL:      "/" + page.Slug,
-				IsActive: currentPath == "/"+page.Slug,
-			})
-		}
-	} else {
-		log.Printf("failed to get published pages for navigation: %v", err)
-	}
-
-	postTypes, err := a.contentService.GetPublishedCustomPostTypes(ctx)
-	if err == nil && a.postTypeResolver != nil {
-		for _, pt := range postTypes {
-			resolved, resolveErr := a.postTypeResolver.GetBySlug(pt)
-			name := pt
-			if resolveErr == nil && resolved.Name != "" {
-				name = resolved.Name
-			}
-			items = append(items, NavigationItem{
-				Title:    name,
-				URL:      "/" + pt,
-				IsActive: currentPath == "/"+pt,
-			})
-		}
-	} else if err != nil {
-		log.Printf("failed to get published custom post types for navigation: %v", err)
-	}
-
-	return items
 }
 
 func (a *DataAssembler) buildLanguageLinks(ctx context.Context, content ContentRef, currentLang string) []LanguageLink {
@@ -257,6 +363,7 @@ func (a *DataAssembler) buildHomeSections(ctx context.Context) []HomeSection {
 	if len(a.homepageSections) == 0 {
 		return nil
 	}
+	lang := a.preferredLang()
 	sections := make([]HomeSection, 0, len(a.homepageSections))
 	for _, hs := range a.homepageSections {
 		limit := hs.Limit
@@ -271,15 +378,27 @@ func (a *DataAssembler) buildHomeSections(ctx context.Context) []HomeSection {
 		if len(contents) == 0 {
 			continue
 		}
-		title := hs.Title
+		title := ""
+		if lang == "id" && strings.TrimSpace(hs.TitleID) != "" {
+			title = hs.TitleID
+		} else if strings.TrimSpace(hs.Title) != "" {
+			title = hs.Title
+		}
 		description := ""
+		if lang == "id" && strings.TrimSpace(hs.DescriptionID) != "" {
+			description = hs.DescriptionID
+		} else if strings.TrimSpace(hs.Description) != "" {
+			description = hs.Description
+		}
 		url := "/" + hs.PostType
 		if a.postTypeResolver != nil {
 			if resolved, resolveErr := a.postTypeResolver.GetBySlug(hs.PostType); resolveErr == nil {
 				if title == "" {
-					title = resolved.Name
+					title = a.localizedPostTypeName(resolved, lang)
 				}
-				description = resolved.Description
+				if description == "" {
+					description = a.localizedPostTypeDescription(resolved, lang)
+				}
 			}
 		}
 		if title == "" {
@@ -300,8 +419,21 @@ func (a *DataAssembler) buildHomeSections(ctx context.Context) []HomeSection {
 	return sections
 }
 
+// listImageURL returns the image that list cards and list-page og:image tags
+// should use: the explicit FeaturedImage first, then the first body image
+// (format-aware), or empty when neither exists.
+func (a *DataAssembler) listImageURL(c ContentRef) string {
+	if trimmed := strings.TrimSpace(c.FeaturedImage); trimmed != "" {
+		return trimmed
+	}
+	if c.Format == FormatHTML {
+		return seo.ExtractImageURLFromHTML(c.Content)
+	}
+	return seo.ExtractImageURL(c.Content)
+}
+
 func (a *DataAssembler) buildPostItem(ctx context.Context, c ContentRef) PostItem {
-	imageURL := seo.ExtractImageURL(c.Content)
+	imageURL := a.listImageURL(c)
 	thumbURL, imageSrcset, imageSizes, imageVariants, originalURL := a.resolvePostImage(imageURL)
 
 	var authorAvatarURL string
@@ -377,6 +509,43 @@ func (a *DataAssembler) Languages() []string {
 	return a.languages
 }
 
+// forRequest returns a shallow copy of the assembler with the negotiated
+// language chain. Listings built from the copy prefer the visitor's language
+// first; the shared assembler keeps the configured order for the next request.
+func (a *DataAssembler) forRequest(languages []string) *DataAssembler {
+	next := *a
+	next.languages = append([]string{}, languages...)
+	return &next
+}
+
+// siteLanguageLinks builds the site-wide language switcher for the given
+// path: one entry per configured language pointing at the same path with
+// ?lang set, so a switch re-renders the listing in that language or redirects
+// a post to its translation. Existing query state (page, year, month) is
+// preserved; only the lang parameter is replaced.
+func (a *DataAssembler) siteLanguageLinks(currentPath string, query url.Values) []LanguageLink {
+	if len(a.languages) <= 1 {
+		return nil
+	}
+	if currentPath == "" {
+		currentPath = "/"
+	}
+	links := make([]LanguageLink, 0, len(a.languages))
+	for _, lang := range a.languages {
+		q := url.Values{}
+		for key, values := range query {
+			q[key] = append([]string{}, values...)
+		}
+		q.Set("lang", lang)
+		links = append(links, LanguageLink{
+			Code: lang,
+			Name: displayLanguage(lang),
+			URL:  currentPath + "?" + q.Encode(),
+		})
+	}
+	return links
+}
+
 func (a *DataAssembler) ContentService() ContentReader {
 	return a.contentService
 }
@@ -414,6 +583,42 @@ func (a *DataAssembler) WithBaseURL(baseURL string) *DataAssembler {
 	return a
 }
 
+// WithUICatalog attaches the i18n UI catalog used for engine-generated listing
+// strings (browse/posts-by/posts-tagged). When nil, English hardcodes apply;
+// when set, the preferred language wins with English fallback.
+func (a *DataAssembler) WithUICatalog(catalog *i18n.Catalog) *DataAssembler {
+	a.uiCatalog = catalog
+	return a
+}
+
+func (a *DataAssembler) preferredLang() string {
+	return primaryLanguage(a.languages)
+}
+
+func (a *DataAssembler) uiFormat(lang, key, fallback string) string {
+	if a.uiCatalog == nil {
+		return fallback
+	}
+	if formatted := a.uiCatalog.T(lang, key); formatted != "" && formatted != key {
+		return formatted
+	}
+	return fallback
+}
+
+func (a *DataAssembler) localizedPostTypeName(pt posttype.PostType, lang string) string {
+	if lang == "id" && strings.TrimSpace(pt.NameID) != "" {
+		return pt.NameID
+	}
+	return pt.Name
+}
+
+func (a *DataAssembler) localizedPostTypeDescription(pt posttype.PostType, lang string) string {
+	if lang == "id" && strings.TrimSpace(pt.DescriptionID) != "" {
+		return pt.DescriptionID
+	}
+	return pt.Description
+}
+
 func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (ContentData, error) {
 	content, err := a.contentService.GetPublishedBySlugAny(ctx, slug)
 	if err != nil {
@@ -446,25 +651,51 @@ func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (Cont
 		ogDesc = content.MetaDescription
 	}
 
+	// Explicit featured image wins; the body-derived image is the fallback.
 	var featuredImage string
-	switch content.Format {
-	case FormatHTML:
-		featuredImage = seo.ExtractImageURLFromHTML(content.Content)
-	default:
-		featuredImage = seo.ExtractImageURL(content.Content)
+	if content.FeaturedImage != "" {
+		featuredImage = content.FeaturedImage
+	} else {
+		switch content.Format {
+		case FormatHTML:
+			featuredImage = seo.ExtractImageURLFromHTML(content.Content)
+		default:
+			featuredImage = seo.ExtractImageURL(content.Content)
+		}
 	}
 
 	currentPath := "/" + slug
-	navItems := a.buildNavigationItems(ctx, currentPath)
+	pageChrome := a.buildChrome(ctx, currentPath)
 
 	var formattedFields []FormattedField
 	var postScripts template.HTML
+	var galleries map[string][]GalleryImage
 	if a.postTypeResolver != nil && content.PostType != "" {
 		if pt, ptErr := a.postTypeResolver.GetBySlug(content.PostType); ptErr == nil {
 			if content.CustomFields != nil {
 				formattedFields = formatCustomFields(pt.Fields, content.CustomFields, lang)
 				formattedFields = append(formattedFields,
 					formatCustomFields(pt.SystemFields, content.CustomFields, lang)...)
+				schemas := make([]customfield.FieldSchema, 0, len(pt.Fields)+len(pt.SystemFields))
+				schemas = append(schemas, pt.Fields...)
+				schemas = append(schemas, pt.SystemFields...)
+				for _, f := range schemas {
+					if f.Type != customfield.FieldTypeGallery {
+						continue
+					}
+					raw, ok := content.CustomFields[f.Slug]
+					if !ok {
+						continue
+					}
+					images := a.resolveGalleryField(raw)
+					if len(images) == 0 {
+						continue
+					}
+					if galleries == nil {
+						galleries = make(map[string][]GalleryImage)
+					}
+					galleries[f.Slug] = images
+				}
 				if declaresPostScript(pt) {
 					if raw, ok := content.CustomFields[customfield.PostScriptSlug]; ok {
 						if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
@@ -517,7 +748,9 @@ func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (Cont
 			OGTitle:         ogTitle,
 			OGDesc:          ogDesc,
 			OGImage:         a.absoluteImageURL(featuredImage),
-			NavigationItems: navItems,
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     currentPath,
 			Lang:            lang,
 			LanguageLinks:   languageLinks,
@@ -533,6 +766,7 @@ func (a *DataAssembler) BuildContentData(ctx context.Context, slug string) (Cont
 		AllowComments:         content.AllowComments,
 		CustomFields:          content.CustomFields,
 		CustomFieldsFormatted: formattedFields,
+		CustomFieldGalleries:  galleries,
 		Related:               relatedItems,
 		Comments:              commentItems,
 		PostType:              content.PostType,
@@ -554,7 +788,7 @@ func (a *DataAssembler) BuildHomeData(ctx context.Context, page, year, month int
 	var ogImage string
 	posts := make([]PostItem, 0, len(contents))
 	for _, c := range contents {
-		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
+		if imageURL := a.listImageURL(c); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
 		posts = append(posts, a.buildPostItem(ctx, c))
@@ -569,14 +803,16 @@ func (a *DataAssembler) BuildHomeData(ctx context.Context, page, year, month int
 	sections := a.buildHomeSections(ctx)
 
 	currentPath := "/"
-	navItems := a.buildNavigationItems(ctx, currentPath)
+	pageChrome := a.buildChrome(ctx, currentPath)
 
 	return IndexData{
 		LayoutData: LayoutData{
 			Title:           a.siteConfig.Name,
 			PageTitle:       a.siteConfig.Name,
 			OGImage:         a.absoluteImageURL(ogImage),
-			NavigationItems: navItems,
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
 			SiteConfig:      a.siteConfig,
@@ -606,29 +842,37 @@ func (a *DataAssembler) BuildIndexData(ctx context.Context, postTypeSlug string,
 	}
 	pageTitle := postTypeSlug
 	if resolveErr == nil && resolved.Name != "" {
-		pageTitle = resolved.Name
+		pageTitle = a.localizedPostTypeName(resolved, primaryLang)
 	}
 
 	posts := make([]PostItem, 0, len(contents))
 	var ogImage string
 	for _, c := range contents {
-		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
+		if imageURL := a.listImageURL(c); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
 		posts = append(posts, a.buildPostItem(ctx, c))
 	}
 
 	currentPath := "/" + postTypeSlug
-	navItems := a.buildNavigationItems(ctx, currentPath)
+	pageChrome := a.buildChrome(ctx, currentPath)
+
+	browseFormat := a.uiFormat(primaryLang, "ui.browse_posts", "Browse %s.")
+	browseText := browseFormat
+	if strings.Contains(browseFormat, "%s") || strings.Contains(browseFormat, "%q") || strings.Contains(browseFormat, "%d") {
+		browseText = fmt.Sprintf(browseFormat, pageTitle)
+	}
 
 	return IndexData{
 		LayoutData: LayoutData{
 			Title:           pageTitle,
 			PageTitle:       fmt.Sprintf("%s - %s", pageTitle, a.siteConfig.Name),
-			Description:     fmt.Sprintf("Browse %s.", pageTitle),
-			OGDesc:          fmt.Sprintf("Browse %s.", pageTitle),
+			Description:     browseText,
+			OGDesc:          browseText,
 			OGImage:         a.absoluteImageURL(ogImage),
-			NavigationItems: navItems,
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
 			SiteConfig:      a.siteConfig,
@@ -661,7 +905,7 @@ func (a *DataAssembler) BuildAuthorData(ctx context.Context, username string, pa
 		if authorName == "" {
 			authorName = c.Author
 		}
-		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
+		if imageURL := a.listImageURL(c); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
 		posts = append(posts, a.buildPostItem(ctx, c))
@@ -695,16 +939,24 @@ func (a *DataAssembler) BuildAuthorData(ctx context.Context, username string, pa
 	}
 
 	currentPath := "/authors/" + username
-	navItems := a.buildNavigationItems(ctx, currentPath)
+	pageChrome := a.buildChrome(ctx, currentPath)
+
+	byFormat := a.uiFormat(primaryLang, "ui.posts_by", "Posts by %s.")
+	byText := byFormat
+	if strings.Contains(byFormat, "%s") || strings.Contains(byFormat, "%q") || strings.Contains(byFormat, "%d") {
+		byText = fmt.Sprintf(byFormat, authorName)
+	}
 
 	return AuthorData{
 		LayoutData: LayoutData{
 			Title:           authorName,
 			PageTitle:       fmt.Sprintf("%s - %s", authorName, a.siteConfig.Name),
-			Description:     fmt.Sprintf("Posts by %s.", authorName),
-			OGDesc:          fmt.Sprintf("Posts by %s.", authorName),
+			Description:     byText,
+			OGDesc:          byText,
 			OGImage:         a.absoluteImageURL(ogImage),
-			NavigationItems: navItems,
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
 			SiteConfig:      a.siteConfig,
@@ -736,23 +988,31 @@ func (a *DataAssembler) BuildTagData(ctx context.Context, tag string, page, year
 	posts := make([]PostItem, 0, len(contents))
 	var ogImage string
 	for _, c := range contents {
-		if imageURL := seo.ExtractImageURL(c.Content); imageURL != "" && ogImage == "" {
+		if imageURL := a.listImageURL(c); imageURL != "" && ogImage == "" {
 			ogImage = imageURL
 		}
 		posts = append(posts, a.buildPostItem(ctx, c))
 	}
 
 	currentPath := "/tags/" + tag
-	navItems := a.buildNavigationItems(ctx, currentPath)
+	pageChrome := a.buildChrome(ctx, currentPath)
+
+	taggedFormat := a.uiFormat(primaryLang, "ui.posts_tagged", "Posts tagged %q.")
+	taggedText := taggedFormat
+	if strings.Contains(taggedFormat, "%s") || strings.Contains(taggedFormat, "%q") || strings.Contains(taggedFormat, "%d") {
+		taggedText = fmt.Sprintf(taggedFormat, tag)
+	}
 
 	return TagData{
 		LayoutData: LayoutData{
 			Title:           tag,
 			PageTitle:       fmt.Sprintf("%s - %s", tag, a.siteConfig.Name),
-			Description:     fmt.Sprintf("Posts tagged %q.", tag),
-			OGDesc:          fmt.Sprintf("Posts tagged %q.", tag),
+			Description:     taggedText,
+			OGDesc:          taggedText,
 			OGImage:         a.absoluteImageURL(ogImage),
-			NavigationItems: navItems,
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			CurrentPath:     currentPath,
 			Lang:            primaryLang,
 			SiteConfig:      a.siteConfig,
@@ -764,13 +1024,15 @@ func (a *DataAssembler) BuildTagData(ctx context.Context, tag string, page, year
 }
 
 func (a *DataAssembler) BuildNotFoundData(ctx context.Context, currentPath string) NotFoundData {
-	navItems := a.buildNavigationItems(ctx, currentPath)
+	pageChrome := a.buildChrome(ctx, currentPath)
 
 	return NotFoundData{
 		LayoutData: LayoutData{
 			Title:           "Not Found",
 			PageTitle:       fmt.Sprintf("Not Found - %s", a.siteConfig.Name),
-			NavigationItems: navItems,
+			NavigationItems: pageChrome.Header,
+			FooterItems:     pageChrome.Footer,
+			Legal:           pageChrome.Legal,
 			Lang:            primaryLanguage(a.languages),
 			SiteConfig:      a.siteConfig,
 		},
@@ -802,8 +1064,13 @@ func NewDataAssembler(
 		languages:         languages,
 		homepageSections:  homepageSections,
 		siteConfig: SiteConfig{
-			Name: siteConfig.Name,
-			Logo: siteConfig.Logo,
+			Name:              siteConfig.Name,
+			Logo:              siteConfig.Logo,
+			Favicon:           siteConfig.Favicon,
+			ProductImageRatio: siteConfig.ProductImageRatio,
+			HeroImage:         siteConfig.HeroImage,
+			HeroTitle:         siteConfig.HeroTitle,
+			HeroSubtitle:      siteConfig.HeroSubtitle,
 		},
 		postsPerPage: postsPerPage,
 	}

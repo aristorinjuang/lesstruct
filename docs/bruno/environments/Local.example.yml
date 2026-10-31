@@ -19,8 +19,15 @@ variables:
     value: alice@lesstruct.local
   - secret: true
     name: VERIFICATION_TOKEN
+  # Login MFA: Login captures the challenge; MFA_CODE is the 6-digit code from
+  # the email (or the server log under DEV_MODE with SMTP unconfigured).
+  # Verify MFA sets the lesstruct_jwt HttpOnly session cookie, which Bruno's
+  # cookie jar stores and sends on every browser-realm request below — no
+  # token variable is needed.
   - secret: true
-    name: TOKEN
+    name: MFA_CHALLENGE_TOKEN
+  - name: MFA_CODE
+    value: "123456"
   - name: USER_ID
     value: "5"
   - secret: true
@@ -53,3 +60,46 @@ variables:
   # Public search
   - name: SEARCH_QUERY
     value: hello
+  # Public catalog product (eCommerce edition)
+  - name: PRODUCT_SLUG
+    value: tshirt
+  # Public cart (eCommerce edition): token from Create Cart, item id from Add Cart Item
+  - name: CART_TOKEN
+    value: ""
+  - name: CART_ITEM_ID
+    value: "1"
+  # Orders (eCommerce edition): CHECKOUT_EMAIL/NAME are the guest contact on
+  # Checkout; ORDER_NUMBER + TRACK_EMAIL + TRACK_TOKEN drive guest tracking
+  # (the token comes from the checkout response's trackingToken field or the
+  # confirmation email's tracking link); ORDER_ID is the admin order surface
+  - name: CHECKOUT_EMAIL
+    value: customer@example.com
+  - name: CHECKOUT_NAME
+    value: Customer Name
+  - name: CHECKOUT_PHONE
+    value: ""
+  - name: ORDER_NUMBER
+    value: ORD-000001
+  - name: TRACK_EMAIL
+    value: customer@example.com
+  - name: TRACK_TOKEN
+    value: ""
+  - name: ORDER_ID
+    value: "1"
+  # Admin orders list: optional lifecycle filter + keyset cursor from meta.pagination
+  - name: ORDER_STATUS
+    value: pending
+  - name: ORDER_CURSOR
+    value: ""
+  # Payments (eCommerce edition): PAYMENT_ID drives the admin payment surface,
+  # PAYMENT_STATUS/PAYMENT_CURSOR the admin list, PAYMENT_ORDER_ID one
+  # order's history; the public proof submission and hosted session
+  # reuse ORDER_NUMBER + TRACK_EMAIL + TRACK_TOKEN
+  - name: PAYMENT_ID
+    value: "1"
+  - name: PAYMENT_STATUS
+    value: pending
+  - name: PAYMENT_CURSOR
+    value: ""
+  - name: PAYMENT_ORDER_ID
+    value: "1"

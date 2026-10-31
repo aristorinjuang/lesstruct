@@ -13,14 +13,15 @@ import (
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/auth"
+	"github.com/aristorinjuang/lesstruct/internal/constants"
+	emailmocks "github.com/aristorinjuang/lesstruct/internal/email/mocks"
+	"github.com/aristorinjuang/lesstruct/internal/modules"
+	repomocks "github.com/aristorinjuang/lesstruct/internal/repository/mocks"
+	"github.com/aristorinjuang/lesstruct/internal/util"
 	authapi "github.com/aristorinjuang/lesstruct/modules/auth/api"
 	authdomain "github.com/aristorinjuang/lesstruct/modules/auth/domain"
-	emailmocks "github.com/aristorinjuang/lesstruct/internal/email/mocks"
-	"github.com/aristorinjuang/lesstruct/internal/constants"
+	authmocks "github.com/aristorinjuang/lesstruct/modules/auth/domain/mocks"
 	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
-	repomocks "github.com/aristorinjuang/lesstruct/internal/repository/mocks"
-	"github.com/aristorinjuang/lesstruct/internal/modules"
-	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -32,6 +33,12 @@ func TestCompleteLoginFlow(t *testing.T) {
 		t.Fatalf("Failed to hash default password: %v", err)
 	}
 
+	loginPassword := "SecurePassword123!"
+	loginPasswordHash, err := auth.HashPassword(loginPassword)
+	if err != nil {
+		t.Fatalf("Failed to hash login password: %v", err)
+	}
+
 	authService := authdomain.NewAuthService(defaultPasswordHash, modules.NewUserCredentialPolicy())
 	jwtManager := auth.NewJWTManager("test-secret-key-for-integration-testing")
 	logger := util.NewLogger(os.Stdout)
@@ -39,34 +46,29 @@ func TestCompleteLoginFlow(t *testing.T) {
 	registrationService := authdomain.NewRegistrationService(nil, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
+	verifiedAdmin := &userdomain.User{
+		ID:           1,
+		Username:     "admin",
+		PasswordHash: loginPasswordHash,
+		Email:        "admin@example.com",
+		Role:         "Admin",
+		Status:       "verified",
+	}
+
 	userRepo := repomocks.NewMockUserRepo(t)
 	userRepo.EXPECT().
-		GetAdminUser(mock.Anything).
-		Return(&userdomain.User{
-			ID:           1,
-			Username:     "admin",
-			PasswordHash: defaultPasswordHash,
-			Email:        "admin@example.com",
-			Role:         "Admin",
-			Status:       "verified",
-		}, nil)
-	userRepo.EXPECT().
 		GetUserByUsername(mock.Anything, "admin").
-		Return(&userdomain.User{
-			ID:           1,
-			Username:     "admin",
-			PasswordHash: defaultPasswordHash,
-			Email:        "admin@example.com",
-			Role:         "Admin",
-			Status:       "verified",
-		}, nil)
+		Return(verifiedAdmin, nil)
+	userRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(verifiedAdmin, nil)
 
 	userRepo.EXPECT().
 		UpdateLastLoginAt(mock.Anything, mock.Anything).
 		Return(nil)
 
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	failedLoginRepo.EXPECT().
 		IsLocked(mock.Anything, 1).
 		Return(false, (*time.Time)(nil), nil)
@@ -77,10 +79,10 @@ func TestCompleteLoginFlow(t *testing.T) {
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, deliverer := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -96,10 +98,10 @@ func TestCompleteLoginFlow(t *testing.T) {
 		blockedEmailRepo,
 	)
 
-	// Test login with correct credentials
+	// Test the password step with correct credentials
 	reqBody := authapi.LoginRequest{
 		Username: "admin",
-		Password: "admin",
+		Password: loginPassword,
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
@@ -109,14 +111,48 @@ func TestCompleteLoginFlow(t *testing.T) {
 
 	authHandler.Login(w, req)
 
-	// Assert response status
 	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", w.Code)
+		t.Fatalf("Expected password step status 200, got %d", w.Code)
 	}
 
-	// Verify JWT token is returned
+	var challengeResp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&challengeResp); err != nil {
+		t.Fatalf("Failed to decode challenge response: %v", err)
+	}
+
+	challengeData, ok := challengeResp["data"].(map[string]any)
+	if !ok {
+		t.Fatal("Challenge data should be an object")
+	}
+
+	challengeToken, _ := challengeData["challengeToken"].(string)
+	if challengeToken == "" {
+		t.Fatal("Password step should issue a challenge token")
+	}
+
+	if deliverer.code == "" {
+		t.Fatal("Login code should have been delivered")
+	}
+
+	// Test the code step
+	verifyBody := authapi.MFAVerifyRequest{
+		ChallengeToken: challengeToken,
+		Code:           deliverer.code,
+	}
+	verifyBytes, _ := json.Marshal(verifyBody)
+
+	verifyReq := httptest.NewRequest(http.MethodPost, "/api/auth/mfa/verify", bytes.NewReader(verifyBytes))
+	verifyReq.Header.Set("Content-Type", "application/json")
+	verifyW := httptest.NewRecorder()
+
+	authHandler.VerifyMFA(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusOK {
+		t.Fatalf("Expected verify step status 200, got %d", verifyW.Code)
+	}
+
 	var resp map[string]any
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+	if err := json.NewDecoder(verifyW.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
@@ -125,15 +161,37 @@ func TestCompleteLoginFlow(t *testing.T) {
 		t.Fatal("Response data should be an object")
 	}
 
-	token, ok := data["token"].(string)
-	if !ok || token == "" {
-		t.Error("JWT token should be returned in response")
+	if _, present := data["token"]; present {
+		t.Error("JWT token must not be returned in the response body")
 	}
 
-	// Verify token can be validated
-	claims, err := jwtManager.ValidateToken(token)
+	userData, ok := data["user"].(map[string]any)
+	if !ok {
+		t.Fatal("Response data should carry the user")
+	}
+	if userData["username"] != "admin" {
+		t.Errorf("Expected username 'admin', got '%v'", userData["username"])
+	}
+
+	// The session travels in the HttpOnly cookie: it must be set with the
+	// session attributes and validate like the old Bearer did.
+	var sessionCookie *http.Cookie
+	for _, c := range verifyW.Result().Cookies() {
+		if c.Name == "lesstruct_jwt" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("Session cookie lesstruct_jwt should be set")
+	}
+	if !sessionCookie.HttpOnly {
+		t.Error("Session cookie must be HttpOnly")
+	}
+
+	// Verify the cookie value validates
+	claims, err := jwtManager.ValidateToken(sessionCookie.Value)
 	if err != nil {
-		t.Errorf("Failed to validate JWT token: %v", err)
+		t.Errorf("Failed to validate session cookie token: %v", err)
 	}
 
 	if claims.Username != "admin" {
@@ -158,14 +216,14 @@ func TestLoginWithEmptyCredentials(t *testing.T) {
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -226,14 +284,14 @@ func TestLoginWithInvalidJSON(t *testing.T) {
 
 	userRepo := repomocks.NewMockUserRepo(t)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -261,10 +319,14 @@ func TestLoginWithInvalidJSON(t *testing.T) {
 	}
 }
 
-// TestLoginResponseStructure tests the structure of the login response
+// TestLoginResponseStructure tests the structure of both login responses:
+// the MFA challenge after the password step and the session after the code
+// step.
 func TestLoginResponseStructure(t *testing.T) {
 	// Setup
 	defaultPasswordHash, _ := auth.HashPassword(constants.DefaultPassword)
+	loginPassword := "SecurePassword123!"
+	loginPasswordHash, _ := auth.HashPassword(loginPassword)
 	authService := authdomain.NewAuthService(defaultPasswordHash, modules.NewUserCredentialPolicy())
 	jwtManager := auth.NewJWTManager("test-secret")
 	logger := util.NewLogger(os.Stdout)
@@ -272,34 +334,28 @@ func TestLoginResponseStructure(t *testing.T) {
 	registrationService := authdomain.NewRegistrationService(nil, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(nil, nil, 24)
 
+	verifiedAdmin := &userdomain.User{
+		ID:           1,
+		Username:     "admin",
+		PasswordHash: loginPasswordHash,
+		Email:        "admin@example.com",
+		Role:         "Admin",
+		Status:       "verified",
+	}
+
 	userRepo := repomocks.NewMockUserRepo(t)
 	userRepo.EXPECT().
-		GetAdminUser(mock.Anything).
-		Return(&userdomain.User{
-			ID:           1,
-			Username:     "admin",
-			PasswordHash: defaultPasswordHash,
-			Email:        "admin@example.com",
-			Role:         "Admin",
-			Status:       "verified",
-		}, nil)
-	userRepo.EXPECT().
 		GetUserByUsername(mock.Anything, "admin").
-		Return(&userdomain.User{
-			ID:           1,
-			Username:     "admin",
-			PasswordHash: defaultPasswordHash,
-			Email:        "admin@example.com",
-			Role:         "Admin",
-			Status:       "verified",
-		}, nil)
-
+		Return(verifiedAdmin, nil)
+	userRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(verifiedAdmin, nil)
 	userRepo.EXPECT().
 		UpdateLastLoginAt(mock.Anything, mock.Anything).
 		Return(nil)
 
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	failedLoginRepo.EXPECT().
 		IsLocked(mock.Anything, 1).
 		Return(false, (*time.Time)(nil), nil)
@@ -310,10 +366,10 @@ func TestLoginResponseStructure(t *testing.T) {
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, deliverer := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -331,7 +387,7 @@ func TestLoginResponseStructure(t *testing.T) {
 
 	reqBody := authapi.LoginRequest{
 		Username: "admin",
-		Password: "admin",
+		Password: loginPassword,
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
@@ -341,12 +397,15 @@ func TestLoginResponseStructure(t *testing.T) {
 
 	authHandler.Login(w, req)
 
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected password step status 200, got %d", w.Code)
+	}
+
 	var resp map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	// Check response structure
 	if _, ok := resp["data"]; !ok {
 		t.Error("Response should have 'data' field")
 	}
@@ -355,22 +414,76 @@ func TestLoginResponseStructure(t *testing.T) {
 		t.Error("Successful response should not have 'error' field")
 	}
 
-	// Check data structure
 	data, ok := resp["data"].(map[string]any)
 	if !ok {
 		t.Fatal("Response data should be an object")
 	}
 
-	if _, ok := data["token"]; !ok {
-		t.Error("Response data should have 'token' field")
+	if mfaRequired, _ := data["mfaRequired"].(bool); !mfaRequired {
+		t.Error("Challenge response should report mfaRequired")
 	}
 
-	if _, ok := data["user"]; !ok {
-		t.Error("Response data should have 'user' field")
+	challengeToken, _ := data["challengeToken"].(string)
+	if challengeToken == "" {
+		t.Fatal("Challenge response should carry a challengeToken")
 	}
 
-	// Check user structure
-	user, ok := data["user"].(map[string]any)
+	if _, ok := data["token"]; ok {
+		t.Error("Challenge response must not carry a session token")
+	}
+
+	if hint, _ := data["emailHint"].(string); hint != "a***@example.com" {
+		t.Errorf("Expected masked email hint, got %q", hint)
+	}
+
+	if deliverer.code == "" {
+		t.Fatal("Code should have been delivered")
+	}
+
+	verifyBody := authapi.MFAVerifyRequest{
+		ChallengeToken: challengeToken,
+		Code:           deliverer.code,
+	}
+	verifyBytes, _ := json.Marshal(verifyBody)
+
+	verifyReq := httptest.NewRequest(http.MethodPost, "/api/auth/mfa/verify", bytes.NewReader(verifyBytes))
+	verifyReq.Header.Set("Content-Type", "application/json")
+	verifyW := httptest.NewRecorder()
+
+	authHandler.VerifyMFA(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusOK {
+		t.Fatalf("Expected verify step status 200, got %d", verifyW.Code)
+	}
+
+	var verifyResp map[string]any
+	if err := json.NewDecoder(verifyW.Body).Decode(&verifyResp); err != nil {
+		t.Fatalf("Failed to decode verify response: %v", err)
+	}
+
+	verifyData, ok := verifyResp["data"].(map[string]any)
+	if !ok {
+		t.Fatal("Verify response data should be an object")
+	}
+
+	if _, ok := verifyData["token"]; ok {
+		t.Error("Verify response data must not have a 'token' field")
+	}
+
+	var sessionCookie *http.Cookie
+	for _, c := range verifyW.Result().Cookies() {
+		if c.Name == "lesstruct_jwt" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("Verify response should set the lesstruct_jwt session cookie")
+	}
+	if !sessionCookie.HttpOnly {
+		t.Error("Session cookie must be HttpOnly")
+	}
+
+	user, ok := verifyData["user"].(map[string]any)
 	if !ok {
 		t.Fatal("User should be an object")
 	}
@@ -420,7 +533,7 @@ func TestCompleteRegistrationFlow(t *testing.T) {
 		Return(nil)
 
 	// Configure verification token repository mock
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	verificationTokenRepo.EXPECT().
 		DeleteUserTokens(mock.Anything, mock.Anything).
 		Return(nil)
@@ -434,7 +547,7 @@ func TestCompleteRegistrationFlow(t *testing.T) {
 	notificationRepo.EXPECT().
 		CreateNotification(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
 	blockedEmailRepo.EXPECT().
@@ -447,10 +560,10 @@ func TestCompleteRegistrationFlow(t *testing.T) {
 		SendVerificationEmail(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
 
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -484,8 +597,8 @@ func TestCompleteRegistrationFlow(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Assert response status
-	if w.Code != http.StatusCreated {
-		t.Errorf("Expected status 201, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
 	// Verify user was created with pending status
@@ -522,8 +635,8 @@ func TestCompleteRegistrationFlow(t *testing.T) {
 		t.Error("Response data should have message field")
 	}
 
-	if _, ok := data["userId"]; !ok {
-		t.Error("Response data should have userId field")
+	if _, ok := data["userId"]; ok {
+		t.Error("Response data must not include a userId (anti-enumeration)")
 	}
 }
 
@@ -565,7 +678,7 @@ func TestCompleteVerificationFlow(t *testing.T) {
 	// Configure verification token repository mock
 	var storedToken *authdomain.VerificationToken
 
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	verificationTokenRepo.EXPECT().
 		DeleteUserTokens(mock.Anything, testUser.ID).
 		Return(nil)
@@ -594,14 +707,14 @@ func TestCompleteVerificationFlow(t *testing.T) {
 	notificationRepo.EXPECT().
 		CreateNotification(mock.Anything, mock.Anything, mock.Anything).
 		Return(nil)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -672,7 +785,7 @@ func TestExpiredTokenFlow(t *testing.T) {
 	userRepo := repomocks.NewMockUserRepo(t)
 
 	// Configure verification token repository mock to return expired token
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	verificationTokenRepo.EXPECT().
 		FindValidToken(mock.Anything, mock.Anything).
 		Return(&authdomain.VerificationToken{
@@ -686,14 +799,14 @@ func TestExpiredTokenFlow(t *testing.T) {
 	registrationService := authdomain.NewRegistrationService(userRepo, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -762,7 +875,7 @@ func TestResendVerificationFlow(t *testing.T) {
 	// Configure verification token repository mock
 	var newVerificationTokenHash string
 
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	verificationTokenRepo.EXPECT().
 		DeleteUserTokens(mock.Anything, pendingUser.ID).
 		Return(nil)
@@ -776,7 +889,7 @@ func TestResendVerificationFlow(t *testing.T) {
 	registrationService := authdomain.NewRegistrationService(userRepo, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 
 	// Configure email service mock - use Maybe since it runs in a goroutine
@@ -786,10 +899,10 @@ func TestResendVerificationFlow(t *testing.T) {
 		Return(nil)
 
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -873,19 +986,19 @@ func TestResendVerificationFlow_EmailAlreadyVerified(t *testing.T) {
 		GetUserByEmail(mock.Anything, pendingUser.Email).
 		Return(pendingUser, nil)
 
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	registrationService := authdomain.NewRegistrationService(userRepo, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -955,7 +1068,7 @@ func TestResendVerificationFlow_EmailAlreadyVerifiedLegacyMode(t *testing.T) {
 		Return(pendingUser, nil)
 
 	var newVerificationTokenHash string
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	verificationTokenRepo.EXPECT().
 		DeleteUserTokens(mock.Anything, pendingUser.ID).
 		Return(nil)
@@ -969,7 +1082,7 @@ func TestResendVerificationFlow_EmailAlreadyVerifiedLegacyMode(t *testing.T) {
 	registrationService := authdomain.NewRegistrationService(userRepo, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
 
 	// Configure email service mock - use Maybe since it runs in a goroutine
@@ -979,11 +1092,11 @@ func TestResendVerificationFlow_EmailAlreadyVerifiedLegacyMode(t *testing.T) {
 		Return(nil)
 
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
 	// No admin-approval option: legacy mode
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -1039,13 +1152,13 @@ func TestForgotPasswordAndResetFlow(t *testing.T) {
 	newPasswordHash, _ := auth.HashPassword("NewP@ssw0rd!12345")
 
 	userRepo := repomocks.NewMockUserRepo(t)
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	registrationService := authdomain.NewRegistrationService(userRepo, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 
 	emailService := emailmocks.NewMockEmailService(t)
@@ -1055,7 +1168,7 @@ func TestForgotPasswordAndResetFlow(t *testing.T) {
 
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, deliverer := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),
@@ -1196,8 +1309,53 @@ func TestForgotPasswordAndResetFlow(t *testing.T) {
 		t.Fatalf("Failed to decode login response: %v", err)
 	}
 	loginData, _ := loginResp["data"].(map[string]any)
-	if _, ok := loginData["token"]; !ok {
-		t.Error("Login response should contain token")
+	challengeToken, _ := loginData["challengeToken"].(string)
+	if challengeToken == "" {
+		t.Fatal("Login password step should issue a challenge token")
+	}
+
+	// Complete the second step with the delivered code.
+	userRepo.EXPECT().
+		GetUserByID(mock.Anything, 1).
+		Return(&userdomain.User{
+			ID:           1,
+			Username:     "testuser",
+			PasswordHash: newPasswordHash,
+			Email:        "user@example.com",
+			Role:         "Admin",
+			Status:       "verified",
+		}, nil)
+
+	verifyBody, _ := json.Marshal(authapi.MFAVerifyRequest{
+		ChallengeToken: challengeToken,
+		Code:           deliverer.code,
+	})
+	verifyReq := httptest.NewRequest(http.MethodPost, "/api/auth/mfa/verify", bytes.NewReader(verifyBody))
+	verifyReq.Header.Set("Content-Type", "application/json")
+	verifyW := httptest.NewRecorder()
+
+	authHandler.VerifyMFA(verifyW, verifyReq)
+
+	if verifyW.Code != http.StatusOK {
+		t.Fatalf("Verify after reset: expected 200, got %d. Body: %s", verifyW.Code, verifyW.Body.String())
+	}
+
+	var verifyResp map[string]any
+	if err := json.NewDecoder(verifyW.Body).Decode(&verifyResp); err != nil {
+		t.Fatalf("Failed to decode verify response: %v", err)
+	}
+	verifyData, _ := verifyResp["data"].(map[string]any)
+	if _, ok := verifyData["token"]; ok {
+		t.Error("Verify response must not contain a token")
+	}
+	foundSessionCookie := false
+	for _, c := range verifyW.Result().Cookies() {
+		if c.Name == "lesstruct_jwt" && c.HttpOnly {
+			foundSessionCookie = true
+		}
+	}
+	if !foundSessionCookie {
+		t.Error("Verify response should set the HttpOnly lesstruct_jwt session cookie")
 	}
 }
 
@@ -1210,18 +1368,18 @@ func TestForgotPasswordNonexistentEmail(t *testing.T) {
 	firstLoginService := authdomain.NewFirstLoginService(modules.NewUserCredentialPolicy())
 
 	userRepo := repomocks.NewMockUserRepo(t)
-	verificationTokenRepo := repomocks.NewMockVerificationTokenRepo(t)
+	verificationTokenRepo := authmocks.NewMockVerificationTokenRepo(t)
 	registrationService := authdomain.NewRegistrationService(userRepo, modules.NewUserCredentialPolicy(), true)
 	verificationService := authdomain.NewVerificationService(userRepo, verificationTokenRepo, 24)
 	notificationRepo := repomocks.NewMockNotificationRepo(t)
-	failedLoginRepo := repomocks.NewMockFailedLoginAttemptRepo(t)
+	failedLoginRepo := authmocks.NewMockFailedLoginAttemptRepo(t)
 	loginService := authdomain.NewLoginService(userRepo, failedLoginRepo, modules.NewUserCredentialPolicy(), nil)
-	passwordResetTokenRepo := repomocks.NewMockPasswordResetTokenRepo(t)
+	passwordResetTokenRepo := authmocks.NewMockPasswordResetTokenRepo(t)
 	passwordResetService := authdomain.NewPasswordResetService(userRepo, passwordResetTokenRepo, modules.NewUserCredentialPolicy(), 1)
 	emailService := emailmocks.NewMockEmailService(t)
 	blockedEmailRepo := repomocks.NewMockBlockedEmailRepo(t)
 
-	authHandler := authapi.NewAuthHandler(
+	authHandler, _ := newTestAuthHandler(
 		authService,
 		jwtManager,
 		modules.NewLogger(logger),

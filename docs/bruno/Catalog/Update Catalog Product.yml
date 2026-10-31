@@ -1,0 +1,33 @@
+info:
+  name: Update Catalog Product
+  type: http
+  seq: 2
+
+http:
+  method: PUT
+  url: "{{BASE_URL}}/api/v1/catalog/products/1"
+  body:
+    type: json
+    data: |-
+      {
+        "price": 299000,
+        "salePrice": 249000,
+        "sku": "TSHIRT",
+        "trackInventory": true,
+        "stock": 7,
+        "lowStockThreshold": 3,
+        "options": {
+          "size": ["S", "M", "L"]
+        },
+        "variants": [
+          { "options": { "size": "S" }, "sku": "TSHIRT-S", "stock": 2 },
+          { "options": { "size": "M" }, "sku": "TSHIRT-M", "stock": 4, "price": 279000 }
+        ]
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

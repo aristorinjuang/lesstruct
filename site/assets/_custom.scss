@@ -173,7 +173,9 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--gray-500);
+  /* gray-500 fails the 4.5:1 contrast threshold for small text in light mode;
+     gray-600 passes in both color schemes (8.2:1 light, 5.5:1 dark). */
+  color: var(--gray-600);
 }
 
 .landing-hero h1 {
@@ -246,6 +248,21 @@
 .landing-section-lede {
   margin: 0 0 1.75rem;
   color: var(--gray-600);
+}
+
+/* Links inside the lede sit in a run of body copy, so color alone is not
+   enough to distinguish them — keep the underline. */
+.landing-section-lede a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/* Same rule for the landing's quick-start markdown. In dark mode the theme's
+   link blue (#84b2ff) on the code surface (#5c6165) is 2.9:1, below AA, so
+   link-coloured code chips get a lighter tint. */
+.landing-content a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .landing-feature-grid {
@@ -331,7 +348,7 @@
 .screenshot figcaption {
   margin-top: 0.5rem;
   font-size: 0.85rem;
-  color: var(--gray-500);
+  color: var(--gray-600);
   line-height: 1.4;
 }
 
@@ -598,4 +615,25 @@
 
 .landing-404 .landing-cta {
   margin-top: 1.25rem;
+}
+
+/* Footer copyright links sit inside a sentence — underline them so they do not
+   rely on colour alone (required in dark mode, where link/text contrast is
+   below 3:1). */
+.book-copyright a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+/* Dark-mode contrast repairs for the landing (declared after the base rules so
+   the cascade applies): link-coloured code chips inside the quick-start copy
+   and the product badges were below AA on their dark surfaces. */
+@media (prefers-color-scheme: dark) {
+  .landing-content a code {
+    color: #d4e2ff;
+  }
+
+  .product-tile .product-badge {
+    color: #a8c7ff;
+  }
 }

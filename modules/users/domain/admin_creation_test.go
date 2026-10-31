@@ -407,3 +407,75 @@ func TestAdminCreateUserService_CreateUser_DependencyFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminCreateUserService_CreateUser_CommentatorGating(t *testing.T) {
+	tests := []struct {
+		name         string
+		comments     bool
+		registration *bool
+		wantErr      bool
+	}{
+		{
+			name:     "success - comments enabled without registration override allows",
+			comments: true,
+			wantErr:  false,
+		},
+		{
+			name:     "error - comments disabled without registration override refuses",
+			comments: false,
+			wantErr:  true,
+		},
+		{
+			name:         "error - comments disabled refuses even with registration enabled",
+			comments:     false,
+			registration: func() *bool { v := true; return &v }(),
+			wantErr:      true,
+		},
+		{
+			name:         "error - registration explicitly disabled refuses even with comments",
+			comments:     true,
+			registration: func() *bool { v := false; return &v }(),
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockUserRepo := mocks.NewMockAdminCreateUserRepo(t)
+			mockBlockedEmailRepo := mocks.NewMockBlockedEmailRepo(t)
+
+			if !tt.wantErr {
+				mockUserRepo.EXPECT().CheckUsernameExists(context.Background(), "testuser").Return(false, nil)
+				mockUserRepo.EXPECT().CheckEmailExists(context.Background(), "test@example.com").Return(false, nil)
+				mockBlockedEmailRepo.EXPECT().IsEmailBlocked(context.Background(), "test@example.com").Return(false, nil)
+				mockUserRepo.EXPECT().CreateUser(
+					context.Background(),
+					mock.AnythingOfType("*user.User"),
+				).RunAndReturn(func(_ context.Context, u *user.User) error {
+					u.ID = 43
+					return nil
+				})
+			}
+
+			opts := []user.AdminCreateUserOption{}
+			if tt.registration != nil {
+				opts = append(opts, user.WithRegistrationEnabled(*tt.registration))
+			}
+			svc := user.NewAdminCreateUserService(mockUserRepo, mockBlockedEmailRepo, stubPolicy{}, tt.comments, opts...)
+
+			result, err := svc.CreateUser(context.Background(), user.AdminCreateUserRequest{
+				Username: "testuser",
+				Email:    "test@example.com",
+				Role:     "Commentator",
+			})
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, user.ErrInvalidRole)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "Commentator", result.User.Role)
+		})
+	}
+}

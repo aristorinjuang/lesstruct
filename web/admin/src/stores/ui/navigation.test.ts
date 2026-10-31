@@ -9,10 +9,15 @@ vi.mock('@/composables/useAuth', () => ({
   })),
 }))
 
-// Mock useConfig so tests can control the comments flag without network calls
+// Mock useConfig so tests can control the comments flag and the commerce
+// config extras without network calls.
+const ordersRef = ref<{ currency: string } | null>(null)
+const paymentsRef = ref<{ methods: string[]; gateway: boolean } | null>(null)
 vi.mock('@/composables/useConfig', () => ({
   useConfig: vi.fn(() => ({
     commentsEnabled: ref(true),
+    orders: ordersRef,
+    payments: paymentsRef,
   })),
 }))
 
@@ -59,6 +64,8 @@ describe('NavigationStore', () => {
     roleStoreState.me = null
     roleStoreState.roles = []
     roleStoreState.capabilitiesLoaded = false
+    ordersRef.value = null
+    paymentsRef.value = null
     // Clear localStorage
     localStorage.clear()
   })
@@ -230,6 +237,44 @@ describe('NavigationStore', () => {
       expect(paths).toContain('/media')
       expect(paths).not.toContain('/content?type=post')
       expect(paths).not.toContain('/dashboard')
+    })
+
+    it('should show the orders entry only on commerce installs', () => {
+      const store = useNavigationStore()
+      expect(store.navigationItems.map(item => item.path)).not.toContain('/orders')
+      expect(store.navigationItems.map(item => item.path)).not.toContain('/settings/invoice')
+
+      ordersRef.value = { currency: 'IDR' }
+      const paths = store.navigationItems.map(item => item.path)
+      expect(paths).toContain('/orders')
+      expect(store.navigationItems).toContainEqual({
+        path: '/orders',
+        label: 'Orders',
+        icon: 'shopping-bag',
+        permission: 'admin',
+      })
+      expect(paths).toContain('/settings/invoice')
+      expect(store.navigationItems).toContainEqual({
+        path: '/settings/invoice',
+        label: 'Invoice settings',
+        icon: 'document',
+        permission: 'admin',
+      })
+    })
+
+    it('should show the payments entry only on commerce installs', () => {
+      const store = useNavigationStore()
+      expect(store.navigationItems.map(item => item.path)).not.toContain('/payments')
+
+      paymentsRef.value = { methods: ['manual'], gateway: false }
+      const paths = store.navigationItems.map(item => item.path)
+      expect(paths).toContain('/payments')
+      expect(store.navigationItems).toContainEqual({
+        path: '/payments',
+        label: 'Payments',
+        icon: 'document-text',
+        permission: 'admin',
+      })
     })
   })
 

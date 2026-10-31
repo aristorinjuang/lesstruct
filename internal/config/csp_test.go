@@ -52,6 +52,64 @@ func TestLoadCSPConfig_NoSection(t *testing.T) {
 	assert.Empty(t, cspCfg.Policy)
 }
 
+func TestLoadCSPConfig_StorageOriginAppendedToImgSrc(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		extraSrc []string
+		wantImg  []string
+	}{
+		{
+			name:    "s3 cdn origin is appended",
+			baseURL: "https://cdn.example.com",
+			wantImg: []string{"https://cdn.example.com"},
+		},
+		{
+			name:    "port is kept and path dropped",
+			baseURL: "https://cdn.example.com:8443/assets",
+			wantImg: []string{"https://cdn.example.com:8443"},
+		},
+		{
+			name:     "operator sources keep their place",
+			baseURL:  "https://cdn.example.com",
+			extraSrc: []string{"https://images.example.com"},
+			wantImg:  []string{"https://images.example.com", "https://cdn.example.com"},
+		},
+		{
+			name:    "no storage base url appends nothing",
+			baseURL: "",
+			wantImg: nil,
+		},
+		{
+			name:    "unparseable base url appends nothing",
+			baseURL: "not a url",
+			wantImg: nil,
+		},
+		{
+			name:    "non-http scheme appends nothing",
+			baseURL: "ftp://cdn.example.com",
+			wantImg: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config.toml")
+			content := "languages = [\"en\"]\n"
+			if tt.extraSrc != nil {
+				content = "[csp]\nimg_src = [\"https://images.example.com\"]\n"
+			}
+			require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+			cfg := &config.Config{ConfigDir: tmpDir, ConfigFile: "config.toml", StorageS3PublicBaseURL: tt.baseURL}
+			cspCfg, err := config.LoadCSPConfig(cfg)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantImg, cspCfg.ImgSrc)
+		})
+	}
+}
+
 func TestLoadCSPConfig_WithExtras(t *testing.T) {
 	tmpDir := t.TempDir()
 	configContent := `
@@ -276,11 +334,11 @@ func TestBuild_Defaults(t *testing.T) {
 	assert.Contains(t, headerValue, "default-src 'self'")
 	assert.Contains(t, headerValue, "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net")
 	assert.Contains(t, headerValue, "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net")
-	assert.Contains(t, headerValue, "img-src 'self' data: blob: https:")
+	assert.Contains(t, headerValue, "img-src 'self' data: blob:")
 	assert.Contains(t, headerValue, "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net")
 	assert.Contains(t, headerValue, "connect-src 'self'")
-	assert.Contains(t, headerValue, "frame-src 'self' https://www.youtube.com")
-	assert.Contains(t, headerValue, "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com")
+	assert.Contains(t, headerValue, "frame-src 'self' blob: chrome-extension: https://www.youtube.com")
+	assert.Contains(t, headerValue, "frame-src 'self' blob: chrome-extension: https://www.youtube.com https://www.youtube-nocookie.com")
 	assert.Contains(t, headerValue, "frame-ancestors 'none'")
 	assert.Contains(t, headerValue, "base-uri 'self'")
 	assert.Contains(t, headerValue, "form-action 'self'")
@@ -298,9 +356,9 @@ func TestBuild_WithAppends(t *testing.T) {
 
 func TestBuild_FrameAncestorsReplaces(t *testing.T) {
 	tests := []struct {
-		name      string
-		cfg       config.CSPConfig
-		want      string
+		name string
+		cfg  config.CSPConfig
+		want string
 	}{
 		{
 			name: "default none",
@@ -482,7 +540,7 @@ func TestBuild_ExtraDirectives(t *testing.T) {
 	cspCfg := config.CSPConfig{
 		ExtraDirectives: map[string]string{
 			"upgrade-insecure-requests": "",
-			"report-uri":               "https://example.com/csp-report",
+			"report-uri":                "https://example.com/csp-report",
 		},
 	}
 	_, headerValue := cspCfg.Build()
@@ -535,10 +593,10 @@ func TestBuild_AllAppendableDirectives(t *testing.T) {
 	_, headerValue := cspCfg.Build()
 	assert.Contains(t, headerValue, "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net a")
 	assert.Contains(t, headerValue, "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net b")
-	assert.Contains(t, headerValue, "img-src 'self' data: blob: https: c")
+	assert.Contains(t, headerValue, "img-src 'self' data: blob: c")
 	assert.Contains(t, headerValue, "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net d")
 	assert.Contains(t, headerValue, "connect-src 'self' e")
-	assert.Contains(t, headerValue, "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com f")
+	assert.Contains(t, headerValue, "frame-src 'self' blob: chrome-extension: https://www.youtube.com https://www.youtube-nocookie.com f")
 	assert.Contains(t, headerValue, "media-src g")
 	assert.Contains(t, headerValue, "object-src h")
 	assert.Contains(t, headerValue, "worker-src i")
@@ -651,6 +709,58 @@ func TestIFrameHosts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.cfg.IFrameHosts()
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestBuild_FrameSrcBlobPDFViewer(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.CSPConfig
+		want string
+	}{
+		{
+			name: "defaults allow blob pdf viewer",
+			cfg:  config.CSPConfig{},
+			want: "frame-src 'self' blob: chrome-extension: https://www.youtube.com https://www.youtube-nocookie.com",
+		},
+		{
+			name: "operator blob append dedups",
+			cfg:  config.CSPConfig{FrameSrc: []string{"blob:"}},
+			want: "frame-src 'self' blob: chrome-extension: https://www.youtube.com https://www.youtube-nocookie.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, headerValue := tt.cfg.Build()
+			assert.Contains(t, headerValue, tt.want)
+			assert.NotContains(t, headerValue, "blob: blob:")
+		})
+	}
+}
+
+func TestIFrameHosts_SkipsViewerSchemes(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  config.CSPConfig
+		want []string
+	}{
+		{
+			name: "defaults exclude blob and chrome-extension schemes",
+			cfg:  config.CSPConfig{},
+			want: []string{"www.youtube.com", "www.youtube-nocookie.com"},
+		},
+		{
+			name: "appends exclude blob and chrome-extension schemes",
+			cfg:  config.CSPConfig{FrameSrc: []string{"blob:", "chrome-extension:", "https://vimeo.com"}},
+			want: []string{"www.youtube.com", "www.youtube-nocookie.com", "vimeo.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.cfg.IFrameHosts())
 		})
 	}
 }

@@ -45,6 +45,10 @@ func TestModule_ThemeFiles(t *testing.T) {
 		"pages/reset_password.gohtml",
 		"static/base.css",
 		"static/style.css",
+		"static/favicon.svg",
+		"static/favicon.ico",
+		"static/favicon-96x96.png",
+		"static/apple-touch-icon.png",
 	} {
 		_, err := fs.Stat(files, path)
 		assert.NoError(t, err, "theme file %q must exist", path)

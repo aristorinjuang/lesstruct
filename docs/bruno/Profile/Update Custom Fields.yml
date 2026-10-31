@@ -14,9 +14,7 @@ http:
           "bio": "Updated bio text"
         }
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

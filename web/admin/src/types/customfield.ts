@@ -1,4 +1,21 @@
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'datetime' | 'email' | 'url' | 'select' | 'checkbox'
+export type FieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'date'
+  | 'datetime'
+  | 'email'
+  | 'url'
+  | 'select'
+  | 'checkbox'
+  | 'multiselect'
+  | 'list'
+  | 'gallery'
+
+export interface GalleryItem {
+  url: string
+  alt: string
+}
 
 export interface FieldSchema {
   name: string
@@ -9,4 +26,5 @@ export interface FieldSchema {
   min?: number
   max?: number
   maxLength?: number
+  maxItems?: number
 }

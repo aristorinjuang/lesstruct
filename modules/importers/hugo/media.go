@@ -36,20 +36,6 @@ const (
 	dupReasonVisual = "visual"
 )
 
-// MediaService is the subset of the media domain service used to re-upload
-// Hugo images (both local static/ files and remote URLs). It mirrors the
-// wordpress package's mediaService interface so the same concrete service can
-// be shared.
-type MediaService interface {
-	GenerateFromBytes(
-		ctx context.Context,
-		imageBytes []byte,
-		principal kernel.Principal,
-		altText string,
-		originalFilename string,
-	) (*mediadomain.Media, error)
-}
-
 var (
 	// imageSrcRe matches an <img> tag and captures its src attribute value.
 	imageSrcRe = regexp.MustCompile(`<img\b[^>]*\bsrc="([^"]*)"[^>]*>`)
@@ -146,6 +132,20 @@ func altTextFromRef(ref string) string {
 		return "Imported from Hugo"
 	}
 	return name
+}
+
+// MediaService is the subset of the media domain service used to re-upload
+// Hugo images (both local static/ files and remote URLs). It mirrors the
+// wordpress package's mediaService interface so the same concrete service can
+// be shared.
+type MediaService interface {
+	GenerateFromBytes(
+		ctx context.Context,
+		imageBytes []byte,
+		principal kernel.Principal,
+		altText string,
+		originalFilename string,
+	) (*mediadomain.Media, error)
 }
 
 // failure records a reference whose migration failed, including what the body

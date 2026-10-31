@@ -10,9 +10,7 @@ info:
 http:
   method: POST
   url: "{{BASE_URL}}/api/admin/users/{{USER_ID}}/approve"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

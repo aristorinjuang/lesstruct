@@ -48,10 +48,10 @@ func TestNewService_SeedsBuiltInRoles(t *testing.T) {
 			},
 		},
 		{
-			name: "commentator keeps media and comment capabilities",
+			name: "commentator may comment but may not use media",
 			role: "Commentator",
 			check: func(s *role.Service) bool {
-				return s.CanMedia("Commentator") && s.CanComment("Commentator")
+				return !s.CanMedia("Commentator") && s.CanComment("Commentator")
 			},
 		},
 		{

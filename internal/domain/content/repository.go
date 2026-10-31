@@ -94,7 +94,12 @@ type Repository interface {
 	// restricted to that post type. An empty postType aggregates across all
 	// types.
 	GetPublishedArchive(ctx context.Context, postType string, languages []string) ([]*contentdomain.ArchiveMonth, error)
-	SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error)
+	// SearchPublished returns published content whose title or meta
+	// description matches the query, scoped to postTypes. A nil or empty
+	// postTypes list searches every type; the service passes an explicit list
+	// of registered, non-hidden types when the post-type registry is
+	// available. Results are ordered newest-first.
+	SearchPublished(ctx context.Context, query string, postTypes []string, limit int) ([]*contentdomain.Content, error)
 	// GetTranslations returns all content items in the same translation group, excluding the given content ID.
 	GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error)
 	// TranslationGroupExists checks whether a content item with the given ID exists.

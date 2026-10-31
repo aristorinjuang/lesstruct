@@ -8,6 +8,8 @@ import DateInput from '@/components/atoms/DateInput.vue'
 import DateTimeInput from '@/components/atoms/DateTimeInput.vue'
 import Select from '@/components/atoms/Select.vue'
 import SwitchToggle from '@/components/atoms/SwitchToggle.vue'
+import MultiSelect from '@/components/atoms/MultiSelect.vue'
+import ListInput from '@/components/molecules/ListInput.vue'
 import FormField from '@/components/molecules/FormField.vue'
 
 interface Props {
@@ -34,7 +36,10 @@ defineEmits<Emits>()
 const labelId = computed(() => `field-label-${props.field.slug}`)
 
 function getFieldComponent(type: FieldType): Component {
-  const map: Record<FieldType, Component> = {
+  // gallery is not mapped here: ContentEditor hosts the gallery fields
+  // directly (they need the media panel, an organism) and never reaches the
+  // generic renderer.
+  const map: Partial<Record<FieldType, Component>> = {
     text: InputText,
     textarea: InputText,
     number: NumberInput,
@@ -44,8 +49,10 @@ function getFieldComponent(type: FieldType): Component {
     url: InputText,
     select: Select,
     checkbox: SwitchToggle,
+    multiselect: MultiSelect,
+    list: ListInput,
   }
-  return map[type]
+  return map[type] as Component
 }
 
 function getFieldProps(field: FieldSchema): Record<string, unknown> {
@@ -75,6 +82,15 @@ function getFieldProps(field: FieldSchema): Record<string, unknown> {
       return { ...base, inputType: 'url' }
     case 'select':
       return { ...base, options: (field.options ?? []).map(o => ({ value: o, label: o })) }
+    case 'multiselect':
+      return { ...base, options: field.options ?? [] }
+    case 'list':
+      return {
+        ...base,
+        maxLength: field.maxLength,
+        maxItems: field.maxItems,
+        placeholder: `Add an item${field.maxLength ? ` (max ${field.maxLength} characters)` : ''}`
+      }
     case 'checkbox':
       return { ...base, label: '', 'aria-labelledby': labelId.value }
     default:

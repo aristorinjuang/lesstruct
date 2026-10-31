@@ -2,10 +2,13 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
+	"github.com/aristorinjuang/lesstruct/kernel/legal"
 	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
@@ -26,6 +29,10 @@ var (
 	// the [registration] config block (or, by legacy default, when the comment
 	// system is off).
 	ErrRegistrationDisabled = errors.New("self-registration is disabled")
+
+	// ErrConsentRequired is returned when registration demands an affirmative
+	// consent act and the request does not carry one.
+	ErrConsentRequired = errors.New("consent is required to register")
 )
 
 // usernameRegex validates username format (alphanumeric, underscores, hyphens, 1-50 chars)
@@ -41,10 +48,20 @@ func ValidateUsername(username string) error {
 
 // RegisterRequest represents a user registration request
 type RegisterRequest struct {
-	Username string `json:"username"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username        string `json:"username"`
+	Name            string `json:"name"`
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	ConsentAccepted bool   `json:"consentAccepted,omitempty"`
+}
+
+// ConsentPolicy is the registration consent contract resolved once at boot:
+// whether an affirmative act is required and which document revisions that
+// act refers to. A zero policy leaves registration unchanged.
+type ConsentPolicy struct {
+	Required bool
+	Terms    legal.Document
+	Privacy  legal.Document
 }
 
 // RegisterResult contains the result of a successful registration
@@ -86,6 +103,31 @@ type RegistrationService struct {
 	commentsEnabled bool
 	enabled         bool
 	defaultRole     string
+	consent         ConsentPolicy
+}
+
+// SetConsentPolicy adopts the boot-time registration consent contract. The
+// composition root resolves the conventional legal documents after the auth
+// module is built, so this seam lands before any request is served: enabling
+// consent here also gates the API, not just the rendered checkbox.
+func (s *RegistrationService) SetConsentPolicy(policy ConsentPolicy) {
+	s.consent = policy
+}
+
+// consentEvidence stamps the acceptance evidence for a consent-gated
+// registration. It returns nil evidence when the policy does not require
+// consent, keeping the user row unchanged.
+func (s *RegistrationService) consentEvidence(now time.Time) (*time.Time, string, error) {
+	if !s.consent.Required {
+		return nil, "", nil
+	}
+	consent := legal.NewConsent(s.consent.Terms, s.consent.Privacy, now)
+	payload, err := json.Marshal(consent)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to marshal consent evidence: %w", err)
+	}
+	acceptedAt := consent.AcceptedAt
+	return &acceptedAt, string(payload), nil
 }
 
 // RegistrationEnabled reports whether self-registration is currently allowed.
@@ -104,6 +146,12 @@ func (s *RegistrationService) RegistrationEnabled() bool {
 func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequest) (*RegisterResult, error) {
 	if !s.enabled {
 		return nil, ErrRegistrationDisabled
+	}
+
+	// Consent is enforced before any repository work: an unconsented
+	// registration must not create rows, send tokens, or leak existence.
+	if s.consent.Required && !req.ConsentAccepted {
+		return nil, ErrConsentRequired
 	}
 
 	// Validate username format
@@ -141,14 +189,20 @@ func (s *RegistrationService) RegisterUser(ctx context.Context, req RegisterRequ
 
 	// Hash password
 	passwordHash, _ := s.policy.HashPassword(req.Password)
+	consentAt, consentEvidence, err := s.consentEvidence(time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrRegistrationFailed, err)
+	}
 
 	user := &userdomain.User{
-		Username:     req.Username,
-		PasswordHash: passwordHash,
-		Email:        req.Email,
-		Name:         req.Name,
-		Role:         s.defaultRole,
-		Status:       "pending",
+		Username:        req.Username,
+		PasswordHash:    passwordHash,
+		Email:           req.Email,
+		Name:            req.Name,
+		Role:            s.defaultRole,
+		Status:          "pending",
+		ConsentAt:       consentAt,
+		ConsentEvidence: consentEvidence,
 	}
 
 	if err := s.userRepo.CreateUser(ctx, user); err != nil {

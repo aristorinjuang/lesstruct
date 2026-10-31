@@ -13,8 +13,13 @@ languages = ["en"]
 
 # ── Site Identity (optional) ────────────────────────────────────────
 # [site_config]
-# name = "My Site"           # drives the <title> suffix, og:site_name, logo text, footer
-# logo = "/uploads/logo.png" # optional image; omit to render the name as text
+# name = "My Site"              # drives the <title> suffix, og:site_name, logo text, footer
+# logo = "/uploads/logo.png"    # optional image; storefront shows logo plus name when set
+# favicon = "/uploads/icon.png" # optional image; omit to use the theme's bundled favicon set
+# product_image_ratio = "1:1"   # optional storefront media ratio ("W:H"/"W/H")
+# hero_image = "/uploads/hero.webp"     # optional storefront hero photo; omit to keep the monogram
+# hero_title = "Custom title"           # optional hero title override; omit for the bilingual default
+# hero_subtitle = "Custom subtitle"     # optional hero subtitle override; omit for the bilingual default
 # When omitted entirely, the name defaults to "Lesstruct".
 # Everything else (social links, analytics, footer copy) is a theme concern.
 
@@ -142,7 +147,7 @@ max_length = 1000
 # roles always exist:
 #   Admin        - reserved superuser (cannot be redefined)
 #   Contributor  - manages every post type, may publish, media, comments
-#   Commentator  - no content types, but media + comments
+#   Commentator  - no content types, comments only (no media)
 # A [[role]] entry overrides a built-in (except Admin) or adds a custom role.
 #
 #   post_types = ["article", "page"]  # post-type slugs this role may manage
@@ -195,15 +200,16 @@ max_length = 1000
 # ── Thumbnail Sizes ─────────────────────────────────────────────────
 # Thumbnail size configuration for media processing.
 # Each [[thumbnail]] entry defines a max_width (integer > 0) and a suffix (unique, starts with _).
-# If no thumbnails are defined, a single default is used: { max_width = 370, suffix = "_thumb" }.
+# If no thumbnails are defined, three defaults are used: 64/280/616 for
+# gallery thumbs, cards, and gallery main images.
 [[thumbnail]]
-max_width = 370
+max_width = 64
 suffix = "_thumb"
 
 [[thumbnail]]
-max_width = 800
+max_width = 280
 suffix = "_medium"
 
 [[thumbnail]]
-max_width = 1600
+max_width = 616
 suffix = "_large"

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +17,9 @@ import (
 	handlersmocks "github.com/aristorinjuang/lesstruct/internal/api/handlers/mocks"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	contentservice "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -143,6 +144,33 @@ func TestContentHandler_CreateContent(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "validation error - invalid tiptap content",
+			requestBody: `{
+				"title": "Plain Body Without Format",
+				"content": "not tiptap json",
+				"tags": [],
+				"status": "draft"
+			}`,
+			setupService: func(s *handlersmocks.MockContentServiceInterface) {
+				s.EXPECT().Create(
+					mock.Anything,
+					mock.Anything,
+					mock.AnythingOfType("content.CreateContentRequest"),
+				).Return(nil, contentdomain.ErrInvalidTipTapContent)
+			},
+			expectedStatus: http.StatusBadRequest,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				err, ok := resp["error"].(map[string]any)
+				if !ok {
+					t.Errorf("expected error field")
+					return
+				}
+				if err["code"] != "invalid_content" {
+					t.Errorf("expected code 'invalid_content', got %v", err["code"])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -175,6 +203,124 @@ func TestContentHandler_CreateContent(t *testing.T) {
 			if tt.validateResp != nil {
 				tt.validateResp(t, resp)
 			}
+		})
+	}
+}
+
+// TestContentHandler_CreateContent_StripsStyleBlocks proves <style> blocks are
+// stripped for every author on the browser write path (pentest #7): the
+// surrounding content survives but the style block never reaches storage.
+func TestContentHandler_CreateContent_StripsStyleBlocks(t *testing.T) {
+	styledBody := `<div><style>.x { position: absolute; }</style><p>Hello</p></div>`
+
+	tests := []struct {
+		name     string
+		roles    []string
+		wantBody string
+	}{
+		{
+			name:     "admin loses style blocks but keeps content",
+			roles:    []string{contentdomain.RoleAdmin},
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+		{
+			name:     "non-admin loses style blocks but keeps content",
+			roles:    []string{"Contributor"},
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := handlersmocks.NewMockContentServiceInterface(t)
+			var captured contentdomain.CreateContentRequest
+			mockService.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+				Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
+					captured = req
+				}).
+				Return(&contentdomain.Content{
+					ID:      1,
+					UserID:  1,
+					Title:   "Styled",
+					Slug:    "styled",
+					Content: "stored",
+					Status:  contentdomain.StatusDraft,
+				}, nil)
+
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+			reqBody := `{"title": "Styled", "content": ` + strconv.Quote(styledBody) + `, "format": "html", "tags": [], "status": "draft"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/content_items", bytes.NewReader([]byte(reqBody)))
+			req.Header.Set("Content-Type", "application/json")
+
+			ctx := context.WithValue(req.Context(), middleware.UserIDKey, "1")
+			ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser", Roles: tt.roles})
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+			handler.CreateContent(w, req)
+
+			require.Equal(t, http.StatusCreated, w.Code, "expected success, got body: %s", w.Body.String())
+			assert.Equal(t, tt.wantBody, captured.Content, "stored body for roles %v", tt.roles)
+		})
+	}
+}
+
+func TestContentHandler_UpdateContent_StripsStyleBlocks(t *testing.T) {
+	styledBody := `<div><style>.x { position: absolute; }</style><p>Hello</p></div>`
+
+	tests := []struct {
+		name     string
+		roles    []string
+		wantBody string
+	}{
+		{
+			name:     "admin loses style blocks but keeps content",
+			roles:    []string{contentdomain.RoleAdmin},
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+		{
+			name:     "non-admin loses style blocks but keeps content",
+			roles:    []string{"Contributor"},
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := handlersmocks.NewMockContentServiceInterface(t)
+			var captured contentservice.UpdateContentRequest
+			mockService.EXPECT().Update(mock.Anything, 1, mock.Anything, mock.Anything).
+				Run(func(_ context.Context, _ int, _ kernel.Principal, req contentservice.UpdateContentRequest) {
+					captured = req
+				}).
+				Return(&contentdomain.Content{
+					ID:      1,
+					UserID:  1,
+					Title:   "Styled",
+					Slug:    "styled",
+					Content: "stored",
+					Status:  contentdomain.StatusDraft,
+				}, nil)
+
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+			r := chi.NewRouter()
+			r.Put("/api/v1/content_items/{id}", func(w http.ResponseWriter, r *http.Request) {
+				ctx := context.WithValue(r.Context(), middleware.UserIDKey, "1")
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser", Roles: tt.roles})
+				handler.UpdateContent(w, r.WithContext(ctx))
+			})
+
+			reqBody := `{"title": "Styled", "content": ` + strconv.Quote(styledBody) + `, "format": "html", "tags": [], "status": "draft"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/content_items/1", bytes.NewReader([]byte(reqBody)))
+			req.Header.Set("Content-Type", "application/json")
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code, "expected success, got body: %s", w.Body.String())
+			assert.Equal(t, tt.wantBody, captured.Content, "stored body for roles %v", tt.roles)
 		})
 	}
 }
@@ -723,6 +869,69 @@ func TestContentHandler_UpdateContent(t *testing.T) {
 				return
 			}
 
+			if tt.validateResp != nil {
+				tt.validateResp(t, resp)
+			}
+		})
+	}
+}
+
+func TestContentHandler_GetContent(t *testing.T) {
+	tests := []struct {
+		name           string
+		contentID      string
+		setupService   func(s *handlersmocks.MockContentServiceInterface)
+		expectedStatus int
+		validateResp   func(*testing.T, map[string]any)
+	}{
+		{
+			name:      "returns the featured image",
+			contentID: "1",
+			setupService: func(s *handlersmocks.MockContentServiceInterface) {
+				s.EXPECT().GetByID(mock.Anything, 1).Return(&contentdomain.Content{
+					ID:            1,
+					UserID:        1,
+					Title:         "Lesstruct Tshirt",
+					Slug:          "tshirt",
+					Content:       "Body",
+					Status:        contentdomain.StatusPublished,
+					PostType:      "product",
+					FeaturedImage: "/uploads/media/ee5596044963e8f6.webp",
+				}, nil)
+				s.EXPECT().GetTranslations(mock.Anything, 1, 1).Return(nil, nil)
+			},
+			expectedStatus: http.StatusOK,
+			validateResp: func(t *testing.T, resp map[string]any) {
+				data, ok := resp["data"].(map[string]any)
+				require.True(t, ok, "expected data field")
+				assert.Equal(t, "/uploads/media/ee5596044963e8f6.webp", data["featuredImage"])
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := handlersmocks.NewMockContentServiceInterface(t)
+			tt.setupService(mockService)
+
+			handler := handlers.NewContentHandler(mockService, util.NewLogger(os.Stdout), "http://localhost:3000", nil, nil)
+
+			r := chi.NewRouter()
+			r.Get("/api/v1/content_items/{id}", func(w http.ResponseWriter, r *http.Request) {
+				ctx := context.WithValue(r.Context(), middleware.UserIDKey, "1")
+				ctx = kernel.ContextWithPrincipal(ctx, kernel.Principal{ID: "1", Username: "testuser"})
+				handler.GetContent(w, r.WithContext(ctx))
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/content_items/"+tt.contentID, nil)
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var resp map[string]any
+			require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 			if tt.validateResp != nil {
 				tt.validateResp(t, resp)
 			}
@@ -1456,6 +1665,14 @@ func TestContentHandler_SearchPublished(t *testing.T) {
 				if len(data) != 1 {
 					t.Errorf("expected 1 result, got %d", len(data))
 				}
+				item, ok := data[0].(map[string]any)
+				if !ok {
+					t.Errorf("expected map item")
+					return
+				}
+				if item["postType"] != "post" {
+					t.Errorf("expected postType 'post', got %v", item["postType"])
+				}
 			},
 		},
 		{
@@ -1546,7 +1763,7 @@ func TestContentHandler_SearchPublished(t *testing.T) {
 					"golang",
 					10,
 				).Return([]*contentdomain.Content{
-					{Title: "Golang Basics", Slug: "golang-basics", MetaDescription: "Intro to Go"},
+					{Title: "Golang Basics", Slug: "golang-basics", MetaDescription: "Intro to Go", PostType: "product"},
 				}, nil)
 			},
 			expectedStatus: http.StatusOK,
@@ -1573,6 +1790,9 @@ func TestContentHandler_SearchPublished(t *testing.T) {
 				}
 				if item["metaDescription"] != "Intro to Go" {
 					t.Errorf("expected metaDescription 'Intro to Go', got %v", item["metaDescription"])
+				}
+				if item["postType"] != "product" {
+					t.Errorf("expected postType 'product', got %v", item["postType"])
 				}
 			},
 		},

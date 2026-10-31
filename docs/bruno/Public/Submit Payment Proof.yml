@@ -1,0 +1,24 @@
+info:
+  name: Submit Payment Proof
+  type: http
+  seq: 21
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/public/orders/{{ORDER_NUMBER}}/payments"
+  body:
+    type: json
+    data: |-
+      {
+        "email": "{{TRACK_EMAIL}}",
+        "token": "{{TRACK_TOKEN}}",
+        "method": "manual",
+        "reference": "BR-12345"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

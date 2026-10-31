@@ -7,6 +7,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	"github.com/aristorinjuang/lesstruct/kernel/sanitize"
+	"github.com/aristorinjuang/lesstruct/kernel/tiptap"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -275,6 +276,186 @@ func TestConvert_MappingTable(t *testing.T) {
 	}
 }
 
+func TestConvert_Tables(t *testing.T) {
+	tests := []struct {
+		name string
+		md   string
+		// check asserts the structural expectation on the decoded doc.
+		check func(t *testing.T, doc tNode)
+	}{
+		{
+			name: "header and body rows",
+			md:   "| Data | Basis |\n|---|---|\n| Orders | Contract |",
+			check: func(t *testing.T, doc tNode) {
+				require.Len(t, doc.Content, 1)
+				table := doc.Content[0]
+				assert.Equal(t, "table", table.Type)
+				require.Len(t, table.Content, 2)
+				header := table.Content[0]
+				assert.Equal(t, "tableRow", header.Type)
+				require.Len(t, header.Content, 2)
+				assert.Equal(t, "tableHeader", header.Content[0].Type)
+				assert.Equal(t, "Data", header.Content[0].Content[0].Content[0].Text)
+				body := table.Content[1]
+				assert.Equal(t, "tableRow", body.Type)
+				require.Len(t, body.Content, 2)
+				assert.Equal(t, "tableCell", body.Content[0].Type)
+				assert.Equal(t, "Orders", body.Content[0].Content[0].Content[0].Text)
+				assert.Equal(t, "Contract", body.Content[1].Content[0].Content[0].Text)
+			},
+		},
+		{
+			name: "column alignment maps to align attrs",
+			md:   "| L | C | R |\n|:---|:---:|---:|\n| a | b | c |",
+			check: func(t *testing.T, doc tNode) {
+				table := doc.Content[0]
+				assert.Equal(t, "table", table.Type)
+				require.Len(t, table.Content, 2)
+				for _, row := range table.Content {
+					require.Len(t, row.Content, 3)
+					assert.Equal(t, "left", row.Content[0].Attrs["align"])
+					assert.Equal(t, "center", row.Content[1].Attrs["align"])
+					assert.Equal(t, "right", row.Content[2].Attrs["align"])
+				}
+				assert.Equal(t, "tableHeader", table.Content[0].Content[0].Type)
+				assert.Equal(t, "tableCell", table.Content[1].Content[0].Type)
+			},
+		},
+		{
+			name: "plain delimiter emits no align attrs",
+			md:   "| A | B |\n|---|---|\n| x | y |",
+			check: func(t *testing.T, doc tNode) {
+				table := doc.Content[0]
+				require.Len(t, table.Content, 2)
+				for _, row := range table.Content {
+					for _, cell := range row.Content {
+						assert.Nil(t, cell.Attrs, "columns without a marker carry no align attr")
+					}
+				}
+			},
+		},
+		{
+			name: "marks survive inside cells",
+			md:   "| Item | Note |\n|---|---|\n| **bold** | [link](https://example.com) and `code` |",
+			check: func(t *testing.T, doc tNode) {
+				body := doc.Content[0].Content[1]
+				require.Len(t, body.Content, 2)
+				bold := body.Content[0].Content[0].Content[0]
+				_, ok := hasMark(bold, "bold")
+				assert.True(t, ok, "expected bold mark in cell")
+				note := body.Content[1].Content[0].Content
+				require.Len(t, note, 3)
+				_, ok = hasMark(note[0], "link")
+				assert.True(t, ok, "expected link mark in cell")
+				_, ok = hasMark(note[2], "code")
+				assert.True(t, ok, "expected code mark in cell")
+			},
+		},
+		{
+			name: "strikethrough converts to strike mark",
+			md:   "~~gone~~ stays",
+			check: func(t *testing.T, doc tNode) {
+				txt := doc.Content[0].Content[0]
+				assert.Equal(t, "gone", txt.Text)
+				_, ok := hasMark(txt, "strike")
+				assert.True(t, ok, "expected strike mark")
+			},
+		},
+		{
+			name: "strikethrough inside a cell",
+			md:   "| Item |\n|---|\n| ~~gone~~ |",
+			check: func(t *testing.T, doc tNode) {
+				txt := doc.Content[0].Content[1].Content[0].Content[0].Content[0]
+				assert.Equal(t, "gone", txt.Text)
+				_, ok := hasMark(txt, "strike")
+				assert.True(t, ok, "expected strike mark in cell")
+			},
+		},
+		{
+			name: "empty cells get an empty paragraph",
+			md:   "| A | B |\n|---|---|\n|  | x |",
+			check: func(t *testing.T, doc tNode) {
+				body := doc.Content[0].Content[1]
+				require.Len(t, body.Content, 2)
+				empty := body.Content[0].Content[0]
+				assert.Equal(t, "paragraph", empty.Type)
+				assert.Empty(t, empty.Content, "empty cell carries an empty paragraph")
+				assert.Equal(t, "x", body.Content[1].Content[0].Content[0].Text)
+			},
+		},
+		{
+			name: "ragged rows still yield a valid table",
+			md:   "| A | B |\n|---|---|\n| only |\n| x | y | z |",
+			check: func(t *testing.T, doc tNode) {
+				table := doc.Content[0]
+				assert.Equal(t, "table", table.Type)
+				assert.True(t, hasChildType(table, "tableRow"), "expected body rows")
+			},
+		},
+		{
+			name: "delimiter without body rows keeps the header",
+			md:   "| A |\n|---|",
+			check: func(t *testing.T, doc tNode) {
+				require.Len(t, doc.Content, 1)
+				table := doc.Content[0]
+				assert.Equal(t, "table", table.Type)
+				require.Len(t, table.Content, 1)
+				assert.Equal(t, "tableHeader", table.Content[0].Content[0].Type)
+				assert.Equal(t, "A", table.Content[0].Content[0].Content[0].Content[0].Text)
+			},
+		},
+		{
+			name: "mismatched delimiter is not a table",
+			md:   "| A | B |\n|---|\n| x | y |",
+			check: func(t *testing.T, doc tNode) {
+				for _, block := range doc.Content {
+					assert.NotEqual(t, "table", block.Type, "a mismatched delimiter stays plain text")
+				}
+				assert.True(t, hasChildType(doc, "paragraph"), "expected paragraph blocks")
+			},
+		},
+		{
+			name: "raw html in cells is sanitized",
+			md:   "| A |\n|---|\n| <b>x</b> |",
+			check: func(t *testing.T, doc tNode) {
+				assertNoRawHTML(t, doc, "| A |\n|---|\n| <b>x</b> |")
+			},
+		},
+		{
+			name: "table between blocks",
+			md:   "# Title\n\n| A |\n|---|\n| x |\n\nAfter.",
+			check: func(t *testing.T, doc tNode) {
+				require.Len(t, doc.Content, 3)
+				assert.Equal(t, "heading", doc.Content[0].Type)
+				assert.Equal(t, "table", doc.Content[1].Type)
+				assert.Equal(t, "paragraph", doc.Content[2].Type)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc, err := markdown.Convert(tt.md)
+			require.NoError(t, err)
+			mustValidate(t, doc)
+			tt.check(t, decode(t, doc))
+		})
+	}
+}
+
+func TestConvert_TableRendersStorefrontHTML(t *testing.T) {
+	doc, err := markdown.Convert("| Data | Basis |\n|---|---|\n| Orders | Contract |")
+	require.NoError(t, err)
+	mustValidate(t, doc)
+
+	html, err := tiptap.NewRenderer(nil).Render(doc)
+	require.NoError(t, err)
+	assert.Contains(t, html, `<div class="table-wrapper"><table>`)
+	assert.Contains(t, html, "<th>")
+	assert.Contains(t, html, "<td>")
+	assert.Contains(t, html, "Orders")
+}
+
 func TestConvert_EmptyAndWhitespace(t *testing.T) {
 	tests := []struct {
 		name string
@@ -338,9 +519,10 @@ func assertNoRawHTML(t *testing.T, n tNode, src string) {
 func TestConvert_NeverErrorsOnContent(t *testing.T) {
 	// The conversion degrades gracefully on any content: it never returns an
 	// error, and always yields a valid (sanitizer-passing) non-empty document.
-	// Unsupported node kinds are stripped + logged; since core CommonMark (no
-	// GFM) is fully mapped, this table also confirms no standard construct
-	// trips the defensive strip path into producing invalid output.
+	// Unsupported node kinds are stripped + logged; since CommonMark plus the
+	// table/strikethrough extensions is fully mapped, this table also confirms
+	// no standard construct trips the defensive strip path into producing
+	// invalid output.
 	tests := []struct {
 		name string
 		md   string
@@ -352,6 +534,10 @@ func TestConvert_NeverErrorsOnContent(t *testing.T) {
 		{name: "deeply emphasized", md: "_a *b `c` d* e_"},
 		{name: "many headings", md: "# 1\n## 2\n### 3\n#### 4\n##### 5\n###### 6"},
 		{name: "link reference then use", md: "[ref]: https://example.com\n\nSee [ref]"},
+		{name: "ragged table rows", md: "| A | B |\n|---|---|\n| only |"},
+		{name: "table with empty cells", md: "| A | B |\n|---|---|\n| | |"},
+		{name: "table-like text without delimiter", md: "| not a table |"},
+		{name: "strikethrough", md: "~~gone~~"},
 	}
 
 	for _, tt := range tests {

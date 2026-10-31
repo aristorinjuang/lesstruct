@@ -59,7 +59,10 @@ func newMediaCmd(apiKey, baseURL, output *string) *cobra.Command {
 			"(built into {\"altText\":\"...\"}) or --metadata <raw JSON> (escape hatch). " +
 			"--metadata values may be strings, numbers, booleans, or objects " +
 			"(passed through as typed JSON); the server persists only altText today. " +
-			"--alt-text and --metadata are mutually exclusive.",
+			"--alt-text and --metadata are mutually exclusive. Uploads deduplicate " +
+			"by content hash: re-uploading identical bytes answers 409 CONFLICT " +
+			"(\"media already exists\") instead of storing a second copy. " +
+			"Requires a role with the media capability (403 otherwise).",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -140,9 +143,26 @@ func newMediaCmd(apiKey, baseURL, output *string) *cobra.Command {
 		},
 	}
 
+	deleteCmd := &cobra.Command{
+		Use:           "delete <id>",
+		Short:         "Delete a media item by id",
+		Long:          "Delete a media item via DELETE /api/v1/media/{id}. Owners may delete their own media; deleting another user's media requires the Admin role (403 FORBIDDEN, non-owner 404 with no existence disclosure).",
+		Args:          cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runMediaDelete(cmd, args, mediaReadOptions{
+				apiKey:  *apiKey,
+				baseURL: *baseURL,
+				output:  *output,
+			})
+		},
+	}
+
 	media.AddCommand(upload)
 	media.AddCommand(listCmd)
 	media.AddCommand(getCmd)
+	media.AddCommand(deleteCmd)
 	return media
 }
 
@@ -302,6 +322,43 @@ func runMediaGet(cmd *cobra.Command, args []string, opts mediaReadOptions) error
 	}
 
 	return printMediaGet(cmd.OutOrStdout(), opts.output, data, meta, "Media")
+}
+
+// runMediaDelete implements `lesstruct-cli media delete <id>`.
+func runMediaDelete(cmd *cobra.Command, args []string, opts mediaReadOptions) error {
+	if err := validateOutput(opts.output); err != nil {
+		return err
+	}
+
+	id, err := parseIntID(args[0], "media")
+	if err != nil {
+		return err
+	}
+
+	apiKey, baseURL, err := resolveCredentials(opts.apiKey, opts.baseURL)
+	if err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	}
+
+	cl, err := client.New(baseURL, apiKey)
+	if err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	}
+
+	_, _, err = cl.DeleteMedia(cmd.Context(), id)
+	if err != nil {
+		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
+	}
+
+	if opts.output == "text" {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "Deleted media #%d\n", id)
+		if err != nil {
+			return &exitError{code: client.ExitGeneric, msg: err.Error()}
+		}
+	}
+	// --output json: 204 → no body. The server envelope is empty; printing
+	// nothing to stdout is the honest answer. Exit 0 is the success signal.
+	return nil
 }
 
 // runMediaList implements `lesstruct-cli media list`.

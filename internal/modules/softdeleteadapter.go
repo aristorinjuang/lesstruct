@@ -7,17 +7,27 @@ import (
 	usersapi "github.com/aristorinjuang/lesstruct/modules/users/api"
 )
 
+func convertSoftDeletedContent(item *repository.SoftDeletedContent) *usersapi.SoftDeletedContent {
+	out := &usersapi.SoftDeletedContent{
+		ID:          item.ID,
+		ContentType: item.ContentType,
+		ContentID:   item.ContentID,
+		DeletedAt:   item.DeletedAt,
+		DeletedBy:   item.DeletedBy,
+	}
+	if item.Reason.Valid {
+		out.Reason = item.Reason.String
+		out.HasReason = true
+	}
+	return out
+}
+
 // SoftDeleteStore adapts repository.SoftDeleteRepo to the users module's
 // SoftDeleteStore seam. Database null types are converted at this boundary
 // so the module never imports database/sql. It lives in core — the only
 // layer that may import both sides.
 type SoftDeleteStore struct {
 	repo repository.SoftDeleteRepo
-}
-
-// NewSoftDeleteStore creates a SoftDeleteStore.
-func NewSoftDeleteStore(repo repository.SoftDeleteRepo) *SoftDeleteStore {
-	return &SoftDeleteStore{repo: repo}
 }
 
 // GetSoftDeletedContentByUser returns the soft-deleted content of a user.
@@ -50,19 +60,9 @@ func (s *SoftDeleteStore) RestoreContent(ctx context.Context, contentType string
 	return s.repo.RestoreContent(ctx, contentType, contentID)
 }
 
-func convertSoftDeletedContent(item *repository.SoftDeletedContent) *usersapi.SoftDeletedContent {
-	out := &usersapi.SoftDeletedContent{
-		ID:          item.ID,
-		ContentType: item.ContentType,
-		ContentID:   item.ContentID,
-		DeletedAt:   item.DeletedAt,
-		DeletedBy:   item.DeletedBy,
-	}
-	if item.Reason.Valid {
-		out.Reason = item.Reason.String
-		out.HasReason = true
-	}
-	return out
+// NewSoftDeleteStore creates a SoftDeleteStore.
+func NewSoftDeleteStore(repo repository.SoftDeleteRepo) *SoftDeleteStore {
+	return &SoftDeleteStore{repo: repo}
 }
 
 var _ usersapi.SoftDeleteStore = (*SoftDeleteStore)(nil)

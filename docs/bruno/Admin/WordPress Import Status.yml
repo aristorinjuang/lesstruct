@@ -6,9 +6,7 @@ info:
 http:
   method: GET
   url: "{{BASE_URL}}/api/admin/wordpress/import/status/{{JOB_ID}}"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

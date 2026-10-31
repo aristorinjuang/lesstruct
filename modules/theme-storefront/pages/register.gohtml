@@ -1,0 +1,38 @@
+{{- define "body"}}
+<div class="auth-page container">
+	<div class="auth-card">
+		<p class="eyebrow">{{if eq .Lang "id"}}Akun Baru{{else}}New account{{end}}</p>
+		<h1>{{t .Lang "ui.register"}}</h1>
+		<div id="auth-error" class="auth-error alert alert--error" role="alert" style="display:none"></div>
+		<form id="register-form" class="auth-form">
+			<label for="username">{{t .Lang "ui.username_label"}}</label>
+			<input type="text" id="username" name="username" class="form-control" autocomplete="username" required>
+			<label for="name">{{t .Lang "ui.name_label"}}</label>
+			<input type="text" id="name" name="name" class="form-control" autocomplete="name" required>
+			<label for="email">{{t .Lang "ui.email_label"}}</label>
+			<input type="email" id="email" name="email" class="form-control" autocomplete="email" required>
+			<label for="password">{{t .Lang "ui.password_label"}}</label>
+			<input type="password" id="password" name="password" class="form-control" autocomplete="new-password" required>
+			{{- if .Legal.RegistrationConsent}}
+			<label class="consent-check" for="register-consent">
+				<input type="checkbox" id="register-consent" name="consentAccepted" value="true" required>
+				<span>{{if eq .Lang "id"}}Saya menyetujui{{else}}I agree to the{{end}}
+					{{- if .Legal.TermsOfServiceURL}} <a href="{{.Legal.TermsOfServiceURL}}" target="_blank" rel="noopener">{{t .Lang "ui.legal_terms"}}</a>
+					{{- else}} {{t .Lang "ui.legal_terms"}}{{end}}
+					{{- if eq .Lang "id"}} dan{{else}} and the{{end}}
+					{{- if .Legal.PrivacyPolicyURL}} <a href="{{.Legal.PrivacyPolicyURL}}" target="_blank" rel="noopener">{{t .Lang "ui.legal_privacy"}}</a>
+					{{- else}} {{t .Lang "ui.legal_privacy"}}{{end}}.</span>
+			</label>
+			{{- end}}
+			<button type="submit" class="btn">{{t .Lang "ui.register"}}</button>
+		</form>
+		<div id="auth-success" class="auth-success alert alert--success" role="status" style="display:none">
+			<p>{{t .Lang "ui.check_email_verify"}}</p>
+		</div>
+		<div class="auth-links">
+			<p><a href="/login">{{t .Lang "ui.already_have_account"}}</a></p>
+		</div>
+	</div>
+</div>
+<script src="/static/auth.js"></script>
+{{- end}}

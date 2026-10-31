@@ -2,15 +2,21 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/aristorinjuang/lesstruct/kernel"
 	userdomain "github.com/aristorinjuang/lesstruct/modules/users/domain"
 )
 
 // TokenIssuer mints JWTs for authenticated sessions. The core JWT manager
-// satisfies it structurally; verification stays core-side (middleware).
+// satisfies it structurally through the composition-root adapter;
+// verification stays core-side (middleware).
 type TokenIssuer interface {
-	GenerateToken(userID, username, role string) (string, error)
+	GenerateToken(userID, username, role string, tokenVersion int) (string, error)
+	// ValidateTokenExpiry validates the token and reports its expiry so the
+	// session cookie lifetime matches the token instead of duplicating the
+	// TTL.
+	ValidateTokenExpiry(token string) (time.Time, error)
 }
 
 // Mailer sends the account emails the auth flow triggers. It carries
@@ -20,6 +26,14 @@ type Mailer interface {
 	SendVerificationEmail(ctx context.Context, to, username, token string) error
 	SendPasswordResetEmail(ctx context.Context, to, username, token string) error
 	SendAccountLockoutEmail(ctx context.Context, to, username string) error
+	SendRegistrationAttemptEmail(ctx context.Context, to, username string) error
+}
+
+// MFACodeDeliverer delivers the one-time login code to the second factor
+// channel. The composition root picks the adapter: email whenever SMTP is
+// configured, and a log-only sink only when DEV_MODE is on and SMTP is absent.
+type MFACodeDeliverer interface {
+	DeliverMFACode(ctx context.Context, to, username, code string) error
 }
 
 // NotificationRecorder records admin-facing notifications for auth events.
@@ -53,4 +67,7 @@ type UserStore interface {
 	GetUserByID(ctx context.Context, userID int) (*userdomain.User, error)
 	GetAdminUser(ctx context.Context) (*userdomain.User, error)
 	UpdateAdminPasswordAndEmail(ctx context.Context, passwordHash, email, currentPasswordHash string) error
+	// RevokeSessions bumps the stored token version so every previously
+	// issued session for the user stops validating.
+	RevokeSessions(ctx context.Context, userID int) error
 }

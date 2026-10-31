@@ -30,7 +30,7 @@ jobs:
       - name: Build Admin Panel
         run: make build-admin
 
-      - name: Build Binaries (default edition; the sqlite-free server
+      - name: Build Binaries (blog edition; the sqlite-free server
           edition from `make build-server` is not shipped as a release
           asset yet)
         run: |
@@ -43,6 +43,13 @@ jobs:
               fi
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
                 go build -ldflags="-s -w" -o "dist/${BINARY}" .
+              # Core edition — the headless engine (fewer modules, smaller binary).
+              CORE_BINARY="lesstruct-core-${GOOS}-${GOARCH}"
+              if [ "$GOOS" = "windows" ]; then
+                CORE_BINARY="${CORE_BINARY}.exe"
+              fi
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+                go build -ldflags="-s -w" -o "dist/${CORE_BINARY}" ./cmd/lesstruct-core
             done
           done
 

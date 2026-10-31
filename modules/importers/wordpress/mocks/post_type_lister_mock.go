@@ -6,7 +6,7 @@ package mocks
 
 import (
 	"github.com/aristorinjuang/lesstruct/kernel/customfield"
-	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
+	"github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -16,10 +16,19 @@ func newMockpostTypeLister(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *mockpostTypeLister {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &mockpostTypeLister{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }

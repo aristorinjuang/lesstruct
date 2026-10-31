@@ -19,10 +19,10 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/content/markdown"
 	contentservice "github.com/aristorinjuang/lesstruct/internal/domain/content"
-	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
-	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	"github.com/aristorinjuang/lesstruct/internal/util"
 	"github.com/aristorinjuang/lesstruct/kernel"
+	contentdomain "github.com/aristorinjuang/lesstruct/kernel/content"
+	"github.com/aristorinjuang/lesstruct/kernel/customfield"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -319,6 +319,18 @@ func TestContentHandler_Create(t *testing.T) {
 			wantCode:   "VALIDATION_ERROR",
 		},
 		{
+			name:     "error - unconfigured language returns VALIDATION_ERROR",
+			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON, "language": "xx"}),
+			withUser: true,
+			setup: func(svc *agentmocks.MockContentService, _ *contentdomain.CreateContentRequest) {
+				svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+					Return(nil, contentdomain.ErrInvalidLanguage)
+			},
+			wantStatus:     http.StatusBadRequest,
+			wantCode:       "VALIDATION_ERROR",
+			wantMessageHas: "configured languages",
+		},
+		{
 			name:     "error - ownership returns FORBIDDEN",
 			body:     marshalJSON(map[string]any{"title": "Hello", "body": tiptapJSON}),
 			withUser: true,
@@ -572,6 +584,100 @@ func TestContentHandler_Create(t *testing.T) {
 			if tt.wantContentID != 0 {
 				assert.Equal(t, tt.wantContentID, envelopeDataContentID(t, w), "envelope data.content.id")
 			}
+		})
+	}
+}
+
+// TestContentHandler_Create_StripsStyleBlocks proves <style> blocks are
+// stripped for every author on the agent write path (pentest #7): the
+// surrounding content survives but the style block never reaches storage.
+func TestContentHandler_Create_StripsStyleBlocks(t *testing.T) {
+	styledBody := `<div><style>.x { position: absolute; }</style><p>Hello</p></div>`
+
+	tests := []struct {
+		name     string
+		role     string
+		wantBody string
+	}{
+		{
+			name:     "admin loses style blocks but keeps content",
+			role:     contentdomain.RoleAdmin,
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+		{
+			name:     "non-admin loses style blocks but keeps content",
+			role:     "Contributor",
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := agentmocks.NewMockContentService(t)
+			var captured contentdomain.CreateContentRequest
+			svc.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything).
+				Run(func(_ context.Context, _ kernel.Principal, req contentdomain.CreateContentRequest) {
+					captured = req
+				}).
+				Return(&contentdomain.Content{ID: 21, Title: "Styled"}, nil)
+
+			handler := newContentHandler(svc)
+			body := marshalJSON(map[string]any{"title": "Styled", "body": styledBody, "format": "html"})
+			r := newAuthenticatedRequestAs(http.MethodPost, "/api/v1/content", body, testUserID, tt.role)
+			w := httptest.NewRecorder()
+			handler.Create(w, r)
+
+			require.Equal(t, http.StatusOK, w.Code, "expected success, got body: %s", w.Body.String())
+			assert.Equal(t, tt.wantBody, captured.Content, "stored body for role %q", tt.role)
+		})
+	}
+}
+
+// TestContentHandler_Update_StripsStyleBlocks proves <style> blocks are
+// stripped for every author on the agent update path (pentest #7): the
+// surrounding content survives but the style block never reaches storage.
+func TestContentHandler_Update_StripsStyleBlocks(t *testing.T) {
+	styledBody := `<div><style>.x { position: absolute; }</style><p>Hello</p></div>`
+
+	tests := []struct {
+		name     string
+		role     string
+		wantBody string
+	}{
+		{
+			name:     "admin loses style blocks but keeps content",
+			role:     contentdomain.RoleAdmin,
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+		{
+			name:     "non-admin loses style blocks but keeps content",
+			role:     "Contributor",
+			wantBody: `<div><p>Hello</p></div>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := agentmocks.NewMockContentService(t)
+			var captured contentservice.UpdateContentRequest
+			svc.EXPECT().GetByID(mock.Anything, 5).Return(&contentdomain.Content{
+				ID: 5, UserID: testUserID, PostType: "page",
+			}, nil)
+			svc.EXPECT().Update(mock.Anything, 5, mock.Anything, mock.Anything).
+				Run(func(_ context.Context, _ int, _ kernel.Principal, req contentservice.UpdateContentRequest) {
+					captured = req
+				}).
+				Return(&contentdomain.Content{ID: 5, UserID: testUserID, Title: "Styled"}, nil)
+
+			handler := newContentHandler(svc)
+			body := marshalJSON(map[string]any{"title": "Styled", "body": styledBody, "format": "html"})
+			r := newAuthenticatedRequestAs(http.MethodPut, "/api/v1/content/5", body, testUserID, tt.role)
+			r.SetPathValue("id", "5")
+			w := httptest.NewRecorder()
+			handler.Update(w, r)
+
+			require.Equal(t, http.StatusOK, w.Code, "expected success, got body: %s", w.Body.String())
+			assert.Equal(t, tt.wantBody, captured.Content, "stored body for role %q", tt.role)
 		})
 	}
 }

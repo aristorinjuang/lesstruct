@@ -12,9 +12,7 @@ http:
       {
         "title": "My First Content"
       }
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 settings:
   encodeUrl: true

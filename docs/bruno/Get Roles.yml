@@ -6,9 +6,7 @@ info:
 http:
   method: GET
   url: "{{BASE_URL}}/api/v1/roles"
-  auth:
-    type: bearer
-    token: "{{TOKEN}}"
+  auth: inherit
 
 # Response envelope: { "data": { "roles": [...], "me": {...} }, "error": null }
 #   roles[] — every registered role (built-ins + [[role]] entries): name, postTypes/allTypes, publish, media, comments, isAdmin

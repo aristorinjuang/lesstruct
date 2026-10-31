@@ -16,10 +16,19 @@ func NewMockEmailService(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockEmailService {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockEmailService{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -364,6 +373,75 @@ func (_c *MockEmailService_SendEmailUpdateVerificationEmail_Call) RunAndReturn(r
 	return _c
 }
 
+// SendMFACodeEmail provides a mock function for the type MockEmailService
+func (_mock *MockEmailService) SendMFACodeEmail(ctx context.Context, to string, username string, code string) error {
+	ret := _mock.Called(ctx, to, username, code)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SendMFACodeEmail")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = returnFunc(ctx, to, username, code)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockEmailService_SendMFACodeEmail_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SendMFACodeEmail'
+type MockEmailService_SendMFACodeEmail_Call struct {
+	*mock.Call
+}
+
+// SendMFACodeEmail is a helper method to define mock.On call
+//   - ctx context.Context
+//   - to string
+//   - username string
+//   - code string
+func (_e *MockEmailService_Expecter) SendMFACodeEmail(ctx any, to any, username any, code any) *MockEmailService_SendMFACodeEmail_Call {
+	return &MockEmailService_SendMFACodeEmail_Call{Call: _e.mock.On("SendMFACodeEmail", ctx, to, username, code)}
+}
+
+func (_c *MockEmailService_SendMFACodeEmail_Call) Run(run func(ctx context.Context, to string, username string, code string)) *MockEmailService_SendMFACodeEmail_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockEmailService_SendMFACodeEmail_Call) Return(err error) *MockEmailService_SendMFACodeEmail_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockEmailService_SendMFACodeEmail_Call) RunAndReturn(run func(ctx context.Context, to string, username string, code string) error) *MockEmailService_SendMFACodeEmail_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SendPasswordResetEmail provides a mock function for the type MockEmailService
 func (_mock *MockEmailService) SendPasswordResetEmail(ctx context.Context, to string, username string, token string) error {
 	ret := _mock.Called(ctx, to, username, token)
@@ -429,6 +507,69 @@ func (_c *MockEmailService_SendPasswordResetEmail_Call) Return(err error) *MockE
 }
 
 func (_c *MockEmailService_SendPasswordResetEmail_Call) RunAndReturn(run func(ctx context.Context, to string, username string, token string) error) *MockEmailService_SendPasswordResetEmail_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SendRegistrationAttemptEmail provides a mock function for the type MockEmailService
+func (_mock *MockEmailService) SendRegistrationAttemptEmail(ctx context.Context, to string, username string) error {
+	ret := _mock.Called(ctx, to, username)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SendRegistrationAttemptEmail")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) error); ok {
+		r0 = returnFunc(ctx, to, username)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockEmailService_SendRegistrationAttemptEmail_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SendRegistrationAttemptEmail'
+type MockEmailService_SendRegistrationAttemptEmail_Call struct {
+	*mock.Call
+}
+
+// SendRegistrationAttemptEmail is a helper method to define mock.On call
+//   - ctx context.Context
+//   - to string
+//   - username string
+func (_e *MockEmailService_Expecter) SendRegistrationAttemptEmail(ctx any, to any, username any) *MockEmailService_SendRegistrationAttemptEmail_Call {
+	return &MockEmailService_SendRegistrationAttemptEmail_Call{Call: _e.mock.On("SendRegistrationAttemptEmail", ctx, to, username)}
+}
+
+func (_c *MockEmailService_SendRegistrationAttemptEmail_Call) Run(run func(ctx context.Context, to string, username string)) *MockEmailService_SendRegistrationAttemptEmail_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockEmailService_SendRegistrationAttemptEmail_Call) Return(err error) *MockEmailService_SendRegistrationAttemptEmail_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockEmailService_SendRegistrationAttemptEmail_Call) RunAndReturn(run func(ctx context.Context, to string, username string) error) *MockEmailService_SendRegistrationAttemptEmail_Call {
 	_c.Call.Return(run)
 	return _c
 }

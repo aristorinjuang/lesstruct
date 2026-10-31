@@ -36,6 +36,11 @@ func mapContentItemToDomain(item *ContentItem, tagsJSON string) *contentdomain.C
 		ogDescription = *item.OGDescription
 	}
 
+	var featuredImage string
+	if item.FeaturedImage != nil {
+		featuredImage = *item.FeaturedImage
+	}
+
 	var customFields map[string]any
 	if item.CustomFields != nil && *item.CustomFields != "" {
 		_ = json.Unmarshal([]byte(*item.CustomFields), &customFields)
@@ -65,6 +70,7 @@ func mapContentItemToDomain(item *ContentItem, tagsJSON string) *contentdomain.C
 		MetaDescription:    metaDescription,
 		OGTitle:            ogTitle,
 		OGDescription:      ogDescription,
+		FeaturedImage:      featuredImage,
 		AllowComments:      item.AllowComments,
 		CustomFields:       customFields,
 		Language:           item.Language,
@@ -189,6 +195,7 @@ func scanContentRowsWithAuthorAndUsername(rows *sql.Rows) ([]*contentdomain.Cont
 			&item.MetaDescription,
 			&item.OGTitle,
 			&item.OGDescription,
+			&item.FeaturedImage,
 			&item.AllowComments,
 			&item.CustomFields,
 			&item.Language,
@@ -240,6 +247,7 @@ func scanContentRowsWithAuditInfo(rows *sql.Rows) ([]*contentdomain.Content, err
 			&item.MetaDescription,
 			&item.OGTitle,
 			&item.OGDescription,
+			&item.FeaturedImage,
 			&item.AllowComments,
 			&item.CustomFields,
 			&item.Language,
@@ -290,6 +298,7 @@ type ContentItem struct {
 	MetaDescription    *string       `json:"metaDescription"`
 	OGTitle            *string       `json:"ogTitle"`
 	OGDescription      *string       `json:"ogDescription"`
+	FeaturedImage      *string       `json:"featuredImage"`
 	AllowComments      bool          `json:"allowComments"`
 	CustomFields       *string       `json:"customFields"`
 	Language           string        `json:"language"`
@@ -333,16 +342,16 @@ func (r *ContentRepository) Create(ctx context.Context, content *contentdomain.C
 	var createdAt, updatedAt time.Time
 	if content.CreatedAt.IsZero() {
 		err = r.db.QueryRowContext(ctx, `
-			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-			RETURNING id, created_at, updated_at
-		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID).Scan(&id, &createdAt, &updatedAt)
-	} else {
-		err = r.db.QueryRowContext(ctx, `
-			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id, created_at)
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, featured_image, allow_comments, custom_fields, language, translation_group_id)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 			RETURNING id, created_at, updated_at
-		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, language, translationGroupID, content.CreatedAt).Scan(&id, &createdAt, &updatedAt)
+		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.FeaturedImage, content.AllowComments, customFieldsJSON, language, translationGroupID).Scan(&id, &createdAt, &updatedAt)
+	} else {
+		err = r.db.QueryRowContext(ctx, `
+			INSERT INTO content_items (user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, featured_image, allow_comments, custom_fields, language, translation_group_id, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			RETURNING id, created_at, updated_at
+		`, content.UserID, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.FeaturedImage, content.AllowComments, customFieldsJSON, language, translationGroupID, content.CreatedAt).Scan(&id, &createdAt, &updatedAt)
 	}
 	if err != nil {
 		if pgUniqueError(err) {
@@ -364,7 +373,7 @@ func (r *ContentRepository) GetBySlug(ctx context.Context, slug string, language
 	var tagsJSON string
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, allow_comments, custom_fields, language, translation_group_id, created_at, updated_at
+		SELECT id, user_id, title, slug, content, tags, status, format, post_type, meta_description, og_title, og_description, featured_image, allow_comments, custom_fields, language, translation_group_id, created_at, updated_at
 		FROM content_items
 		WHERE slug = $1 AND language = $2
 	`, slug, language).Scan(
@@ -380,6 +389,7 @@ func (r *ContentRepository) GetBySlug(ctx context.Context, slug string, language
 		&item.MetaDescription,
 		&item.OGTitle,
 		&item.OGDescription,
+		&item.FeaturedImage,
 		&item.AllowComments,
 		&item.CustomFields,
 		&item.Language,
@@ -411,7 +421,7 @@ func (r *ContentRepository) GetByUser(ctx context.Context, userID int, limit int
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
 		       c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username
 		FROM content_items c
@@ -450,7 +460,7 @@ func (r *ContentRepository) ListByCursor(ctx context.Context, userID int, limit 
 	// yields the original unfiltered query.
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString(`
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
 		       c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username
 		FROM content_items c
@@ -528,7 +538,7 @@ func (r *ContentRepository) GetAll(ctx context.Context, limit int, offset int) (
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
 		       c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username
 		FROM content_items c
@@ -572,7 +582,7 @@ func (r *ContentRepository) GetByID(ctx context.Context, id int) (*contentdomain
 	var updatedByUsername sql.NullString
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username,
 		       c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username
 		FROM content_items c
@@ -592,6 +602,7 @@ func (r *ContentRepository) GetByID(ctx context.Context, id int) (*contentdomain
 		&item.MetaDescription,
 		&item.OGTitle,
 		&item.OGDescription,
+		&item.FeaturedImage,
 		&item.AllowComments,
 		&item.CustomFields,
 		&item.Language,
@@ -733,9 +744,9 @@ func (r *ContentRepository) Update(ctx context.Context, content *contentdomain.C
 
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE content_items
-		SET title = $1, slug = $2, content = $3, tags = $4, status = $5, format = $6, post_type = $7, meta_description = $8, og_title = $9, og_description = $10, allow_comments = $11, custom_fields = $12, updated_at = NOW(), updated_by = $13
-		WHERE id = $14
-	`, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.AllowComments, customFieldsJSON, content.UpdatedBy, content.ID)
+		SET title = $1, slug = $2, content = $3, tags = $4, status = $5, format = $6, post_type = $7, meta_description = $8, og_title = $9, og_description = $10, featured_image = $11, allow_comments = $12, custom_fields = $13, updated_at = NOW(), updated_by = $14
+		WHERE id = $15
+	`, content.Title, content.Slug, content.Content, string(tagsJSON), content.Status, content.Format, content.PostType, content.MetaDescription, content.OGTitle, content.OGDescription, content.FeaturedImage, content.AllowComments, customFieldsJSON, content.UpdatedBy, content.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update content: %w", err)
 	}
@@ -775,7 +786,7 @@ func (r *ContentRepository) GetPublished(ctx context.Context, limit int, offset 
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -799,7 +810,7 @@ func (r *ContentRepository) GetPublishedBySlug(ctx context.Context, slug string,
 	var username sql.NullString
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -817,6 +828,7 @@ func (r *ContentRepository) GetPublishedBySlug(ctx context.Context, slug string,
 		&item.MetaDescription,
 		&item.OGTitle,
 		&item.OGDescription,
+		&item.FeaturedImage,
 		&item.AllowComments,
 		&item.CustomFields,
 		&item.Language,
@@ -852,7 +864,7 @@ func (r *ContentRepository) GetPublishedBySlugAny(ctx context.Context, slug stri
 	var username sql.NullString
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -870,6 +882,7 @@ func (r *ContentRepository) GetPublishedBySlugAny(ctx context.Context, slug stri
 		&item.MetaDescription,
 		&item.OGTitle,
 		&item.OGDescription,
+		&item.FeaturedImage,
 		&item.AllowComments,
 		&item.CustomFields,
 		&item.Language,
@@ -910,7 +923,7 @@ func (r *ContentRepository) GetPublishedByAuthorUsername(ctx context.Context, us
 	}
 
 	query := `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -955,7 +968,7 @@ func (r *ContentRepository) AuthorExists(ctx context.Context, username string) (
 func (r *ContentRepository) GetTranslations(ctx context.Context, translationGroupID int, excludeID int) ([]*contentdomain.Content, error) {
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -995,7 +1008,7 @@ func (r *ContentRepository) GetPublishedByTag(ctx context.Context, tag string, l
 	}
 
 	query := `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -1255,7 +1268,7 @@ func (r *ContentRepository) GetPublishedArchive(ctx context.Context, postType st
 func (r *ContentRepository) ListByFilters(ctx context.Context, userID int, filters contentdomain.ContentFilters) ([]*contentdomain.Content, error) {
 
 	var queryBuilder strings.Builder
-	queryBuilder.WriteString(`SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at, COALESCE(u.name, u.username) as author, u.username, c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username FROM content_items c LEFT JOIN users u ON c.user_id = u.id LEFT JOIN users u2 ON c.updated_by = u2.id`)
+	queryBuilder.WriteString(`SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at, COALESCE(u.name, u.username) as author, u.username, c.updated_by, COALESCE(u2.name, u2.username) as updated_by_username FROM content_items c LEFT JOIN users u ON c.user_id = u.id LEFT JOIN users u2 ON c.updated_by = u2.id`)
 
 	whereClause, args, err := buildContentFilterWhereClause(userID, filters)
 	if err != nil {
@@ -1328,7 +1341,7 @@ func (r *ContentRepository) Count(ctx context.Context, userID int, filters conte
 func (r *ContentRepository) GetPublishedPages(ctx context.Context) ([]*contentdomain.Content, error) {
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -1383,7 +1396,7 @@ func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType
 	}
 
 	query := `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -1419,7 +1432,7 @@ func (r *ContentRepository) GetPublishedByPostType(ctx context.Context, postType
 	return scanContentRowsWithAuthorAndUsername(rows)
 }
 
-func (r *ContentRepository) SearchPublished(ctx context.Context, query string, limit int) ([]*contentdomain.Content, error) {
+func (r *ContentRepository) SearchPublished(ctx context.Context, query string, postTypes []string, limit int) ([]*contentdomain.Content, error) {
 
 	if limit <= 0 {
 		limit = 10
@@ -1432,16 +1445,30 @@ func (r *ContentRepository) SearchPublished(ctx context.Context, query string, l
 	escapedQuery = strings.ReplaceAll(escapedQuery, "_", `\_`)
 	likePattern := "%" + escapedQuery + "%"
 
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+	scoped := ""
+	args := []any{contentdomain.StatusPublished}
+	next := 2
+	if len(postTypes) > 0 {
+		placeholders := make([]string, len(postTypes))
+		for i, postType := range postTypes {
+			placeholders[i] = fmt.Sprintf("$%d", next+i)
+			args = append(args, postType)
+		}
+		next += len(postTypes)
+		scoped = fmt.Sprintf(" AND c.post_type IN (%s)", strings.Join(placeholders, ","))
+	}
+	args = append(args, likePattern, likePattern, limit)
+
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
-		WHERE c.status = $1 AND c.post_type = 'post'
-		  AND (LOWER(c.title) LIKE LOWER($2) ESCAPE '\' OR LOWER(c.meta_description) LIKE LOWER($3) ESCAPE '\')
+		WHERE c.status = $1%s
+		  AND (LOWER(c.title) LIKE LOWER($%d) ESCAPE '\' OR LOWER(c.meta_description) LIKE LOWER($%d) ESCAPE '\')
 		ORDER BY c.created_at DESC
-		LIMIT $4
-	`, contentdomain.StatusPublished, likePattern, likePattern, limit)
+		LIMIT $%d
+	`, scoped, next, next+1, next+2), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search published content: %w", err)
 	}
@@ -1485,7 +1512,7 @@ func (r *ContentRepository) GetRelatedByTags(ctx context.Context, excludeID int,
 	args = append(args, limit)
 
 	query := fmt.Sprintf(`
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id
@@ -1515,7 +1542,7 @@ func (r *ContentRepository) GetLatestByPostType(ctx context.Context, excludeID i
 	}
 
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
+		SELECT c.id, c.user_id, c.title, c.slug, c.content, c.tags, c.status, c.format, c.post_type, c.meta_description, c.og_title, c.og_description, c.featured_image, c.allow_comments, c.custom_fields, c.language, c.translation_group_id, c.created_at, c.updated_at,
 		       COALESCE(u.name, u.username) as author, u.username
 		FROM content_items c
 		LEFT JOIN users u ON c.user_id = u.id

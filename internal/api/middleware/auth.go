@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	"github.com/aristorinjuang/lesstruct/internal/auth"
 	"github.com/aristorinjuang/lesstruct/internal/constants"
+	apikeydomain "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 	"github.com/aristorinjuang/lesstruct/kernel"
 )
 
@@ -17,6 +19,14 @@ const (
 	UserIDKey   contextKey = "user_id"
 	UsernameKey contextKey = "username"
 	RoleKey     contextKey = "role"
+)
+
+// Session validation constants
+const (
+	// accountStatusVerified is the only account status allowed to carry a
+	// session. Suspended and soft-deleted accounts are rejected on the next
+	// request instead of at token expiry.
+	accountStatusVerified = "verified"
 )
 
 // Role constants for easy reference in middleware
@@ -33,6 +43,14 @@ var (
 	ErrMissingToken = errors.New("missing authorization token")
 	ErrInvalidToken = errors.New("invalid authorization token")
 )
+
+// isAPIKeyShaped reports whether a Bearer token looks like a lesstruct API
+// key (the "lesstruct_" prefix). API keys belong to the Bearer-only /api/v1
+// agent realm; JWT routes must reject them with JWT_REQUIRED guidance instead
+// of the generic INVALID_TOKEN.
+func isAPIKeyShaped(token string) bool {
+	return strings.HasPrefix(token, apikeydomain.KeyPrefix)
+}
 
 // newUserContext populates request context with user identity using the shared
 // context keys. Both the JWT AuthMiddleware and the API-key APIKeyAuthMiddleware
@@ -55,6 +73,20 @@ func newUserContext(ctx context.Context, userID, username, role string) context.
 	})
 }
 
+// clearStaleSessionCookie drops a presented-but-rejected session cookie so an
+// expired or revoked session stops being resent on every request. It only
+// acts when no Authorization header was sent: a present header means the
+// caller authenticated with a Bearer and any cookie was never consulted.
+func clearStaleSessionCookie(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "" {
+		return
+	}
+	if _, err := r.Cookie(kernel.SessionCookieName); err != nil {
+		return
+	}
+	kernel.ClearSessionCookie(w, r)
+}
+
 // UserContext represents user information stored in request context
 type UserContext struct {
 	UserID   string
@@ -65,35 +97,47 @@ type UserContext struct {
 // AuthMiddleware represents authentication middleware
 type AuthMiddleware struct {
 	jwtManager *auth.JWTManager
+	userLookup UserLookup
 }
 
-// extractToken extracts the JWT token from the Authorization header
+// extractToken extracts the JWT from the Authorization header with a cookie
+// fallback. A present header always wins — even an API-key-shaped Bearer is
+// returned as-is so the caller rejects it with JWT_REQUIRED without ever
+// consulting the cookie. The session cookie is only read when no header is
+// present, so already-issued Bearer JWTs keep validating exactly as today.
 func (m *AuthMiddleware) extractToken(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", ErrMissingToken
+	if authHeader != "" {
+		// Check if header starts with "Bearer " (exactly one space after Bearer)
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			return "", ErrInvalidToken
+		}
+
+		// Extract token and trim whitespace
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		token = strings.TrimSpace(token)
+
+		// Validate token is not empty after trimming
+		if token == "" {
+			return "", ErrInvalidToken
+		}
+
+		// Check for multiple Bearer prefixes (potential attack)
+		if strings.Contains(strings.ToLower(token), "bearer ") {
+			return "", ErrInvalidToken
+		}
+
+		return token, nil
 	}
 
-	// Check if header starts with "Bearer " (exactly one space after Bearer)
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return "", ErrInvalidToken
+	if cookie, err := r.Cookie(kernel.SessionCookieName); err == nil {
+		token := strings.TrimSpace(cookie.Value)
+		if token != "" {
+			return token, nil
+		}
 	}
 
-	// Extract token and trim whitespace
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-	token = strings.TrimSpace(token)
-
-	// Validate token is not empty after trimming
-	if token == "" {
-		return "", ErrInvalidToken
-	}
-
-	// Check for multiple Bearer prefixes (potential attack)
-	if strings.Contains(strings.ToLower(token), "bearer ") {
-		return "", ErrInvalidToken
-	}
-
-	return token, nil
+	return "", ErrMissingToken
 }
 
 // createUserContext now delegates to the shared helper.
@@ -106,6 +150,30 @@ func (m *AuthMiddleware) hasRequiredRole(userRole string, requiredRoles []string
 	return slices.Contains(requiredRoles, userRole)
 }
 
+// sessionValid resolves the token subject and verifies the session is still
+// usable: the account exists, is verified, and its stored token version still
+// matches the one embedded in the token. A password change or reset bumps the
+// stored version, so every token issued before it is rejected immediately
+// instead of remaining valid until expiry. Every failure reports false without
+// revealing which check failed.
+func (m *AuthMiddleware) sessionValid(ctx context.Context, claims *auth.Claims) bool {
+	userID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		return false
+	}
+
+	user, err := m.userLookup.GetUserByID(ctx, userID)
+	if err != nil || user == nil {
+		return false
+	}
+
+	if user.Status != accountStatusVerified {
+		return false
+	}
+
+	return claims.TokenVersion == user.TokenVersion
+}
+
 // RequireAuth validates JWT token and adds user context to request
 func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -115,17 +183,31 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 			response.Error(w, http.StatusUnauthorized, "MISSING_TOKEN", "Missing authorization token", nil)
 			return
 		}
+		if isAPIKeyShaped(token) {
+			response.Error(w, http.StatusUnauthorized, "JWT_REQUIRED", "This endpoint requires a JWT; API keys belong on the /api/v1 agent endpoints", nil)
+			return
+		}
 
 		// Validate token
 		claims, err := m.jwtManager.ValidateToken(token)
 		if err != nil {
 			// Check if token is expired
 			if strings.Contains(err.Error(), "expired") {
+				clearStaleSessionCookie(w, r)
 				response.Error(w, http.StatusUnauthorized, "TOKEN_EXPIRED", "Your session has expired. Please log in again", nil)
 				return
 			}
 
 			// Invalid token
+			clearStaleSessionCookie(w, r)
+			response.Error(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid authorization token", nil)
+			return
+		}
+
+		// Reject revoked sessions (password change/reset) and accounts that are
+		// no longer active before the request reaches a handler.
+		if !m.sessionValid(r.Context(), claims) {
+			clearStaleSessionCookie(w, r)
 			response.Error(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid authorization token", nil)
 			return
 		}
@@ -156,6 +238,13 @@ func (m *AuthMiddleware) OptionalAuth(next http.Handler) http.Handler {
 			return
 		}
 
+		// A revoked or inactive session is treated as anonymous; the handler
+		// decides what an anonymous caller may see.
+		if !m.sessionValid(r.Context(), claims) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Add user context to request
 		ctx := m.createUserContext(r.Context(), claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -172,17 +261,31 @@ func (m *AuthMiddleware) RequireRole(roles ...string) func(http.Handler) http.Ha
 				response.Error(w, http.StatusUnauthorized, "MISSING_TOKEN", "Missing authorization token", nil)
 				return
 			}
+			if isAPIKeyShaped(token) {
+				response.Error(w, http.StatusUnauthorized, "JWT_REQUIRED", "This endpoint requires a JWT; API keys belong on the /api/v1 agent endpoints", nil)
+				return
+			}
 
 			// Validate token
 			claims, err := m.jwtManager.ValidateToken(token)
 			if err != nil {
 				// Check if token is expired
 				if strings.Contains(err.Error(), "expired") {
+					clearStaleSessionCookie(w, r)
 					response.Error(w, http.StatusUnauthorized, "TOKEN_EXPIRED", "Your session has expired. Please log in again", nil)
 					return
 				}
 
 				// Invalid token
+				clearStaleSessionCookie(w, r)
+				response.Error(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid authorization token", nil)
+				return
+			}
+
+			// Reject revoked or inactive sessions before checking the role so a
+			// stale token never reaches a protected handler.
+			if !m.sessionValid(r.Context(), claims) {
+				clearStaleSessionCookie(w, r)
 				response.Error(w, http.StatusUnauthorized, "INVALID_TOKEN", "Invalid authorization token", nil)
 				return
 			}
@@ -200,10 +303,14 @@ func (m *AuthMiddleware) RequireRole(roles ...string) func(http.Handler) http.Ha
 	}
 }
 
-// NewAuthMiddleware creates a new authentication middleware
-func NewAuthMiddleware(jwtManager *auth.JWTManager) *AuthMiddleware {
+// NewAuthMiddleware creates a new authentication middleware. userLookup is
+// consulted on every authenticated request to enforce account status and
+// token-version revocation, so a password change or deleted account takes
+// effect immediately rather than at token expiry.
+func NewAuthMiddleware(jwtManager *auth.JWTManager, userLookup UserLookup) *AuthMiddleware {
 	return &AuthMiddleware{
 		jwtManager: jwtManager,
+		userLookup: userLookup,
 	}
 }
 

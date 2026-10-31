@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/modules/users/domain/profilepicture"
@@ -16,6 +17,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// zeroDimMagic identifies the synthetic format whose DecodeConfig reports
+// zero dimensions, exercising the pixel-budget guard's pass-through branch.
+const zeroDimMagic = "ZDIMPROF"
+
+func init() {
+	image.RegisterFormat(
+		"profilepicture-zero-dim-test",
+		zeroDimMagic,
+		func(io.Reader) (image.Image, error) {
+			return image.NewRGBA(image.Rect(0, 0, 1, 1)), nil
+		},
+		func(io.Reader) (image.Config, error) {
+			return image.Config{}, nil
+		},
+	)
+}
+
+// encodeTestPNG builds a solid PNG of the given dimensions.
+func encodeTestPNG(t *testing.T, width, height int) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, width, height))))
+	return buf.Bytes()
+}
 
 func TestProcessor_CropAndConvertToWebP(t *testing.T) {
 	tests := []struct {
@@ -223,4 +250,44 @@ func TestProcessor_CropAndConvertToWebP_DecompressionBomb(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "image dimensions exceed")
+}
+
+func TestProcessor_CropAndConvertToWebP_ReaderEdgeCases(t *testing.T) {
+	tests := []struct {
+		name            string
+		reader          func(*testing.T) io.Reader
+		wantErrContains string
+	}{
+		{
+			name: "rewind failure is surfaced",
+			reader: func(t *testing.T) io.Reader {
+				return failSeekFile{Reader: bytes.NewReader(encodeTestPNG(t, 40, 40))}
+			},
+			wantErrContains: "forced seek error",
+		},
+		{
+			name: "zero-dimension config passes the budget guard",
+			reader: func(*testing.T) io.Reader {
+				return bytes.NewReader(append([]byte(zeroDimMagic), make([]byte, 8)...))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			processor := profilepicture.NewProcessor()
+
+			result, err := processor.CropAndConvertToWebP(tt.reader(t), profilepicture.ProfilePictureSize)
+
+			if tt.wantErrContains != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErrContains)
+				assert.Empty(t, result)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.NotEmpty(t, result)
+		})
+	}
 }

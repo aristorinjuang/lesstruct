@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	"github.com/aristorinjuang/lesstruct/kernel/database"
+	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	"github.com/aristorinjuang/lesstruct/modules/media/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -255,7 +255,7 @@ func TestMediaRepository_FindAllByCursor(t *testing.T) {
 			// A different user's media must be INCLUDED (global, non-scoped list).
 			createMediaForSearch(t, db, 2, "other.jpg", "hash-fa-other")
 
-			got, err := repo.FindAllByCursor(context.Background(), tt.limit, tt.beforeID)
+			got, err := repo.FindAllByCursor(context.Background(), 0, tt.limit, tt.beforeID)
 			require.NoError(t, err, "FindAllByCursor() unexpected error")
 
 			gotIDs := make([]int, 0, len(got))
@@ -549,11 +549,11 @@ func TestMediaRepository_FindAllByFilenameByCursor(t *testing.T) {
 	repo := store.New(db, database.SQLiteDialect())
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilenameByCursor(ctx, "sunset", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, 0, "sunset", 100, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 2, "FindAllByFilenameByCursor() expected 2 results matching 'sunset'")
 
-	found, err = repo.FindAllByFilenameByCursor(ctx, "sunset", 100, 3)
+	found, err = repo.FindAllByFilenameByCursor(ctx, 0, "sunset", 100, 3)
 	require.NoError(t, err)
 	assert.Len(t, found, 1, "FindAllByFilenameByCursor() expected 1 result before ID 3")
 	assert.Equal(t, 1, found[0].ID, "FindAllByFilenameByCursor() should return the older row")
@@ -568,7 +568,7 @@ func TestMediaRepository_FindAllByFilenameByCursor_CaseInsensitive(t *testing.T)
 	repo := store.New(db, database.SQLiteDialect())
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilenameByCursor(ctx, "SUNSET", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, 0, "SUNSET", 100, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 1, "FindAllByFilenameByCursor() should be case-insensitive")
 }
@@ -582,7 +582,7 @@ func TestMediaRepository_FindAllByFilenameByCursor_NoMatch(t *testing.T) {
 	repo := store.New(db, database.SQLiteDialect())
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilenameByCursor(ctx, "mountain", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, 0, "mountain", 100, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 0, "FindAllByFilenameByCursor() expected 0 results for non-matching query")
 }
@@ -600,9 +600,90 @@ func TestMediaRepository_FindAllByFilenameByCursor_AcrossUsers(t *testing.T) {
 	repo := store.New(db, database.SQLiteDialect())
 	ctx := context.Background()
 
-	found, err := repo.FindAllByFilenameByCursor(ctx, "sunset", 100, 0)
+	found, err := repo.FindAllByFilenameByCursor(ctx, 0, "sunset", 100, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 2, "FindAllByFilenameByCursor() should return results across all users")
+}
+
+// TestMediaRepository_FindAllByCursor_OwnerScope proves ownerID > 0 pins the
+// list to one user's library while 0 (the admin scope) keeps it global — the
+// scoping rule that keeps a buyer from inventorying another account's uploads.
+func TestMediaRepository_FindAllByCursor_OwnerScope(t *testing.T) {
+	db := setupMediaTestDB(t)
+	defer closeMediaTestDB(db)
+
+	_, err := db.Exec(`INSERT INTO users (username, password_hash, role, name) VALUES ('user2', 'hash2', 'user', 'User Two')`)
+	require.NoError(t, err)
+
+	// Seed interleaved so ordering assertions cover both users' rows.
+	createMediaForSearch(t, db, 1, "one.jpg", "hash-os-1")
+	createMediaForSearch(t, db, 2, "two.jpg", "hash-os-2")
+	createMediaForSearch(t, db, 1, "three.jpg", "hash-os-3")
+
+	repo := store.New(db, database.SQLiteDialect())
+	ctx := context.Background()
+
+	global, err := repo.FindAllByCursor(ctx, 0, 100, 0)
+	require.NoError(t, err, "global scope")
+	gotIDs := make([]int, 0, len(global))
+	for _, m := range global {
+		gotIDs = append(gotIDs, m.ID)
+	}
+	assert.Len(t, gotIDs, 3, "global scope must include every user's media")
+
+	scoped, err := repo.FindAllByCursor(ctx, 1, 100, 0)
+	require.NoError(t, err, "owner scope")
+	scopedIDs := make([]int, 0, len(scoped))
+	for _, m := range scoped {
+		scopedIDs = append(scopedIDs, m.ID)
+		assert.Equal(t, 1, m.UserID, "owner-scoped rows must all belong to user 1")
+	}
+	assert.Equal(t, []int{3, 1}, scopedIDs, "owner scope returns only that user's media, newest-first")
+
+	empty, err := repo.FindAllByCursor(ctx, 999, 100, 0)
+	require.NoError(t, err, "unknown owner")
+	assert.Empty(t, empty, "an owner with no media sees an empty list")
+}
+
+func TestMediaRepository_FindAllByFilenameByCursor_OwnerScope(t *testing.T) {
+	db := setupMediaTestDB(t)
+	defer closeMediaTestDB(db)
+
+	_, err := db.Exec(`INSERT INTO users (username, password_hash, role, name) VALUES ('user2', 'hash2', 'user', 'User Two')`)
+	require.NoError(t, err)
+
+	createMediaForSearch(t, db, 1, "sunset.jpg", "hash-fs-1")
+	createMediaForSearch(t, db, 2, "sunset_other.jpg", "hash-fs-2")
+
+	repo := store.New(db, database.SQLiteDialect())
+	ctx := context.Background()
+
+	found, err := repo.FindAllByFilenameByCursor(ctx, 1, "sunset", 100, 0)
+	require.NoError(t, err)
+	require.Len(t, found, 1, "owner-scoped search returns only the caller's match")
+	assert.Equal(t, 1, found[0].UserID)
+}
+
+func TestMediaRepository_Count_OwnerScope(t *testing.T) {
+	db := setupMediaTestDB(t)
+	defer closeMediaTestDB(db)
+
+	_, err := db.Exec(`INSERT INTO users (username, password_hash, role, name) VALUES ('user2', 'hash2', 'user', 'User Two')`)
+	require.NoError(t, err)
+
+	createMediaForSearch(t, db, 1, "sunset.jpg", "hash-cs-1")
+	createMediaForSearch(t, db, 2, "sunset_other.jpg", "hash-cs-2")
+
+	repo := store.New(db, database.SQLiteDialect())
+	ctx := context.Background()
+
+	global, err := repo.Count(ctx, 0, "sunset", time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, global, "global scope counts every user's media")
+
+	scoped, err := repo.Count(ctx, 1, "sunset", time.Time{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, scoped, "owner scope counts only that user's media")
 }
 
 func TestMediaRepository_FindAllByDateRangeByCursor(t *testing.T) {
@@ -620,7 +701,7 @@ func TestMediaRepository_FindAllByDateRangeByCursor(t *testing.T) {
 	ctx := context.Background()
 
 	since := time.Now().AddDate(0, 0, -7)
-	found, err := repo.FindAllByDateRangeByCursor(ctx, since, 100, 0)
+	found, err := repo.FindAllByDateRangeByCursor(ctx, 0, since, 100, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 1, "FindAllByDateRangeByCursor() expected 1 recent result")
 	assert.Equal(t, "recent_photo.jpg", found[0].OriginalFilename)
@@ -639,7 +720,7 @@ func TestMediaRepository_FindAllByDateRangeByCursor_NoResults(t *testing.T) {
 	ctx := context.Background()
 
 	since := time.Now().AddDate(0, 0, -7)
-	found, err := repo.FindAllByDateRangeByCursor(ctx, since, 100, 0)
+	found, err := repo.FindAllByDateRangeByCursor(ctx, 0, since, 100, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 0, "FindAllByDateRangeByCursor() expected 0 results for old media")
 }
@@ -660,7 +741,7 @@ func TestMediaRepository_FindAllByFilenameAndDateRangeByCursor(t *testing.T) {
 	ctx := context.Background()
 
 	since := time.Now().AddDate(0, 0, -7)
-	found, err := repo.FindAllByFilenameAndDateRangeByCursor(ctx, "sunset", since, 100, 0)
+	found, err := repo.FindAllByFilenameAndDateRangeByCursor(ctx, 0, "sunset", since, 100, 0)
 	require.NoError(t, err)
 	assert.Len(t, found, 1, "FindAllByFilenameAndDateRangeByCursor() expected 1 result matching both filters")
 	assert.Equal(t, "sunset_recent.jpg", found[0].OriginalFilename)
@@ -728,7 +809,7 @@ func TestMediaRepository_Count(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			total, err := repo.Count(ctx, tt.search, tt.since)
+			total, err := repo.Count(ctx, 0, tt.search, tt.since)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, total, "Count() mismatch for %q", tt.name)
 		})

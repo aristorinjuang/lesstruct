@@ -35,17 +35,15 @@ function extractFilename(disposition: string | null, fallback: string): string {
  * Download a binary response (e.g. a tar.gz archive) as a file attachment.
  * No timeout by default — large exports can take minutes, mirroring the CLI
  * and Bruno collections (timeout: 0). Returns the server-provided filename.
+ * The browser session travels in the HttpOnly cookie, so credentials are
+ * included and no Authorization header is ever set.
  */
 async function download(
   path: string,
   fallbackFilename: string,
   options?: { timeout?: number }
 ): Promise<string> {
-  const token = localStorage.getItem('auth_token')
   const headers: Record<string, string> = {}
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
-  }
 
   const url = `${BASE_URL}${path}`
   const controller = new AbortController()
@@ -56,6 +54,7 @@ async function download(
     const response = await fetch(url, {
       method: 'GET',
       headers,
+      credentials: 'include',
       signal: controller.signal,
     })
 
@@ -101,7 +100,6 @@ async function request<T>(
   data?: Record<string, unknown> | FormData,
   options?: RequestOptions
 ): Promise<{ data: T }> {
-  const token = localStorage.getItem('auth_token')
   const headers: Record<string, string> = {
     ...(options?.headers as Record<string, string>),
   }
@@ -109,10 +107,6 @@ async function request<T>(
   // Only set Content-Type for JSON requests (not FormData)
   if (!(data instanceof FormData)) {
     headers['Content-Type'] = 'application/json'
-  }
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
   }
 
   // Build URL with query params
@@ -135,6 +129,7 @@ async function request<T>(
     const response = await fetch(url, {
       method,
       headers,
+      credentials: 'include',
       body: data instanceof FormData ? data : data ? JSON.stringify(data) : undefined,
       signal: controller.signal
     })

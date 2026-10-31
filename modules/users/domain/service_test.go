@@ -1243,6 +1243,90 @@ func TestUserManagementService_UpdateUserProfile_CommentatorAllowedWhenCommentsE
 	assert.Equal(t, "Commentator", result.Role)
 }
 
+// TestUserManagementService_UpdateUserProfile_CommentatorRegistrationGating
+// pins the update path to the same comments-AND-registration predicate as
+// the create path: with registration disabled, assigning Commentator via
+// the edit-user flow refuses even when comments stay enabled.
+func TestUserManagementService_UpdateUserProfile_CommentatorRegistrationGating(t *testing.T) {
+	tests := []struct {
+		name         string
+		comments     bool
+		registration *bool
+		wantErr      bool
+	}{
+		{
+			name:     "success - comments enabled without registration override allows",
+			comments: true,
+			wantErr:  false,
+		},
+		{
+			name:     "error - comments disabled without registration override refuses",
+			comments: false,
+			wantErr:  true,
+		},
+		{
+			name:         "error - registration explicitly disabled refuses even with comments",
+			comments:     true,
+			registration: func() *bool { v := false; return &v }(),
+			wantErr:      true,
+		},
+		{
+			name:         "error - comments disabled refuses even with registration enabled",
+			comments:     false,
+			registration: func() *bool { v := true; return &v }(),
+			wantErr:      true,
+		},
+		{
+			name:         "success - comments and registration both enabled allows",
+			comments:     true,
+			registration: func() *bool { v := true; return &v }(),
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockUserRepo := mocks.NewMockUserRepo(t)
+			_ = mocks.NewMockBlockedEmailRepo(t)
+
+			opts := []user.UserManagementOption{}
+			if tt.registration != nil {
+				opts = append(opts, user.WithManagementRegistrationEnabled(*tt.registration))
+			}
+			service := user.NewUserManagementService(mockUserRepo, nil, stubPolicy{}, tt.comments, opts...)
+
+			mockUserRepo.EXPECT().
+				GetUserByID(mock.Anything, 1).
+				Return(&user.User{
+					ID: 1, Username: "testuser", Email: "test@example.com",
+					Name: "Test", Role: "Admin",
+				}, nil).Once()
+			if !tt.wantErr {
+				mockUserRepo.EXPECT().
+					UpdateProfile(mock.Anything, 1, mock.Anything, mock.Anything, "Commentator", mock.Anything).
+					Return(nil)
+				mockUserRepo.EXPECT().
+					GetUserByID(mock.Anything, 1).
+					Return(&user.User{
+						ID: 1, Username: "testuser", Email: "test@example.com",
+						Name: "Test", Role: "Commentator",
+					}, nil).Once()
+			}
+
+			result, err := service.UpdateUserProfile(context.Background(), 1, "", "", "Commentator", nil)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, user.ErrInvalidRole))
+				mockUserRepo.AssertNotCalled(t, "UpdateProfile", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "Commentator", result.Role)
+		})
+	}
+}
+
 // TestUserManagementService_UpdateUserProfile_RoleServiceAllowsCustomRole
 // verifies the update path accepts roles registered in the config-driven role
 // registry, beyond the three built-ins.

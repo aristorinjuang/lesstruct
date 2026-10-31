@@ -24,12 +24,6 @@ func readEmbeddedPage(filename string) string {
 	return string(data)
 }
 
-// Theme holds the path to a custom theme directory on disk.
-// When Dir is empty, embedded defaults are used.
-type Theme struct {
-	Dir string
-}
-
 // readThemeFile reads a template file from the theme's templates directory,
 // falling back to the embedded page if the theme is nil, empty,
 // or the file does not exist.
@@ -44,6 +38,23 @@ func readThemeFile(theme *Theme, filename string) string {
 	}
 
 	return string(data)
+}
+
+// readLayoutSources returns the shared layout sources in precedence order:
+// the embedded artifact first, then the theme directory override. Parsing
+// both keeps partials defined by the embedded layout available when a child
+// theme replaces only the outer shell.
+func readLayoutSources(theme *Theme) []string {
+	sources := make([]string, 0, 2)
+	if embedded := readEmbeddedPage("layout.html"); embedded != "" {
+		sources = append(sources, embedded)
+	}
+	if theme != nil && theme.Dir != "" {
+		if data, err := os.ReadFile(filepath.Join(theme.Dir, "templates", "layout.html")); err == nil {
+			sources = append(sources, string(data))
+		}
+	}
+	return sources
 }
 
 // readContentTemplate resolves the content template for a given post type slug.
@@ -203,6 +214,12 @@ func resolveFS(theme *Theme, embedded fs.FS, subPath string) fs.FS {
 		primary:   primary,
 		secondary: secondary,
 	}
+}
+
+// Theme holds the path to a custom theme directory on disk.
+// When Dir is empty, embedded defaults are used.
+type Theme struct {
+	Dir string
 }
 
 // compositeFS implements fs.FS by checking a primary filesystem first,

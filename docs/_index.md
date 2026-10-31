@@ -17,10 +17,16 @@ section — each doc states its scope at the top._
 | If you are working on... | Read this first |
 |---|---|
 | Architecture, layers, stack versions, conventions, **where new code goes** | [project-context.md](project-context.md) |
+| Domain model: bounded contexts, aggregates, DDD layers, context map | [ddd/domain-context.md](ddd/domain-context.md) |
+| Domain vocabulary (the term to use in code, docs, and UI) | [ddd/ubiquitous-language.md](ddd/ubiquitous-language.md) |
+| Commerce order model: checkout invariants, lifecycle, Money, invoices | [ddd/orders-bounded-context.md](ddd/orders-bounded-context.md) |
 | The `/api/v1` REST API (auth, envelope, error catalog) | [api-reference.md](api-reference.md) |
+| The `lesstruct-cli` terminal client (install, auth, commands, workflows) | [cli.md](cli.md) |
 | `config.toml` schema or environment variables | [configuration.md](configuration.md) |
 | Writing a Go module (Tier 1: layout, seams, gating, wiring) | [module-development.md](module-development.md) |
 | What a built-in module owns / what disabling it does | [built-in-modules.md](built-in-modules.md) |
+| Which edition to install / what each edition carries | [editions.md](editions.md) |
+| Setting up the eCommerce edition: products, payments, fulfillment | [getting-started-ecommerce.md](getting-started-ecommerce.md) |
 | Understanding or evolving the kernel | [kernel.md](kernel.md) |
 | Writing a WASM plugin (hooks, lifecycle, build) | [plugin-development.md](plugin-development.md) |
 | Plugin capabilities / host functions | [plugin-capabilities.md](plugin-capabilities.md) |
