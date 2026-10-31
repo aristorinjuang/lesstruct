@@ -1,3 +1,5 @@
+github.com/aristorinjuang/lesstruct/kernel v1.1.1 h1:ZKHkl8TRJ4/hRtBxbU6NFFivASagXj+qtH9rCtDST0o=
+github.com/aristorinjuang/lesstruct/kernel v1.1.1/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-chi/chi/v5 v5.3.1 h1:3j4HZLGZQ3JpMCrPJF/Jl3mYJfWLKBfNJ6quurUGCf8=
@@ -10,20 +12,3 @@ gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
 gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
-github.com/aristorinjuang/lesstruct/kernel v1.1.1/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
-github.com/aristorinjuang/lesstruct/modules/adminpanel v1.1.1/go.mod h1:Z7ngVbgQAJAqabI5YL0QOQiP7YbpvcvwM7zPPZG1DDc=
-github.com/aristorinjuang/lesstruct/modules/auth v1.1.1/go.mod h1:cujgBjFdyksRaaD9IOAq7ROPYiDZtSNWffkb/vIj09Q=
-github.com/aristorinjuang/lesstruct/modules/cart v1.1.1/go.mod h1:L7Ln2Z6CAQHz2pBKTdylsqy3m2Pw9rTI/AaqtR0JagQ=
-github.com/aristorinjuang/lesstruct/modules/catalog v1.1.1/go.mod h1:eX2Nx9lDIRjyPudJvo4FoVIQk5TUz2BJFkOm1FGnNco=
-github.com/aristorinjuang/lesstruct/modules/comments v1.1.1/go.mod h1:eRsCvgeGNmrERL8O1nacuV0cE1JqBqx+S3MyJ1++/ds=
-github.com/aristorinjuang/lesstruct/modules/importers v1.1.1/go.mod h1:WLk0vXqj2M0z0d+FKUlVhbvB8T6QThGIW2f0UhxQ0Jk=
-github.com/aristorinjuang/lesstruct/modules/media v1.1.1/go.mod h1:npkYUgiztA12TFAqw3wnkDYHPjbw6IBjVqCiyY0/XgI=
-github.com/aristorinjuang/lesstruct/modules/orders v1.1.1/go.mod h1:y5Z+7UaTVZmFfzqXTSp7AOW+S08JBpmvqTswMgUG2r0=
-github.com/aristorinjuang/lesstruct/modules/payments v1.1.1/go.mod h1:aR2wg4NsSk1hB125QR9tL2md8viyPojQm4wrjWxQmtY=
-github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.1.1/go.mod h1:W7Jk9ZRDAR9n4Up6NUqt6/NW+lE9fdLbMZo9p5xdzn8=
-github.com/aristorinjuang/lesstruct/modules/seo v1.1.1/go.mod h1:JAU5ebiOwUvxZQkQ9Oact1isW6EZdcMgKYRHQ/8j2Ho=
-github.com/aristorinjuang/lesstruct/modules/site-ssr v1.1.1/go.mod h1:nBeED4syB/PPAWQwIOXXJlW1feFPrLAaoiQ+4VkoYXc=
-github.com/aristorinjuang/lesstruct/modules/textgen v1.1.1/go.mod h1:J5/bHuOwArxHo+O+5ly8h6niXmOnfOSpMxJYaIfANWo=
-github.com/aristorinjuang/lesstruct/modules/theme-default v1.1.1/go.mod h1:OPM0Q95jk87/EsNNk/UDh/iBZmmGoIm2yTQphvtomqg=
-github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.1.1/go.mod h1:ox1Zxpk9CFU2jzFFclDmuLium5VXdkz9ATMo1F+5HeM=
-github.com/aristorinjuang/lesstruct/modules/users v1.1.1/go.mod h1:gjIJgnCx2eOcI33Vc52+UW79TesbwnhvVdpVcDGda2s=
