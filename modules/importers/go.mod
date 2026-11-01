@@ -7,10 +7,10 @@ toolchain go1.27.3
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/aristorinjuang/lesstruct/kernel v1.1.2
-	github.com/aristorinjuang/lesstruct/modules/media v1.1.2
-	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.1.2
-	github.com/aristorinjuang/lesstruct/modules/seo v1.1.2
+	github.com/aristorinjuang/lesstruct/kernel v1.1.3
+	github.com/aristorinjuang/lesstruct/modules/media v1.1.3
+	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.1.3
+	github.com/aristorinjuang/lesstruct/modules/seo v1.1.3
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/image v0.45.0
 	golang.org/x/net v0.62.0
