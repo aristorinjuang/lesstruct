@@ -1,7 +1,7 @@
-github.com/aristorinjuang/lesstruct/kernel v1.1.1 h1:ZKHkl8TRJ4/hRtBxbU6NFFivASagXj+qtH9rCtDST0o=
-github.com/aristorinjuang/lesstruct/kernel v1.1.1/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
-github.com/aristorinjuang/lesstruct/modules/users v1.1.1 h1:5nXsmRSDD2J4buT9hlRcHWMyWx/jtbCHUMFfwc0wQzA=
-github.com/aristorinjuang/lesstruct/modules/users v1.1.1/go.mod h1:gjIJgnCx2eOcI33Vc52+UW79TesbwnhvVdpVcDGda2s=
+github.com/aristorinjuang/lesstruct/kernel v1.1.2 h1:pb3zFTY7mJuIxzIr/T+oVmlny8fMdyf3pQ5KRBe7bj8=
+github.com/aristorinjuang/lesstruct/kernel v1.1.2/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
+github.com/aristorinjuang/lesstruct/modules/users v1.1.2 h1:yxq9RDxffG5RQf1z1AA3q/OELBPq8igj8PqBSX/kdDE=
+github.com/aristorinjuang/lesstruct/modules/users v1.1.2/go.mod h1:HusSZsEzuESCtHmye32wzdyKieQiD7TQLBhOXwoG36k=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

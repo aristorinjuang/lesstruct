@@ -1,5 +1,5 @@
-github.com/aristorinjuang/lesstruct/kernel v1.1.1 h1:ZKHkl8TRJ4/hRtBxbU6NFFivASagXj+qtH9rCtDST0o=
-github.com/aristorinjuang/lesstruct/kernel v1.1.1/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
+github.com/aristorinjuang/lesstruct/kernel v1.1.2 h1:pb3zFTY7mJuIxzIr/T+oVmlny8fMdyf3pQ5KRBe7bj8=
+github.com/aristorinjuang/lesstruct/kernel v1.1.2/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/boombuler/barcode v1.1.0 h1:ChaYjBR63fr4LFyGn8E8nt7dBSt3MiU3zMOZqFvVkHo=
 github.com/boombuler/barcode v1.1.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=

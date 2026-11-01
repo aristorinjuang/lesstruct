@@ -6,8 +6,8 @@ cloud.google.com/go/compute/metadata v0.9.0 h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdB
 cloud.google.com/go/compute/metadata v0.9.0/go.mod h1:E0bWwX5wTnLPedCKqk3pJmVgCBSM6qQI1yTBdEb3C10=
 github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
-github.com/aristorinjuang/lesstruct/kernel v1.1.1 h1:ZKHkl8TRJ4/hRtBxbU6NFFivASagXj+qtH9rCtDST0o=
-github.com/aristorinjuang/lesstruct/kernel v1.1.1/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
+github.com/aristorinjuang/lesstruct/kernel v1.1.2 h1:pb3zFTY7mJuIxzIr/T+oVmlny8fMdyf3pQ5KRBe7bj8=
+github.com/aristorinjuang/lesstruct/kernel v1.1.2/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
