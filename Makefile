@@ -212,6 +212,8 @@ css:
 	go install github.com/tdewolff/minify/v2/cmd/minify@latest
 	minify -o modules/theme-default/static/base.css modules/theme-default/static/base.src.css
 	minify -o modules/theme-default/static/style.css modules/theme-default/static/style.src.css
+	minify -o modules/theme-storefront/static/base.css modules/theme-storefront/static/base.src.css
+	minify -o modules/theme-storefront/static/style.css modules/theme-storefront/static/style.src.css
 
 js:
 	go install github.com/tdewolff/minify/v2/cmd/minify@latest

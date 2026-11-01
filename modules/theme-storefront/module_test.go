@@ -100,7 +100,9 @@ func TestModule_ThemeFiles(t *testing.T) {
 		"pages/checkout.gohtml",
 		"pages/orders-track.gohtml",
 		"static/base.css",
+		"static/base.src.css",
 		"static/style.css",
+		"static/style.src.css",
 		"static/storefront.js",
 		"static/storefront.src.js",
 		"static/nav-auth.js",
@@ -172,6 +174,51 @@ func TestModule_StorefrontMinified(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Contains(t, string(min), tt.needle)
+		})
+	}
+}
+
+func TestModule_StylesheetsMinified(t *testing.T) {
+	files := testutil.NewModule().ThemeFiles()
+
+	// Both stylesheets ship minified builds of their readable sources: a
+	// source edit without re-running `make css` leaves a stale bundle the
+	// size check alone cannot catch, so each pair also pins selectors the
+	// minifier must preserve.
+	tests := []struct {
+		name    string
+		src     string
+		min     string
+		needles []string
+	}{
+		{
+			name:    "base tokens survive minification",
+			src:     "static/base.src.css",
+			min:     "static/base.css",
+			needles: []string{":root", "--color-bg"},
+		},
+		{
+			name:    "components survive minification",
+			src:     "static/style.src.css",
+			min:     "static/style.css",
+			needles: []string{".site-header", ".product-card"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src, err := fs.ReadFile(files, tt.src)
+			require.NoError(t, err)
+
+			min, err := fs.ReadFile(files, tt.min)
+			require.NoError(t, err)
+
+			require.NotEmpty(t, bytes.TrimSpace(min), "minified stylesheet must not ship empty (regenerate with make css)")
+			assert.Less(t, len(min), len(src), "minified stylesheet must be smaller than its readable source (regenerate with make css)")
+			assert.NotContains(t, string(min), "Readable source of truth", "minified stylesheet must not be a copy of the readable source")
+			for _, needle := range tt.needles {
+				assert.Contains(t, string(min), needle)
+			}
 		})
 	}
 }
