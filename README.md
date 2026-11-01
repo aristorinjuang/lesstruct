@@ -65,7 +65,7 @@ Open <http://localhost:8080/admin>, **sign in as `admin` / `admin`** and set a n
 
 ### Option A — Download a release binary (recommended)
 
-Grab the latest build for your platform from the [releases page](https://github.com/aristorinjuang/lesstruct/releases). Each release ships static binaries for `linux`, `darwin`, and `windows` on `amd64` and `arm64` — the default (blog) edition as `lesstruct-<os>-<arch>` and the Core edition (headless engine) as `lesstruct-core-<os>-<arch>`:
+Grab the latest build for your platform from the [releases page](https://github.com/aristorinjuang/lesstruct/releases). Each release ships static binaries for `linux`, `darwin`, and `windows` on `amd64` and `arm64` — the default (blog) edition as `lesstruct-<os>-<arch>`, the Core edition (headless engine) as `lesstruct-core-<os>-<arch>`, the eCommerce edition as `lesstruct-ecommerce-<os>-<arch>`, and the CLI as `lesstruct-cli-<os>-<arch>`.
 
 | OS | amd64 | arm64 |
 |---|---|---|

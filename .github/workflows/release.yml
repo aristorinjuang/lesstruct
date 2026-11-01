@@ -30,26 +30,30 @@ jobs:
       - name: Build Admin Panel
         run: make build-admin
 
-      - name: Build Binaries (blog edition; the sqlite-free server
-          edition from `make build-server` is not shipped as a release
-          asset yet)
+      - name: Build Binaries (blog, core, and eCommerce editions plus the
+          CLI; the sqlite-free server edition from `make build-server` is
+          not shipped as a release asset yet)
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p dist
           for GOOS in linux darwin windows; do
             for GOARCH in amd64 arm64; do
-              BINARY="lesstruct-${GOOS}-${GOARCH}"
+              SUFFIX=""
               if [ "$GOOS" = "windows" ]; then
-                BINARY="${BINARY}.exe"
+                SUFFIX=".exe"
               fi
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-s -w" -o "dist/${BINARY}" .
+                go build -ldflags="-s -w" -o "dist/lesstruct-${GOOS}-${GOARCH}${SUFFIX}" .
               # Core edition — the headless engine (fewer modules, smaller binary).
-              CORE_BINARY="lesstruct-core-${GOOS}-${GOARCH}"
-              if [ "$GOOS" = "windows" ]; then
-                CORE_BINARY="${CORE_BINARY}.exe"
-              fi
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-s -w" -o "dist/${CORE_BINARY}" ./cmd/lesstruct-core
+                go build -ldflags="-s -w" -o "dist/lesstruct-core-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-core
+              # eCommerce edition — blog plus the commerce modules.
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+                go build -ldflags="-s -w" -o "dist/lesstruct-ecommerce-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-ecommerce
+              # CLI — carries the release version like `make install` does.
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+                go build -ldflags="-s -w -X github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/cmd.version=${VERSION}" -o "dist/lesstruct-cli-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-cli
             done
           done
 

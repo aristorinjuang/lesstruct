@@ -89,12 +89,11 @@ cascades away `cart`, `orders`, and `payments`). The full cascade rules are in
 
 ## Installing
 
-Release binaries ship for the blog edition (`lesstruct-<os>-<arch>`) and the
-Core edition (`lesstruct-core-<os>-<arch>`) on `linux`, `darwin`, and `windows`
-(`amd64`, `arm64`) from the
-[releases page](https://github.com/aristorinjuang/lesstruct/releases).
-The eCommerce edition is installed via `go install` or built from source —
-no release asset is published for it yet:
+Release binaries ship for the blog edition (`lesstruct-<os>-<arch>`), the
+Core edition (`lesstruct-core-<os>-<arch>`), the eCommerce edition
+(`lesstruct-ecommerce-<os>-<arch>`), and the CLI (`lesstruct-cli-<os>-<arch>`)
+on `linux`, `darwin`, and `windows` (`amd64`, `arm64`) from the
+[releases page](https://github.com/aristorinjuang/lesstruct/releases):
 
 ```bash
 # The default (blog) edition — every module except commerce
