@@ -1532,6 +1532,7 @@ func TestFavicon_RedirectsToStatic(t *testing.T) {
 
 	require.Equal(t, http.StatusFound, w.Code, "favicon must redirect instead of 404ing")
 	assert.Equal(t, "/static/favicon.ico", w.Header().Get("Location"))
+	assert.Equal(t, "public, max-age=86400", w.Header().Get("Cache-Control"), "favicon redirect carries the bounded static TTL")
 }
 
 func TestVerifyEmail_ReachableOnPublicLimiter(t *testing.T) {

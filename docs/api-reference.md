@@ -489,6 +489,31 @@ Returns the caller's own media, newest-first, using [cursor pagination](#paginat
 
 > **Shared path note.** `GET /api/v1/media`, `GET /api/v1/media/{id}`, and `DELETE /api/v1/media/{id}` are shared with the browser admin panel; the server dispatches to the agent handler when the request presents a `lesstruct_`-prefixed Bearer token, and to the browser handler otherwise. For agent clients this is transparent — always send the Bearer key. `POST /api/v1/media` (upload) is agent/Bearer-only. The browser admin handler speaks the **same contract**: `limit` (default `50`, clamped to `100`) plus `cursor`, returning the same bare-array list with `meta.pagination` — the admin media library pages through it with infinite scroll.
 
+### Re-encode media library (one-time)
+
+```http
+POST /api/v1/media/reencode
+```
+
+Rewrites every stored original and variant in place at identical dimensions
+(already-WebP files pass through sanitize-only; other formats transcode at
+Quality 80) — same filenames, URLs,
+and dimensions, so no content changes and no re-uploads. **Admin only:** unauthenticated requests
+are rejected 401 by the credential middleware; a valid non-admin key gets
+`403 INSUFFICIENT_PERMISSIONS` from the route guard (the handler additionally
+requires an authenticated Admin principal) and nothing is rewritten. **One-time, operator-triggered use, never automatic:** lossy
+re-encoding an already-q80 file loses a little quality per generation, so
+run it once via `lesstruct-cli media
+reencode` and do not wire it to login or startup.
+
+**Response** `200 OK`: `{"data":{"processed":12,"skipped":0,"bytesBefore":123456,"bytesAfter":12345}}`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `processed` | int | Media records fully rewritten (every file succeeded). |
+| `skipped` | int | Media records skipped after a per-file failure (the run continues). |
+| `bytesBefore` / `bytesAfter` | int | Total stored bytes before/after for the processed records. |
+
 ## Comments
 
 Create, list, delete, and moderate comments on a content item. The agent comment surface is **nested under the content namespace** (`/api/v1/content/{id}/comments`) so it is collision-free with the browser admin's `/api/v1/content_items/.../comments` and `/api/v1/comments` routes, and consistent with the rest of the agent surface (which keys everything by content id). New comments always start in the `pending` moderation status.
@@ -1915,7 +1940,7 @@ true
 ------boundary--
 ```
 
-The archive must contain a `content/` directory at its root with the Hugo posts (HTML or Markdown files with YAML frontmatter). Archives built with default GNU tar flags (`tar -czf site.tar.gz .` — including the leading `./` root entry) are accepted. A `static/` directory is optional — images referenced by the content (local `static/` files or remote `https://` URLs) are downloaded and re-uploaded as Lesstruct media (already-WebP input passes through without re-encoding, with metadata chunks stripped; other formats are transcoded; SHA-256 dedup), with body `<img src>` paths rewritten and the first frontmatter `images:` entry prepended as a featured image — unless the rewritten body's first image is already that same image, in which case the prepend is skipped so the cover is never duplicated (a featured image that fails to migrate is not prepended either). References that resolve to files under the archive's `static/` dir (links, iframe demos, stylesheets, images that could not be migrated, and all image references under `skipMedia`) are rewritten to `/static/<path>` — the documented convention that operators mirror their Hugo `static/` into the theme's `static/`. Migration failures and references left unresolved are surfaced in the job's `errors` list as `warning:` entries — each exactly once across the import — including missing static files; content permalinks and aliases are not warned about. The `skipMedia` field is optional — when set to `"true"` the server skips media migration and images stay linked to their original paths or `/static/<path>` URLs.
+The archive must contain a `content/` directory at its root with the Hugo posts (HTML or Markdown files with YAML frontmatter). Archives built with default GNU tar flags (`tar -czf site.tar.gz .` — including the leading `./` root entry) are accepted. A `static/` directory is optional — images referenced by the content (local `static/` files or remote `https://` URLs) are downloaded and re-uploaded as Lesstruct media (already-WebP input is re-encoded at Quality 80, with metadata chunks stripped; other formats are transcoded; SHA-256 dedup), with body `<img src>` paths rewritten and the first frontmatter `images:` entry prepended as a featured image — unless the rewritten body's first image is already that same image, in which case the prepend is skipped so the cover is never duplicated (a featured image that fails to migrate is not prepended either). References that resolve to files under the archive's `static/` dir (links, iframe demos, stylesheets, images that could not be migrated, and all image references under `skipMedia`) are rewritten to `/static/<path>` — the documented convention that operators mirror their Hugo `static/` into the theme's `static/`. Migration failures and references left unresolved are surfaced in the job's `errors` list as `warning:` entries — each exactly once across the import — including missing static files; content permalinks and aliases are not warned about. The `skipMedia` field is optional — when set to `"true"` the server skips media migration and images stay linked to their original paths or `/static/<path>` URLs.
 
 The importer also reads the site's `hugo.toml` / `config.toml` for `baseURL` and `defaultContentLanguage`, preserves the frontmatter `date` as the content's publish date, and skips items whose slug already exists (idempotent re-runs).
 

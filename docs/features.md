@@ -259,8 +259,9 @@ boundary, with webhook dedup resolving through a blind-index column.
   directory.
   - **Media migration.** Images referenced by the content (local `static/`
     files and remote `https://` URLs) are downloaded and re-uploaded as
-    Lesstruct media (WebP passthrough for already-WebP input — no generation
-    loss — transcode for other formats, SHA-256 dedup); body `<img src>` paths
+    Lesstruct media (already-WebP input passes through sanitize-only —
+    metadata stripped, pixels untouched; other formats are transcoded;
+    SHA-256 dedup); body `<img src>` paths
     are rewritten to the new media URLs and the first frontmatter `images:`
     entry is prepended as a featured image — unless the body's first images
     already show that picture, in which case the prepend is skipped so the
@@ -325,22 +326,32 @@ boundary, with webhook dedup resolving through a blind-index column.
   uploads, so one account cannot inventory another's file paths, hashes, and
   original filenames.
 - **Automatic WebP conversion.** Every uploaded image is served as WebP:
-  already-WebP uploads pass through without re-encoding (no generation loss,
-  and their EXIF/XMP/ICC metadata chunks are stripped — the same privacy
-  behavior the transcode path always had), every other format is transcoded to
+  already-WebP uploads pass through byte-identical (their
+  EXIF/XMP/ICC metadata chunks are stripped — the same privacy behavior the
+  transcode path always had — with zero generation loss, so the stored
+  colors match the source exactly). Every other format is transcoded to
   WebP (quality 80) on upload, so images never weigh down your content.
+  Files uploaded before this change keep their exact stored bytes — run the
+  one-time `POST /api/v1/media/reencode` (Admin only, via `lesstruct-cli
+  media reencode`) to rewrite every stored original and variant in place at
+  identical dimensions with no URL or hash changes (stored file sizes are
+  updated to match).
   Extended VP8X/alpha WebP files are fully supported; animated WebP is
   rejected with a clear error.
 - **Configurable thumbnail variants.** Defaults ship `_thumb` (64px),
   `_medium` (280px), `_large` (616px) — gallery thumbs, cards, gallery main —
   all editable in `config.toml`. Post
-  bodies emit a responsive `srcset` from the variants plus the original at its
-  intrinsic width when it is larger than the largest variant — so wide/high-DPI
-  viewports get the full-resolution image (matching the editor), while small
-  screens get appropriately sized variants. Post cards resolve the `_medium`
+  bodies emit a responsive `srcset` from the variants only (`src` stays the
+  original URL) with `sizes="(max-width: 768px) 100vw, 760px"` matching the
+  content column, wrapped in a `<picture>` element whose mobile source caps
+  small viewports (≤767px) at the `_medium` rendition — small screens get
+  appropriately sized variants without
+  over-fetching the full-resolution original. Post cards resolve the `_medium`
   rendition (`_thumb` fallback) and also expose an
   `ImageVariants` map (keyed by configured suffix) and an `OriginalURL` field
   for the unscaled original, enabling hero backgrounds and high-DPI layouts.
+  Card and gallery-main markup wraps the image in the same mobile-capped
+  `<picture>` element, so phones never fetch the `_large` rendition.
   Gallery-typed custom fields resolve to per-image `_thumb`/`_large` renditions
   (matched by suffix name with original-URL fallbacks) that themes prefer over
   the legacy `lines` list.

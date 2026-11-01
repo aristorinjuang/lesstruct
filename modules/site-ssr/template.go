@@ -40,6 +40,25 @@ func standalonePageTemplate(page string) string {
 	return strings.ReplaceAll(page, "/", "-") + ".html"
 }
 
+// inlineThemeStyles concatenates the resolved base.css and style.css into a
+// single style element for layouts to inline instead of render-blocking on.
+// It reuses ReadThemeStyles, so THEME_DIR overrides resolve exactly like the
+// linked stylesheets they replace. A missing file contributes nothing; the
+// stylesheets never contain a closing style tag (pinned by tests), so no
+// escaping is needed.
+func inlineThemeStyles(theme *Theme) template.HTML {
+	baseCSS, styleCSS := ReadThemeStyles(theme)
+	if baseCSS == "" && styleCSS == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("<style>")
+	b.WriteString(baseCSS)
+	b.WriteString(styleCSS)
+	b.WriteString("</style>")
+	return template.HTML(b.String())
+}
+
 // SetEmbeddedFS installs the default theme artifact filesystem. The
 // composition root calls it once after resolving the ThemeProvider; test
 // fixtures call it with fixture filesystems.
@@ -108,7 +127,9 @@ func ReadThemeStyles(theme *Theme) (baseCSS, styleCSS string) {
 
 // staticHandler rewrites versioned CSS requests (<name>.<hash>.css) to serve
 // <name>.css with immutable Cache-Control headers. It handles both base.css
-// and style.css (and any future hashed assets).
+// and style.css (and any future hashed assets). Every other file gets a
+// bounded one-day TTL: plain /static/ URLs change across releases, so they
+// must not be immutable.
 type staticHandler struct {
 	fs        fs.FS
 	assetHash string
@@ -132,6 +153,7 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 	http.FileServer(http.FS(h.fs)).ServeHTTP(w, r)
 }
 
@@ -229,6 +251,12 @@ type PostItem struct {
 	ImageSrcset     string
 	ImageSizes      string
 	ImageVariants   map[string]string
+	// ImageMobileURL is the rendition mobile browsers (<=767px) must load:
+	// the _medium variant when the pipeline generated one, _thumb
+	// otherwise, falling back to ImageURL. It guarantees small viewports
+	// never fetch the _large rendition (srcset alone cannot promise that:
+	// a high-DPR phone resolves a 342px slot against the 616w entry).
+	ImageMobileURL  string
 	OriginalURL     string
 	Author          string
 	Username        string
@@ -536,6 +564,8 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) 
 
 	assetHash := ComputeAssetHash(theme)
 
+	inlineCSS := inlineThemeStyles(theme)
+
 	funcs := template.FuncMap{
 		"urlpath": url.PathEscape,
 		"t":       tFunc,
@@ -545,11 +575,15 @@ func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) 
 			base := strings.TrimSuffix(name, ext)
 			return "/static/" + base + "." + assetHash + ext
 		},
+		"inlineStyles": func() template.HTML {
+			return inlineCSS
+		},
 		"formatDate":     FormatDate,
 		"formatDateTime": FormatDateTime,
 	}
 	// Theme funcs extend the engine vocabulary; engine names always win so a
-	// theme cannot shadow urlpath, t, upper, assetURL, or the date formatters.
+	// theme cannot shadow urlpath, t, upper, assetURL, inlineStyles, or the
+	// date formatters.
 	for name, fn := range themeFuncs {
 		if _, exists := funcs[name]; !exists {
 			funcs[name] = fn

@@ -3,6 +3,7 @@ package commerce_test
 import (
 	"html/template"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
@@ -58,6 +59,11 @@ func TestStorefrontThemeBrandFallback(t *testing.T) {
 			}))
 
 			body := w.Body.String()
+			// The theme styles are inlined in <head>; scope markup
+			// assertions past <body> so CSS selectors can't satisfy them.
+			if _, markup, ok := strings.Cut(body, "<body>"); ok {
+				body = markup
+			}
 			for _, want := range tt.wantContains {
 				assert.Contains(t, body, want)
 			}
@@ -209,6 +215,10 @@ func TestStorefrontThemeResolvedGallery(t *testing.T) {
 				`src="/uploads/media/a_large.webp"`,
 				`src="/uploads/media/a_thumb.webp"`,
 				`data-image="/uploads/media/a_large.webp"`,
+				`data-image-medium="/uploads/media/a_medium.webp"`,
+				`<picture>`,
+				`media="(max-width: 767px)"`,
+				`srcset="/uploads/media/a_medium.webp"`,
 			},
 			wantNotContain: []string{
 				`product-gallery__fallback`,
@@ -246,6 +256,11 @@ func TestStorefrontThemeResolvedGallery(t *testing.T) {
 			require.NoError(t, templates.RenderContent(w, data))
 
 			body := w.Body.String()
+			// The theme styles are inlined in <head>; scope markup
+			// assertions past <body> so CSS selectors can't satisfy them.
+			if _, markup, ok := strings.Cut(body, "<body>"); ok {
+				body = markup
+			}
 			for _, want := range tt.wantContains {
 				assert.Contains(t, body, want)
 			}
@@ -362,6 +377,11 @@ func TestStorefrontThemeHomepageHero(t *testing.T) {
 			}))
 
 			body := w.Body.String()
+			// The theme styles are inlined in <head>; scope markup
+			// assertions past <body> so CSS selectors can't satisfy them.
+			if _, markup, ok := strings.Cut(body, "<body>"); ok {
+				body = markup
+			}
 			for _, want := range tt.wantContains {
 				assert.Contains(t, body, want)
 			}

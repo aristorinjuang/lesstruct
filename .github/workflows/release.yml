@@ -44,18 +44,46 @@ jobs:
                 SUFFIX=".exe"
               fi
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-s -w" -o "dist/lesstruct-${GOOS}-${GOARCH}${SUFFIX}" .
+                go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/lesstruct-${GOOS}-${GOARCH}${SUFFIX}" .
               # Core edition — the headless engine (fewer modules, smaller binary).
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-s -w" -o "dist/lesstruct-core-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-core
+                go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/lesstruct-core-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-core
               # eCommerce edition — blog plus the commerce modules.
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
-                go build -ldflags="-s -w" -o "dist/lesstruct-ecommerce-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-ecommerce
+                go build -ldflags="-s -w -X main.version=${VERSION}" -o "dist/lesstruct-ecommerce-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-ecommerce
               # CLI — carries the release version like `make install` does.
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
                 go build -ldflags="-s -w -X github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/cmd.version=${VERSION}" -o "dist/lesstruct-cli-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-cli
             done
           done
+
+      # Smoke test: every release binary must execute on this runner and
+      # report exactly the tag it was built from. This is the guard against
+      # stale or hand-built assets shipping again (the v1.1.2 incident).
+      - name: Smoke test linux-amd64 binaries
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -e
+          for bin in lesstruct lesstruct-core lesstruct-ecommerce; do
+            out=$(./dist/${bin}-linux-amd64 --version)
+            if [ "$out" != "${VERSION}" ]; then
+              echo "::error::${bin} --version printed '$out', want '${VERSION}'"
+              exit 1
+            fi
+          done
+          cli_out=$(./dist/lesstruct-cli-linux-amd64 --version)
+          if [ "$cli_out" != "lesstruct-cli version ${VERSION}" ]; then
+            echo "::error::lesstruct-cli --version printed '$cli_out', want 'lesstruct-cli version ${VERSION}'"
+            exit 1
+          fi
+          revision=$(git rev-parse HEAD)
+          meta=$(go version -m dist/lesstruct-ecommerce-linux-amd64)
+          echo "$meta" | grep -q "vcs.revision=${revision}" || { echo "::error::binary was not built from the tag commit"; exit 1; }
+          echo "$meta" | grep -q "vcs.modified=false" || { echo "::error::binary was built from a dirty tree"; exit 1; }
+
+      - name: Generate checksums
+        run: cd dist && sha256sum * > sha256sums.txt
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2

@@ -930,3 +930,62 @@ func (_c *MockRepository_ListByCursor_Call) RunAndReturn(run func(ctx context.Co
 	_c.Call.Return(run)
 	return _c
 }
+
+// UpdateFileSize provides a mock function for the type MockRepository
+func (_mock *MockRepository) UpdateFileSize(ctx context.Context, id int, size int64) error {
+	ret := _mock.Called(ctx, id, size)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateFileSize")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int, int64) error); ok {
+		r0 = returnFunc(ctx, id, size)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockRepository_UpdateFileSize_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateFileSize'
+type MockRepository_UpdateFileSize_Call struct {
+	*mock.Call
+}
+
+// UpdateFileSize is a helper method to define mock.On call
+//   - ctx context.Context
+//   - id int
+//   - size int64
+func (_e *MockRepository_Expecter) UpdateFileSize(ctx any, id any, size any) *MockRepository_UpdateFileSize_Call {
+	return &MockRepository_UpdateFileSize_Call{Call: _e.mock.On("UpdateFileSize", ctx, id, size)}
+}
+
+func (_c *MockRepository_UpdateFileSize_Call) Run(run func(ctx context.Context, id int, size int64)) *MockRepository_UpdateFileSize_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int
+		if args[1] != nil {
+			arg1 = args[1].(int)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+// Return is a helper method to define mock.On call
+func (_c *MockRepository_UpdateFileSize_Call) Return(_a0 error) *MockRepository_UpdateFileSize_Call {
+	_c.Call.Return(_a0)
+	return _c
+}

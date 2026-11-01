@@ -600,6 +600,32 @@ func (r *Repository) DeleteByOwner(ctx context.Context, id int, userID int) erro
 	return nil
 }
 
+// UpdateFileSize refreshes the stored file size after an in-place rewrite.
+func (r *Repository) UpdateFileSize(ctx context.Context, id int, size int64) error {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	next := r.placeholders()
+	result, err := r.db.ExecContext(ctx, `UPDATE media_files SET file_size = `+next()+` WHERE id = `+next(), size, id)
+	if err != nil {
+		return fmt.Errorf("failed to update media file size: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return mediadomain.ErrMediaNotFound
+	}
+
+	return nil
+}
+
 // New creates a repository on db speaking dialect. Dialect must be non-nil;
 // the composition root resolves it from the driver registry.
 func New(db *sql.DB, dialect kerneldatabase.Dialect) *Repository {

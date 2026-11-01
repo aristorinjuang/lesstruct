@@ -7,4 +7,5 @@ type Storage interface {
 	Save(filename string, reader io.Reader) (string, error)
 	Delete(filePath string) error
 	GetURL(filePath string) string
+	Open(filePath string) (io.ReadCloser, error)
 }

@@ -65,10 +65,11 @@ func (s *S3Storage) Save(filename string, reader io.Reader) (string, error) {
 
 	key := s.keyPrefix + filename
 	_, err = s.client.PutObject(context.Background(), &s3.PutObjectInput{
-		Bucket:      aws.String(s.bucket),
-		Key:         aws.String(key),
-		Body:        bytes.NewReader(data),
-		ContentType: aws.String(contentTypeFor(filename, data)),
+		Bucket:       aws.String(s.bucket),
+		Key:          aws.String(key),
+		Body:         bytes.NewReader(data),
+		ContentType:  aws.String(contentTypeFor(filename, data)),
+		CacheControl: aws.String("public, max-age=31536000, immutable"),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload object %q: %w", key, err)
@@ -93,6 +94,20 @@ func (s *S3Storage) Delete(filePath string) error {
 // GetURL returns the public URL for a stored file
 func (s *S3Storage) GetURL(filePath string) string {
 	return strings.TrimRight(s.publicBaseURL, "/") + "/" + s.keyFor(filePath)
+}
+
+// Open returns a reader for the stored object so maintenance jobs read back
+// through the interface instead of sniffing the driver.
+func (s *S3Storage) Open(filePath string) (io.ReadCloser, error) {
+	key := s.keyFor(filePath)
+	out, err := s.client.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open object %q: %w", key, err)
+	}
+	return out.Body, nil
 }
 
 // NewS3Storage creates an S3-compatible storage backend (AWS S3 or MinIO)

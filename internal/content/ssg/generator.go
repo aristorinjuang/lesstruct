@@ -36,10 +36,14 @@ var staticAssetPattern = regexp.MustCompile(`/static/([A-Za-z0-9._\-/]+)`)
 // alwaysExportedAssets lists embedded assets copied into every export even when
 // no literal reference appears in the rendered HTML: the two stylesheets are
 // linked through assetURL's cache-busting form (/static/base.<hash>.css), so
-// their plain names never show up in a page.
+// their plain names never show up in a page — and the self-hosted font plus
+// its OFL license are only referenced from inside the stylesheets, which the
+// collector never scans.
 var alwaysExportedAssets = map[string]bool{
-	"base.css":  true,
-	"style.css": true,
+	"base.css":              true,
+	"style.css":             true,
+	"inter-latin-var.woff2": true,
+	"OFL.txt":               true,
 }
 
 func sanitizePathSegment(s string) string {

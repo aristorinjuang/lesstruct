@@ -46,7 +46,11 @@ func TestRenderIndex(t *testing.T) {
 	assert.Contains(t, body, "<html")
 	assert.Contains(t, body, "Hello World")
 	assert.Contains(t, body, `href="/hello-world"`)
-	assert.Regexp(t, `href="/static/style\.[a-f0-9]+\.css"`, body)
+	assert.Contains(t, body, "<style>")
+	assert.Contains(t, body, "--color-bg")
+	assert.NotContains(t, body, `rel="stylesheet" href="/static/`)
+	assert.Contains(t, body, `<link rel="preload" as="font" type="font/woff2" crossorigin href="/static/inter-latin-var.woff2">`)
+	assert.NotContains(t, body, "fonts.googleapis.com")
 }
 
 func TestRenderIndex_PostItemTagsAccepted(t *testing.T) {
@@ -295,7 +299,7 @@ func TestRenderResetPassword(t *testing.T) {
 	assert.Contains(t, body, `style="display:none"`)
 }
 
-func TestAssetURL_VersionedCSS(t *testing.T) {
+func TestInlineStyles_ThemeCSSInlined(t *testing.T) {
 	templates, err := sitessr.NewTemplates(nil, nil)
 	require.NoError(t, err)
 
@@ -310,7 +314,11 @@ func TestAssetURL_VersionedCSS(t *testing.T) {
 	require.NoError(t, templates.RenderIndex(w, data))
 
 	body := w.Body.String()
-	assert.Regexp(t, `href="/static/style\.[a-f0-9]+\.css"`, body)
+	assert.Contains(t, body, "<style>")
+	assert.Contains(t, body, "--color-bg")
+	assert.NotContains(t, body, `rel="stylesheet" href="/static/`)
+	assert.Contains(t, body, `<link rel="preload" as="font" type="font/woff2" crossorigin href="/static/inter-latin-var.woff2">`)
+	assert.NotContains(t, body, "fonts.googleapis.com")
 }
 
 func TestRenderContent_PostTypeDispatch(t *testing.T) {

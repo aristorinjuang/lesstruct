@@ -96,6 +96,7 @@ type MediaService interface {
 	GetByID(ctx context.Context, id int) (*mediadomain.Media, error)
 	ListByCursor(ctx context.Context, userID int, limit int, beforeID int) ([]*mediadomain.Media, error)
 	Delete(ctx context.Context, id int, principal kernel.Principal) error
+	ReencodeLibrary(ctx context.Context) (mediadomain.ReencodeSummary, error)
 }
 
 // MediaHandlerOption configures a MediaHandler. A role service makes the upload
@@ -295,6 +296,32 @@ func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Reencode handles POST /api/v1/media/reencode. It is Admin-only and never
+// automatic: the operator triggers it once after the alpha-quality rollout to
+// rewrite every stored original and variant in place at identical dimensions.
+// A non-admin caller gets 403 (401 when unauthenticated) and nothing is
+// rewritten. Success returns {processed, skipped, bytesBefore, bytesAfter}.
+func (h *MediaHandler) Reencode(w http.ResponseWriter, r *http.Request) {
+	if _, ok := authenticatedUserID(r); !ok {
+		httpx.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "User not authenticated", nil)
+		return
+	}
+	principal, _ := kernel.PrincipalFromContext(r.Context())
+	if !principal.HasRole(adminRoleName) {
+		httpx.Error(w, http.StatusForbidden, "FORBIDDEN", "Only administrators can re-encode media", nil)
+		return
+	}
+
+	summary, err := h.mediaService.ReencodeLibrary(r.Context())
+	if err != nil {
+		h.logger.Error("agent reencode media failed: err=%v", err)
+		handleMediaError(w, err)
+		return
+	}
+
+	httpx.Success(w, summary)
 }
 
 // NewMediaHandler constructs a MediaHandler backed by the given media service. A nil logger

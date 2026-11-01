@@ -65,4 +65,9 @@ type Repository interface {
 	Count(ctx context.Context, ownerID int, search string, since time.Time) (int, error)
 	DeleteByID(ctx context.Context, id int) error
 	DeleteByOwner(ctx context.Context, id int, userID int) error
+	// UpdateFileSize refreshes the stored file size after an in-place
+	// rewrite (e.g. the one-time alpha-compression re-encode). Filenames,
+	// URLs, and hashes are untouched — only the size column follows the
+	// bytes actually on disk.
+	UpdateFileSize(ctx context.Context, id int, size int64) error
 }

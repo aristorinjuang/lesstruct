@@ -131,6 +131,7 @@ lesstruct-cli content publish 42
 ```bash
 lesstruct-cli media upload --file hero.webp --alt-text "Store hero"
 lesstruct-cli media list --limit 20
+lesstruct-cli media reencode
 ```
 
 - `upload` — `--file` is required. `--alt-text` or `--metadata
@@ -141,6 +142,10 @@ lesstruct-cli media list --limit 20
 - `get <id>` — includes generated variants (thumbnails) when present.
 - `delete <id>` — owners delete their own; anyone else's requires Admin
   (403, or 404 with no disclosure for non-owners).
+- `reencode` — one-time library rewrite in place via `POST
+  /api/v1/media/reencode` (same filenames, URLs, and dimensions; only the
+  stored bytes shrink). **Admin only.** Run once as needed;
+  lossy re-runs lose quality, so it never runs automatically.
 
 ### `catalog` — commerce data for products (eCommerce)
 

@@ -333,9 +333,9 @@ func TestBuild_Defaults(t *testing.T) {
 
 	assert.Contains(t, headerValue, "default-src 'self'")
 	assert.Contains(t, headerValue, "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net")
-	assert.Contains(t, headerValue, "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net")
+	assert.Contains(t, headerValue, "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net")
 	assert.Contains(t, headerValue, "img-src 'self' data: blob:")
-	assert.Contains(t, headerValue, "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net")
+	assert.Contains(t, headerValue, "font-src 'self' https://cdn.jsdelivr.net")
 	assert.Contains(t, headerValue, "connect-src 'self'")
 	assert.Contains(t, headerValue, "frame-src 'self' blob: chrome-extension: https://www.youtube.com")
 	assert.Contains(t, headerValue, "frame-src 'self' blob: chrome-extension: https://www.youtube.com https://www.youtube-nocookie.com")
@@ -351,7 +351,7 @@ func TestBuild_WithAppends(t *testing.T) {
 	}
 	_, headerValue := cspCfg.Build()
 	assert.Contains(t, headerValue, "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.googletagmanager.com")
-	assert.Contains(t, headerValue, "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net data:")
+	assert.Contains(t, headerValue, "font-src 'self' https://cdn.jsdelivr.net data:")
 }
 
 func TestBuild_FrameAncestorsReplaces(t *testing.T) {
@@ -592,9 +592,9 @@ func TestBuild_AllAppendableDirectives(t *testing.T) {
 	}
 	_, headerValue := cspCfg.Build()
 	assert.Contains(t, headerValue, "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net a")
-	assert.Contains(t, headerValue, "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net b")
+	assert.Contains(t, headerValue, "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net b")
 	assert.Contains(t, headerValue, "img-src 'self' data: blob: c")
-	assert.Contains(t, headerValue, "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net d")
+	assert.Contains(t, headerValue, "font-src 'self' https://cdn.jsdelivr.net d")
 	assert.Contains(t, headerValue, "connect-src 'self' e")
 	assert.Contains(t, headerValue, "frame-src 'self' blob: chrome-extension: https://www.youtube.com https://www.youtube-nocookie.com f")
 	assert.Contains(t, headerValue, "media-src g")

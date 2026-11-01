@@ -161,21 +161,21 @@ func (a *DataAssembler) absoluteImageURL(imageURL string) string {
 	return seo.BuildURL(a.baseURL, imageURL)
 }
 
-func (a *DataAssembler) resolvePostImage(imageURL string) (thumbURL, srcset, sizes string, variants map[string]string, originalURL string) {
+func (a *DataAssembler) resolvePostImage(imageURL string) (thumbURL, mobileURL, srcset, sizes string, variants map[string]string, originalURL string) {
 	if a.mediaRepo == nil || imageURL == "" {
-		return imageURL, "", "", nil, imageURL
+		return imageURL, imageURL, "", "", nil, imageURL
 	}
 	hash := ExtractHashFromURL(imageURL)
 	if hash == "" {
-		return imageURL, "", "", nil, imageURL
+		return imageURL, imageURL, "", "", nil, imageURL
 	}
 	m, err := a.mediaRepo.FindByHashPrefix(context.Background(), hash)
 	if err != nil {
 		log.Printf("WARNING: resolvePostImage FindByHashPrefix failed for hash %q: %v", hash, err)
-		return imageURL, "", "", nil, imageURL
+		return imageURL, imageURL, "", "", nil, imageURL
 	}
 	if m == nil {
-		return imageURL, "", "", nil, imageURL
+		return imageURL, imageURL, "", "", nil, imageURL
 	}
 	originalURL = m.URL
 	if len(m.Variants) > 0 {
@@ -201,10 +201,22 @@ func (a *DataAssembler) resolvePostImage(imageURL string) (thumbURL, srcset, siz
 		} else {
 			thumbURL = imageURL
 		}
+		// Mobile viewports (<=767px) never load the large rendition: the
+		// card slot is ~342 CSS px, but a 2-3x DPR phone resolves the 616w
+		// srcset entry. The mobile source is medium where generated, thumb
+		// otherwise — never large.
+		if medium, ok := m.Variants["_medium"]; ok && medium.URL != "" {
+			mobileURL = medium.URL
+		} else if thumb, ok := m.Variants["_thumb"]; ok && thumb.URL != "" {
+			mobileURL = thumb.URL
+		} else {
+			mobileURL = thumbURL
+		}
 	} else {
 		thumbURL = imageURL
+		mobileURL = imageURL
 	}
-	return thumbURL, srcset, sizes, variants, originalURL
+	return thumbURL, mobileURL, srcset, sizes, variants, originalURL
 }
 
 // resolveGalleryImage resolves one gallery entry against the media
@@ -434,7 +446,7 @@ func (a *DataAssembler) listImageURL(c ContentRef) string {
 
 func (a *DataAssembler) buildPostItem(ctx context.Context, c ContentRef) PostItem {
 	imageURL := a.listImageURL(c)
-	thumbURL, imageSrcset, imageSizes, imageVariants, originalURL := a.resolvePostImage(imageURL)
+	thumbURL, mobileURL, imageSrcset, imageSizes, imageVariants, originalURL := a.resolvePostImage(imageURL)
 
 	var authorAvatarURL string
 	if a.userProvider != nil && c.Username != "" {
@@ -456,6 +468,7 @@ func (a *DataAssembler) buildPostItem(ctx context.Context, c ContentRef) PostIte
 		ImageSrcset:     imageSrcset,
 		ImageSizes:      imageSizes,
 		ImageVariants:   imageVariants,
+		ImageMobileURL:  mobileURL,
 		OriginalURL:     originalURL,
 		Author:          c.Author,
 		Username:        c.Username,

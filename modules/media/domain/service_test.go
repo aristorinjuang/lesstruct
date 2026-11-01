@@ -76,6 +76,7 @@ type stubStorage struct {
 	saveSucceed int
 	deleteErr   error
 	deleted     []string
+	openErr     error
 }
 
 func newStubStorage() *stubStorage {
@@ -106,6 +107,24 @@ func (s *stubStorage) Delete(filePath string) error {
 
 func (s *stubStorage) GetURL(filePath string) string {
 	return filePath
+}
+
+func (s *stubStorage) Open(filePath string) (io.ReadCloser, error) {
+	if s.openErr != nil {
+		return nil, s.openErr
+	}
+	if data, ok := s.saved[filePath]; ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+	base := filepath.Base(filePath)
+	if data, ok := s.saved[base]; ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+	trimmed := strings.TrimPrefix(filePath, "/uploads/media/")
+	if data, ok := s.saved[trimmed]; ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+	return nil, io.ErrUnexpectedEOF
 }
 
 func testPrincipal(userID int, role string) kernel.Principal {

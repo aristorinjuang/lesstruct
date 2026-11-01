@@ -15,6 +15,7 @@ import (
 	"github.com/deepteams/webp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ximagewebp "golang.org/x/image/webp"
 )
 
 // insertWebPChunk rebuilds the RIFF container with an extra chunk inserted
@@ -634,11 +635,19 @@ func TestProcessor_ConvertToWebP_WebPPassthrough(t *testing.T) {
 	input := testWebPBytes(t, 640, 360, false)
 	got, metadata, err := processor.ConvertToWebP(bytes.NewReader(input))
 	require.NoError(t, err)
-	// Already-WebP input is stored untouched — no re-encode, no generation loss.
-	assert.Equal(t, input, got)
 	require.NotNil(t, metadata)
 	assert.Equal(t, 640, metadata.Width)
 	assert.Equal(t, 360, metadata.Height)
+	// Already-WebP input passes through byte-identical: the fixture carries
+	// no metadata chunks, so the sanitizer has nothing to strip — no
+	// re-encode, no generation loss.
+	assert.Equal(t, input, got)
+	assert.Equal(t, 640, metadata.Width)
+	assert.Equal(t, 360, metadata.Height)
+	decoded, err := ximagewebp.Decode(bytes.NewReader(got))
+	require.NoError(t, err, "passthrough output must decode with the strict x/image decoder (browser-compatible)")
+	assert.Equal(t, 640, decoded.Bounds().Dx())
+	assert.Equal(t, 360, decoded.Bounds().Dy())
 }
 
 func TestProcessor_ConvertToWebP_VP8XAlphaPassthrough(t *testing.T) {
@@ -648,10 +657,16 @@ func TestProcessor_ConvertToWebP_VP8XAlphaPassthrough(t *testing.T) {
 	require.True(t, len(input) >= 12 && string(input[8:12]) == "WEBP")
 	got, metadata, err := processor.ConvertToWebP(bytes.NewReader(input))
 	require.NoError(t, err)
-	assert.Equal(t, input, got)
 	require.NotNil(t, metadata)
 	assert.Equal(t, 740, metadata.Width)
 	assert.Equal(t, 468, metadata.Height)
+	// Alpha-bearing WebP passes through byte-identical like opaque WebP:
+	// no quantization, no VP8L — the plane is never touched.
+	assert.Equal(t, input, got)
+	decoded, err := ximagewebp.Decode(bytes.NewReader(got))
+	require.NoError(t, err, "passthrough output must decode with the strict x/image decoder (browser-compatible)")
+	assert.Equal(t, 740, decoded.Bounds().Dx())
+	assert.Equal(t, 468, decoded.Bounds().Dy())
 }
 
 func TestProcessor_Resize_VP8XAlphaInput(t *testing.T) {

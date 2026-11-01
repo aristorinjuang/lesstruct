@@ -35,12 +35,24 @@ func TestModule_ProductGalleryContract(t *testing.T) {
 			needle: ".Large",
 		},
 		{
+			name:   "main image is wrapped in a picture element",
+			needle: "<picture>",
+		},
+		{
+			name:   "mobile source gates small viewports behind the medium rendition",
+			needle: `media="(max-width: 767px)"`,
+		},
+		{
 			name:   "thumbs carry the Thumb rendition",
 			needle: ".Thumb",
 		},
 		{
 			name:   "thumb swap targets the large rendition via data-image",
 			needle: "data-image",
+		},
+		{
+			name:   "thumb swap carries the medium rendition for mobile via data-image-medium",
+			needle: "data-image-medium",
 		},
 		{
 			name:   "thumb swap carries the srcset via data-srcset",
@@ -103,6 +115,8 @@ func TestModule_ThemeFiles(t *testing.T) {
 		"static/base.src.css",
 		"static/style.css",
 		"static/style.src.css",
+		"static/inter-latin-var.woff2",
+		"static/OFL.txt",
 		"static/storefront.js",
 		"static/storefront.src.js",
 		"static/nav-auth.js",
@@ -169,6 +183,14 @@ func TestModule_StorefrontMinified(t *testing.T) {
 			name:   "checkout prefill target survives minification",
 			needle: "checkout-email",
 		},
+		{
+			name:   "gallery medium swap target survives minification",
+			needle: "data-image-medium",
+		},
+		{
+			name:   "gallery swap forces picture re-selection",
+			needle: "insertBefore",
+		},
 	}
 
 	for _, tt := range tests {
@@ -195,7 +217,7 @@ func TestModule_StylesheetsMinified(t *testing.T) {
 			name:    "base tokens survive minification",
 			src:     "static/base.src.css",
 			min:     "static/base.css",
-			needles: []string{":root", "--color-bg"},
+			needles: []string{":root", "--color-bg", "@font-face", "/static/inter-latin-var.woff2"},
 		},
 		{
 			name:    "components survive minification",
@@ -216,6 +238,7 @@ func TestModule_StylesheetsMinified(t *testing.T) {
 			require.NotEmpty(t, bytes.TrimSpace(min), "minified stylesheet must not ship empty (regenerate with make css)")
 			assert.Less(t, len(min), len(src), "minified stylesheet must be smaller than its readable source (regenerate with make css)")
 			assert.NotContains(t, string(min), "Readable source of truth", "minified stylesheet must not be a copy of the readable source")
+			assert.NotContains(t, string(min), "</style", "inline block must never contain a closing style tag")
 			for _, needle := range tt.needles {
 				assert.Contains(t, string(min), needle)
 			}

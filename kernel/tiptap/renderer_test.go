@@ -492,10 +492,37 @@ func TestRender_ImageWithSrcset(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, result, `src="/uploads/photo.webp"`)
 	assert.Contains(t, result, `srcset="/uploads/photo_thumb.webp 370w, /uploads/photo_medium.webp 800w, /uploads/photo_large.webp 1600w"`)
-	assert.Contains(t, result, `sizes="100vw"`)
+	assert.Contains(t, result, `sizes="(max-width: 768px) 100vw, 760px"`)
 	assert.Contains(t, result, `alt="A photo"`)
 	assert.Contains(t, result, "<figure>")
 	assert.Contains(t, result, "</figure>")
+}
+
+func TestRender_ImageOriginalWiderThanVariants(t *testing.T) {
+	resolver := func(src string) []tiptap.ImageVariant {
+		if src == "/uploads/product.webp" {
+			return []tiptap.ImageVariant{
+				{URL: "/uploads/product_thumb.webp", Width: 64, Height: 43},
+				{URL: "/uploads/product_medium.webp", Width: 280, Height: 187},
+				{URL: "/uploads/product_large.webp", Width: 616, Height: 411},
+			}
+		}
+		return nil
+	}
+
+	r := tiptap.NewRenderer(resolver)
+
+	result, err := r.Render(`{
+		"type": "doc",
+		"content": [{"type": "image", "attrs": {"src": "/uploads/product.webp", "alt": "A product"}}]
+	}`)
+	require.NoError(t, err)
+	assert.Contains(t, result, `src="/uploads/product.webp"`)
+	assert.Contains(t, result, `srcset="/uploads/product_thumb.webp 64w, /uploads/product_medium.webp 280w, /uploads/product_large.webp 616w"`)
+	assert.NotContains(t, result, "/uploads/product.webp 1024w")
+	assert.Contains(t, result, `sizes="(max-width: 768px) 100vw, 760px"`)
+	assert.Contains(t, result, `width="616" height="411"`)
+	assert.Contains(t, result, `loading="eager" fetchpriority="high"`)
 }
 
 func TestRender_ImageNoResolverNoSrcset(t *testing.T) {
@@ -750,6 +777,70 @@ func TestRender_ImageDimensions(t *testing.T) {
 				return
 			}
 			assert.Contains(t, result, tt.wantWidth)
+		})
+	}
+}
+
+func TestRender_ImageMobilePicture(t *testing.T) {
+	tests := []struct {
+		name        string
+		variants    []tiptap.ImageVariant
+		wantSource  string
+		wantPicture bool
+		wantErr     bool
+	}{
+		{
+			name: "standard trio gates mobile behind the medium rendition",
+			variants: []tiptap.ImageVariant{
+				{URL: "/uploads/product_thumb.webp", Width: 64, Height: 43},
+				{URL: "/uploads/product_medium.webp", Width: 280, Height: 187},
+				{URL: "/uploads/product_large.webp", Width: 616, Height: 411},
+			},
+			wantSource:  `<source media="(max-width: 767px)" srcset="/uploads/product_medium.webp">`,
+			wantPicture: true,
+			wantErr:     false,
+		},
+		{
+			name: "all renditions above the cap fall back to the smallest",
+			variants: []tiptap.ImageVariant{
+				{URL: "/uploads/photo_medium.webp", Width: 370},
+				{URL: "/uploads/photo_large.webp", Width: 800},
+			},
+			wantSource:  `<source media="(max-width: 767px)" srcset="/uploads/photo_medium.webp">`,
+			wantPicture: true,
+			wantErr:     false,
+		},
+		{
+			name:        "no variants emit a plain image with no picture wrapper",
+			variants:    nil,
+			wantSource:  "",
+			wantPicture: false,
+			wantErr:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver := func(src string) []tiptap.ImageVariant {
+				return tt.variants
+			}
+			r := tiptap.NewRenderer(resolver)
+			result, err := r.Render(`{"type":"doc","content":[{"type":"image","attrs":{"src":"/uploads/product.webp","alt":"A product"}}]}`)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, result, "<figure>")
+			assert.Contains(t, result, `src="/uploads/product.webp"`)
+			if tt.wantPicture {
+				require.Contains(t, result, "<picture>")
+				assert.Contains(t, result, tt.wantSource)
+				assert.Contains(t, result, "</picture>")
+			} else {
+				assert.NotContains(t, result, "<picture>")
+				assert.NotContains(t, result, "<source")
+			}
 		})
 	}
 }

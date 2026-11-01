@@ -22,9 +22,9 @@ type defaultDirective struct {
 var defaultDirectives = []defaultDirective{
 	{Name: "default-src", Sources: []string{"'self'"}},
 	{Name: "script-src", Sources: []string{"'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"}},
-	{Name: "style-src", Sources: []string{"'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"}},
+	{Name: "style-src", Sources: []string{"'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"}},
 	{Name: "img-src", Sources: []string{"'self'", "data:", "blob:"}},
-	{Name: "font-src", Sources: []string{"'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"}},
+	{Name: "font-src", Sources: []string{"'self'", "https://cdn.jsdelivr.net"}},
 	{Name: "connect-src", Sources: []string{"'self'"}},
 	{Name: "frame-src", Sources: []string{"'self'", "blob:", "chrome-extension:", "https://www.youtube.com", "https://www.youtube-nocookie.com"}}, // blob: + chrome-extension: let Chromium's built-in PDF viewer (an extension iframe) render blob-tab PDFs such as admin invoices.
 	{Name: "frame-ancestors", Sources: []string{"'none'"}},

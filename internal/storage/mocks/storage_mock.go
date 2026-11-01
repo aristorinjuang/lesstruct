@@ -148,6 +148,68 @@ func (_c *MockStorage_GetURL_Call) RunAndReturn(run func(filePath string) string
 	return _c
 }
 
+// Open provides a mock function for the type MockStorage
+func (_mock *MockStorage) Open(filePath string) (io.ReadCloser, error) {
+	ret := _mock.Called(filePath)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Open")
+	}
+
+	var r0 io.ReadCloser
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (io.ReadCloser, error)); ok {
+		return returnFunc(filePath)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) io.ReadCloser); ok {
+		r0 = returnFunc(filePath)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(io.ReadCloser)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(filePath)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockStorage_Open_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Open'
+type MockStorage_Open_Call struct {
+	*mock.Call
+}
+
+// Open is a helper method to define mock.On call
+//   - filePath string
+func (_e *MockStorage_Expecter) Open(filePath any) *MockStorage_Open_Call {
+	return &MockStorage_Open_Call{Call: _e.mock.On("Open", filePath)}
+}
+
+func (_c *MockStorage_Open_Call) Run(run func(filePath string)) *MockStorage_Open_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockStorage_Open_Call) Return(readCloser io.ReadCloser, err error) *MockStorage_Open_Call {
+	_c.Call.Return(readCloser, err)
+	return _c
+}
+
+func (_c *MockStorage_Open_Call) RunAndReturn(run func(filePath string) (io.ReadCloser, error)) *MockStorage_Open_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Save provides a mock function for the type MockStorage
 func (_mock *MockStorage) Save(filename string, reader io.Reader) (string, error) {
 	ret := _mock.Called(filename, reader)

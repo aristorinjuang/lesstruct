@@ -159,10 +159,34 @@ func newMediaCmd(apiKey, baseURL, output *string) *cobra.Command {
 		},
 	}
 
+	reencodeCmd := &cobra.Command{
+		Use:   "reencode",
+		Short: "Re-encode the media library in place (one-time)",
+		Long: "Rewrite every stored original and variant in place at identical dimensions " +
+			"via POST /api/v1/media/reencode (already-WebP files pass through sanitize-only; " +
+			"other formats transcode at Quality 80). Same filenames, URLs, and " +
+			"dimensions — only the stored bytes shrink. Admin only (403 otherwise). " +
+			"One-time, operator-triggered use: lossy re-runs lose quality, so it never runs automatically. " +
+			"The run rewrites every stored file server-side and may take several minutes; " +
+			"Ctrl+C cancels it. If a reverse proxy fronts the server, a public URL may still " +
+			"time out at the proxy — run against the server host itself in that case.",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runMediaReencode(cmd, args, mediaReadOptions{
+				apiKey:  *apiKey,
+				baseURL: *baseURL,
+				output:  *output,
+			})
+		},
+	}
+
 	media.AddCommand(upload)
 	media.AddCommand(listCmd)
 	media.AddCommand(getCmd)
 	media.AddCommand(deleteCmd)
+	media.AddCommand(reencodeCmd)
 	return media
 }
 
@@ -385,6 +409,33 @@ func runMediaList(cmd *cobra.Command, args []string, opts mediaListOptions) erro
 	return printMediaList(cmd.OutOrStdout(), opts.output, data, meta)
 }
 
+// runMediaReencode implements `lesstruct-cli media reencode`.
+func runMediaReencode(cmd *cobra.Command, args []string, opts mediaReadOptions) error {
+	if err := validateOutput(opts.output); err != nil {
+		return err
+	}
+
+	apiKey, baseURL, err := resolveCredentials(opts.apiKey, opts.baseURL)
+	if err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	}
+
+	cl, err := client.New(baseURL, apiKey)
+	if err != nil {
+		return &exitError{code: client.ExitGeneric, msg: err.Error()}
+	}
+
+	ctx, stop := signalContext(cmd.Context())
+	defer stop()
+
+	data, meta, err := cl.ReencodeMedia(ctx)
+	if err != nil {
+		return &exitError{code: client.ExitCode(err), msg: apiErrorMessage(err)}
+	}
+
+	return printMediaReencode(cmd.OutOrStdout(), opts.output, data, meta)
+}
+
 // printMediaGet writes a single media item to w in the requested mode. The
 // `verb` parameter is "Uploaded" (for the upload command's success line) or
 // "Media" (for the get command's success line) — the field set is the same
@@ -505,4 +556,41 @@ func printMediaList(w io.Writer, mode string, data, meta json.RawMessage) error 
 		}
 	}
 	return nil
+}
+
+// printMediaReencode writes a re-encode summary to w in the requested mode.
+func printMediaReencode(w io.Writer, mode string, data, meta json.RawMessage) error {
+	if mode == "json" {
+		env := struct {
+			Data json.RawMessage `json:"data,omitempty"`
+			Meta json.RawMessage `json:"meta,omitempty"`
+		}{Data: data, Meta: meta}
+		encoded, err := json.Marshal(env)
+		if err != nil {
+			return fmt.Errorf("encode output: %w", err)
+		}
+		_, err = fmt.Fprintln(w, string(encoded))
+		return err
+	}
+
+	var summary struct {
+		Processed   int   `json:"processed"`
+		Skipped     int   `json:"skipped"`
+		BytesBefore int64 `json:"bytesBefore"`
+		BytesAfter  int64 `json:"bytesAfter"`
+	}
+	if err := json.Unmarshal(data, &summary); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	saved := summary.BytesBefore - summary.BytesAfter
+	_, err := fmt.Fprintf(
+		w,
+		"Re-encoded media: processed=%d skipped=%d bytesBefore=%d bytesAfter=%d (saved %d)\n",
+		summary.Processed,
+		summary.Skipped,
+		summary.BytesBefore,
+		summary.BytesAfter,
+		saved,
+	)
+	return err
 }

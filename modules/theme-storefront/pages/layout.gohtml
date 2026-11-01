@@ -23,11 +23,8 @@
 	<link rel="shortcut icon" href="/static/favicon.ico">
 	<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 	{{- end}}
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-	<link rel="stylesheet" href="{{assetURL "base.css"}}">
-	<link rel="stylesheet" href="{{assetURL "style.css"}}">
+	<link rel="preload" as="font" type="font/woff2" crossorigin href="/static/inter-latin-var.woff2">
+	{{inlineStyles}}
 	{{- if .SiteConfig.ProductImageRatio}}<style>.product-card__media,.product-gallery__main,.cart-line__media{aspect-ratio: {{.SiteConfig.ProductImageRatio}}}</style>{{end}}
 </head>
 <body>
@@ -111,7 +108,10 @@
 	<a class="product-card__link" href="/{{.Slug}}">
 		<div class="product-card__media">
 			{{- if .ImageURL}}
-			<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" loading="lazy">
+			<picture>
+				{{if .ImageMobileURL}}<source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">{{end}}
+				<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" loading="lazy">
+			</picture>
 			{{- else}}
 			<div class="product-card__placeholder" aria-hidden="true">{{.Title}}</div>
 			{{- end}}

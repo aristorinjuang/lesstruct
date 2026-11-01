@@ -14,6 +14,14 @@ import (
 	"time"
 )
 
+// ReencodeTimeout bounds one media re-encode run end to end. The run
+// rewrites the whole library server-side and takes minutes on real
+// libraries, so it cannot share the default 30s client timeout. Fifteen
+// minutes covers large libraries while still failing loudly against a hung
+// server or a dropped connection; the caller controls earlier cancellation
+// via ctx.
+const ReencodeTimeout = 15 * time.Minute
+
 // envelope mirrors the server's {data, error, meta} JSON envelope. data and meta
 // are kept as RawMessage so callers decode the payload themselves; the client
 // never imports the server's response types (the HTTP API is the hard boundary).
@@ -603,6 +611,23 @@ func (c *Client) ListMedia(
 		query.Set("cursor", cursor)
 	}
 	return c.do(ctx, http.MethodGet, "/api/v1/media", query, nil)
+}
+
+// ReencodeMedia sends POST /api/v1/media/reencode with an empty body and
+// returns the decoded data ({processed, skipped, bytesBefore, bytesAfter})
+// and meta payloads, or an *APIError on failure. Admin only: the server
+// returns 403 FORBIDDEN to a non-admin key.
+//
+// The run takes minutes server-side, so this call uses a dedicated client
+// with ReencodeTimeout instead of the shared 30s client.
+func (c *Client) ReencodeMedia(
+	ctx context.Context,
+) (json.RawMessage, json.RawMessage, error) {
+	reencodeClient := &http.Client{
+		CheckRedirect: redirectPolicy,
+		Timeout:       ReencodeTimeout,
+	}
+	return c.doRequestWithClient(reencodeClient, ctx, http.MethodPost, "/api/v1/media/reencode", nil, "", nil)
 }
 
 // CreateComment POSTs a comment to /api/v1/content/{id}/comments and returns the

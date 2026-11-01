@@ -253,18 +253,33 @@ The full set of custom properties the default theme defines.
 
 ## Font Customization
 
-The default theme loads Inter from Google Fonts through a plain `<link>`
-stylesheet in the `<head>` of `layout.html` (kept parallel with the theme
-stylesheets — never `@import` it from CSS, which would serialize discovery
-and delay first paint). To switch:
+Both embedded themes self-host the Inter variable font (weights 100–900 in
+one file): `static/inter-latin-var.woff2` (OFL 1.1, see `static/OFL.txt`)
+declared with `@font-face` at the top of the base stylesheet, so the font
+ships inside the inlined styles and pages need no third-party font origin.
+The layouts preload it (`<link rel="preload" as="font">`). To switch:
 
-1. Point the font `<link>` in your `templates/layout.html` at the new family
-   (or self-host and `@font-face` it, keeping the `<link>` parallel).
+1. Copy your woff2 next to the theme's `static/` dir (or point `src:` at your
+   hosted file), replace the `@font-face` block, and point the layout
+   `preload` at the same file; re-run `make css` so the minified build picks
+   it up, and ship the replacement font's license file alongside it.
+   The latin subset covers EN + ID; for other scripts, vendor the matching
+   subsets and extend the `unicode-range` accordingly.
 2. Override `--font-sans` on `:root`.
 3. Override `--font-mono` if you want a different monospace stack.
 
 ```html
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;600;700&display=swap">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="/static/fira-sans-latin-var.woff2">
+```
+
+```css
+@font-face {
+	font-family: "Fira Sans";
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url("/static/fira-sans-latin-var.woff2") format("woff2");
+}
 
 :root {
   --font-sans: 'Fira Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -576,6 +591,7 @@ Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Render `
 | `.ImageSrcset` | `string` | Responsive image `srcset` (may be empty) |
 | `.ImageSizes` | `string` | Responsive image `sizes` (may be empty) |
 | `.ImageVariants` | `map[string]string` | Map of thumbnail variant URLs keyed by configured suffix (e.g. `"_large"`, `"_medium"`, `"_thumb"`). Guard with `{{with (index .ImageVariants "_large")}}` — keys depend on `[[thumbnail]]` config. Populated when a media record is resolved; empty when no media. |
+| `.ImageMobileURL` | `string` | Rendition for small viewports (≤767px): the `_medium` variant when generated, `_thumb` otherwise, else the card URL. Wrap card images in `<picture><source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">…</picture>` so phones never fetch `_large` (a `srcset` alone cannot promise that on high-DPR screens). |
 | `.OriginalURL` | `string` | The unscaled original image URL (from `Media.URL`). Falls back to the raw content image URL when no media record is found. Useful for hero backgrounds, high-DPI displays, and download links. |
 | `.Author` | `string` | Author display name |
 | `.Username` | `string` | Author username (for `/authors/<username>` links) |
@@ -720,6 +736,10 @@ The engine registers these helpers for use in any template:
   Returns a versioned URL for the named static asset. Currently `base.css` and
   `style.css` are supported. The hash is computed from both files at startup;
   cache headers are `immutable` for versioned URLs.
+- `{{inlineStyles}}` — inlines the resolved `base.css` + `style.css` inside a
+  single `<style>` element so pages render without a blocking stylesheet
+  request. Resolves through the same theme-override path as the AI style read.
+  Emit it before any page-specific `<style>` overrides.
 
 **Additional helpers from the active theme.** The embedded theme may contribute
 extra funcs (the storefront theme adds `{{lines .CustomFields.images}}` to
@@ -803,19 +823,20 @@ source and its `base.css`/`style.css` from their `.src.css` sources; the
 
 | File | Used by | DOM contract |
 |------|---------|--------------|
-| `base.css` | All pages (linked from `layout.html`) | Imports Google Fonts, defines CSS custom properties (`:root` tokens), resets, base element styles, and `.content-body` typography. Override freely. |
+| `base.css` | All pages (linked from `layout.html`) | Defines CSS custom properties (`:root` tokens), resets, base element styles, and `.content-body` typography. Override freely. |
 | `style.css` | All pages (linked from `layout.html`) | Defines layout primitives, components, header/nav, grid, article wrappers, tags, comments, auth, footer, and responsive rules. Override freely. |
 | `storefront.js` | `theme-storefront` layout (all pages); hydrates cart, checkout, order tracking, product pages, and product cards | Expects `[data-cart-page]`, `[data-checkout-page]`, `[data-track-page]`, `[data-product-page]`, `[data-variant-matrix]`, `[data-variant-axes]`, `[data-price]`, `[data-stock]`, `#product-sku-row`, `#currency-select`, `#language-select`, `#cookie-banner`, `#cookie-accept`, `#cookie-decline`, `#checkout-consent`, `#cart-count`, `#checkout-link`; reads the cart token always and the display currency only when `lesstruct_consent=accepted`; reads `document.cookie lesstruct_consent` for banner + currency gating; prefills checkout name/email from `/api/profile/` with cookie credentials only when the `lesstruct_auth` hint is present (anonymous loads issue zero profile requests); POSTs checkout with `consentAccepted` derived from `#checkout-consent` (when present) and calls `/api/v1/config`, `/api/v1/public/cart*`, `/checkout`, `/orders/*`, and `/payments/*`. Checkout success stores `order.trackingToken` (the order's guest key, delivered once) and redirects to `/orders/track?order=…&t=…`; the track page expects `#track-token` (prefilled from `?t=` or the stored order) and sends all three factors — `?email=&token=` on tracking reads, `token` in the payment-proof and hosted-session bodies. Query params are decoded one extra layer when escapes remain, so a gateway finish redirect that arrives double-encoded (Midtrans re-encodes the callback URL) still auto-loads instead of 404ing on a literal `%40`. |
 | `nav-auth.js` | `layout.html` | Expects `#nav-login`, `#nav-logout`; probes `/api/profile` with the session cookie only when the `lesstruct_auth` hint is present (anonymous loads issue zero requests; shows `#nav-logout` when authenticated) and logs out via `POST /api/auth/logout`; handles `.nav-toggle` / `.site-nav` for mobile. |
 | `search.js` | `layout.html` | Expects `.search-toggle`, `.search-box`, `#search-input`, `#search-dropdown`; fetches `/api/v1/public/search?q=…`. |
 | `auth.js` | `login.html`, `register.html`, `forgot_password.html` | Expects `#login-form`/`#mfa-form`/`#register-form`/`#forgot-form`, inputs named `username`/`name`/`email`/`password`/`code`, `#mfa-code`, `#mfa-email-hint`, `#mfa-resend`, `#mfa-submit`, `#mfa-back`, `#login-links`, `#register-consent`, and `#auth-error` / `#auth-success`. POSTs to `/api/auth/login` (returns an MFA challenge), `/api/auth/mfa/verify` (sets the `lesstruct_jwt` HttpOnly session cookie and returns only the user — no token), `/api/auth/mfa/resend`, `/api/auth/register` (with `consentAccepted` from `#register-consent` when present; any `data` payload is a success — duplicates never return an error or an account ID, the existing holder gets a notice email), `/api/auth/forgot-password`. A `firstLoginRequired` response (seeded admin before setup) redirects to `/admin/first-login`. |
 | `comments.js` | `post.html` in both embedded themes (only when comments are enabled) | Expects `#comment-form[data-slug]`, `#comment-error`, `#comment-success`, `#comment-login-link`; probes `/api/profile` with the session cookie only when the `lesstruct_auth` hint is present (anonymous loads issue zero requests and stay on the login link) to decide form vs login link; POSTs to `/api/v1/content_items/<slug>/comments` with cookie credentials (no `Authorization` header). |
+| `inter-latin-var.woff2` | `layout.html` (preload) + `base.css` (`@font-face`) | Inter variable font, weights 100–900, latin subset (OFL 1.1, see `static/OFL.txt`). Self-hosted so pages need no third-party font origin. |
 | `math.js` | `layout.html` | KaTeX auto-render; depends on katex from CDN (see below). |
 | `verify-email.js` | `verify_email.html` | Reads `?token=` from the URL; calls `/api/auth/verify-email?token=…`; toggles `#auth-error` / `#auth-success`. |
 | `reset-password.js` | `reset_password.html` | Reads `?token=` from the URL; POSTs to `/api/auth/reset-password`; expects `#new-password` input. |
 | `highlight.min.js` | `layout.html` | Provides the global `hljs`. The default layout also runs `hljs.highlightAll()` on `DOMContentLoaded`. |
 
-The default layout uses `{{assetURL "base.css"}}` and `{{assetURL "style.css"}}` to emit content-hashed filenames with immutable cache headers. Plain `/static/base.css` and `/static/style.css` still work for backward compatibility.
+Both embedded layouts inline the theme stylesheets with `{{inlineStyles}}` instead of linking them, so first paint never blocks on theme CSS. The Inter variable font is self-hosted (`static/inter-latin-var.woff2`, declared in `base.css`, preloaded from the layout), so pages need no third-party font origin; KaTeX/highlight.js in the default theme keep the deferred `media="print"` + `onload` pattern. The trade-off is deliberate: every HTML response carries the CSS instead of using the immutable static cache on repeat views. `{{assetURL "base.css"}}` / `{{assetURL "style.css"}}` remain for child themes that prefer linked stylesheets: they emit content-hashed filenames with immutable cache headers. Plain `/static/` files carry `Cache-Control: public, max-age=86400` (hashed CSS stays immutable); `/static/base.css` and `/static/style.css` still work for backward compatibility.
 
 ### Favicons
 

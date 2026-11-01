@@ -460,6 +460,11 @@ func TestStorefrontHeaderOrder(t *testing.T) {
 	}))
 
 	body := w.Body.String()
+	// The theme styles are inlined in <head>; scope the order check past
+	// <body> so CSS selectors can't satisfy it.
+	if _, markup, ok := strings.Cut(body, "<body>"); ok {
+		body = markup
+	}
 	cartIdx := strings.Index(body, "cart-link")
 	currencyIdx := strings.Index(body, "currency-select")
 	languageIdx := strings.Index(body, "language-select")

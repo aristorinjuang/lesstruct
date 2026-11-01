@@ -7,6 +7,12 @@ import (
 	"strings"
 )
 
+// mobileMaxWidth caps what small viewports may load: the widest rendition at
+// or below this width (the default _medium pipeline width). A plain srcset
+// cannot promise that — a high-DPR phone resolves a narrow CSS slot against
+// the largest entry — so the renderer gates it behind a media query.
+const mobileMaxWidth = 280
+
 func escapeHTML(s string) string {
 	return html.EscapeString(s)
 }
@@ -19,7 +25,31 @@ func escapeAttr(s string) string {
 	return s
 }
 
-// ImageResolver maps an image src to its sized variants for rendering.
+// mobileVariant picks the rendition small viewports must load: the widest
+// variant at or below mobileMaxWidth, falling back to the smallest variant
+// when every rendition exceeds it. Empty when there are no variants.
+func mobileVariant(variants []ImageVariant) string {
+	best := ""
+	bestWidth := 0
+	smallest := ""
+	smallestWidth := 0
+	for _, v := range variants {
+		if v.URL == "" || v.Width <= 0 {
+			continue
+		}
+		if smallest == "" || v.Width < smallestWidth {
+			smallest, smallestWidth = v.URL, v.Width
+		}
+		if v.Width <= mobileMaxWidth && v.Width > bestWidth {
+			best, bestWidth = v.URL, v.Width
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return smallest
+}
+
 // largestVariantSize returns the dimensions of the widest variant, so the
 // emitted width/height describe the full rendition and the browser can
 // reserve the aspect ratio before the image loads. Zeroes when unknown.
@@ -53,6 +83,7 @@ func firstImageSrc(doc document) string {
 	return walk(doc.Content)
 }
 
+// ImageResolver maps an image src to its sized variants for rendering.
 type ImageResolver func(src string) []ImageVariant
 
 // Renderer converts TipTap JSON documents to HTML.
@@ -196,25 +227,35 @@ func (r Renderer) renderImage(n node) string {
 		return ""
 	}
 
+	var variants []ImageVariant
+	if r.imageResolver != nil {
+		variants = r.imageResolver(src)
+	}
+
 	var sb strings.Builder
 	sb.WriteString("<figure>")
+	wrapped := false
+	if mobile := mobileVariant(variants); mobile != "" {
+		fmt.Fprintf(&sb, `<picture><source media="(max-width: 767px)" srcset="%s">`, escapeAttr(mobile))
+		wrapped = true
+	}
 	fmt.Fprintf(&sb, `<img src="%s"`, escapeAttr(src))
 
-	if r.imageResolver != nil {
-		variants := r.imageResolver(src)
-		if len(variants) > 0 {
-			sb.WriteString(` srcset="`)
-			for i, v := range variants {
-				if i > 0 {
-					sb.WriteString(", ")
-				}
-				fmt.Fprintf(&sb, "%s %dw", escapeAttr(v.URL), v.Width)
+	if len(variants) > 0 {
+		sb.WriteString(` srcset="`)
+		for i, v := range variants {
+			if i > 0 {
+				sb.WriteString(", ")
 			}
-			sb.WriteString(`"`)
-			sb.WriteString(` sizes="100vw"`)
-			if w, h := largestVariantSize(variants); w > 0 && h > 0 {
-				fmt.Fprintf(&sb, ` width="%d" height="%d"`, w, h)
-			}
+			fmt.Fprintf(&sb, "%s %dw", escapeAttr(v.URL), v.Width)
+		}
+		sb.WriteString(`"`)
+		sb.WriteString(` sizes="(max-width: 768px) 100vw, 760px"`)
+		// Reserve the aspect ratio from the widest variant. Variants are
+		// downscaled proportionally, so the widest variant's ratio matches
+		// the original's even when src points at a larger file.
+		if w, h := largestVariantSize(variants); w > 0 && h > 0 {
+			fmt.Fprintf(&sb, ` width="%d" height="%d"`, w, h)
 		}
 	}
 
@@ -229,6 +270,9 @@ func (r Renderer) renderImage(n node) string {
 		sb.WriteString(` loading="eager" fetchpriority="high">`)
 	} else {
 		sb.WriteString(` loading="lazy">`)
+	}
+	if wrapped {
+		sb.WriteString("</picture>")
 	}
 	sb.WriteString("</figure>")
 	return sb.String()

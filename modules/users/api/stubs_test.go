@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -408,6 +409,13 @@ func (s *stubPictureStorage) Delete(filePath string) error {
 
 func (s *stubPictureStorage) GetURL(filePath string) string {
 	return "/uploads/profile_pictures/" + filePath
+}
+
+func (s *stubPictureStorage) Open(filePath string) (io.ReadCloser, error) {
+	if data, ok := s.files[filePath]; ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+	return nil, io.ErrUnexpectedEOF
 }
 
 // requestWithPrincipal attaches a kernel principal to the request context,

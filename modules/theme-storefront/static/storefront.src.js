@@ -730,13 +730,29 @@
 		}
 
 		const galleryThumbs = page.querySelectorAll(".product-gallery__thumb");
+		const mobileQuery = window.matchMedia("(max-width: 767px)");
 		for (const thumb of galleryThumbs) {
 			thumb.addEventListener("click", () => {
 				if (!mainImage || mainImage.tagName !== "IMG") return;
-				mainImage.src = thumb.getAttribute("data-image") || mainImage.src;
+				const large = thumb.getAttribute("data-image");
+				const medium = thumb.getAttribute("data-image-medium");
+				mainImage.src = (mobileQuery.matches && medium) || large || mainImage.src;
 				const srcset = thumb.getAttribute("data-srcset");
 				if (srcset) mainImage.setAttribute("srcset", srcset);
 				else mainImage.removeAttribute("srcset");
+				// While the mobile source matches, the browser renders from
+				// the <source> and ignores img attribute changes — and some
+				// mobile engines do not re-run picture selection on a bare
+				// srcset mutation. Re-inserting the source node is a
+				// guaranteed "sources changed" signal that forces
+				// re-selection in every engine.
+				const picture = mainImage.closest ? mainImage.closest("picture") : null;
+				const source = picture ? picture.querySelector("source") : null;
+				if (source) {
+					if (medium) source.setAttribute("srcset", medium);
+					else source.removeAttribute("srcset");
+					picture.insertBefore(source, mainImage);
+				}
 				for (const other of galleryThumbs) other.classList.toggle("is-active", other === thumb);
 			});
 		}

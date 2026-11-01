@@ -10,10 +10,13 @@ import (
 
 // Storage persists uploaded bytes under opaque keys. Save returns the storage
 // key (local path or object key); Delete removes it; GetURL renders the
-// public URL for a stored key. Implementations must be safe for concurrent
-// use; all methods fail closed with descriptive errors.
+// public URL for a stored key. Open returns a reader for the stored bytes so
+// maintenance jobs (one-time library re-encode) read back through the
+// interface instead of sniffing the driver. Implementations must be safe for
+// concurrent use; all methods fail closed with descriptive errors.
 type Storage interface {
 	Save(filename string, reader io.Reader) (string, error)
 	Delete(filePath string) error
 	GetURL(filePath string) string
+	Open(filePath string) (io.ReadCloser, error)
 }

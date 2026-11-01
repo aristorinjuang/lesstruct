@@ -6,10 +6,22 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/aristorinjuang/lesstruct/internal/app"
 	commerceedition "github.com/aristorinjuang/lesstruct/internal/editions/commerce"
 )
 
+// version is the build version, stamped via -ldflags -X main.version in
+// release builds (see .github/workflows/release.yml); `--version` reports it
+// so an operator can confirm exactly which build is running.
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
+		fmt.Println(version)
+		return
+	}
 	app.Run(commerceedition.Edition())
 }

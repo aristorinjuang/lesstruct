@@ -81,6 +81,13 @@ func (s *stubStorage) GetURL(filePath string) string {
 	return "/uploads/profile_pictures/" + filePath
 }
 
+func (s *stubStorage) Open(filePath string) (io.ReadCloser, error) {
+	if data, ok := s.files[filePath]; ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
+	}
+	return nil, io.ErrUnexpectedEOF
+}
+
 // createTestImage creates a PNG image of the given dimensions
 func createTestImage(t *testing.T, width, height int) []byte {
 	t.Helper()

@@ -19,6 +19,17 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const (
+	// immutableCacheControl marks write-once responses (content-hashed media,
+	// timestamped profile pictures) as cacheable forever.
+	immutableCacheControl = "public, max-age=31536000, immutable"
+
+	// staticCacheControl bounds repeat-visit caching for versioned-but-unhashed
+	// /static/ files: plain URLs change across releases, so they must not be
+	// immutable (post-deploy staleness is capped at a day).
+	staticCacheControl = "public, max-age=86400"
+)
+
 // maxBodySizeMiddleware limits request body size to 1MB
 func maxBodySizeMiddleware(maxBytes int64) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -122,6 +133,7 @@ type MediaAgentHandler interface {
 	List(http.ResponseWriter, *http.Request)
 	Get(http.ResponseWriter, *http.Request)
 	Delete(http.ResponseWriter, *http.Request)
+	Reencode(http.ResponseWriter, *http.Request)
 }
 
 // CommentBrowserHandler is the browser-realm (JWT/CSRF) comment surface the
@@ -453,6 +465,13 @@ func Setup(
 		// dual-auth dispatch routes (the browser admin media list/get co-owns the same path;
 		// Chi routes by path, not auth realm, so a single registration dispatches by credential).
 		r.With(maxBodySizeMiddleware(10<<20)).Post("/api/v1/media", agentMediaHandler.Upload)
+
+		// One-time library re-encode — rewrites every stored original and
+		// variant in place at identical dimensions (alpha Quality 80).
+		// Admin-only and never automatic: lossy re-runs lose quality, so the
+		// operator triggers it once via the CLI. The handler also gates
+		// non-admin callers in-realm.
+		r.With(agentAdminOnly(authorize), maxBodySizeMiddleware(1<<20)).Post("/api/v1/media/reencode", agentMediaHandler.Reencode)
 
 		// Content export (agent-only) — streams a tar.gz of all content as
 		// Hugo-compatible source files with bundled media. Admin-only: the
@@ -800,13 +819,13 @@ func Setup(
 	if storageDriver == "local" {
 		uploadsDir := filepath.Join("data", "uploads", "media")
 		if info, err := os.Stat(uploadsDir); err == nil && info.IsDir() {
-			mediaFS := http.StripPrefix("/uploads/media/", http.FileServer(http.Dir(uploadsDir)))
+			mediaFS := middleware.NewCacheControlMiddleware(immutableCacheControl).Handler(http.StripPrefix("/uploads/media/", http.FileServer(http.Dir(uploadsDir))))
 			r.Handle("/uploads/media/*", mediaFS)
 		}
 
 		profilePicturesDir := filepath.Join("data", "uploads", "profile_pictures")
 		if info, err := os.Stat(profilePicturesDir); err == nil && info.IsDir() {
-			profilePicturesFS := http.StripPrefix("/uploads/profile_pictures/", http.FileServer(http.Dir(profilePicturesDir)))
+			profilePicturesFS := middleware.NewCacheControlMiddleware(immutableCacheControl).Handler(http.StripPrefix("/uploads/profile_pictures/", http.FileServer(http.Dir(profilePicturesDir))))
 			r.Handle("/uploads/profile_pictures/*", profilePicturesFS)
 		}
 	}
@@ -818,8 +837,11 @@ func Setup(
 		r.Handle("/static/*", http.StripPrefix("/static/", staticHandler))
 		// Browsers request /favicon.ico at the root by default; the theme
 		// ships it under /static/. Redirect there so the root never 404s
-		// in console noise and the theme set stays the single source.
+		// in console noise and the theme set stays the single source. The
+		// redirect itself carries the bounded static TTL so repeat visits
+		// skip the round trip.
 		r.Get("/favicon.ico", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("Cache-Control", staticCacheControl)
 			http.Redirect(w, req, "/static/favicon.ico", http.StatusFound)
 		})
 	}

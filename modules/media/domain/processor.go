@@ -248,7 +248,7 @@ type Processor struct{}
 // ConvertToWebP ensures the input is a WebP image: already-WebP input is
 // passed through (metadata chunks stripped, still frames validated — no
 // re-encode, no generation loss); every other registered format is decoded
-// and re-encoded as WebP.
+// and re-encoded as WebP at Quality 80 / Method 4.
 func (p *Processor) ConvertToWebP(reader io.Reader) ([]byte, *ImageMetadata, error) {
 	head, err := readHeader(reader, 12)
 	if err != nil {
@@ -300,12 +300,12 @@ func (p *Processor) ConvertToWebP(reader io.Reader) ([]byte, *ImageMetadata, err
 	}
 
 	var buf bytes.Buffer
-	// webp.Encode rarely fails in practice and is difficult to test
-	// We skip the error check with _ since it's not testable
-	_ = webp.Encode(&buf, img, &webp.EncoderOptions{
+	if err := webp.Encode(&buf, img, &webp.EncoderOptions{
 		Quality: 80,
 		Method:  4,
-	})
+	}); err != nil {
+		return nil, nil, fmt.Errorf("failed to encode WebP: %w", err)
+	}
 
 	return buf.Bytes(), metadata, nil
 }
@@ -363,10 +363,12 @@ func (p *Processor) Resize(reader io.Reader, maxWidth int) ([]byte, *ImageMetada
 		}
 
 		var buf bytes.Buffer
-		_ = webp.Encode(&buf, img, &webp.EncoderOptions{
+		if err := webp.Encode(&buf, img, &webp.EncoderOptions{
 			Quality: 80,
 			Method:  4,
-		})
+		}); err != nil {
+			return nil, nil, fmt.Errorf("failed to encode resized WebP: %w", err)
+		}
 
 		return buf.Bytes(), metadata, nil
 	}
@@ -381,10 +383,12 @@ func (p *Processor) Resize(reader io.Reader, maxWidth int) ([]byte, *ImageMetada
 	}
 
 	var buf bytes.Buffer
-	_ = webp.Encode(&buf, dst, &webp.EncoderOptions{
+	if err := webp.Encode(&buf, dst, &webp.EncoderOptions{
 		Quality: 80,
 		Method:  4,
-	})
+	}); err != nil {
+		return nil, nil, fmt.Errorf("failed to encode resized WebP: %w", err)
+	}
 
 	return buf.Bytes(), metadata, nil
 }
@@ -403,12 +407,12 @@ func (p *Processor) CropToOpenGraph(data []byte) ([]byte, error) {
 	draw.BiLinear.Scale(dst, dst.Bounds(), cropped, cropped.Bounds(), draw.Over, nil)
 
 	var buf bytes.Buffer
-	// webp.Encode rarely fails in practice and is difficult to test
-	// We skip the error check with _ since it's not testable
-	_ = webp.Encode(&buf, dst, &webp.EncoderOptions{
+	if err := webp.Encode(&buf, dst, &webp.EncoderOptions{
 		Quality: 80,
 		Method:  4,
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("failed to encode Open Graph WebP: %w", err)
+	}
 
 	return buf.Bytes(), nil
 }

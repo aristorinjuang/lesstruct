@@ -229,3 +229,49 @@ func (_c *MockMediaAgentHandler_Upload_Call) RunAndReturn(run func(responseWrite
 	_c.Run(run)
 	return _c
 }
+
+// Reencode provides a mock function for the type MockMediaAgentHandler
+func (_mock *MockMediaAgentHandler) Reencode(responseWriter http.ResponseWriter, request *http.Request) {
+	_mock.Called(responseWriter, request)
+	return
+}
+
+// MockMediaAgentHandler_Reencode_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Reencode'
+type MockMediaAgentHandler_Reencode_Call struct {
+	*mock.Call
+}
+
+// Reencode is a helper method to define mock.On call
+//   - responseWriter http.ResponseWriter
+//   - request *http.Request
+func (_e *MockMediaAgentHandler_Expecter) Reencode(responseWriter any, request any) *MockMediaAgentHandler_Reencode_Call {
+	return &MockMediaAgentHandler_Reencode_Call{Call: _e.mock.On("Reencode", responseWriter, request)}
+}
+
+func (_c *MockMediaAgentHandler_Reencode_Call) Run(run func(responseWriter http.ResponseWriter, request *http.Request)) *MockMediaAgentHandler_Reencode_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 http.ResponseWriter
+		if args[0] != nil {
+			arg0 = args[0].(http.ResponseWriter)
+		}
+		var arg1 *http.Request
+		if args[1] != nil {
+			arg1 = args[1].(*http.Request)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMediaAgentHandler_Reencode_Call) Return() *MockMediaAgentHandler_Reencode_Call {
+	_c.Call.Return()
+	return _c
+}
+
+func (_c *MockMediaAgentHandler_Reencode_Call) RunAndReturn(run func(responseWriter http.ResponseWriter, request *http.Request)) *MockMediaAgentHandler_Reencode_Call {
+	_c.Run(run)
+	return _c
+}

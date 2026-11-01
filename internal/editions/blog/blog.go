@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
@@ -63,6 +64,36 @@ func siteSSRConfig(siteConfig config.SiteConfig) sitessr.SiteConfig {
 		HeroTitle:         siteConfig.HeroTitle,
 		HeroSubtitle:      siteConfig.HeroSubtitle,
 	}
+}
+
+// resolveBodyImageVariants projects a media record's thumbnail variants onto
+// the renderer seam, sorted ascending by width. The original is never
+// appended: srcset carries variants only and src stays the original URL.
+func resolveBodyImageVariants(m *mediadomain.Media) []tiptap.ImageVariant {
+	if m == nil {
+		return nil
+	}
+	if len(m.Variants) == 0 {
+		return nil
+	}
+	result := make([]tiptap.ImageVariant, 0, len(m.Variants))
+	for _, v := range m.Variants {
+		if v.URL == "" || v.Width <= 0 {
+			continue
+		}
+		result = append(result, tiptap.ImageVariant{
+			URL:    v.URL,
+			Width:  v.Width,
+			Height: v.Height,
+		})
+	}
+	slices.SortFunc(result, func(a, b tiptap.ImageVariant) int {
+		if c := cmp.Compare(a.Width, b.Width); c != 0 {
+			return c
+		}
+		return strings.Compare(a.URL, b.URL)
+	})
+	return result
 }
 
 // state carries the edition-built services and modules between the Wire and
@@ -257,29 +288,7 @@ func (s *state) mount(core *app.Core) error {
 		if m == nil {
 			return nil
 		}
-		variants := m.Variants
-		if len(variants) == 0 {
-			return nil
-		}
-		result := make([]tiptap.ImageVariant, 0, len(variants))
-		for _, v := range variants {
-			result = append(result, tiptap.ImageVariant{
-				URL:    v.URL,
-				Width:  v.Width,
-				Height: v.Height,
-			})
-		}
-		slices.SortFunc(result, func(a, b tiptap.ImageVariant) int {
-			return cmp.Compare(a.Width, b.Width)
-		})
-		if m.URL != "" && m.Width > 0 && m.Width > result[len(result)-1].Width {
-			result = append(result, tiptap.ImageVariant{
-				URL:    m.URL,
-				Width:  m.Width,
-				Height: m.Height,
-			})
-		}
-		return result
+		return resolveBodyImageVariants(m)
 	})
 	userProvider := sitessr.NewUserRepoAdapter(func(ctx context.Context, username string) (*sitessr.UserBasicInfo, error) {
 		user, err := core.UserRepo.GetUserByUsername(ctx, username)

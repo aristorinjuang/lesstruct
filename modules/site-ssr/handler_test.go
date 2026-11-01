@@ -1258,7 +1258,7 @@ func TestServeContent_CustomFieldsCheckboxFormatting(t *testing.T) {
 	body := w.Body.String()
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, "<dd>Yes</dd>")
-	assert.NotContains(t, body, "true")
+	assert.NotContains(t, body, "<dd>true</dd>")
 	mockService.AssertExpectations(t)
 	mockResolver.AssertExpectations(t)
 }
@@ -2041,7 +2041,7 @@ func TestServeContent_CommentsHiddenWhenDisabled(t *testing.T) {
 	body := w.Body.String()
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.NotContains(t, body, `aria-label="Comments"`)
-	assert.NotContains(t, body, "comment-")
+	assert.NotContains(t, body, `id="comment-`)
 	mockService.AssertExpectations(t)
 }
 
@@ -2243,7 +2243,8 @@ func TestLayoutLoadsInterFontStylesheet(t *testing.T) {
 
 	body := w.Body.String()
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, body, "fonts.googleapis.com/css2?family=Inter", "layout should load Inter through a parallel stylesheet")
+	assert.Contains(t, body, `<link rel="preload" as="font" type="font/woff2"`, "layout should preload the self-hosted Inter font")
+	assert.NotContains(t, body, "fonts.googleapis.com", "no third-party font origin should remain")
 	mockService.AssertExpectations(t)
 }
 
@@ -2276,7 +2277,11 @@ func TestAllPagesRenderWithCSS(t *testing.T) {
 
 			assert.Equal(t, tt.want, w.Code)
 			assert.Contains(t, w.Body.String(), tt.body)
-			assert.Regexp(t, `/static/style\.[a-f0-9]+\.css`, w.Body.String())
+			assert.Contains(t, w.Body.String(), "<style>")
+			assert.Contains(t, w.Body.String(), "--color-bg")
+			assert.NotContains(t, w.Body.String(), `rel="stylesheet" href="/static/`)
+			assert.Contains(t, w.Body.String(), `<link rel="preload" as="font" type="font/woff2" crossorigin href="/static/inter-latin-var.woff2">`)
+			assert.NotContains(t, w.Body.String(), "fonts.googleapis.com")
 		})
 	}
 	mockService.AssertExpectations(t)
@@ -2323,7 +2328,11 @@ func TestAllPagesRenderWithCSS_AuthorAnd404(t *testing.T) {
 
 			assert.Equal(t, tt.want, w.Code)
 			assert.Contains(t, w.Body.String(), tt.body)
-			assert.Regexp(t, `/static/style\.[a-f0-9]+\.css`, w.Body.String())
+			assert.Contains(t, w.Body.String(), "<style>")
+			assert.Contains(t, w.Body.String(), "--color-bg")
+			assert.NotContains(t, w.Body.String(), `rel="stylesheet" href="/static/`)
+			assert.Contains(t, w.Body.String(), `<link rel="preload" as="font" type="font/woff2" crossorigin href="/static/inter-latin-var.woff2">`)
+			assert.NotContains(t, w.Body.String(), "fonts.googleapis.com")
 		})
 	}
 	mockService.AssertExpectations(t)
@@ -2723,7 +2732,7 @@ func TestServeContent_SystemFieldCheckboxFormatting(t *testing.T) {
 	body := w.Body.String()
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, "<dd>Yes</dd>")
-	assert.NotContains(t, body, "true")
+	assert.NotContains(t, body, "<dd>true</dd>")
 	mockService.AssertExpectations(t)
 	mockResolver.AssertExpectations(t)
 }
@@ -3270,7 +3279,7 @@ func TestServeAuthor_CheckboxAndDateFormatting(t *testing.T) {
 	body := w.Body.String()
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, body, "<dd>Yes</dd>")
-	assert.NotContains(t, body, "true")
+	assert.NotContains(t, body, "<dd>true</dd>")
 	assert.Contains(t, body, "<dd>January 15, 2026</dd>")
 	assert.NotContains(t, body, "2026-01-15T00:00:00Z")
 	mockService.AssertExpectations(t)
@@ -3681,8 +3690,19 @@ func TestStaticFiles_PlainCSSStillWorks(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.NotEqual(t, "public, max-age=31536000, immutable", w.Header().Get("Cache-Control"))
+	assert.Equal(t, "public, max-age=86400", w.Header().Get("Cache-Control"))
 	assert.Contains(t, w.Body.String(), "site-header")
+}
+
+func TestStaticFiles_PlainJSGetsDayTTL(t *testing.T) {
+	handler := sitessr.StaticFiles(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/nav-auth.js", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "public, max-age=86400", w.Header().Get("Cache-Control"))
 }
 
 func TestServeIndex_FeaturedImageFirst(t *testing.T) {

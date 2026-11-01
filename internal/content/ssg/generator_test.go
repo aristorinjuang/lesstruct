@@ -338,6 +338,8 @@ func TestGenerator_Generate_StaticAssets(t *testing.T) {
 			wantFiles: []string{
 				"static/base.css",
 				"static/style.css",
+				"static/inter-latin-var.woff2",
+				"static/OFL.txt",
 				"static/search.js",
 				"static/nav-auth.js",
 				"static/math.js",

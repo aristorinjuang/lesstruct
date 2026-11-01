@@ -45,6 +45,8 @@ func TestModule_ThemeFiles(t *testing.T) {
 		"pages/reset_password.gohtml",
 		"static/base.css",
 		"static/style.css",
+		"static/inter-latin-var.woff2",
+		"static/OFL.txt",
 		"static/favicon.svg",
 		"static/favicon.ico",
 		"static/favicon-96x96.png",

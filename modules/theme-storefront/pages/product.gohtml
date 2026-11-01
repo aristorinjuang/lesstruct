@@ -17,7 +17,10 @@
 			<figure class="product-gallery__main">
 				{{- if $gallery}}
 				{{- with index $gallery 0}}
-				<img id="product-main-image" src="{{.Large}}"{{if .Srcset}} srcset="{{.Srcset}}"{{end}} alt="{{if .Alt}}{{.Alt}}{{else}}{{$.Title}}{{end}}" fetchpriority="high">
+				<picture>
+					<source media="(max-width: 767px)" srcset="{{.Medium}}">
+					<img id="product-main-image" src="{{.Large}}"{{if .Srcset}} srcset="{{.Srcset}}"{{end}} alt="{{if .Alt}}{{.Alt}}{{else}}{{$.Title}}{{end}}" fetchpriority="high">
+				</picture>
 				{{- end}}
 				{{- else if $images}}
 				<img id="product-main-image" src="{{index $images 0}}" alt="{{.Title}}" fetchpriority="high">
@@ -31,7 +34,7 @@
 			{{- if gt (len $gallery) 1}}
 			<div class="product-gallery__thumbs">
 				{{- range $i, $image := $gallery}}
-				<button type="button" class="product-gallery__thumb{{if eq $i 0}} is-active{{end}}" data-image="{{$image.Large}}"{{if $image.Srcset}} data-srcset="{{$image.Srcset}}"{{end}} aria-label="{{if eq $.Lang "id"}}Lihat gambar {{$i}}{{else}}View image {{$i}}{{end}}">
+				<button type="button" class="product-gallery__thumb{{if eq $i 0}} is-active{{end}}" data-image="{{$image.Large}}" data-image-medium="{{$image.Medium}}"{{if $image.Srcset}} data-srcset="{{$image.Srcset}}"{{end}} aria-label="{{if eq $.Lang "id"}}Lihat gambar {{$i}}{{else}}View image {{$i}}{{end}}">
 					<img src="{{$image.Thumb}}" alt="{{$image.Alt}}" loading="lazy">
 				</button>
 				{{- end}}

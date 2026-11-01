@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,9 +19,15 @@ import (
 	thumbnail "github.com/aristorinjuang/lesstruct/modules/media/domain/thumbnail"
 )
 
-// adminRoleName is the reserved administrator role. It matches the users
-// module's reserved name; the two reconcile when that module lands.
-const adminRoleName = "Admin"
+const (
+	// adminRoleName is the reserved administrator role. It matches the users
+	// module's reserved name; the two reconcile when that module lands.
+	adminRoleName = "Admin"
+
+	// reencodePageSize bounds each FindAllByCursor page during a library
+	// re-encode so a large library streams instead of loading at once.
+	reencodePageSize = 100
+)
 
 // now is the clock seam: tests pin it to cover weekday and month boundaries.
 var now = time.Now
@@ -139,6 +148,18 @@ type UploadRequest struct {
 	FileHeader *multipart.FileHeader
 	UserID     int
 	AltText    string
+}
+
+// ReencodeSummary reports a one-time library re-encode run: how many media
+// records were rewritten in place (Processed) versus skipped after a
+// per-file failure (Skipped), plus the total stored bytes before and after
+// for the processed records. Filenames, URLs, hashes, and DB rows are
+// untouched — only the stored bytes shrink.
+type ReencodeSummary struct {
+	Processed   int   `json:"processed"`
+	Skipped     int   `json:"skipped"`
+	BytesBefore int64 `json:"bytesBefore"`
+	BytesAfter  int64 `json:"bytesAfter"`
 }
 
 // Service handles media business logic
@@ -488,6 +509,118 @@ func (s *Service) Delete(ctx context.Context, id int, principal kernel.Principal
 	}
 
 	return nil
+}
+
+// ReencodeLibrary walks every stored original and each variant file and
+// normalizes it through ConvertToWebP (already-WebP files pass through
+// sanitize-only — metadata stripped, pixels untouched; other formats are
+// transcoded at Quality 80), overwriting each object in place via Save with
+// the same filename. Filenames, URLs, and hashes are untouched; only the
+// stored bytes may change, and each record's stored file size is refreshed
+// to match. It pages FindAllByCursor in admin scope (owner 0)
+// so a large library streams. A record whose any file fails to open, decode,
+// re-encode, or save counts as skipped and the run continues with the next
+// record; already-overwritten files of a skipped record stay overwritten
+// (the run is documented one-time use because lossy re-runs lose quality).
+func (s *Service) ReencodeLibrary(ctx context.Context) (ReencodeSummary, error) {
+	var summary ReencodeSummary
+	beforeID := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return summary, err
+		}
+		batch, err := s.repo.FindAllByCursor(ctx, 0, reencodePageSize, beforeID)
+		if err != nil {
+			return summary, fmt.Errorf("failed to list media for re-encode: %w", err)
+		}
+		if len(batch) == 0 {
+			break
+		}
+		for _, m := range batch {
+			if err := ctx.Err(); err != nil {
+				return summary, err
+			}
+			if m == nil {
+				summary.Skipped++
+				continue
+			}
+			type pending struct {
+				filename  string
+				filePath  string
+				reencoded []byte
+			}
+			origFilename := m.Filename
+			if origFilename == "" {
+				origFilename = filepath.Base(m.FilePath)
+			}
+			files := []pending{{filename: origFilename, filePath: m.FilePath}}
+			for _, suffix := range slices.Sorted(maps.Keys(m.Variants)) {
+				v := m.Variants[suffix]
+				files = append(files, pending{
+					filename: filepath.Base(v.FilePath),
+					filePath: v.FilePath,
+				})
+			}
+			var beforeTotal int64
+			var afterTotal int64
+			ok := true
+			for i := range files {
+				rc, err := s.storage.Open(files[i].filePath)
+				if err != nil {
+					ok = false
+					break
+				}
+				data, err := io.ReadAll(rc)
+				_ = rc.Close()
+				if err != nil {
+					ok = false
+					break
+				}
+				beforeTotal += int64(len(data))
+				reencoded, _, err := s.processor.ConvertToWebP(bytes.NewReader(data))
+				if err != nil {
+					ok = false
+					break
+				}
+				files[i].reencoded = reencoded
+				afterTotal += int64(len(reencoded))
+			}
+			if !ok {
+				summary.Skipped++
+				continue
+			}
+			writeOk := true
+			for _, f := range files {
+				if _, err := s.storage.Save(f.filename, bytes.NewReader(f.reencoded)); err != nil {
+					writeOk = false
+					break
+				}
+			}
+			if !writeOk {
+				summary.Skipped++
+				continue
+			}
+			if err := s.repo.UpdateFileSize(ctx, m.ID, int64(len(files[0].reencoded))); err != nil {
+				summary.Skipped++
+				continue
+			}
+			summary.Processed++
+			summary.BytesBefore += beforeTotal
+			summary.BytesAfter += afterTotal
+		}
+		advanced := false
+		for i := len(batch) - 1; i >= 0; i-- {
+			if batch[i] != nil {
+				beforeID = batch[i].ID
+				advanced = true
+				break
+			}
+		}
+		if !advanced || len(batch) < reencodePageSize {
+			break
+		}
+	}
+	return summary, nil
 }
 
 // NewService creates a new media service

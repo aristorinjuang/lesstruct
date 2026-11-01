@@ -1,6 +1,7 @@
 package storage_test
 
 import (
+	"bytes"
 	"io"
 	"testing"
 
@@ -31,6 +32,14 @@ func (s *stubStorage) Delete(filePath string) error {
 
 func (s *stubStorage) GetURL(filePath string) string {
 	return "/uploads/" + filePath
+}
+
+func (s *stubStorage) Open(filePath string) (io.ReadCloser, error) {
+	data, ok := s.saved[filePath]
+	if !ok {
+		return nil, io.ErrUnexpectedEOF
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 func TestStorageContract(t *testing.T) {

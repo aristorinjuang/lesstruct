@@ -23,14 +23,15 @@ type s3MockServer struct {
 	lastPath     string
 	lastBody     string
 	lastCT       string
+	lastCC       string
 	putStatus    int
 	deleteStatus int
 }
 
-func (m *s3MockServer) snapshot() (method, path, body, contentType string) {
+func (m *s3MockServer) snapshot() (method, path, body, contentType, cacheControl string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.lastMethod, m.lastPath, m.lastBody, m.lastCT
+	return m.lastMethod, m.lastPath, m.lastBody, m.lastCT, m.lastCC
 }
 
 func newS3MockServer(t *testing.T) *s3MockServer {
@@ -43,6 +44,7 @@ func newS3MockServer(t *testing.T) *s3MockServer {
 		m.lastPath = r.URL.Path
 		m.lastBody = string(body)
 		m.lastCT = r.Header.Get("Content-Type")
+		m.lastCC = r.Header.Get("Cache-Control")
 		m.mu.Unlock()
 
 		switch r.Method {
@@ -117,10 +119,11 @@ func TestS3Storage_Save(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantKey, key)
 
-			method, path, body, _ := m.snapshot()
+			method, path, body, _, cacheControl := m.snapshot()
 			assert.Equal(t, http.MethodPut, method)
 			assert.Equal(t, "/lesstruct/"+tt.wantKey, path)
 			assert.Equal(t, tt.content, body)
+			assert.Equal(t, "public, max-age=31536000, immutable", cacheControl)
 		})
 	}
 }
@@ -160,7 +163,7 @@ func TestS3Storage_Save_ContentType(t *testing.T) {
 			_, err := storage.Save(tt.filename, strings.NewReader(tt.content))
 			require.NoError(t, err)
 
-			_, _, _, contentType := m.snapshot()
+			_, _, _, contentType, _ := m.snapshot()
 			assert.Equal(t, tt.wantCT, contentType)
 		})
 	}
@@ -206,7 +209,7 @@ func TestS3Storage_Delete(t *testing.T) {
 			err := storage.Delete(tt.filePath)
 
 			require.NoError(t, err)
-			method, path, _, _ := m.snapshot()
+			method, path, _, _, _ := m.snapshot()
 			assert.Equal(t, http.MethodDelete, method)
 			assert.Equal(t, tt.wantPath, path)
 		})
