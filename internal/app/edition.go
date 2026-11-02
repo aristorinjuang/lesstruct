@@ -57,6 +57,7 @@ type HandlerSet struct {
 	Static         http.Handler
 	AliasRedirect  *handlers.AliasRedirectHandler
 	TextGen        routes.TextGenSurface
+	Speech         routes.SpeechSurface
 
 	// ConfigExtras contributes edition-specific keys to the public
 	// GET /api/v1/config payload (e.g. the catalog block). Nil or empty

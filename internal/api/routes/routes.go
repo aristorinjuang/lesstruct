@@ -180,6 +180,14 @@ type TextGenSurface interface {
 	Translate(http.ResponseWriter, *http.Request)
 }
 
+// SpeechSurface is the browser-realm voice-dictation surface the routes
+// mount. It is satisfied by the speech module's handler; the structural seam
+// keeps routes.go from importing the module so the surface stays removable.
+// The speechEnabled feature flag gates mounting.
+type SpeechSurface interface {
+	Transcribe(http.ResponseWriter, *http.Request)
+}
+
 // WordPressSurface is the browser-and-agent WordPress import surface the
 // routes mount. It is satisfied by the importers module's handler; the
 // structural seam keeps routes.go from importing the module so the surface
@@ -318,6 +326,8 @@ func Setup(
 	imageReferenceEnabled bool,
 	textGenEnabled bool,
 	textGenHandler TextGenSurface,
+	speechEnabled bool,
+	speechHandler SpeechSurface,
 	languages []string,
 	aliasRedirectHandler *handlers.AliasRedirectHandler,
 	headlessEnabled bool,
@@ -361,7 +371,8 @@ func Setup(
 		imageGenEnabled := imageGenEnabled
 		imageReferenceEnabled := imageReferenceEnabled
 		textGenEnabled := textGenEnabled
-		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v}}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled); err != nil {
+		speechEnabled := speechEnabled
+		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v,"speechToText":%v}}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled, speechEnabled); err != nil {
 			log.Printf("Failed to write response: %v", err)
 		}
 	})
@@ -809,6 +820,14 @@ func Setup(
 			// AI image generation — 32MB. The JSON prompt-only form is tiny, but the
 			// multipart form may carry up to three 10MB reference images.
 			r.With(maxBodySizeMiddleware(32<<20)).Post("/media/generate", mediaHandler.GenerateImage)
+
+			// Voice dictation — 32MB. The multipart form carries up to 10MB
+			// of WAV audio plus small text fields. Dictation requires both
+			// speech-to-text and text generation (the transcript is enhanced
+			// into content), so speechEnabled already composes both flags.
+			if speechEnabled && speechHandler != nil {
+				r.With(maxBodySizeMiddleware(32<<20)).Post("/speech/transcribe", speechHandler.Transcribe)
+			}
 		})
 	})
 
