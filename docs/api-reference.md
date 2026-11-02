@@ -788,6 +788,33 @@ Translate content between languages, along with its SEO title and meta descripti
 - `format=tiptap` → returns translated TipTap JSON in `content` preserving structure, plus translated `title` and `metaDescription`.
 - `format=html` → returns translated HTML in `content` preserving tags, styles, and URLs — only visible text and `alt` attributes are translated — plus translated `title` and `metaDescription`.
 
+## AI voice dictation
+
+> Requires `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `speechToText`.
+
+### Transcribe
+
+```
+POST /api/v1/speech/transcribe
+```
+
+Transcribe a dictated recording and enhance the transcript into TipTap content. The browser records up to five minutes of mono 16-bit PCM WAV (16 or 24 kHz); anything else is rejected with `400 invalid_audio`.
+
+**Request body** (`multipart/form-data`):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `audio` | file | yes | WAV audio, mono 16-bit PCM at 16 or 24 kHz, max 10 MB (≈5 minutes). Larger uploads get `413 audio_too_large`. |
+| `language` | string | no | Optional language hint for recognition (e.g. `"English"`, `"en"`). When omitted the provider auto-detects. Overlong values are ignored. |
+
+**Response:** `200 OK` with `{ "data": { "transcript": "...", "content": "...", "title": "...", "metaDescription": "..." } }`.
+
+- `transcript` → the raw transcription text.
+- `content` → enhanced TipTap JSON, ready to insert into the editor: punctuation and capitalization restored, spoken cues ("heading two", "bullet list", ...) applied as structure.
+- `title` (max 60 characters) and `metaDescription` (max 160 characters) → AI suggestions for empty fields.
+
+**Errors:** `401 unauthorized`, `400 invalid_request` (unparseable form), `400 invalid_audio`, `413 audio_too_large`, `400 invalid_content` (transcript too long), `502 transcription_failed` (provider failure, or no speech detected), `500 generation_failed` (enhancement failure).
+
 ## OpenAPI snippet
 
 A machine-readable OpenAPI fragment for the Content create endpoint. A full OpenAPI specification is deferred to post-MVP; this snippet is suitable for agent tooling consumption.

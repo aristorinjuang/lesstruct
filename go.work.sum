@@ -173,6 +173,7 @@ github.com/aristorinjuang/lesstruct/modules/seo v1.1.3/go.mod h1:y3N7abpJOH9/EY/
 github.com/aristorinjuang/lesstruct/modules/seo v1.1.4/go.mod h1:T9dF9tofOQ9KUpYn2Itz4rFCInF4enWAQn/NCzbjt28=
 github.com/aristorinjuang/lesstruct/modules/site-ssr v1.1.3/go.mod h1:P49RerM7VjodIoEAakjIHTV6QTJAudYBuqXfGBcUoVc=
 github.com/aristorinjuang/lesstruct/modules/site-ssr v1.1.4/go.mod h1:HM2+7RJE59iosbQekkBByZnJyVP0pdAWDMFG5v+VQ3A=
+github.com/aristorinjuang/lesstruct/modules/speech v1.1.4/go.mod h1:9JXyx4vryAEoyP5snkazyU6GGVGUFUKquKCchmWLes0=
 github.com/aristorinjuang/lesstruct/modules/textgen v1.1.3/go.mod h1:klvaH4ogYJ68QhrQUO5NOfT7iJFL53X8nmIDY2Nmiac=
 github.com/aristorinjuang/lesstruct/modules/textgen v1.1.4/go.mod h1:eGDu/731ESCWc8Z9M7WBIDYH7inxftH8tHWNsfDnEX0=
 github.com/aristorinjuang/lesstruct/modules/theme-default v1.1.3/go.mod h1:zH4GcHx/GIECFIj462+Yzj3GDZPB232GIC1IwlL8wP4=

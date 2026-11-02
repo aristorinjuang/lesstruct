@@ -11,6 +11,18 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const (
+	// SpeechToTextProviderMeta selects Meta Model API (Muse Voice
+	// Transcribe) as the speech-to-text provider. Read via
+	// AI_SPEECH_TO_TEXT_PROVIDER.
+	SpeechToTextProviderMeta = "meta"
+
+	// SpeechToTextProviderOpenAI selects an OpenAI-compatible audio
+	// transcription endpoint (POST /v1/audio/transcriptions) as the
+	// speech-to-text provider. Read via AI_SPEECH_TO_TEXT_PROVIDER.
+	SpeechToTextProviderOpenAI = "openai"
+)
+
 // getEnv retrieves an environment variable or returns a default value
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
@@ -170,6 +182,11 @@ type Config struct {
 	AITextGenerationBaseURL string
 	AITextGenerationModel   string
 
+	AISpeechToTextAPIKey   string
+	AISpeechToTextBaseURL  string
+	AISpeechToTextModel    string
+	AISpeechToTextProvider string
+
 	APIKeyPepper string
 
 	// ImportMaxSizeMB is the ceiling (in megabytes) for any importer upload
@@ -201,6 +218,15 @@ func (c *Config) IsImageGenerationEnabled() bool {
 // IsTextGenerationEnabled returns true if the AI text generation API key is configured
 func (c *Config) IsTextGenerationEnabled() bool {
 	return c.AITextGenerationAPIKey != ""
+}
+
+// IsSpeechToTextEnabled returns true if the speech-to-text API key is
+// configured. The provider value itself is validated at Load, so presence of
+// the key is the only runtime gate. Voice dictation additionally requires
+// text generation (the transcription is enhanced into TipTap content), which
+// callers compose as IsSpeechToTextEnabled() && IsTextGenerationEnabled().
+func (c *Config) IsSpeechToTextEnabled() bool {
+	return c.AISpeechToTextAPIKey != ""
 }
 
 // ParseCORSOrigins parses the comma-separated CORS origins string into a slice
@@ -322,6 +348,11 @@ func Load() (*Config, error) {
 		AITextGenerationBaseURL: getEnv("AI_TEXT_GENERATION_BASE_URL", ""),
 		AITextGenerationModel:   getEnv("AI_TEXT_GENERATION_MODEL", "gpt-5-mini"),
 
+		AISpeechToTextAPIKey:   getEnv("AI_SPEECH_TO_TEXT_API_KEY", ""),
+		AISpeechToTextBaseURL:  getEnv("AI_SPEECH_TO_TEXT_BASE_URL", "https://api.meta.ai"),
+		AISpeechToTextModel:    getEnv("AI_SPEECH_TO_TEXT_MODEL", "muse-voice-transcribe-1.0"),
+		AISpeechToTextProvider: strings.ToLower(strings.TrimSpace(getEnv("AI_SPEECH_TO_TEXT_PROVIDER", SpeechToTextProviderMeta))),
+
 		APIKeyPepper: getEnv("API_KEY_PEPPER", ""),
 
 		ImportMaxSizeMB:        getEnvInt("IMPORT_MAX_SIZE_MB", 100),
@@ -414,6 +445,19 @@ func Load() (*Config, error) {
 
 	if cfg.HugoImportTimeout <= 0 {
 		return nil, fmt.Errorf("HUGO_IMPORT_TIMEOUT must be positive, got %v", cfg.HugoImportTimeout)
+	}
+
+	// Validate speech-to-text provider
+	switch cfg.AISpeechToTextProvider {
+	case SpeechToTextProviderMeta, SpeechToTextProviderOpenAI:
+		// supported providers need no further validation
+	default:
+		return nil, fmt.Errorf(
+			"AI_SPEECH_TO_TEXT_PROVIDER must be %q or %q, got %q",
+			SpeechToTextProviderMeta,
+			SpeechToTextProviderOpenAI,
+			cfg.AISpeechToTextProvider,
+		)
 	}
 
 	return cfg, nil

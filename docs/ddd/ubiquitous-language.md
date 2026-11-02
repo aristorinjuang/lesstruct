@@ -60,6 +60,16 @@
 | Pixel budget | The 60-megapixel cap probed before decoding, guarding decompression bombs. | `maxDecodedPixels` |
 | Image generation | AI-produced imagery through the provider port. | `ImageGenerationService` |
 
+## AI Assistance
+
+| Term | Meaning | Code name |
+|---|---|---|
+| Enhancement | Rewriting a body into sharper copy plus SEO title/meta, same language. | `EnhanceText` / `enhanceContent` |
+| Translation | Rendering body, title, and meta into another language, preserving structure. | `TranslateText` / `translateContent` |
+| Dictation | Recording speech to author content instead of typing. | `speech` module / "Dictate with AI" |
+| Transcription | The raw text (plus detected turns) a speech provider returns for audio. | `speechdomain.Transcription` |
+| Speech turn | One detected speech segment with millisecond boundaries and an optional speaker label. | `speechdomain.Turn` |
+
 ## Catalog
 
 | Term | Meaning | Code name |

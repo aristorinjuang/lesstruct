@@ -1,0 +1,25 @@
+info:
+  name: Transcribe
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/speech/transcribe"
+  body:
+    type: multipart-form
+    data:
+      - name: audio
+        type: file
+        value:
+          - ./dictation.wav
+      - name: language
+        type: text
+        value: English
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

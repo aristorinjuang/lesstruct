@@ -12,7 +12,7 @@ The default `lesstruct` binary (the **blog** edition) carries every module in
 the table below except the commerce stack and `theme-storefront`; the **Core**
 edition (`lesstruct-core`) carries the engine subset only — `users`, `auth`,
 `adminpanel`, `posttypes-basic`, and `media` — leaving out `comments`, `seo`,
-`site-ssr`, `theme-default`, `textgen`, and `importers`; the **eCommerce**
+`site-ssr`, `theme-default`, `textgen`, `speech`, and `importers`; the **eCommerce**
 edition (`lesstruct-ecommerce`) is the blog list plus the commerce stack —
 `catalog`, `cart`, `orders`, and `payments` — with `theme-storefront` in place
 of `theme-default`. Within any edition, `[modules] disabled` still prunes
@@ -37,6 +37,7 @@ compiles against, see [The Kernel](kernel.md).
 | `theme-default` | — | The default blog theme (layouts, styles, root files) | — |
 | `theme-storefront` | — | The eCommerce storefront theme (layouts, styles, cart/checkout/tracking pages) | — |
 | `textgen` | — | AI text enhance/translate and HTML generation | — |
+| `speech` | — | Voice dictation: speech-to-text transcription enhanced into content | — |
 | `importers` | — | WordPress (WXR) and Hugo importers | Import |
 | `catalog` | — | Commerce catalog (pricing, variants, stock, SKUs) | Catalog panel |
 | `cart` | `catalog` | Token-keyed guest carts, live-priced | — |
@@ -144,6 +145,14 @@ supported child-theme path. Leaf.
 AI text features: enhance, translate, and on-brand HTML generation
 (theme-aware prompts, media context). Bring-your-own key via the AI text
 settings. Leaf.
+
+### speech
+
+Voice dictation: transcribe recorded speech (Meta Muse Voice Transcribe by
+default, or any OpenAI-compatible transcription endpoint) and enhance the
+transcript into TipTap content with a suggested title and meta description
+via the textgen service. Bring-your-own keys via the AI speech and text
+settings — both keys are required. Leaf.
 
 ### importers
 

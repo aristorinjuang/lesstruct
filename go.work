@@ -15,6 +15,7 @@ use (
 	./modules/posttypes-basic
 	./modules/seo
 	./modules/site-ssr
+	./modules/speech
 	./modules/textgen
 	./modules/theme-default
 	./modules/theme-storefront

@@ -89,3 +89,14 @@ func TestOpenAITextService_TranslateText_ContextCancellation(t *testing.T) {
 	)
 	assert.Error(t, err, "TranslateText with cancelled context should return error")
 }
+
+func TestOpenAITextService_EnhanceTranscription_ContextCancellation(t *testing.T) {
+	svc := textgeninfra.NewOpenAITextService("sk-fake-key", "", defaultModel, "", "")
+	require.NotNil(t, svc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := svc.EnhanceTranscription(ctx, "heading two hello world")
+	assert.Error(t, err, "EnhanceTranscription with cancelled context should return error")
+}

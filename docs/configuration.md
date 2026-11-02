@@ -234,6 +234,17 @@ When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhanc
 | `AI_TEXT_GENERATION_BASE_URL` | empty | Override the API base URL. Default is OpenAI's API. For other providers: `https://api.deepseek.com`, `https://openrouter.ai/api/v1`, `http://localhost:11434/v1` (Ollama), etc. |
 | `AI_TEXT_GENERATION_MODEL` | `gpt-5-mini` | Chat model name. Examples by provider: OpenAI `gpt-5-mini`, DeepSeek `deepseek-chat`, OpenRouter `openai/gpt-5-mini`, Together `meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8`, Ollama `llama3`. |
 
+### AI speech-to-text / voice dictation (optional)
+
+When **both** `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` are set, the content editor shows a "Dictate with AI" button: the author records up to five minutes of speech, the audio is transcribed, and the transcript is enhanced into TipTap content (punctuation, headings, lists, links, tables, math) with an AI-suggested title and meta description. The suggestion is previewed first and applied only to empty fields.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_SPEECH_TO_TEXT_API_KEY` | empty | API key for the speech provider (Meta Model API by default). |
+| `AI_SPEECH_TO_TEXT_BASE_URL` | `https://api.meta.ai` | Override the API base URL. For OpenAI-compatible providers (Whisper, Groq, self-hosted): the server root, e.g. `http://localhost:11434/v1`. |
+| `AI_SPEECH_TO_TEXT_MODEL` | `muse-voice-transcribe-1.0` | Speech model name. Examples: Muse `muse-voice-transcribe-1.0`, OpenAI `whisper-1`. |
+| `AI_SPEECH_TO_TEXT_PROVIDER` | `meta` | `meta` (Meta Model API, Muse Voice Transcribe) or `openai` (any OpenAI-compatible `POST /v1/audio/transcriptions` endpoint). Unknown values fail startup. |
+
 ### Admin frontend (Vite)
 
 The admin SPA (served at `/admin/`) loads its API base URL from a Vite env var. In production (embedded assets, same origin), the SPA uses a relative base and follows whatever host:port the user opens in the browser — no config needed. Override only for cross-origin dev setups.
@@ -1231,6 +1242,10 @@ AI_IMAGE_GENERATION_ASPECT_RATIO=
 AI_TEXT_GENERATION_API_KEY=
 AI_TEXT_GENERATION_BASE_URL=
 AI_TEXT_GENERATION_MODEL=gpt-5-mini
+AI_SPEECH_TO_TEXT_API_KEY=
+AI_SPEECH_TO_TEXT_BASE_URL=https://api.meta.ai
+AI_SPEECH_TO_TEXT_MODEL=muse-voice-transcribe-1.0
+AI_SPEECH_TO_TEXT_PROVIDER=meta
 ```
 
 ### All `config.toml` keys
