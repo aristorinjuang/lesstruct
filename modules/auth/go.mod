@@ -5,8 +5,8 @@ go 1.27
 toolchain go1.27.3
 
 require (
-	github.com/aristorinjuang/lesstruct/kernel v1.1.3
-	github.com/aristorinjuang/lesstruct/modules/users v1.1.3
+	github.com/aristorinjuang/lesstruct/kernel v1.1.4
+	github.com/aristorinjuang/lesstruct/modules/users v1.1.4
 	github.com/stretchr/testify v1.11.1
 )
 
