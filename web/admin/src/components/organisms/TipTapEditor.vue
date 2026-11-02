@@ -49,6 +49,7 @@ const NonInclusiveLink = Link.extend({
 interface Props {
   modelValue: string
   placeholder?: string
+  editable?: boolean
 }
 
 interface Emits {
@@ -57,6 +58,7 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
   placeholder: 'Start writing...',
+  editable: true,
 })
 
 const emit = defineEmits<Emits>()
@@ -96,6 +98,7 @@ let isUpdatingFromProp = false
 
 const editor = useEditor({
   content: parseInitialContent(props.modelValue),
+  editable: props.editable,
   extensions: [
     StarterKit.configure({
       heading: {
@@ -179,6 +182,14 @@ watch(
   },
 )
 
+// Watch for editability changes (read-only previews)
+watch(
+  () => props.editable,
+  (editable) => {
+    editor.value?.setEditable(editable)
+  },
+)
+
 onBeforeUnmount(() => {
   editor.value?.destroy()
 })
@@ -192,7 +203,7 @@ defineExpose({
 <template>
   <div class="tiptap-editor">
     <EditorToolbar
-      v-if="editor"
+      v-if="editor && editable"
       :editor="editor"
       :can-undo="canUndo"
       :can-redo="canRedo"

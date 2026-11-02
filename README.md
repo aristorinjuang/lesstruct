@@ -44,11 +44,11 @@
 ## Why Lesstruct?
 
 - **One binary, no Docker.** A single static Go binary runs the whole CMS. SQLite is built in. No runtime, no container, no `node_modules` in production.
-- **Everything is a module.** Eleven built-in features are independent modules with a declared dependency graph — disable what you don't need with `[modules] disabled` and dependents cascade. Per-module reference: [`docs/built-in-modules.md`](docs/built-in-modules.md).
+- **Everything is a module.** Twelve built-in features are independent modules with a declared dependency graph — disable what you don't need with `[modules] disabled` and dependents cascade. Per-module reference: [`docs/built-in-modules.md`](docs/built-in-modules.md).
 - **Multi-database, your choice.** SQLite by default; PostgreSQL and MySQL supported via `DB_DRIVER`. Migrations run on first start.
 - **Custom fields, no plugins needed.** Define post types, user profile fields, and validation rules in `config.toml`. The admin form, storage, and queries all read from that file.
 - **Extend with WebAssembly plugins.** Drop a compiled `.wasm` into `plugins/` and it hooks into `before_save`, `after_create`, and `after_publish`. Plugins are sandboxed, immutable, and can call host functions for HTTP, DB, and logging.
-- **AI integrations are opt-in.** Bring your own OpenAI-compatible key for text, or a Google / OpenAI key for image generation. The admin panel surfaces them as buttons; nothing else changes.
+- **AI integrations are opt-in.** Bring your own OpenAI-compatible key for text, a Meta or OpenAI-compatible key for speech-to-text dictation, or a Google / OpenAI key for image generation. The admin panel surfaces them as buttons; nothing else changes.
 - **Built for humans AND AI agents.** A versioned REST API at `/api/v1`, a `lesstruct-cli` client, Markdown as a first-class ingest format, and installable agent skills (`npx skills add aristorinjuang/lesstruct`).
 
 ## Quick start

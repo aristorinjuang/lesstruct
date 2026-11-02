@@ -1125,6 +1125,57 @@ describe('Content Store', () => {
       expect(store.isLoading).toBe(false)
       expect(store.error).toBe(null)
     })
+  })
+
+  describe('transcribeAudio', () => {
+    it('should return transcript with enhanced content and SEO metadata', async () => {
+      vi.mocked(api.postWithTimeout).mockResolvedValue({
+        data: {
+          data: {
+            transcript: 'heading two hello world',
+            content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+            title: 'Hello World',
+            metaDescription: 'A dictated hello.',
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.postWithTimeout>>)
+
+      const store = useContentStore()
+      const audio = new Blob(['fake-wav'], { type: 'audio/wav' })
+      const result = await store.transcribeAudio(audio)
+
+      expect(api.postWithTimeout).toHaveBeenCalledWith(
+        '/api/v1/speech/transcribe',
+        expect.any(FormData),
+        360_000,
+      )
+      const form = vi.mocked(api.postWithTimeout).mock.calls[0][1] as FormData
+      expect(form.get('audio')).toBeInstanceOf(Blob)
+      expect(form.get('language')).toBeNull()
+      expect(result.transcript).toBe('heading two hello world')
+      expect(result.content).toBe('{"type":"doc","content":[{"type":"paragraph"}]}')
+      expect(result.title).toBe('Hello World')
+      expect(result.metaDescription).toBe('A dictated hello.')
+      expect(store.isLoading).toBe(false)
+      expect(store.error).toBe(null)
+    })
+
+    it('should forward the language hint when given', async () => {
+      vi.mocked(api.postWithTimeout).mockResolvedValue({
+        data: {
+          data: {
+            transcript: 'hello world',
+            content: '{"type":"doc","content":[{"type":"paragraph"}]}',
+          },
+        },
+      } as unknown as Awaited<ReturnType<typeof api.postWithTimeout>>)
+
+      const store = useContentStore()
+      await store.transcribeAudio(new Blob(['fake-wav']), 'en')
+
+      const form = vi.mocked(api.postWithTimeout).mock.calls[0][1] as FormData
+      expect(form.get('language')).toBe('en')
+    })
 
     it('should throw when the backend returns no data', async () => {
       vi.mocked(api.postWithTimeout).mockResolvedValue({
@@ -1133,8 +1184,8 @@ describe('Content Store', () => {
 
       const store = useContentStore()
 
-      await expect(store.translateContent('{"type":"doc"}', 'Title', '', 'en', 'fr', 'tiptap')).rejects.toThrow(
-        'Failed to translate content: No data returned',
+      await expect(store.transcribeAudio(new Blob(['fake-wav']))).rejects.toThrow(
+        'Failed to transcribe audio: No data returned',
       )
       expect(store.error).not.toBeNull()
       expect(store.isLoading).toBe(false)
