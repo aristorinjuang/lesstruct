@@ -350,8 +350,10 @@ boundary, with webhook dedup resolving through a blind-index column.
   rendition (`_thumb` fallback) and also expose an
   `ImageVariants` map (keyed by configured suffix) and an `OriginalURL` field
   for the unscaled original, enabling hero backgrounds and high-DPI layouts.
-  Card and gallery-main markup wraps the image in the same mobile-capped
-  `<picture>` element, so phones never fetch the `_large` rendition.
+  Listing cards wrap the image in a mobile-capped `<picture>` element
+  (mobile source loads `_thumb`; desktop loads `_medium` with no `srcset`
+  ladder), so no viewport reaches the `_large` rendition. Gallery-main
+  markup uses the same `<picture>` wrapper with a `_medium` mobile source.
   Gallery-typed custom fields resolve to per-image `_thumb`/`_large` renditions
   (matched by suffix name with original-URL fallbacks) that themes prefer over
   the legacy `lines` list.

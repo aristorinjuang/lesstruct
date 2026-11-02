@@ -75,6 +75,40 @@ func TestModule_ProductGalleryContract(t *testing.T) {
 	}
 }
 
+// TestModule_ProductCardCap pins the listing cap: the mobile source loads
+// the thumb rendition and the desktop image is the medium URL with no
+// srcset ladder, so no viewport can reach _large from a listing card.
+func TestModule_ProductCardCap(t *testing.T) {
+	files := testutil.NewModule().ThemeFiles()
+	raw, err := fs.ReadFile(files, "pages/layout.gohtml")
+	require.NoError(t, err)
+	body := string(raw)
+
+	tests := []struct {
+		name   string
+		needle string
+	}{
+		{
+			name:   "card image is wrapped in a picture element",
+			needle: "<picture>",
+		},
+		{
+			name:   "mobile source loads the mobile rendition",
+			needle: `<source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">`,
+		},
+		{
+			name:   "desktop image is the medium URL with no srcset ladder",
+			needle: `<img src="{{.ImageURL}}" alt="{{.Title}}" loading="lazy" decoding="async">`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Contains(t, body, tt.needle)
+		})
+	}
+}
+
 func TestModule_Lifecycle(t *testing.T) {
 	module := testutil.NewModule()
 

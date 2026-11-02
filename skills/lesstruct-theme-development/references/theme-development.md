@@ -591,7 +591,7 @@ Page size is set by the `POSTS_PER_PAGE` env var (default 50, max 100). Render `
 | `.ImageSrcset` | `string` | Responsive image `srcset` (may be empty) |
 | `.ImageSizes` | `string` | Responsive image `sizes` (may be empty) |
 | `.ImageVariants` | `map[string]string` | Map of thumbnail variant URLs keyed by configured suffix (e.g. `"_large"`, `"_medium"`, `"_thumb"`). Guard with `{{with (index .ImageVariants "_large")}}` — keys depend on `[[thumbnail]]` config. Populated when a media record is resolved; empty when no media. |
-| `.ImageMobileURL` | `string` | Rendition for small viewports (≤767px): the `_medium` variant when generated, `_thumb` otherwise, else the card URL. Wrap card images in `<picture><source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">…</picture>` so phones never fetch `_large` (a `srcset` alone cannot promise that on high-DPR screens). |
+| `.ImageMobileURL` | `string` | Rendition for small viewports (≤767px): the `_thumb` variant when generated, `_medium` otherwise; empty when no variants exist (omit the mobile `<source>` then). Wrap card images in `<picture><source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">…</picture>` and drop the desktop `srcset` ladder so no viewport reaches `_large` (a ladder lets high-DPR screens pick it). |
 | `.OriginalURL` | `string` | The unscaled original image URL (from `Media.URL`). Falls back to the raw content image URL when no media record is found. Useful for hero backgrounds, high-DPI displays, and download links. |
 | `.Author` | `string` | Author display name |
 | `.Username` | `string` | Author username (for `/authors/<username>` links) |

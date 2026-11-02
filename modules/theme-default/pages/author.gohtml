@@ -16,7 +16,7 @@
 		{{- range $i, $post := .Posts}}
 		<article class="post-card" data-post-type="{{$post.PostType}}">
 			<a href="/{{$post.Slug}}">
-				{{- if $post.ImageURL}}<img src="{{$post.ImageURL}}"{{if $post.ImageSrcset}} srcset="{{$post.ImageSrcset}}" sizes="{{$post.ImageSizes}}"{{end}} alt="{{$post.Title}}" class="post-card__image"{{if eq $i 0}} loading="eager" fetchpriority="high"{{else}} loading="lazy"{{end}}>{{end}}
+				{{- if $post.ImageURL}}<picture>{{if $post.ImageMobileURL}}<source media="(max-width: 767px)" srcset="{{$post.ImageMobileURL}}">{{end}}<img src="{{$post.ImageURL}}" alt="{{$post.Title}}" class="post-card__image"{{if eq $i 0}} loading="eager" fetchpriority="high"{{else}} loading="lazy" decoding="async"{{end}}></picture>{{end}}
 				<h2>{{$post.Title}}</h2>
 				{{- if $post.MetaDescription}}<p>{{$post.MetaDescription}}</p>{{end}}
 				<time>{{formatDate $.Lang $post.CreatedAt}}</time>

@@ -269,7 +269,7 @@ func (r Renderer) renderImage(n node) string {
 	if src == r.firstImageSrc {
 		sb.WriteString(` loading="eager" fetchpriority="high">`)
 	} else {
-		sb.WriteString(` loading="lazy">`)
+		sb.WriteString(` loading="lazy" decoding="async">`)
 	}
 	if wrapped {
 		sb.WriteString("</picture>")

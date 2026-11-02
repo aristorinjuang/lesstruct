@@ -35,7 +35,7 @@
 			{{- range .Related}}
 			<article class="post-card">
 				<a href="/{{.Slug}}">
-					{{- if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+					{{- if .ImageURL}}<picture>{{if .ImageMobileURL}}<source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">{{end}}<img src="{{.ImageURL}}" alt="{{.Title}}" class="post-card__image" loading="lazy" decoding="async"></picture>{{end}}
 					<h3>{{.Title}}</h3>
 					{{- if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
 					<time>{{formatDate $.Lang .CreatedAt}}</time>

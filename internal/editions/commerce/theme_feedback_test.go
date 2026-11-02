@@ -344,6 +344,7 @@ func TestStorefrontThemeHomepageHero(t *testing.T) {
 			wantContains: []string{
 				`class="hero__photo"`,
 				`src="/uploads/hero.webp"`,
+				`fetchpriority="high"`,
 				"Custom title",
 				"Custom subtitle",
 			},

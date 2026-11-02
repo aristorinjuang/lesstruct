@@ -32,7 +32,7 @@ func TestDataAssembler_BuildPostItem_MobileURL(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name: "success - medium variant is the mobile rendition",
+			name: "success - thumb variant is the mobile rendition",
 			setupMedia: func(m *mediamocks.MockRepository) {
 				m.On("FindByHashPrefix", mock.Anything, "card").Return(
 					&mediadomain.Media{URL: "/uploads/media/card.webp", Variants: mobileVariants()},
@@ -40,28 +40,28 @@ func TestDataAssembler_BuildPostItem_MobileURL(t *testing.T) {
 				)
 			},
 			featured:     "/uploads/media/card.webp",
-			wantMobile:   "/uploads/media/card_medium.webp",
+			wantMobile:   "/uploads/media/card_thumb.webp",
 			wantImageURL: "/uploads/media/card_medium.webp",
 			wantNotLarge: true,
 			wantErr:      false,
 		},
 		{
-			name: "success - thumb fallback when no medium variant exists",
+			name: "success - medium fallback when no thumb variant exists",
 			setupMedia: func(m *mediamocks.MockRepository) {
 				m.On("FindByHashPrefix", mock.Anything, "card").Return(
 					&mediadomain.Media{
 						URL: "/uploads/media/card.webp",
 						Variants: map[string]mediadomain.MediaVariant{
-							"_thumb": {URL: "/uploads/media/card_thumb.webp", Width: 64},
-							"_large": {URL: "/uploads/media/card_large.webp", Width: 616},
+							"_medium": {URL: "/uploads/media/card_medium.webp", Width: 280},
+							"_large":  {URL: "/uploads/media/card_large.webp", Width: 616},
 						},
 					},
 					nil,
 				)
 			},
 			featured:     "/uploads/media/card.webp",
-			wantMobile:   "/uploads/media/card_thumb.webp",
-			wantImageURL: "/uploads/media/card_thumb.webp",
+			wantMobile:   "/uploads/media/card_medium.webp",
+			wantImageURL: "/uploads/media/card_medium.webp",
 			wantNotLarge: true,
 			wantErr:      false,
 		},
@@ -85,7 +85,7 @@ func TestDataAssembler_BuildPostItem_MobileURL(t *testing.T) {
 			wantErr:      false,
 		},
 		{
-			name: "success - missing media falls back to the raw URL",
+			name: "success - missing media leaves mobile rendition empty",
 			setupMedia: func(m *mediamocks.MockRepository) {
 				m.On("FindByHashPrefix", mock.Anything, "card").Return(
 					(*mediadomain.Media)(nil),
@@ -93,7 +93,7 @@ func TestDataAssembler_BuildPostItem_MobileURL(t *testing.T) {
 				)
 			},
 			featured:     "/uploads/media/card.webp",
-			wantMobile:   "/uploads/media/card.webp",
+			wantMobile:   "",
 			wantImageURL: "/uploads/media/card.webp",
 			wantNotLarge: true,
 			wantErr:      false,

@@ -3375,12 +3375,13 @@ func TestExtractHashFromURL(t *testing.T) {
 
 func TestResolvePostImage(t *testing.T) {
 	tests := []struct {
-		name           string
-		imageURL       string
-		setupMock      func(*mediaMocks.MockRepository)
-		expectThumbURL string
-		expectSrcset   string
-		expectSizes    string
+		name            string
+		imageURL        string
+		setupMock       func(*mediaMocks.MockRepository)
+		expectThumbURL  string
+		expectMobileURL string
+		expectSrcset    string
+		expectSizes     string
 	}{
 		{
 			name:           "empty URL returns empty",
@@ -3449,9 +3450,10 @@ func TestResolvePostImage(t *testing.T) {
 					nil,
 				)
 			},
-			expectThumbURL: "http://localhost:8080/uploads/media/abc123_medium.webp",
-			expectSrcset:   "http://localhost:8080/uploads/media/abc123_thumb.webp 370w, http://localhost:8080/uploads/media/abc123_medium.webp 800w",
-			expectSizes:    "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
+			expectThumbURL:  "http://localhost:8080/uploads/media/abc123_medium.webp",
+			expectMobileURL: "http://localhost:8080/uploads/media/abc123_thumb.webp",
+			expectSrcset:    "http://localhost:8080/uploads/media/abc123_thumb.webp 370w, http://localhost:8080/uploads/media/abc123_medium.webp 800w",
+			expectSizes:     "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
 		},
 		{
 			name:     "thumb fallback when no medium variant",
@@ -3466,9 +3468,10 @@ func TestResolvePostImage(t *testing.T) {
 					nil,
 				)
 			},
-			expectThumbURL: "http://localhost:8080/uploads/media/abc123_thumb.webp",
-			expectSrcset:   "http://localhost:8080/uploads/media/abc123_thumb.webp 370w",
-			expectSizes:    "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
+			expectThumbURL:  "http://localhost:8080/uploads/media/abc123_thumb.webp",
+			expectMobileURL: "http://localhost:8080/uploads/media/abc123_thumb.webp",
+			expectSrcset:    "http://localhost:8080/uploads/media/abc123_thumb.webp 370w",
+			expectSizes:     "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
 		},
 		{
 			name:     "large fallback when only large variant exists",
@@ -3483,9 +3486,10 @@ func TestResolvePostImage(t *testing.T) {
 					nil,
 				)
 			},
-			expectThumbURL: "http://localhost:8080/uploads/media/abc123_large.webp",
-			expectSrcset:   "http://localhost:8080/uploads/media/abc123_large.webp 616w",
-			expectSizes:    "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
+			expectThumbURL:  "http://localhost:8080/uploads/media/abc123_large.webp",
+			expectMobileURL: "http://localhost:8080/uploads/media/abc123_large.webp",
+			expectSrcset:    "http://localhost:8080/uploads/media/abc123_large.webp 616w",
+			expectSizes:     "(min-width: 1200px) 370px, (min-width: 768px) calc(50vw - 3rem), calc(100vw - 3rem)",
 		},
 	}
 
@@ -3543,8 +3547,10 @@ func TestResolvePostImage(t *testing.T) {
 				assert.Contains(t, body, `src="`+tt.expectThumbURL+`"`)
 			}
 			if tt.expectSrcset != "" {
-				assert.Contains(t, body, `srcset="`+tt.expectSrcset+`"`)
-				assert.Contains(t, body, `sizes="`+tt.expectSizes+`"`)
+				assert.Contains(t, body, `<source media="(max-width: 767px)" srcset="`+tt.expectMobileURL+`"`)
+				// Listing cards hard-cap desktop at _medium: no ladder, no sizes.
+				assert.NotContains(t, body, `sizes="(min-width`)
+				assert.Equal(t, 1, strings.Count(body, "srcset="), "the mobile source carries the only srcset on the card")
 			} else {
 				assert.NotContains(t, body, "srcset")
 				// Icon links carry a fixed sizes attribute; only the responsive

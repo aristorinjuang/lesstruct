@@ -719,13 +719,13 @@ func TestRender_FirstImageEagerRestLazy(t *testing.T) {
 			name:  "first of two images is eager, second stays lazy",
 			input: `{"type":"doc","content":[{"type":"image","attrs":{"src":"/uploads/a.webp"}},{"type":"image","attrs":{"src":"/uploads/b.webp"}}]}`,
 			expected: `<figure><img src="/uploads/a.webp" loading="eager" fetchpriority="high"></figure>` +
-				`<figure><img src="/uploads/b.webp" loading="lazy"></figure>`,
+				`<figure><img src="/uploads/b.webp" loading="lazy" decoding="async"></figure>`,
 		},
 		{
 			name:  "first image nested in a list is still the eager one",
 			input: `{"type":"doc","content":[{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"image","attrs":{"src":"/uploads/a.webp"}}]}]},{"type":"image","attrs":{"src":"/uploads/b.webp"}}]}`,
 			expected: `<ul class="content-wrapper"><li><figure><img src="/uploads/a.webp" loading="eager" fetchpriority="high"></figure></li></ul>` +
-				`<figure><img src="/uploads/b.webp" loading="lazy"></figure>`,
+				`<figure><img src="/uploads/b.webp" loading="lazy" decoding="async"></figure>`,
 		},
 	}
 

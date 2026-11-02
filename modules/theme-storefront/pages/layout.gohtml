@@ -110,7 +110,7 @@
 			{{- if .ImageURL}}
 			<picture>
 				{{if .ImageMobileURL}}<source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">{{end}}
-				<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" loading="lazy">
+				<img src="{{.ImageURL}}" alt="{{.Title}}" loading="lazy" decoding="async">
 			</picture>
 			{{- else}}
 			<div class="product-card__placeholder" aria-hidden="true">{{.Title}}</div>

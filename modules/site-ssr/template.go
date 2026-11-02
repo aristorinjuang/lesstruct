@@ -252,10 +252,11 @@ type PostItem struct {
 	ImageSizes      string
 	ImageVariants   map[string]string
 	// ImageMobileURL is the rendition mobile browsers (<=767px) must load:
-	// the _medium variant when the pipeline generated one, _thumb
-	// otherwise, falling back to ImageURL. It guarantees small viewports
-	// never fetch the _large rendition (srcset alone cannot promise that:
-	// a high-DPR phone resolves a 342px slot against the 616w entry).
+	// the _thumb variant when the pipeline generated one, _medium
+	// otherwise. Empty when no variants exist (templates omit the mobile
+	// source then). It guarantees small viewports fetch the smallest
+	// rendition (srcset alone cannot promise that: a high-DPR phone
+	// resolves a 342px slot against the 616w entry).
 	ImageMobileURL  string
 	OriginalURL     string
 	Author          string

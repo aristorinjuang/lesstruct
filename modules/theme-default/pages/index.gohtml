@@ -3,11 +3,11 @@
 	{{- range $i, $post := .Posts}}
 	<article class="post-card" data-post-type="{{$post.PostType}}">
 		<a href="/{{$post.Slug}}">
-			{{- if $post.ImageURL}}<img src="{{$post.ImageURL}}"{{if $post.ImageSrcset}} srcset="{{$post.ImageSrcset}}" sizes="{{$post.ImageSizes}}"{{end}} alt="{{$post.Title}}" class="post-card__image"{{if eq $i 0}} loading="eager" fetchpriority="high"{{else}} loading="lazy"{{end}}>{{end}}
+			{{- if $post.ImageURL}}<picture>{{if $post.ImageMobileURL}}<source media="(max-width: 767px)" srcset="{{$post.ImageMobileURL}}">{{end}}<img src="{{$post.ImageURL}}" alt="{{$post.Title}}" class="post-card__image"{{if eq $i 0}} loading="eager" fetchpriority="high"{{else}} loading="lazy" decoding="async"{{end}}></picture>{{end}}
 			<h2>{{$post.Title}}</h2>
 			{{- if $post.MetaDescription}}<p>{{$post.MetaDescription}}</p>{{end}}
 			<time>{{formatDate $.Lang $post.CreatedAt}}</time>
-			{{- if $post.Author}}{{if $post.AuthorAvatarURL}}<img src="{{$post.AuthorAvatarURL}}" class="author-avatar" alt="{{$post.Author}}" loading="lazy">{{end}}<span class="author">{{t $.Lang "ui.by_author"}} {{$post.Author}}</span>{{end}}
+			{{- if $post.Author}}{{if $post.AuthorAvatarURL}}<img src="{{$post.AuthorAvatarURL}}" class="author-avatar" alt="{{$post.Author}}" loading="lazy" decoding="async">{{end}}<span class="author">{{t $.Lang "ui.by_author"}} {{$post.Author}}</span>{{end}}
 		</a>
 	</article>
 	{{- else}}
@@ -24,7 +24,7 @@
 		{{- range .Posts}}
 		<article class="post-card" data-post-type="{{.PostType}}">
 			<a href="/{{.Slug}}">
-				{{- if .ImageURL}}<img src="{{.ImageURL}}"{{if .ImageSrcset}} srcset="{{.ImageSrcset}}" sizes="{{.ImageSizes}}"{{end}} alt="{{.Title}}" class="post-card__image" loading="lazy">{{end}}
+				{{- if .ImageURL}}<picture>{{if .ImageMobileURL}}<source media="(max-width: 767px)" srcset="{{.ImageMobileURL}}">{{end}}<img src="{{.ImageURL}}" alt="{{.Title}}" class="post-card__image" loading="lazy" decoding="async"></picture>{{end}}
 				<h2>{{.Title}}</h2>
 				{{- if .MetaDescription}}<p>{{.MetaDescription}}</p>{{end}}
 				<time>{{formatDate $.Lang .CreatedAt}}</time>

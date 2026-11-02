@@ -12,7 +12,7 @@
 		</div>
 		{{- if .SiteConfig.HeroImage}}
 		<div class="hero__panel hero__panel--photo">
-			<img class="hero__photo" src="{{.SiteConfig.HeroImage}}" alt="{{.SiteConfig.Name}}" loading="eager">
+			<img class="hero__photo" src="{{.SiteConfig.HeroImage}}" alt="{{.SiteConfig.Name}}" loading="eager" fetchpriority="high">
 		</div>
 		{{- else}}
 		<div class="hero__panel" aria-hidden="true">
