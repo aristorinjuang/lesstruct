@@ -187,6 +187,9 @@ release:
 	edge theme-default kernel; \
 	edge theme-storefront kernel; \
 	edge users kernel modules/media
+	@$(MAKE) lint
+	@$(MAKE) test
+	@$(MAKE) vulncheck
 	@tmp=$$(mktemp -d); \
 	for m in . $(SUBMODULES); do \
 		mod=$$(head -1 $$m/go.mod | awk '{print $$2}'); \
@@ -199,11 +202,11 @@ release:
 	export GOPROXY="file://$$tmp,https://proxy.golang.org" GOSUMDB=off; \
 	go build ./... && for m in $(SUBMODULES); do (cd $$m && go build ./...) || exit 1; done; \
 	rm -rf "$$tmp"
-	@echo "requires now pin $(VERSION) (builds update go.work.sum by themselves)."
-	@echo "next: review (git diff), run make lint test vulncheck, then:"
+	@echo "requires now pin $(VERSION); lint/test/vulncheck already ran inside release."
+	@echo "next: review (git diff), then:"
 	@echo "  git commit -m 'build: release $(VERSION)'"
 	@echo "  git tag $(VERSION) $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
-	@echo "  git push origin main $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
+	@echo "  git push --atomic origin main $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
 	@echo "  git push origin $(VERSION)   # alone — last: fires the Release workflow"
 	@echo "(push the version tag separately: more than three tags in one push"
 	@echo " drops workflow events, and CI on main needs the submodule tags first)"
