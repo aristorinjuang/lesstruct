@@ -187,19 +187,19 @@ release:
 	edge theme-default kernel; \
 	edge theme-storefront kernel; \
 	edge users kernel modules/media
-	@$(MAKE) lint
-	@$(MAKE) test
-	@$(MAKE) vulncheck
 	@tmp=$$(mktemp -d); \
-	for m in . $(SUBMODULES); do \
+	proxy_copy() { for m in . $(SUBMODULES); do \
 		mod=$$(head -1 $$m/go.mod | awk '{print $$2}'); \
 		rel=$$(echo "$$mod" | sed 's#^github.com/aristorinjuang/lesstruct##'); \
 		if [ -z "$$rel" ]; then d="$$tmp/github.com/aristorinjuang/lesstruct/@v"; \
 		else d="$$tmp/github.com/aristorinjuang/lesstruct$$rel/@v"; fi; \
 		mkdir -p "$$d"; cp $$m/go.mod "$$d/$(VERSION).mod"; \
 		printf '{"Version":"$(VERSION)"}' > "$$d/$(VERSION).info"; \
-	done; \
+	done; }; \
+	proxy_copy; \
 	export GOPROXY="file://$$tmp,https://proxy.golang.org" GOSUMDB=off; \
+	$(MAKE) lint && $(MAKE) test && $(MAKE) vulncheck || { rm -rf "$$tmp"; exit 1; }; \
+	proxy_copy; \
 	go build ./... && for m in $(SUBMODULES); do (cd $$m && go build ./...) || exit 1; done; \
 	rm -rf "$$tmp"
 	@echo "requires now pin $(VERSION); lint/test/vulncheck already ran inside release."

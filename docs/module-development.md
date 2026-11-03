@@ -191,13 +191,14 @@ Releases are lockstep: the root module (`vX.Y.Z`), the kernel
 (`kernel/vX.Y.Z`), and every first-party module (`modules/<name>/vX.Y.Z`)
 are tagged at the same commit, and every `go.mod` requires the sibling
 modules at that same version. Run `make release VERSION=vX.Y.Z`, which
-rewrites the requires, runs `make lint`, `make test`, and `make
-vulncheck` itself, and only then verifies the workspace builds through a
-throwaway file proxy (local checkouts resolve siblings through the
+rewrites the requires, creates a throwaway file proxy first (the
+not-yet-published requires only resolve through it), runs `make lint`,
+`make test`, and `make vulncheck` against it, re-copies the `go.mod`
+files the gates may have normalized, and then verifies the workspace
+builds through the proxy (local checkouts resolve siblings through the
 committed `go.work` workspace — never through `replace`; workspace
-builds keep `go.work.sum` updated by themselves). Running the gates
-before the proxy copies matters: the `.mod` files the proxy serves are
-exactly the ones you commit and tag, so `go.work.sum` stays consistent
+builds keep `go.work.sum` updated by themselves). The proxy serves
+exactly the bytes you commit and tag, so `go.work.sum` stays consistent
 with the published bytes (v1.2.0 shipped file-proxy hashes for files
 the gate pass later normalized, which split the checksum database from
 the tags). It then prints the commit + tag + verify sequence. `go
