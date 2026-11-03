@@ -33,6 +33,9 @@ import (
 	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	"github.com/aristorinjuang/lesstruct/modules/seo"
 	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
+	speechmodule "github.com/aristorinjuang/lesstruct/modules/speech"
+	speechdomain "github.com/aristorinjuang/lesstruct/modules/speech/domain"
+	speechinfra "github.com/aristorinjuang/lesstruct/modules/speech/infrastructure"
 	textgenmodule "github.com/aristorinjuang/lesstruct/modules/textgen"
 	textgendomain "github.com/aristorinjuang/lesstruct/modules/textgen/domain"
 	textgeninfra "github.com/aristorinjuang/lesstruct/modules/textgen/infrastructure"
@@ -105,6 +108,7 @@ type state struct {
 	commentsModule  *comments.Module
 	seoModule       *seo.Module
 	textgenModule   *textgenmodule.Module
+	speechModule    *speechmodule.Module
 	importersModule *importers.Module
 
 	theme *sitessr.Theme
@@ -209,6 +213,42 @@ func (s *state) wire(core *app.Core) error {
 	)
 	core.Candidates = append(core.Candidates, s.textgenModule)
 	hs.TextGen = s.textgenModule.Handler()
+
+	// Initialize speech-to-text service (voice dictation). The Meta adapter
+	// is the default; the OpenAI-compatible adapter serves Whisper, Groq,
+	// and self-hosted endpoints. Dictation needs the text generation
+	// service too (the transcript is enhanced into content) — textGenService
+	// is nil-safe here because the speech routes stay unmounted unless both
+	// AI keys are configured.
+	var speechService speechdomain.SpeechToTextService
+	if cfg.IsSpeechToTextEnabled() {
+		if cfg.AISpeechToTextProvider == config.SpeechToTextProviderOpenAI {
+			speechService = speechinfra.NewOpenAISpeechService(
+				cfg.AISpeechToTextAPIKey,
+				cfg.AISpeechToTextBaseURL,
+				cfg.AISpeechToTextModel,
+				nil,
+			)
+		} else {
+			speechService = speechinfra.NewMetaSpeechService(
+				cfg.AISpeechToTextAPIKey,
+				cfg.AISpeechToTextBaseURL,
+				cfg.AISpeechToTextModel,
+				nil,
+			)
+		}
+	}
+	// v1 module system: the real speech module adopts the transcription
+	// service and the text generation service as its enhancer. Core mounts
+	// the handler explicitly (see Module.Handler): the speechEnabled feature
+	// flag gates mounting.
+	s.speechModule = speechmodule.New(
+		speechmodule.WithTranscriber(speechService),
+		speechmodule.WithEnhancer(textGenService),
+		speechmodule.WithLogger(modules.NewLogger(core.Logger)),
+	)
+	core.Candidates = append(core.Candidates, s.speechModule)
+	hs.Speech = s.speechModule.Handler()
 
 	// Initialize WordPress importer (admin-only content migration)
 	wordpressDownloader := wordpress.NewMediaDownloader(

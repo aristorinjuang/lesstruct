@@ -38,8 +38,8 @@ section — each doc states its scope at the top._
 
 - **Product feature catalog** → [features.md](features.md) (the canonical list; the homepage and `README.md` curate from it).
 - **Coding, testing, and doc-sync conventions** → `AGENTS.md` (repo root).
-- **Build / test / mock commands** → `Makefile`: `make mock`, `make lint`, `make test`, `make vulncheck`, `make docs-serve`, `make build-cli`, `make build-admin`.
-- **External agents building themes/plugins on a deployed site** → the installed skills `skills/lesstruct-theme-development/` and `skills/lesstruct-plugin-development/` (their `references/` are the user-facing snapshots of the theme/plugin docs above).
+- **Build / test / mock commands** → `Makefile`: `make mock`, `make lint`, `make test`, `make vulncheck`, `make docs-serve`, `make build-cli`, `make build-admin`, `make worktree <path>`, `make worktree-sync DIR=...`.
+- **External agents building themes/plugins on a deployed site** → the installed skills `skills/lesstruct-theme-development/` and `skills/lesstruct-plugin-development/` (their `references/` are the user-facing snapshots of the theme/plugin docs above); **agents developing Tier 1 Go modules in a checkout** → the installed skill `skills/lesstruct-module-development/` (its `references/` snapshot the module doc plus the kernel reality matrix and scaffold).
 
 ## Doc-ownership contract
 

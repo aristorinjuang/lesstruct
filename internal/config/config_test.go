@@ -183,6 +183,89 @@ func TestLoad_DevMode(t *testing.T) {
 	}
 }
 
+func TestLoad_SamRedaction(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+
+	tests := []struct {
+		name     string
+		setupEnv func(*testing.T)
+		wantErr  bool
+		checkCfg func(*testing.T, *appconfig.Config)
+	}{
+		{
+			name: "disabled by default",
+			setupEnv: func(t *testing.T) {
+				_ = os.Unsetenv("AI_SAM_API_KEY")
+				_ = os.Unsetenv("AI_SAM_MODEL")
+				_ = os.Unsetenv("AI_SAM_CONCEPTS")
+			},
+			wantErr: false,
+			checkCfg: func(t *testing.T, cfg *appconfig.Config) {
+				assert.False(t, cfg.IsSamEnabled())
+				assert.Equal(t, "", cfg.AISamAPIKey)
+				assert.Equal(t, "sam-3.1", cfg.AISamModel)
+				assert.Equal(t, "face,license plate,nudity", cfg.AISamConcepts)
+			},
+		},
+		{
+			name: "whitespace-only key counts as disabled",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("AI_SAM_API_KEY", "   ")
+				_ = os.Unsetenv("AI_SAM_MODEL")
+				_ = os.Unsetenv("AI_SAM_CONCEPTS")
+			},
+			wantErr: false,
+			checkCfg: func(t *testing.T, cfg *appconfig.Config) {
+				assert.False(t, cfg.IsSamEnabled())
+			},
+		},
+		{
+			name: "enabled with key only",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("AI_SAM_API_KEY", "meta-key")
+				_ = os.Unsetenv("AI_SAM_MODEL")
+				_ = os.Unsetenv("AI_SAM_CONCEPTS")
+			},
+			wantErr: false,
+			checkCfg: func(t *testing.T, cfg *appconfig.Config) {
+				assert.True(t, cfg.IsSamEnabled())
+				assert.Equal(t, "meta-key", cfg.AISamAPIKey)
+				assert.Equal(t, "sam-3.1", cfg.AISamModel)
+				assert.Equal(t, "face,license plate,nudity", cfg.AISamConcepts)
+			},
+		},
+		{
+			name: "enabled with custom model and concepts",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("AI_SAM_API_KEY", "meta-key")
+				t.Setenv("AI_SAM_MODEL", "sam-3.1")
+				t.Setenv("AI_SAM_CONCEPTS", "face,nudity")
+			},
+			wantErr: false,
+			checkCfg: func(t *testing.T, cfg *appconfig.Config) {
+				assert.True(t, cfg.IsSamEnabled())
+				assert.Equal(t, "sam-3.1", cfg.AISamModel)
+				assert.Equal(t, "face,nudity", cfg.AISamConcepts)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupEnv(t)
+			cfg, err := appconfig.Load()
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if tt.checkCfg != nil {
+				tt.checkCfg(t, cfg)
+			}
+		})
+	}
+}
+
 func TestParsePIIMasterKey(t *testing.T) {
 	valid := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	short := base64.StdEncoding.EncodeToString(make([]byte, 16))
@@ -377,6 +460,101 @@ func TestLoad(t *testing.T) {
 			}
 
 			require.NoError(t, err, "Load() unexpected error")
+
+			if tt.checkConfig != nil {
+				tt.checkConfig(t, cfg)
+			}
+		})
+	}
+}
+
+func TestLoad_SpeechToText(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupEnv    func(*testing.T)
+		wantErr     bool
+		errMsg      string
+		checkConfig func(*testing.T, *appconfig.Config)
+	}{
+		{
+			name: "success - defaults keep dictation disabled",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				_ = os.Unsetenv("AI_SPEECH_TO_TEXT_API_KEY")
+				_ = os.Unsetenv("AI_SPEECH_TO_TEXT_BASE_URL")
+				_ = os.Unsetenv("AI_SPEECH_TO_TEXT_MODEL")
+				_ = os.Unsetenv("AI_SPEECH_TO_TEXT_PROVIDER")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, "", cfg.AISpeechToTextAPIKey)
+				assert.Equal(t, "https://api.meta.ai", cfg.AISpeechToTextBaseURL)
+				assert.Equal(t, "muse-voice-transcribe-1.0", cfg.AISpeechToTextModel)
+				assert.Equal(t, appconfig.SpeechToTextProviderMeta, cfg.AISpeechToTextProvider)
+				assert.False(t, cfg.IsSpeechToTextEnabled())
+			},
+		},
+		{
+			name: "success - api key enables dictation",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("AI_SPEECH_TO_TEXT_API_KEY", "meta-key")
+				t.Setenv("AI_SPEECH_TO_TEXT_MODEL", "muse-voice-transcribe-1.0")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, "meta-key", cfg.AISpeechToTextAPIKey)
+				assert.True(t, cfg.IsSpeechToTextEnabled())
+			},
+		},
+		{
+			name: "success - openai provider with custom base url",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("AI_SPEECH_TO_TEXT_API_KEY", "sk-key")
+				t.Setenv("AI_SPEECH_TO_TEXT_PROVIDER", "openai")
+				t.Setenv("AI_SPEECH_TO_TEXT_BASE_URL", "http://localhost:11434/v1")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, appconfig.SpeechToTextProviderOpenAI, cfg.AISpeechToTextProvider)
+				assert.Equal(t, "http://localhost:11434/v1", cfg.AISpeechToTextBaseURL)
+				assert.True(t, cfg.IsSpeechToTextEnabled())
+			},
+		},
+		{
+			name: "success - provider value is normalized to lowercase",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("AI_SPEECH_TO_TEXT_PROVIDER", "Meta")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.Equal(t, appconfig.SpeechToTextProviderMeta, cfg.AISpeechToTextProvider)
+			},
+		},
+		{
+			name: "error - unknown provider fails closed",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("AI_SPEECH_TO_TEXT_PROVIDER", "whisper-local")
+			},
+			wantErr: true,
+			errMsg:  "AI_SPEECH_TO_TEXT_PROVIDER must be",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setupEnv(t)
+			cfg, err := appconfig.Load()
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+				return
+			}
+			require.NoError(t, err)
 
 			if tt.checkConfig != nil {
 				tt.checkConfig(t, cfg)

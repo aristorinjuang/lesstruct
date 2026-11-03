@@ -259,6 +259,17 @@ func TestMediaHandler_Upload(t *testing.T) {
 			wantCode:   "INTERNAL_ERROR",
 		},
 		{
+			name:     "error - privacy scan failure returns PRIVACY_SCAN_FAILED",
+			filename: "photo.png",
+			metadata: `{"altText":"x"}`,
+			withUser: true,
+			setup: func(svc *agentmocks.MockMediaService) {
+				svc.EXPECT().Upload(mock.Anything, mock.Anything).Return(nil, mediadomain.ErrPrivacyScanFailed)
+			},
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   "PRIVACY_SCAN_FAILED",
+		},
+		{
 			name:       "error - missing user returns UNAUTHORIZED",
 			filename:   "photo.png",
 			metadata:   `{"altText":"x"}`,

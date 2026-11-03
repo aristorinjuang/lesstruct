@@ -162,12 +162,34 @@ type ReencodeSummary struct {
 	BytesAfter  int64 `json:"bytesAfter"`
 }
 
+// Redactor blurs sensitive regions before anything is stored. The
+// composition root adapts the privacy service onto it; a nil Redactor
+// keeps the legacy pipeline byte-identical.
+type Redactor interface {
+	Redact(ctx context.Context, imageBytes []byte) ([]byte, error)
+}
+
+// ServiceOption configures a Service. The composition root supplies every
+// option; direct construction without options yields the legacy pipeline.
+type ServiceOption func(*Service)
+
+// WithRedactor adopts the privacy redactor (composition root, nil when
+// AI_SAM_API_KEY is unset). Without one uploads skip the scan entirely.
+func WithRedactor(redactor Redactor) ServiceOption {
+	return func(s *Service) {
+		if redactor != nil {
+			s.redactor = redactor
+		}
+	}
+}
+
 // Service handles media business logic
 type Service struct {
 	repo             Repository
 	storage          kernelstorage.Storage
 	processor        *Processor
 	thumbnailService *thumbnail.Service
+	redactor         Redactor
 }
 
 // validateFile validates the uploaded file
@@ -235,6 +257,10 @@ func (s *Service) Upload(ctx context.Context, req UploadRequest) (*Media, error)
 		return nil, fmt.Errorf("alt text validation failed: %w", err)
 	}
 
+	if s.redactor != nil {
+		return s.uploadRedacted(ctx, req)
+	}
+
 	_, _ = req.File.Seek(0, 0)
 
 	hash, err := s.processor.GenerateHash(req.File)
@@ -279,6 +305,57 @@ func (s *Service) Upload(ctx context.Context, req UploadRequest) (*Media, error)
 	return media, nil
 }
 
+// uploadRedacted runs the SAM redaction pass before hashing so the blurred
+// bytes drive dedup, conversion, and variants. Any scan failure rejects
+// fail-closed and stores nothing.
+func (s *Service) uploadRedacted(ctx context.Context, req UploadRequest) (*Media, error) {
+	_, _ = req.File.Seek(0, 0)
+	raw, err := io.ReadAll(req.File)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	redacted, err := s.redactor.Redact(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("privacy redaction failed: %w", errors.Join(ErrPrivacyScanFailed, err))
+	}
+
+	// GenerateHash on a bytes.Reader cannot fail; the error is ignored to
+	// keep the domain bar without an unreachable branch.
+	hash, _ := s.processor.GenerateHash(bytes.NewReader(redacted))
+
+	existing, err := s.repo.FindByHash(ctx, hash)
+	if err == nil && existing != nil {
+		return nil, &DuplicateMediaError{Existing: existing}
+	}
+
+	webpData, metadata, err := s.processor.ConvertToWebP(bytes.NewReader(redacted))
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to WebP: %w", err)
+	}
+
+	media := &Media{
+		UserID:           req.UserID,
+		Filename:         s.generateFilename(hash),
+		OriginalFilename: SanitizeFilename(req.FileHeader.Filename),
+		MimeType:         MimeTypeWebP,
+		FileSize:         int64(len(webpData)),
+		Width:            metadata.Width,
+		Height:           metadata.Height,
+		AltText:          strings.TrimSpace(req.AltText),
+		IsWebP:           true,
+		Hash:             hash,
+	}
+
+	redactedCopy := append([]byte(nil), redacted...)
+	if err := s.persistMedia(ctx, media, webpData, func() io.Reader {
+		return bytes.NewReader(redactedCopy)
+	}); err != nil {
+		return nil, err
+	}
+
+	return media, nil
+}
+
 // ForceUpload handles media upload bypassing hash uniqueness check
 func (s *Service) ForceUpload(ctx context.Context, req UploadRequest) (*Media, error) {
 	if err := s.validateFile(req.File, req.FileHeader); err != nil {
@@ -287,6 +364,10 @@ func (s *Service) ForceUpload(ctx context.Context, req UploadRequest) (*Media, e
 
 	if err := ValidateAltText(req.AltText); err != nil {
 		return nil, fmt.Errorf("alt text validation failed: %w", err)
+	}
+
+	if s.redactor != nil {
+		return s.forceUploadRedacted(ctx, req)
 	}
 
 	_, _ = req.File.Seek(0, 0)
@@ -326,6 +407,56 @@ func (s *Service) ForceUpload(ctx context.Context, req UploadRequest) (*Media, e
 	if err := s.persistMedia(ctx, media, webpData, func() io.Reader {
 		_, _ = req.File.Seek(0, 0)
 		return req.File
+	}); err != nil {
+		return nil, err
+	}
+
+	return media, nil
+}
+
+// forceUploadRedacted mirrors uploadRedacted but bypasses hash uniqueness
+// with a suffixed hash.
+func (s *Service) forceUploadRedacted(ctx context.Context, req UploadRequest) (*Media, error) {
+	_, _ = req.File.Seek(0, 0)
+	raw, err := io.ReadAll(req.File)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	redacted, err := s.redactor.Redact(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("privacy redaction failed: %w", errors.Join(ErrPrivacyScanFailed, err))
+	}
+
+	// GenerateHash on a bytes.Reader cannot fail; ignore the error to keep
+	// the domain bar without an unreachable branch.
+	hash, _ := s.processor.GenerateHash(bytes.NewReader(redacted))
+
+	uniqueHash, err := s.generateUniqueHash(ctx, hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate unique hash: %w", err)
+	}
+
+	webpData, metadata, err := s.processor.ConvertToWebP(bytes.NewReader(redacted))
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to WebP: %w", err)
+	}
+
+	media := &Media{
+		UserID:           req.UserID,
+		Filename:         s.generateFilename(uniqueHash),
+		OriginalFilename: GenerateDuplicateFilename(SanitizeFilename(req.FileHeader.Filename)),
+		MimeType:         MimeTypeWebP,
+		FileSize:         int64(len(webpData)),
+		Width:            metadata.Width,
+		Height:           metadata.Height,
+		AltText:          strings.TrimSpace(req.AltText),
+		IsWebP:           true,
+		Hash:             uniqueHash,
+	}
+
+	redactedCopy := append([]byte(nil), redacted...)
+	if err := s.persistMedia(ctx, media, webpData, func() io.Reader {
+		return bytes.NewReader(redactedCopy)
 	}); err != nil {
 		return nil, err
 	}
@@ -628,13 +759,18 @@ func NewService(
 	repo Repository,
 	storage kernelstorage.Storage,
 	thumbnailService *thumbnail.Service,
+	opts ...ServiceOption,
 ) *Service {
-	return &Service{
+	s := &Service{
 		repo:             repo,
 		storage:          storage,
 		processor:        NewProcessor(),
 		thumbnailService: thumbnailService,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // GenerateDuplicateFilename appends -2 suffix before extension

@@ -321,6 +321,12 @@ func TestMediaHandler_Upload_OtherErrors(t *testing.T) {
 			expectedCode:   "forbidden",
 		},
 		{
+			name:           "privacy scan failed",
+			serviceError:   media.ErrPrivacyScanFailed,
+			expectedStatus: http.StatusInternalServerError,
+			expectedCode:   "privacy_scan_failed",
+		},
+		{
 			name:           "internal error",
 			serviceError:   errors.New("internal error"),
 			expectedStatus: http.StatusInternalServerError,
@@ -1004,6 +1010,72 @@ func TestMediaHandler_GenerateImage(t *testing.T) {
 				require.True(t, ok)
 				assert.Equal(t, tt.expectedCode, errObj["code"])
 			}
+		})
+	}
+}
+
+// TestMediaHandler_GenerateImage_ClampsAltText verifies the generate endpoint
+// saves an over-long generation prompt as clamped alt text instead of failing
+// the domain's 500-rune alt-text validation. The OG composition suffix must
+// never leak into alt text either.
+func TestMediaHandler_GenerateImage_ClampsAltText(t *testing.T) {
+	longPrompt := strings.Repeat("a vivid landscape with mountains ", 20)
+
+	tests := []struct {
+		name string
+		og   bool
+	}{
+		{
+			name: "long prompt saved as clamped alt text",
+			og:   false,
+		},
+		{
+			name: "og suffix excluded from alt text",
+			og:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := apimocks.NewMockMediaServiceInterface(t)
+			mockImageGen := mediamocks.NewMockImageGenerationService(t)
+			mockImageGen.EXPECT().GenerateImage(
+				mock.Anything,
+				mock.Anything,
+				mock.Anything,
+			).Return(makeTestPNG(t, 800, 600), nil)
+
+			var gotAltText string
+			mockService.EXPECT().GenerateFromBytes(
+				mock.Anything,
+				mock.Anything,
+				mock.Anything,
+				mock.MatchedBy(func(alt string) bool {
+					gotAltText = alt
+					return true
+				}),
+				mock.Anything,
+			).Return(&media.Media{ID: 100}, nil)
+
+			handler := mediaapi.NewMediaHandler(mockService, mockImageGen, nil)
+
+			requestBody := `{"prompt":"` + longPrompt + `"}`
+			if tt.og {
+				requestBody = `{"prompt":"` + longPrompt + `","og":true}`
+			}
+			body := bytes.NewBufferString(requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/media/generate", body)
+			req.Header.Set("Content-Type", "application/json")
+			req = req.WithContext(kernel.ContextWithPrincipal(req.Context(), kernel.Principal{ID: "1", Username: "testuser"}))
+
+			w := httptest.NewRecorder()
+			handler.GenerateImage(w, req)
+
+			require.Equal(t, http.StatusCreated, w.Code)
+			require.NotEmpty(t, gotAltText)
+			assert.LessOrEqual(t, len([]rune(gotAltText)), media.MaxAltTextLength)
+			assert.True(t, strings.HasPrefix(longPrompt, gotAltText), "alt text should be a prompt prefix")
+			assert.NotContains(t, gotAltText, media.OpenGraphPromptSuffix)
 		})
 	}
 }

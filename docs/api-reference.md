@@ -454,8 +454,11 @@ curl -H "Authorization: Bearer lesstruct_a1b2c3d4e5f6_<secret>" \
 | `200` | — | Uploaded; a new media item was created and stored. |
 | `400` | `VALIDATION_ERROR` | Missing `file` part; unsupported/oversized file; empty `altText`. |
 | `409` | `CONFLICT` | A file with the same content hash already exists. The upload is not stored; upload a different file or use the existing media's `url`. |
+| `500` | `PRIVACY_SCAN_FAILED` (`privacy_scan_failed` in the browser realm) | SAM scan failed; the upload was rejected and nothing was stored. Only when `AI_SAM_API_KEY` is set. |
 
 > **Duplicate handling.** The API returns `409 CONFLICT` for a duplicate upload (rather than returning the existing item, as the admin panel does). This keeps the contract honest: the upload was not stored.
+
+> **Privacy blurring.** When `AI_SAM_API_KEY` is set, the stored bytes are the blurred image: faces, plates, and nudity are blurred before hashing, so duplicates dedup on the blurred hash and variants inherit blurred pixels. Profile pictures keep faces visible. Imports and AI-generated images are not scanned in v1.
 
 ### Get media
 
@@ -660,6 +663,7 @@ Errors use the envelope's `error` object: `{"error":{"code":"…","message":"…
 | `409` | `CONFLICT` | Duplicate media upload. | media handler |
 | `429` | `RATE_LIMITED` | You have exceeded the per-key rate limit — or your IP spent its Bearer auth-failure budget (repeated invalid API keys). | rate-limit middleware |
 | `500` | `INTERNAL_ERROR` | Unexpected server error. | handler |
+| `500` | `PRIVACY_SCAN_FAILED` | SAM redaction scan failed; the upload was rejected and nothing was stored. The browser realm emits `privacy_scan_failed` for the same case. | media / profile-picture handler |
 
 ### No-enumeration
 
@@ -787,6 +791,33 @@ Translate content between languages, along with its SEO title and meta descripti
 
 - `format=tiptap` → returns translated TipTap JSON in `content` preserving structure, plus translated `title` and `metaDescription`.
 - `format=html` → returns translated HTML in `content` preserving tags, styles, and URLs — only visible text and `alt` attributes are translated — plus translated `title` and `metaDescription`.
+
+## AI voice dictation
+
+> Requires `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `speechToText`.
+
+### Transcribe
+
+```
+POST /api/v1/speech/transcribe
+```
+
+Transcribe a dictated recording and enhance the transcript into TipTap content. The browser records up to five minutes of mono 16-bit PCM WAV (16 or 24 kHz); anything else is rejected with `400 invalid_audio`.
+
+**Request body** (`multipart/form-data`):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `audio` | file | yes | WAV audio, mono 16-bit PCM at 16 or 24 kHz, max 10 MB (≈5 minutes). Larger uploads get `413 audio_too_large`. |
+| `language` | string | no | Optional language hint for recognition (e.g. `"English"`, `"en"`). When omitted the provider auto-detects. Overlong values are ignored. |
+
+**Response:** `200 OK` with `{ "data": { "transcript": "...", "content": "...", "title": "...", "metaDescription": "..." } }`.
+
+- `transcript` → the raw transcription text.
+- `content` → enhanced TipTap JSON, ready to insert into the editor: punctuation and capitalization restored, spoken cues ("heading two", "bullet list", ...) applied as structure.
+- `title` (max 60 characters) and `metaDescription` (max 160 characters) → AI suggestions for empty fields.
+
+**Errors:** `401 unauthorized`, `400 invalid_request` (unparseable form), `400 invalid_audio`, `413 audio_too_large`, `400 invalid_content` (transcript too long), `502 transcription_failed` (provider failure, or no speech detected), `500 generation_failed` (enhancement failure).
 
 ## OpenAPI snippet
 

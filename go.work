@@ -13,8 +13,10 @@ use (
 	./modules/orders
 	./modules/payments
 	./modules/posttypes-basic
+	./modules/privacy
 	./modules/seo
 	./modules/site-ssr
+	./modules/speech
 	./modules/textgen
 	./modules/theme-default
 	./modules/theme-storefront

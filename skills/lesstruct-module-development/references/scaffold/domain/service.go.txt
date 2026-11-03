@@ -1,0 +1,35 @@
+package __MODULE_NAME__
+
+import (
+	"context"
+	"fmt"
+)
+
+// Service is the application service: use-case orchestration plus
+// invariants over the Repository port. No HTTP, SQL, or provider clients.
+type Service struct {
+	repo Repository
+}
+
+// Get returns the widget by ID.
+func (s *Service) Get(ctx context.Context, id int64) (*Widget, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if id <= 0 {
+		return nil, ErrWidgetNotFound
+	}
+	widget, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get widget: %w", err)
+	}
+	if widget == nil {
+		return nil, ErrWidgetNotFound
+	}
+	return widget, nil
+}
+
+// NewService builds the service over its repository port.
+func NewService(repo Repository) *Service {
+	return &Service{repo: repo}
+}

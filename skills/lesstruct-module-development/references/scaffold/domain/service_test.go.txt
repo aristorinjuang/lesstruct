@@ -1,0 +1,57 @@
+package __MODULE_NAME___test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	__MODULE_NAME__ "github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__/domain"
+)
+
+type stubRepo struct {
+	widget *__MODULE_NAME__.Widget
+	err    error
+}
+
+func (s stubRepo) Get(_ context.Context, _ int64) (*__MODULE_NAME__.Widget, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.widget, nil
+}
+
+func TestServiceGet(t *testing.T) {
+	tests := []struct {
+		name     string
+		repo     stubRepo
+		wantName string
+		wantErr  bool
+	}{
+		{
+			name:     "success - returns widget",
+			repo:     stubRepo{widget: &__MODULE_NAME__.Widget{ID: 1, Name: "demo"}},
+			wantName: "demo",
+			wantErr:  false,
+		},
+		{
+			name:    "error - missing widget",
+			repo:    stubRepo{err: __MODULE_NAME__.ErrWidgetNotFound},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := __MODULE_NAME__.NewService(tt.repo)
+			widget, err := service.Get(context.Background(), 1)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantName, widget.Name)
+		})
+	}
+}

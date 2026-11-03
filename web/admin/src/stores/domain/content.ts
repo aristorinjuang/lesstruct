@@ -17,6 +17,13 @@ export interface EnhanceResult {
   metaDescription?: string
 }
 
+export interface DictationResult {
+  transcript: string
+  content: string
+  title?: string
+  metaDescription?: string
+}
+
 export interface TranslateResult {
   content: string
   title?: string
@@ -383,6 +390,36 @@ export const useContentStore = defineStore('content', () => {
     }
   }
 
+  async function transcribeAudio(audio: Blob, language: string = ''): Promise<DictationResult> {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const form = new FormData()
+      form.append('audio', audio, 'audio.wav')
+      if (language) {
+        form.append('language', language)
+      }
+      // Five minutes of audio can take minutes to transcribe and enhance:
+      // allow six minutes before timing out.
+      const response = await api.postWithTimeout<{ data: DictationResult }>(
+        '/api/v1/speech/transcribe',
+        form,
+        360_000,
+      )
+      const data = response.data.data
+      if (!data || !data.content) {
+        throw new Error('Failed to transcribe audio: No data returned')
+      }
+      return data
+    } catch (err) {
+      error.value = err as Error
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   return {
     content,
     contents,
@@ -409,5 +446,6 @@ export const useContentStore = defineStore('content', () => {
     getTranslations,
     enhanceContent,
     translateContent,
+    transcribeAudio,
   }
 })

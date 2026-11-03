@@ -56,6 +56,9 @@ import (
 	mediastore "github.com/aristorinjuang/lesstruct/modules/media/store"
 	posttypesbasic "github.com/aristorinjuang/lesstruct/modules/posttypes-basic"
 	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
+	privacymodule "github.com/aristorinjuang/lesstruct/modules/privacy"
+	privacydomain "github.com/aristorinjuang/lesstruct/modules/privacy/domain"
+	privacyinfra "github.com/aristorinjuang/lesstruct/modules/privacy/infrastructure"
 	aliasdomain "github.com/aristorinjuang/lesstruct/modules/seo/alias"
 	seodomain "github.com/aristorinjuang/lesstruct/modules/seo/domain"
 	seostore "github.com/aristorinjuang/lesstruct/modules/seo/store"
@@ -114,6 +117,13 @@ func isGeminiModel(model string) bool {
 // isGPTModel returns true if the model name indicates an OpenAI GPT image model.
 func isGPTModel(model string) bool {
 	return strings.HasPrefix(model, "gpt-image-")
+}
+
+// isMuseImageModel returns true if the model name indicates a Meta Muse image
+// model. Muse Image speaks the OpenAI images API on the Meta Model API host,
+// so these models share the GPT Image service with a configured base URL.
+func isMuseImageModel(model string) bool {
+	return strings.HasPrefix(model, "muse-image-")
 }
 
 // isPostgres returns true when the database driver is PostgreSQL.
@@ -357,6 +367,8 @@ func startServer(
 	imageReferenceEnabled bool,
 	textGenEnabled bool,
 	textGenHandler routes.TextGenSurface,
+	speechEnabled bool,
+	speechHandler routes.SpeechSurface,
 	languages []string,
 	aliasRedirectHandler *handlers.AliasRedirectHandler,
 	headlessEnabled bool,
@@ -401,6 +413,8 @@ func startServer(
 		imageReferenceEnabled,
 		textGenEnabled,
 		textGenHandler,
+		speechEnabled,
+		speechHandler,
 		languages,
 		aliasRedirectHandler,
 		headlessEnabled,
@@ -750,7 +764,26 @@ func Run(edition Edition) {
 	if err != nil {
 		log.Fatalf("Failed to initialize media storage: %v", err)
 	}
-	mediaService := mediadomain.NewService(mediaRepo, mediaStorage, thumbnailService)
+	// Privacy redaction (Story: SAM 3.1). When AI_SAM_API_KEY is set, every
+	// media and profile-picture upload is scanned and sensitive regions are
+	// blurred before anything is stored; any scan failure rejects fail-closed.
+	// Empty keeps the legacy pipeline byte-identical.
+	var privacyService *privacydomain.Service
+	if cfg.IsSamEnabled() {
+		samClient := privacyinfra.NewSAMService(cfg.AISamAPIKey, cfg.AISamModel)
+		privacyService = privacydomain.NewService(
+			samClient,
+			privacydomain.ParseConcepts(cfg.AISamConcepts),
+		)
+	}
+	mediaServiceOpts := make([]mediadomain.ServiceOption, 0, 1)
+	if privacyService != nil {
+		mediaServiceOpts = append(
+			mediaServiceOpts,
+			mediadomain.WithRedactor(modules.NewMediaPrivacyRedactor(privacyService)),
+		)
+	}
+	mediaService := mediadomain.NewService(mediaRepo, mediaStorage, thumbnailService, mediaServiceOpts...)
 
 	// Featured-image resolution for the public content-items list via the
 	// same media-join the SSR layer uses. Defined alongside the repo; the
@@ -780,9 +813,10 @@ func Run(edition Edition) {
 				cfg.AIImageGenerationSize,
 				cfg.AIImageGenerationAspectRatio,
 			)
-		case isGPTModel(cfg.AIImageGenerationModel):
+		case isGPTModel(cfg.AIImageGenerationModel) || isMuseImageModel(cfg.AIImageGenerationModel):
 			imageGenService = mediainfra.NewGPTImageService(
 				cfg.AIImageGenerationAPIKey,
+				cfg.AIImageGenerationBaseURL,
 				cfg.AIImageGenerationModel,
 				cfg.AIImageGenerationSize,
 			)
@@ -895,6 +929,16 @@ func Run(edition Edition) {
 		media.WithLogger(modules.NewLogger(utilLogger)),
 	)
 	candidates = append(candidates, mediaModule)
+	// Privacy redaction module: no routes, only the redaction service the
+	// media and profile-picture adapters share. Registered so the module
+	// graph and admin manifest cover it like every other first-party module.
+	// When SAM is disabled the service is inert (nil Segmenter returns its
+	// input unchanged).
+	privacyModule := privacymodule.New(
+		privacymodule.WithService(privacyService),
+		privacymodule.WithLogger(modules.NewLogger(utilLogger)),
+	)
+	candidates = append(candidates, privacyModule)
 
 	// Edition hand-off: the platform services are up; the edition constructs
 	// its own modules on top of them and fills its optional handler set.
@@ -977,11 +1021,20 @@ func Run(edition Edition) {
 	}
 	core.ProfilePicture = profilePictureStorage
 
-	// Initialize profile picture service (Story 12.8)
+	// Initialize profile picture service (Story 12.8). Faces stay visible;
+	// plates and nudity blur when SAM is enabled.
+	profilePictureOpts := make([]profilepicture.ServiceOption, 0, 1)
+	if privacyService != nil {
+		profilePictureOpts = append(
+			profilePictureOpts,
+			profilepicture.WithRedactor(modules.NewProfilePicturePrivacyRedactor(privacyService)),
+		)
+	}
 	profilePictureService := profilepicture.NewService(
 		modules.NewProfilePictureUserRepo(userRepo),
 		profilePictureStorage,
 		profilepicture.NewProcessor(),
+		profilePictureOpts...,
 	)
 
 	// Initialize user management service and handler
@@ -1210,6 +1263,8 @@ func Run(edition Edition) {
 		imageReferenceEnabled,
 		cfg.IsTextGenerationEnabled() && hs.TextGen != nil,
 		hs.TextGen,
+		cfg.IsSpeechToTextEnabled() && cfg.IsTextGenerationEnabled() && hs.Speech != nil,
+		hs.Speech,
 		languages,
 		hs.AliasRedirect,
 		headlessEnabled,

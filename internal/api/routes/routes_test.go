@@ -307,6 +307,8 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		false,
 		false,
 		nil,
+		false,
+		nil,
 		[]string{"en"},
 		nil,
 		headlessEnabled,
@@ -468,6 +470,8 @@ func TestSetup(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
+		nil,
 		[]string{"en"},
 		nil,
 		false,
@@ -618,7 +622,7 @@ func TestHealthRoute(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, "Health route status")
 
 	assert.Contains(t, w.Body.String(), `"status":"ok"`, "Health route body should contain status ok")
-	assert.Contains(t, w.Body.String(), `"features":{"imageGeneration":false,"imageReference":false,"textGeneration":false}`, "Health route body should contain features")
+	assert.Contains(t, w.Body.String(), `"features":{"imageGeneration":false,"imageReference":false,"textGeneration":false,"speechToText":false}`, "Health route body should contain features")
 }
 
 func TestLoginRoute_ValidRequest(t *testing.T) {

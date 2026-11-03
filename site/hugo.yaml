@@ -43,6 +43,11 @@ module:
       files:
         - "*.md"
         - "**/*.md"
+    - source: ../skills/lesstruct-module-development/references
+      target: content/skills/module-development
+      files:
+        - "*.md"
+        - "**/*.md"
 
 outputs:
   home:

@@ -1,0 +1,81 @@
+Scaffold — tiered module templates
+====================================
+
+Tokens (resolve every occurrence before building):
+  __MODULE_NAME__    registry key AND Go package name, lowercase
+                    alphanumeric (e.g. mymod). Keep it hyphen-free so the
+                    package clause needs no renaming (unlike
+                    posttypes-basic/posttypesbasic). Stop if the name
+                    violates this charset — never scaffold with uppercase
+                    or hyphens.
+  __KERNEL_VERSION__  kernel require tag derived from the checkout
+                    (SKILL.md Step 2), e.g. v1.1.4. Never invent it:
+                      awk '/lesstruct\/kernel / {print $2}' modules/cart/go.mod
+                    (workspace members report no version via `go list -m`,
+                    so read the pinned sibling require instead). Stop if
+                    the derived version is empty — never scaffold with an
+                    empty require.
+                    Toolchain and testify versions also derive from the
+                    checkout (root go.mod / sibling modules/<name>/go.mod)
+                    — never hardcode them in go.mod.txt.
+
+Tiers:
+  core    (always)  go.mod.txt -> modules/__MODULE_NAME__/go.mod
+                    module.go.txt -> modules/__MODULE_NAME__/module.go
+                    README.md.txt -> modules/__MODULE_NAME__/README.md
+  domain  (overlay) domain/*.txt -> modules/__MODULE_NAME__/domain/
+  api     (overlay) api/*.txt -> modules/__MODULE_NAME__/api/
+                    api/agent/*.txt -> modules/__MODULE_NAME__/api/agent/
+                    (Bearer-realm handler mirroring the browser overlay)
+  store   (overlay) store/*.txt -> modules/__MODULE_NAME__/store/
+  admin   (overlay) admin/*.txt -> modules/__MODULE_NAME__/admin/
+  testutil (overlay) testutil/*.txt -> modules/__MODULE_NAME__/testutil/
+                    (NewModule()/Kernel() fixture mirroring
+                    modules/media/testutil/testutil.go)
+  migrations (overlay, needs store)
+                    embed.go.txt -> modules/__MODULE_NAME__/embed.go
+                    sqlite/*.txt -> modules/__MODULE_NAME__/migrations/sqlite/
+                    postgresql/*.txt -> modules/__MODULE_NAME__/migrations/postgresql/
+                    mysql/*.txt -> modules/__MODULE_NAME__/migrations/mysql/
+                    (drop the trailing .txt on every file; the embedded FS
+                    layout stays {sqlite,postgresql,mysql}/NNN_name.{up,down}.sql
+                    because the core runner selects the subdir via
+                    Driver.MigrationDir())
+
+Rules:
+  1. Copy core first; it compiles alone (lifecycle only, no handlers).
+  2. Copy only the overlays the design needs.
+  3. Rename every file dropping the trailing `.txt`
+     (go.mod.txt -> go.mod, module.go.txt -> module.go, ...).
+  4. Resolve tokens with exact replacement (no regex):
+       MODULE_NAME=$(echo <name>); KERNEL_VERSION=$(awk '/lesstruct\/kernel / {print $2}' modules/cart/go.mod)
+       grep -rl __MODULE_NAME__ modules/<name> | xargs sed -i "s/__MODULE_NAME__/$MODULE_NAME/g"
+       grep -rl __KERNEL_VERSION__ modules/<name> | xargs sed -i "s/__KERNEL_VERSION__/$KERNEL_VERSION/g"
+     (Never use sed/awk to edit .go logic — token substitution only.)
+     If KERNEL_VERSION is empty, stop — never scaffold with an empty
+     require (SKILL.md Step 2 fail-closed check).
+  5. No `replace` directives in go.mod, ever. Local checkouts resolve
+     siblings through the repo-root go.work (add `use ./modules/<name>`).
+  6. core/module.go ships minimal (no handlers). After copying the api /
+     store / admin overlays, extend it following the cart/media pattern:
+       - add fields for the adopted service/handler/logger,
+       - add WithXxx options (nil-logger guard: keep the existing logger),
+       - build handlers once in New (not in Init — tables do not exist yet;
+         migrations run after InitAll),
+       - expose typed accessors (BrowserHandler/AgentHandler/Service/...),
+       - implement the provider interfaces the design chose
+         (RegisterRoutes / RegisterPublicRoutes / RegisterDualRoutes /
+         Migrations / PostTypes / AdminManifest).
+     Design checkpoint (one line each): Version starts at 0.1.0 per the
+     cart/media/posttypes-basic exemplars; Optional lists soft deps that
+     degrade when absent; migrations tracked in
+     schema_migrations_<module>; README documents the `[modules]
+     disabled` cascade behavior.
+     Exemplars: modules/cart/module.go (PublicRouteProvider + Migrator),
+     modules/media/module.go (explicit dual handlers + AdminManifest),
+     modules/posttypes-basic/module.go (both route surfaces + manifest).
+  7. Wire privately via internal/editions/<custom>/ (see
+     references/integration-recipes.md) — never internal/app by default.
+  8. Verify: go test ./modules/<name>/... then
+     GOWORK=off go test ./modules/<name>/... (catches missing requires
+     and stray replaces).

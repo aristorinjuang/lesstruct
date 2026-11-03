@@ -1,0 +1,9 @@
+package __MODULE_NAME__
+
+import "context"
+
+// Repository is the persistence port the service owns. The store
+// implementation satisfies it structurally.
+type Repository interface {
+	Get(ctx context.Context, id int64) (*Widget, error)
+}

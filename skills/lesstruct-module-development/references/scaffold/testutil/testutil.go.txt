@@ -1,0 +1,19 @@
+// Package testutil provides the kernel fixture module tests run against.
+package testutil
+
+import (
+	"github.com/aristorinjuang/lesstruct/kernel"
+	__MODULE_NAME__ "github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__"
+)
+
+// NewModule builds the __MODULE_NAME__ module. It carries no construction
+// options in this slice; later slices extend the fixture alongside the
+// module (mirroring modules/media/testutil/testutil.go).
+func NewModule() *__MODULE_NAME__.Module {
+	return __MODULE_NAME__.New()
+}
+
+// Kernel returns a bare host for Init testing.
+func Kernel() kernel.Kernel {
+	return kernel.NewHost(nil)
+}

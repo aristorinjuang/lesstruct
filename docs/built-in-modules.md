@@ -12,7 +12,7 @@ The default `lesstruct` binary (the **blog** edition) carries every module in
 the table below except the commerce stack and `theme-storefront`; the **Core**
 edition (`lesstruct-core`) carries the engine subset only — `users`, `auth`,
 `adminpanel`, `posttypes-basic`, and `media` — leaving out `comments`, `seo`,
-`site-ssr`, `theme-default`, `textgen`, and `importers`; the **eCommerce**
+`site-ssr`, `theme-default`, `textgen`, `speech`, and `importers`; the **eCommerce**
 edition (`lesstruct-ecommerce`) is the blog list plus the commerce stack —
 `catalog`, `cart`, `orders`, and `payments` — with `theme-storefront` in place
 of `theme-default`. Within any edition, `[modules] disabled` still prunes
@@ -32,11 +32,13 @@ compiles against, see [The Kernel](kernel.md).
 | `adminpanel` | `auth` | The admin SPA (embedded build) + the frozen extensions manifest API | — |
 | `posttypes-basic` | — | Post-type registry, `/roles`, `/user_fields` | — |
 | `media` | — | Media library, WebP pipeline, thumbnails, dedup | Media |
+| `privacy` | — | SAM 3.1 redaction: blur faces/plates/nudity before media and profile pictures store | — |
 | `seo` | — | SEO meta, sitemap, robots, URL aliases | — |
 | `site-ssr` | — | The SSR content-site engine, templates, aliases rendering | — |
 | `theme-default` | — | The default blog theme (layouts, styles, root files) | — |
 | `theme-storefront` | — | The eCommerce storefront theme (layouts, styles, cart/checkout/tracking pages) | — |
 | `textgen` | — | AI text enhance/translate and HTML generation | — |
+| `speech` | — | Voice dictation: speech-to-text transcription enhanced into content | — |
 | `importers` | — | WordPress (WXR) and Hugo importers | Import |
 | `catalog` | — | Commerce catalog (pricing, variants, stock, SKUs) | Catalog panel |
 | `cart` | `catalog` | Token-keyed guest carts, live-priced | — |
@@ -107,6 +109,14 @@ The media library: upload with WebP transcoding, thumbnail variants,
 SHA-256 dedup, perceptual-hash duplicate detection (used by the
 importers), and AI image generation. Leaf.
 
+### privacy
+
+Opt-in redaction: when `AI_SAM_API_KEY` is set, the SAM 3.1 client scans
+every media and profile-picture upload and blurs faces, plates, and
+nudity before anything is stored (faces stay visible only in profile
+pictures). Any scan failure rejects fail-closed with nothing stored. No
+routes, no migrations, no UI toggle. Leaf.
+
 ### seo
 
 Discovery and identity: per-page SEO meta, OpenGraph, JSON-LD, the XML and
@@ -144,6 +154,14 @@ supported child-theme path. Leaf.
 AI text features: enhance, translate, and on-brand HTML generation
 (theme-aware prompts, media context). Bring-your-own key via the AI text
 settings. Leaf.
+
+### speech
+
+Voice dictation: transcribe recorded speech (Meta Muse Voice Transcribe by
+default, or any OpenAI-compatible transcription endpoint) and enhance the
+transcript into TipTap content with a suggested title and meta description
+via the textgen service. Bring-your-own keys via the AI speech and text
+settings — both keys are required. Leaf.
 
 ### importers
 

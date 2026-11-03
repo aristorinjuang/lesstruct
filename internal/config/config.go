@@ -11,6 +11,18 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const (
+	// SpeechToTextProviderMeta selects Meta Model API (Muse Voice
+	// Transcribe) as the speech-to-text provider. Read via
+	// AI_SPEECH_TO_TEXT_PROVIDER.
+	SpeechToTextProviderMeta = "meta"
+
+	// SpeechToTextProviderOpenAI selects an OpenAI-compatible audio
+	// transcription endpoint (POST /v1/audio/transcriptions) as the
+	// speech-to-text provider. Read via AI_SPEECH_TO_TEXT_PROVIDER.
+	SpeechToTextProviderOpenAI = "openai"
+)
+
 // getEnv retrieves an environment variable or returns a default value
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
@@ -162,6 +174,7 @@ type Config struct {
 	HSTSMaxAge int
 
 	AIImageGenerationAPIKey      string
+	AIImageGenerationBaseURL    string
 	AIImageGenerationModel       string
 	AIImageGenerationSize        string
 	AIImageGenerationAspectRatio string
@@ -169,6 +182,24 @@ type Config struct {
 	AITextGenerationAPIKey  string
 	AITextGenerationBaseURL string
 	AITextGenerationModel   string
+
+	// AISamAPIKey enables the privacy redaction pass: when set, every
+	// media and profile-picture upload is scanned with SAM 3.1 and
+	// sensitive regions are blurred before anything is stored. Empty
+	// keeps the legacy pipeline byte-identical. Read via AI_SAM_API_KEY.
+	AISamAPIKey string
+	// AISamModel is the SAM model name sent to the Model API.
+	// Read via AI_SAM_MODEL.
+	AISamModel string
+	// AISamConcepts is the comma-separated scan vocabulary, e.g.
+	// "face,license plate,nudity" (plain noun phrases — the Model API
+	// matches concrete nouns best). Read via AI_SAM_CONCEPTS.
+	AISamConcepts string
+
+	AISpeechToTextAPIKey   string
+	AISpeechToTextBaseURL  string
+	AISpeechToTextModel    string
+	AISpeechToTextProvider string
 
 	APIKeyPepper string
 
@@ -201,6 +232,23 @@ func (c *Config) IsImageGenerationEnabled() bool {
 // IsTextGenerationEnabled returns true if the AI text generation API key is configured
 func (c *Config) IsTextGenerationEnabled() bool {
 	return c.AITextGenerationAPIKey != ""
+}
+
+// IsSamEnabled returns true when the SAM API key is configured. The privacy
+// redaction pass runs only then; otherwise uploads use the legacy pipeline.
+// A whitespace-only key counts as unset so a pasted blank cannot brick
+// every upload fail-closed.
+func (c *Config) IsSamEnabled() bool {
+	return strings.TrimSpace(c.AISamAPIKey) != ""
+}
+
+// IsSpeechToTextEnabled returns true if the speech-to-text API key is
+// configured. The provider value itself is validated at Load, so presence of
+// the key is the only runtime gate. Voice dictation additionally requires
+// text generation (the transcription is enhanced into TipTap content), which
+// callers compose as IsSpeechToTextEnabled() && IsTextGenerationEnabled().
+func (c *Config) IsSpeechToTextEnabled() bool {
+	return c.AISpeechToTextAPIKey != ""
 }
 
 // ParseCORSOrigins parses the comma-separated CORS origins string into a slice
@@ -314,6 +362,7 @@ func Load() (*Config, error) {
 		HSTSMaxAge:               getEnvInt("HSTS_MAX_AGE_SECONDS", defaultHSTSMaxAge),
 
 		AIImageGenerationAPIKey:      getEnv("AI_IMAGE_GENERATION_API_KEY", ""),
+		AIImageGenerationBaseURL:    getEnv("AI_IMAGE_GENERATION_BASE_URL", ""),
 		AIImageGenerationModel:       getEnv("AI_IMAGE_GENERATION_MODEL", "imagen-4.0-fast-"),
 		AIImageGenerationSize:        getEnv("AI_IMAGE_GENERATION_SIZE", ""),
 		AIImageGenerationAspectRatio: getEnv("AI_IMAGE_GENERATION_ASPECT_RATIO", ""),
@@ -321,6 +370,15 @@ func Load() (*Config, error) {
 		AITextGenerationAPIKey:  getEnv("AI_TEXT_GENERATION_API_KEY", ""),
 		AITextGenerationBaseURL: getEnv("AI_TEXT_GENERATION_BASE_URL", ""),
 		AITextGenerationModel:   getEnv("AI_TEXT_GENERATION_MODEL", "gpt-5-mini"),
+
+		AISamAPIKey:   getEnv("AI_SAM_API_KEY", ""),
+		AISamModel:    getEnv("AI_SAM_MODEL", "sam-3.1"),
+		AISamConcepts: getEnv("AI_SAM_CONCEPTS", "face,license plate,nudity"),
+
+		AISpeechToTextAPIKey:   getEnv("AI_SPEECH_TO_TEXT_API_KEY", ""),
+		AISpeechToTextBaseURL:  getEnv("AI_SPEECH_TO_TEXT_BASE_URL", "https://api.meta.ai"),
+		AISpeechToTextModel:    getEnv("AI_SPEECH_TO_TEXT_MODEL", "muse-voice-transcribe-1.0"),
+		AISpeechToTextProvider: strings.ToLower(strings.TrimSpace(getEnv("AI_SPEECH_TO_TEXT_PROVIDER", SpeechToTextProviderMeta))),
 
 		APIKeyPepper: getEnv("API_KEY_PEPPER", ""),
 
@@ -414,6 +472,19 @@ func Load() (*Config, error) {
 
 	if cfg.HugoImportTimeout <= 0 {
 		return nil, fmt.Errorf("HUGO_IMPORT_TIMEOUT must be positive, got %v", cfg.HugoImportTimeout)
+	}
+
+	// Validate speech-to-text provider
+	switch cfg.AISpeechToTextProvider {
+	case SpeechToTextProviderMeta, SpeechToTextProviderOpenAI:
+		// supported providers need no further validation
+	default:
+		return nil, fmt.Errorf(
+			"AI_SPEECH_TO_TEXT_PROVIDER must be %q or %q, got %q",
+			SpeechToTextProviderMeta,
+			SpeechToTextProviderOpenAI,
+			cfg.AISpeechToTextProvider,
+		)
 	}
 
 	return cfg, nil

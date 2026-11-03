@@ -1,0 +1,55 @@
+package agent
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/aristorinjuang/lesstruct/kernel"
+	"github.com/aristorinjuang/lesstruct/kernel/httpx"
+	domain "github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__/domain"
+)
+
+// WidgetStore is the narrow collaborator subset the agent handlers touch.
+// It mirrors the browser api.WidgetStore so both realms stay structurally
+// compatible over the same domain service.
+type WidgetStore interface {
+	Get(ctx context.Context, id int64) (*domain.Widget, error)
+}
+
+// Handler serves the __MODULE_NAME__ Bearer-realm (agent API) surface. It
+// mirrors the browser api.Handler over the same WidgetStore seam; the only
+// difference is the realm: the Bearer middleware injects the same kernel
+// principal keys, so the principal check below stays identical and realm
+// routing is decided by credential shape, not by a second identity type.
+type Handler struct {
+	store  WidgetStore
+	logger kernel.Logger
+}
+
+// GetWidget serves the widget read for agent callers. Errors map with
+// errors.Is at the seam; the envelope always goes through kernel/httpx.
+func (h *Handler) GetWidget(w http.ResponseWriter, r *http.Request) {
+	principal, ok := kernel.PrincipalFromContext(r.Context())
+	if !ok || principal.IsAnonymous() {
+		httpx.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required", nil)
+		return
+	}
+	_ = principal
+	widget, err := h.store.Get(r.Context(), 1)
+	if err != nil {
+		if errors.Is(err, domain.ErrWidgetNotFound) {
+			httpx.Error(w, http.StatusNotFound, "NOT_FOUND", "widget not found", nil)
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error", nil)
+		return
+	}
+	httpx.Success(w, widget)
+}
+
+// New builds the agent handler over its seams. A nil logger degrades to
+// discard inside the kernel host; handlers keep their own nil guard anyway.
+func New(store WidgetStore, logger kernel.Logger) *Handler {
+	return &Handler{store: store, logger: logger}
+}

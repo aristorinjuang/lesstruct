@@ -1,7 +1,9 @@
 package media_test
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	media "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	"github.com/stretchr/testify/assert"
@@ -101,6 +103,53 @@ func TestBuildGenerationPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.expected, media.BuildGenerationPrompt(tt.prompt, tt.og))
+		})
+	}
+}
+
+func TestAltTextFromPrompt(t *testing.T) {
+	tests := []struct {
+		name     string
+		prompt   string
+		expected string
+	}{
+		{
+			name:     "short prompt unchanged",
+			prompt:   "A sunset over the ocean",
+			expected: "A sunset over the ocean",
+		},
+		{
+			name:     "surrounding whitespace trimmed",
+			prompt:   "  A sunset over the ocean\n",
+			expected: "A sunset over the ocean",
+		},
+		{
+			name:     "exactly at the limit unchanged",
+			prompt:   strings.Repeat("a", media.MaxAltTextLength),
+			expected: strings.Repeat("a", media.MaxAltTextLength),
+		},
+		{
+			name:     "over-long prompt cut at the word boundary",
+			prompt:   strings.Repeat("word ", 120),
+			expected: strings.Repeat("word ", 99) + "word",
+		},
+		{
+			name:     "single over-long token hard-cut",
+			prompt:   strings.Repeat("x", 600),
+			expected: strings.Repeat("x", media.MaxAltTextLength),
+		},
+		{
+			name:     "multibyte runes counted as runes",
+			prompt:   strings.Repeat("☀", 600),
+			expected: strings.Repeat("☀", media.MaxAltTextLength),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := media.AltTextFromPrompt(tt.prompt)
+			assert.Equal(t, tt.expected, result)
+			assert.LessOrEqual(t, utf8.RuneCountInString(result), media.MaxAltTextLength)
 		})
 	}
 }

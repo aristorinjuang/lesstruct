@@ -86,6 +86,7 @@ adapter, where cross-context wiring belongs.
 | **Payments** | `modules/payments` (+ `modules/payments/midtrans`) | Supporting (commerce) | Manual transfer proofs, verification decisions, hosted-checkout sessions, gateway webhooks. |
 | **Identity & Access** | `modules/users`, `modules/auth`, `internal/domain/role`, `internal/domain/apikey`, `internal/identity` | Supporting | Users, credentials, MFA, registration and verification, roles/capabilities, API keys, the `Principal` bridge. |
 | **Media Library** | `modules/media` (+ `domain/thumbnail`) | Supporting | Upload, WebP conversion, thumbnails, dedup, perceptual hashes, AI image generation. |
+| **Privacy** | `modules/privacy` | Supporting | SAM 3.1 redaction: scan media and profile pictures, blur faces/plates/nudity fail-closed before storage. |
 | **AI Assist** | `modules/textgen` | Supporting | Enhance/translate content and generate HTML through a provider port. |
 | **Platform** | `internal/domain/plugin`, `internal/domain/dashboard`, `internal/storage`, `internal/repository`, `internal/config`, `internal/email` | Generic | WASM plugin runtime, dashboard reporting, storage backends, database drivers, configuration, email delivery. |
 | **Presentation** | `modules/site-ssr`, `modules/theme-default`, `modules/theme-storefront`, `web/admin/`, `cmd/lesstruct-cli/` | — (consumer) | HTTP/HTML/CLI surfaces over the contexts above. Not a domain; owns no business invariants. |

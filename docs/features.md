@@ -359,9 +359,15 @@ boundary, with webhook dedup resolving through a blind-index column.
   the legacy `lines` list.
 - **SHA-256 dedup.** Identical uploads are detected and rejected (with a
   force-upload escape hatch).
+- **Privacy blurring (opt-in).** Set `AI_SAM_API_KEY` to scan every media and
+  profile-picture upload with Meta SAM 3.1 and blur faces, plates, and nudity
+  before anything is stored — variants inherit blurred pixels, scan failures
+  reject fail-closed with nothing stored, and duplicates dedup on the blurred
+  hash. Faces stay visible only in profile pictures. See [configuration.md](configuration.md).
 - **AI image generation.** Generate images from the media library and the content
-  editor via Google Imagen, Gemini, or GPT-Image. Bring your own key. Gemini and
-  GPT-Image models additionally accept up to 3 reference images (uploads or
+  editor via Google Imagen, Gemini, GPT-Image, or Meta Muse Image (any
+  OpenAI-compatible images endpoint). Bring your own key. Gemini,
+  GPT-Image, and Muse Image models additionally accept up to 3 reference images (uploads or
   media-library picks) to guide style, subject, or composition. An "Open Graph
   image" mode generates an exact 1200x630 social preview (center-cropped) and,
   from the editor, inserts it at the top of the content — og:image is always
@@ -402,19 +408,31 @@ boundary, with webhook dedup resolving through a blind-index column.
   (`AI_TEXT_GENERATION_BASE_URL`); images via Google or OpenAI. Nothing runs
   without your keys; `/api/health` honestly reports which features are enabled.
 - **Text enhancement and translation.** Refine rich-text (TipTap) post bodies from the editor — enhancement also rewrites the title and SEO meta description (mirrored to the OG title) — or translate between languages.
+- **Voice dictation.** Speak instead of typing: record up to five minutes in the content editor, get back formatted TipTap content (punctuation, headings, lists, links, tables, math) with a suggested title and meta description. Transcribed by Meta Muse Voice Transcribe (or any OpenAI-compatible speech endpoint), enhanced by your text model, previewed before inserting — and applied to empty fields only.
 - **AI-powered HTML/CSS authoring.** Describe what you want in plain language — the AI generates production-ready HTML & CSS with semantic markup, responsive layouts, and accessible design. Output is on-brand by default: the AI reuses your active theme's design tokens (`var(--color-primary)`, spacing, radius, fonts) and component classes rather than inventing arbitrary colors and fonts. Includes 9 quick-start presets (hero, pricing, testimonials, features, CTA, FAQ, stats, contact, newsletter) and iterative refinement — the AI can modify existing HTML based on your follow-up instructions. Your media library images are automatically surfaced as context. This replaces the need for a drag-and-drop page builder: describe, generate, refine, ship. Note: saving `format: html` content strips `<style>` blocks for every author (page CSS belongs in the theme; inline `style=""` attributes are unaffected).
 - **Image generation.** Generate images from the media library and the editor.
-  Gemini and GPT-Image models accept optional reference images (uploaded or
+  Gemini, GPT-Image, and Muse Image models accept optional reference images (uploaded or
   picked from the library) to guide the result. Open Graph mode produces an
   exact 1200x630 preview, auto-inserted at the top of the content it was
   generated from.
+- **Recommended Meta models.** AI features accept any OpenAI-compatible
+  endpoint, but these are the Meta models Lesstruct recommends (configure the
+  keys in [configuration](configuration.md)): **Muse Wonder** powers the
+  Lesstruct Module Development skill (optimized for Muse Code and Muse Wonder);
+  **Muse Spark** enhances writing and translates content into any language
+  defined in `config.toml`; **Muse Voice Transcribe** turns recorded speech into
+  publish-ready content, enhanced and formatted by Muse Spark; **Muse Image**
+  generates any image including exact 1200x630 Open Graph previews, guided by
+  up to three reference images; **Muse SAM** blurs faces, license plates, and
+  nudity in uploaded images before anything is stored.
 - **Built for agents.** [`lesstruct-cli`](cli.md) is a thin Cobra client over `/api/v1`
   designed for AI agents and terminal-first humans. Markdown ingest, cursor
   pagination, and a standard response envelope make it easy to script.
-- **Agent skills.** Lesstruct ships installable skills for theme and plugin
-  development that work from your installed site (no source tree needed).
-  Install them with `npx skills add aristorinjuang/lesstruct` — works with
-  Claude Code, OpenCode, Cursor, Codex, and 25+ other agents.
+- **Agent skills.** Lesstruct ships installable skills for theme, plugin,
+  and module development: theme and plugin skills work from your installed
+  site (no source tree needed); the module skill works from a cloned
+  checkout. Install them with `npx skills add aristorinjuang/lesstruct` —
+  works with Claude Code, OpenCode, Cursor, Codex, and 25+ other agents.
 - **Crawlable docs.** This site publishes `/llms.txt` (page index),
   `/llms-full.txt` (every page concatenated), and a per-page Markdown mirror for
   retrieval pipelines.

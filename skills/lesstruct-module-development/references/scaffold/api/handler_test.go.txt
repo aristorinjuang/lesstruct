@@ -1,0 +1,84 @@
+package api_test
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/aristorinjuang/lesstruct/kernel"
+	__MODULE_NAME__ "github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__/domain"
+	__MODULE_NAME__api "github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__/api"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type stubStore struct {
+	widget *__MODULE_NAME__.Widget
+	err    error
+}
+
+func (s stubStore) Get(_ context.Context, _ int64) (*__MODULE_NAME__.Widget, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.widget, nil
+}
+
+// requestWithPrincipal attaches a kernel principal to the request context,
+// mirroring what the auth middleware populates.
+func requestWithPrincipal(r *http.Request, id, username string, roles ...string) *http.Request {
+	return r.WithContext(kernel.ContextWithPrincipal(r.Context(), kernel.Principal{
+		ID:       id,
+		Username: username,
+		Roles:    roles,
+	}))
+}
+
+func TestHandlerGetWidget(t *testing.T) {
+	tests := []struct {
+		name     string
+		store    stubStore
+		authed   bool
+		wantCode int
+		wantErr  bool
+	}{
+		{
+			name:     "success - returns widget",
+			store:    stubStore{widget: &__MODULE_NAME__.Widget{ID: 1, Name: "demo"}},
+			authed:   true,
+			wantCode: http.StatusOK,
+			wantErr:  false,
+		},
+		{
+			name:     "error - missing widget maps to 404",
+			store:    stubStore{err: __MODULE_NAME__.ErrWidgetNotFound},
+			authed:   true,
+			wantCode: http.StatusNotFound,
+			wantErr:  true,
+		},
+		{
+			name:     "error - anonymous maps to 401",
+			store:    stubStore{widget: &__MODULE_NAME__.Widget{ID: 1, Name: "demo"}},
+			authed:   false,
+			wantCode: http.StatusUnauthorized,
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := __MODULE_NAME__api.New(tt.store, nil)
+			req := httptest.NewRequest(http.MethodGet, "/widget", nil)
+			if tt.authed {
+				req = requestWithPrincipal(req, "1", "tester")
+			}
+			w := httptest.NewRecorder()
+			handler.GetWidget(w, req)
+			assert.Equal(t, tt.wantCode, w.Code)
+			if !tt.wantErr {
+				require.Equal(t, http.StatusOK, w.Code)
+			}
+		})
+	}
+}

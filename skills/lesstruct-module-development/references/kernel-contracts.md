@@ -1,0 +1,51 @@
+# Kernel Contracts — Capability Reality Matrix
+
+> Source of truth: the checkout's `kernel/` tree (`module.go`,
+> `registry.go`, `prune.go`, `host.go`, `principal.go`, `logger.go`,
+> `database/`, `posttype/`, `httpx/`, `conformance/`), `internal/database/modules.go`,
+> `internal/app/app.go` + `edition.go`, and `internal/api/routes/routes.go`.
+> When this matrix disagrees with code, code wins.
+
+## Lifecycle (always)
+
+| Contract | Discovery / location | Mounting semantics | Caveat | Verify |
+|---|---|---|---|---|
+| `kernel.Module` (`Name`, `Version`, `Requires`, `Optional`, `Init`, `Shutdown`) | Implemented by every module (`kernel/module.go`). | `Registry.Register` rejects nil, empty names, duplicates. `InitAll` topologically sorts `Requires` and calls `Init` in order; first `Init` error aborts (no rollback — startup exits). `ShutdownAll` runs reverse init order, `errors.Join`ed. | `Requires` is the operator's disable cascade — design it as such. `Init` must only validate presence: tables do **not** exist yet (migrations run after `InitAll` in `internal/app/app.go`). | `kernel` registry tests; module `Init` unit test over `kernel.NewHost(nil)`. |
+| `kernel.Kernel` (`Logger()`, `Registry()`) | `kernel/host.go` `NewHost(logger)` is the production host; `Init(host)` receives it. | Nil logger degrades to discard (same convention as middleware). | The kernel is never a service locator — it carries only logger + registry. | Pass `NewHost(nil)` in tests; no log output expected. |
+| `Capabilities[T]` | `kernel/registry.go`: collects every registered module asserting `T`, in registry **name order**. | Read-only discovery after `InitAll` (themes, migrators, route providers, admin manifests). | Register order never matters; init order is topological. Do not cache across registry mutations. | `CollectFrom`-style enumeration test (e.g. posttype `CollectFrom`). |
+| `kernel.Prune` (+ `internal/modules.ApplyDisabled`) | `kernel/prune.go`: pure function over `Requires` edges, candidate order preserved. Composition root (`internal/app/app.go`) prunes `[modules] disabled` + cascade, warns on drops and unknown names, registers only kept modules. | Direct-disable drops as `Direct`; transitive `Requires` drops cascade with `Cause`. Absent-but-not-disabled deps are **kept** — `InitAll` still fails fast on them. | Only `comments` unmounts routes on disable (routes are flag-gated). Every other module's HTTP endpoints keep serving from mounted handler instances even when dropped — disable is lifecycle-level, not HTTP-level. `users` cascades `auth`, `comments`, `adminpanel`. | `kernel/prune_test.go` expectations; boot log names dropped modules. |
+| Migrations (`kernel.Migrator`) | `Migrations() fs.FS` laid out `{sqlite,postgresql,mysql}/NNN_name.{up,down}.sql`. Runner: `internal/database/modules.go` `MigrateModules` — per-module `schema_migrations_<module>` table, driver subdir from `Driver.MigrationDir()`. | Run **after** `InitAll`, for every kept `Migrator`, in `Capabilities` (name) order. Missing driver subdir is skipped silently. | Must be idempotent (`CREATE TABLE IF NOT EXISTS`): pre-module installs already carry the tables from the core sequence. `nosqlite` builds exclude sqlite entirely — every module must ship all three driver dirs or accept the skip. Never FK across module boundaries (ordering/drop divergence); index the reference column instead. | `migrateModule` up on all three drivers in CI; downgrade files present. |
+
+## Routes (pick exactly one per surface)
+
+| Contract | Discovery / location | Mounting semantics | Caveat | Verify |
+|---|---|---|---|---|
+| `RouteProvider` (`RegisterRoutes(router chi.Router)`) | `kernel.Capabilities[RouteProvider]` mounted in `routes.go` on the **authenticated** `/api/v1` group (CSRF + JWT + 1MB pre-chained). | One call, one realm. The posttypes-basic module is the exemplar (`GET /post_types`, `/roles`, `/user_fields`). | Cannot express multi-group surfaces (body-limit splits, public + protected). Media/comments/auth/users/deviation surfaces use structural interfaces in `routes.go` instead — that deviation is documented in `docs/module-development.md`. | Hit the endpoint with a JWT session; anonymous gets 401. |
+| `PublicRouteProvider` (`RegisterPublicRoutes`) | `kernel.Capabilities[PublicRouteProvider]` mounted on the **public** `/api/v1/public` group (rate-limited, no auth chain). | Anonymous only. Cart (`POST /cart`, `GET /cart`, …) is the exemplar. | Public handlers decoding a body must cap it first: `r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)` — the public router rate-limits requests, not bytes. | `curl` without credentials; rate-limit headers present. |
+| `DualAuthProvider` (`RegisterDualRoutes(DualAuthRegistrar)`) | `kernel.Capabilities[DualAuthProvider]` mounted via `dualAuthRegistrar` in `routes.go`: each of `Get/Post/Put/Delete/Patch` registers **twice** (agent stack + browser stack) dispatched by credential at the shared path (`dispatchByAuth`). | Patterns must be **full `/api/v1/...` paths** (no sub-router prefix) and collide with nothing. Chi routes by path, not realm — registering the same path twice without the sink shadows. | Handlers keep their in-handler capability checks: a non-admin API key answers 403 on **both** realms. Commerce admin surfaces are the exemplar. | Same path with `Authorization: Bearer lesstruct_…` vs JWT cookie both succeed; wrong-realm token shape routes to the other chain. |
+
+The two co-owned media paths (`GET /api/v1/media`, `GET /api/v1/media/{id}`, `DELETE /api/v1/media/{id}`) use the same `dispatchByAuth` mechanism with hand-built chains — they predate the `DualAuthProvider` sink but behave identically.
+
+## Identity and authorization
+
+| Contract | Discovery / location | Mounting semantics | Caveat | Verify |
+|---|---|---|---|---|
+| `Principal` + `ContextWithPrincipal` / `PrincipalFromContext` | `kernel/principal.go`. Both auth middlewares inject the same context keys so handlers stay auth-agnostic. | Read the principal in handlers/services; parse the decimal ID with the `principalID` pattern; fail closed on `kernel.ErrInvalidPrincipalID`. Never invent a second identity shape. | `IsAnonymous` (empty ID + username) means no auth module ran — fail closed. | Handler test with a test-local principal helper mirroring the auth middleware. |
+| `RoleProvider` (`Capabilities() []string`) + `CapabilityResolver` | `RoleProvider` **declares** capability strings to the permission registry; the users module **resolves** them (`middleware.NewCapabilityResolver`). `kernel/capability` names the vocabulary (`admin`, `media`, `comments`, `content.publish`, `content.manage:<type>`). | Declaring a capability never grants it. Every handler gates through the resolver seam (`WithRoles`, `WithMediaRoleService`, `WithAgentRoles`, …); unknown capabilities and unknown roles fail closed. | Assuming `RoleProvider` alone authorizes is the classic wiring bug — the resolver + handler check is the authorization. | `conformance.CheckAuthorizer` with admin/non-admin/anonymous fixture (determinism, admin grant, anonymous-deny, unknown-deny). |
+| `kernel.Logger` | `kernel/logger.go`: `Info(format, args...)`, `Error(...)` printf-style. | Adopted via `WithLogger`; nil degrades to discard. | Never `fmt.Println` / `log.*` outside `internal/app`. | Nil-logger module test produces no output. |
+
+## Content, themes, admin
+
+| Contract | Discovery / location | Mounting semantics | Caveat | Verify |
+|---|---|---|---|---|
+| `ContentTypeProvider` (`PostTypes() []PostTypeDef`) | `kernel/posttype.Registry.CollectFrom(reg)` after `InitAll`; `Protected` slugs (`post`, `page`, `media`, `comment`) are recorded so later phases refuse overrides. | posttypes-basic declares `post`/`page` protected; media/comments declare theirs when they land. Config `[[post_type]]` entries reusing a built-in slug **extend** it (fields merge); new slugs define new types. | Duplicate slugs abort collection. `hidden = true` is presentation-only (registry keeps serving). | `posttype.Registry` duplicate/protected unit tests. |
+| `ThemeProvider` (`ThemeFiles() fs.FS`, `ThemeFuncs() template.FuncMap`) + `ThemePageProvider` (`ThemePages() []string`) | `kernel.Capabilities[ThemeProvider]` in `internal/app/app.go`: the **first** provider installs into the SSR engine (`core.ThemeInstaller`). | Engine resolves `THEME_DIR` overrides over the installed artifact. `ThemePages` keys (`cart`, `orders/track`) map to `pages/<key-with-hyphens>.gohtml` served at fixed public paths. | First-provider-wins: a second registered theme is **not** a theme replacement. Commerce swaps via `EditionWithTheme(storefront)` in place of the default — never by registering two providers. | Boot with two providers logs/installs the first; second theme's pages 404 unless wired via `EditionWithTheme`. |
+| `AdminExtensionProvider` (`AdminManifest()`) | Aggregated live at `GET /api/admin/extensions` (frozen `ExtensionsVersion`, currently 1). | `AdminExtensionManifest.Validate()` (labels present, paths absolute, no duplicate paths) is the shared check — never copy it per module. Empty collections serialize as `[]`, never null (golden JSON test pins the wire). | One shell renders everything — modules never ship a mini-SPA. Version bumps only on breaking shape change. | `conformance.CheckAdminExtension` (or `ValidateAdminExtension` outside testify) in the module test; manifest determinism across calls. |
+
+## Published language (import directly, no adapters)
+
+`httpx` (the one response envelope — byte-identical to the legacy writers by pinned compat test; `Success`/`SuccessList` — the list `data` field has no `omitempty` so `[]` serializes), `content`, `customfield`, `database` (`Driver`/`Dialect`: `Placeholder(i)`, `SupportsReturning`, `Upsert`, `IsDuplicateError`; `MigrationDir` selects the migration subdir), `storage` (`Save`/`Delete`/`GetURL`), `seo`, `sanitize`, `tiptap`, `i18n`, `posttype`, `capability`, `conformance`, `legal`, `pii`. Contract class = strict semver; published-language class = semver with deprecation notices. None of them imports `lesstruct/internal` or `modules/*` — the one-way rule.
+
+> `legal`/`pii` stay importable published language (commerce precedent);
+> the sibling `module-development.md` snapshot list omits them but this
+> matrix mirrors `docs/`.

@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# Own modules resolve directly from GitHub instead of proxy.golang.org:
+# after a release commit lands, go.mod pins submodule versions whose tags
+# may not have propagated through the proxy yet (the v1.1.4 incident —
+# every package failed setup with "unknown revision"). The repo is public,
+# so direct fetch needs no credentials, and the checksum database is
+# skipped for this path only.
+env:
+  GOPRIVATE: github.com/aristorinjuang/lesstruct
+
 permissions:
   contents: read
 

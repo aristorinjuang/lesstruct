@@ -1,0 +1,44 @@
+// Package store is the single-source __MODULE_NAME__ repository: one
+// implementation against *sql.DB plus a kernel Dialect, following the
+// comments/media/cart store pattern. Placeholder rendering and RETURNING
+// support come from the dialect; no driver types leak upward.
+package store
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	kerneldatabase "github.com/aristorinjuang/lesstruct/kernel/database"
+)
+
+// Store is the __MODULE_NAME__ single-source store.
+type Store struct {
+	db      *sql.DB
+	dialect kerneldatabase.Dialect
+}
+
+// placeholders returns a positional placeholder generator: each call renders
+// the next bind marker ($1, $2… on PostgreSQL; ? elsewhere), so call order
+// matches argument order by construction.
+func (s *Store) placeholders() func() string {
+	index := 0
+	return func() string {
+		marker := s.dialect.Placeholder(index)
+		index++
+		return marker
+	}
+}
+
+// Get returns the row by ID. Add methods per repository port; branch on
+// s.dialect.SupportsReturning() for INSERT/UPDATE … RETURNING and map
+// s.dialect.IsDuplicateError(err) to domain duplicate sentinels.
+func (s *Store) Get(_ context.Context, _ int64) (any, error) {
+	return nil, fmt.Errorf("__MODULE_NAME__: store Get unimplemented")
+}
+
+// New builds the store over the live database and dialect. The composition
+// root (edition Wire) supplies both; modules never open databases.
+func New(db *sql.DB, dialect kerneldatabase.Dialect) *Store {
+	return &Store{db: db, dialect: dialect}
+}

@@ -200,11 +200,11 @@ CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com,https://admin.e
 
 ### AI image generation (optional)
 
-When `AI_IMAGE_GENERATION_API_KEY` is set, the admin panel shows a "Generate with AI" button in the media library and content editor.
+When `AI_IMAGE_GENERATION_API_KEY` is set, the admin panel shows a "Generate with AI" button in the media library and content editor. Models with the `gemini-` prefix use Google Gemini, `gpt-image-` models use OpenAI's GPT Image API, `muse-image-` models use the GPT Image service against `AI_IMAGE_GENERATION_BASE_URL` (e.g. Meta Model API for Muse Image), and anything else falls back to Google Imagen.
 
 Reference images (optional uploads or media-library picks shown as thumbnails in
 the generate dialog, up to 3 images of 10 MB each) are supported by the
-`gemini-*` and `gpt-image-*` models only — the default Imagen models are
+`gemini-*`, `gpt-image-*`, and `muse-image-*` models only — the default Imagen models are
 text-to-image, so the reference section is hidden when one of them is
 configured. Picking a library image as a reference fetches its bytes in the
 browser: with the S3 storage driver the bucket must allow cross-origin GET
@@ -220,7 +220,8 @@ the content editor, the image is inserted at the top of the content —
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AI_IMAGE_GENERATION_API_KEY` | empty | API key for the image provider. |
-| `AI_IMAGE_GENERATION_MODEL` | `imagen-4.0-fast-generate-001` | Model name. Examples: `imagen-4.0-fast-generate-001`, `imagen-4.0-ultra-generate-001`, `gpt-image-1`, `gpt-image-1-mini`, `gemini-2.5-flash-image`. |
+| `AI_IMAGE_GENERATION_BASE_URL` | empty | Override the images API base URL for `muse-image-*` models (e.g. `https://api.meta.ai/v1` for Meta Model API). Empty keeps OpenAI's API. |
+| `AI_IMAGE_GENERATION_MODEL` | `imagen-4.0-fast-generate-001` | Model name. Examples: `imagen-4.0-fast-generate-001`, `imagen-4.0-ultra-generate-001`, `gpt-image-1`, `gpt-image-1-mini`, `gemini-2.5-flash-image`, `muse-image-1.0`. |
 | `AI_IMAGE_GENERATION_SIZE` | empty | Pixel size, e.g. `1024x1024`. |
 | `AI_IMAGE_GENERATION_ASPECT_RATIO` | empty | Aspect ratio, e.g. `16:9`, `1:1`, `4:3`. |
 
@@ -233,6 +234,28 @@ When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhanc
 | `AI_TEXT_GENERATION_API_KEY` | empty | API key for the text provider. |
 | `AI_TEXT_GENERATION_BASE_URL` | empty | Override the API base URL. Default is OpenAI's API. For other providers: `https://api.deepseek.com`, `https://openrouter.ai/api/v1`, `http://localhost:11434/v1` (Ollama), etc. |
 | `AI_TEXT_GENERATION_MODEL` | `gpt-5-mini` | Chat model name. Examples by provider: OpenAI `gpt-5-mini`, DeepSeek `deepseek-chat`, OpenRouter `openai/gpt-5-mini`, Together `meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8`, Ollama `llama3`. |
+
+### Privacy redaction via SAM 3.1 (optional)
+
+When `AI_SAM_API_KEY` is set, every media upload and profile-picture upload is scanned with Meta SAM 3.1 and sensitive regions are blurred before anything is stored. Scanning sends the uploaded image bytes to Meta's Model API, so enabling the key means PII in uploads leaves the host. Redaction precedes WebP conversion and thumbnail derivation so variants inherit blurred pixels; any scan failure rejects the upload fail-closed and stores nothing. Faces stay visible only in profile pictures, blurred everywhere else. Empty keeps the legacy pipeline byte-identical. There is no admin UI toggle (env-driven), no backfill of the existing library, and no importer-download or AI-generated image scanning in v1.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_SAM_API_KEY` | empty | Model API key. Empty disables the redaction pass entirely. |
+| `AI_SAM_MODEL` | `sam-3.1` | SAM checkpoint name sent to the Model API (`POST /v1/responses` on `https://api.meta.ai/v1`). |
+| `AI_SAM_CONCEPTS` | `face,license plate,nudity` | Comma-separated scan vocabulary (plain noun phrases — concrete nouns match best). `face` is exempted for profile pictures only. |
+
+### AI speech-to-text / voice dictation (optional)
+### AI speech-to-text / voice dictation (optional)
+
+When **both** `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` are set, the content editor shows a "Dictate with AI" button: the author records up to five minutes of speech, the audio is transcribed, and the transcript is enhanced into TipTap content (punctuation, headings, lists, links, tables, math) with an AI-suggested title and meta description. The suggestion is previewed first and applied only to empty fields.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_SPEECH_TO_TEXT_API_KEY` | empty | API key for the speech provider (Meta Model API by default). |
+| `AI_SPEECH_TO_TEXT_BASE_URL` | `https://api.meta.ai` | Override the API base URL. For OpenAI-compatible providers (Whisper, Groq, self-hosted): the server root, e.g. `http://localhost:11434/v1`. |
+| `AI_SPEECH_TO_TEXT_MODEL` | `muse-voice-transcribe-1.0` | Speech model name. Examples: Muse `muse-voice-transcribe-1.0`, OpenAI `whisper-1`. |
+| `AI_SPEECH_TO_TEXT_PROVIDER` | `meta` | `meta` (Meta Model API, Muse Voice Transcribe) or `openai` (any OpenAI-compatible `POST /v1/audio/transcriptions` endpoint). Unknown values fail startup. |
 
 ### Admin frontend (Vite)
 
@@ -1117,6 +1140,7 @@ With this config: new registrants become `Journalist` (articles only, drafts, co
 |---------|------------------|-----------|
 | Public site theme (CSS, JS, HTML templates) | `THEME_DIR=themes/<name>` env var → a `themes/<name>/` directory | `skills/lesstruct-theme-development/` |
 | WASM plugins (custom hooks, external API calls) | `<name>.wasm` and `<name>.manifest` in `plugins/` | `skills/lesstruct-plugin-development/` |
+| Tier 1 Go modules (compiled-in features) | `modules/<name>/` in a checkout, wired via `internal/editions/<custom>/` | `skills/lesstruct-module-development/` |
 | Admin panel branding (logo, colors, copy) | Edit `web/admin/` source and rebuild | `make build-admin` |
 | API response shapes | Edit `internal/api/handlers/` | source only |
 | CLI flags | [`lesstruct-cli`](cli.md) (`<command> --help` for the exhaustive list) | built-in |
@@ -1131,7 +1155,7 @@ When you bump the Lesstruct version (via `go install github.com/aristorinjuang/l
 2. **Diff the new `config.toml.example` and `.env.example` against your files.** Lesstruct's release notes call out new env vars; copy them into your `.env` only if you need the feature.
 3. **Validate before starting.** Start the server with the new binary. If `config.toml` has a new validation rule (e.g. a new field type), the runtime reports it at startup. Fix and retry.
 4. **New field types or supported features** are documented here. If you see a new entry in the [Validation Rules](#validation-rules) section, your existing `config.toml` will keep working; only new post types you add will need to use the new field types.
-5. **Theme and plugin skills** ship independently of the runtime. After a runtime upgrade, re-run the theme and plugin skills to compare your `themes/<name>/` and `plugins/<name>.wasm` against any new defaults.
+5. **Theme, plugin, and module skills** ship independently of the runtime. After a runtime upgrade, re-run the theme and plugin skills to compare your `themes/<name>/` and `plugins/<name>.wasm` against any new defaults, and re-run the module skill's upgrade path for any `modules/<name>/` checkout and custom editions.
 
 ## Troubleshooting
 
@@ -1225,12 +1249,17 @@ RATE_LIMIT_PUBLIC_PER_MINUTE=60
 RATE_LIMIT_AGENT_FAILURES_PER_MINUTE=15
 IMPORT_MAX_SIZE_MB=100
 AI_IMAGE_GENERATION_API_KEY=
+AI_IMAGE_GENERATION_BASE_URL=
 AI_IMAGE_GENERATION_MODEL=imagen-4.0-fast-generate-001
 AI_IMAGE_GENERATION_SIZE=
 AI_IMAGE_GENERATION_ASPECT_RATIO=
 AI_TEXT_GENERATION_API_KEY=
 AI_TEXT_GENERATION_BASE_URL=
 AI_TEXT_GENERATION_MODEL=gpt-5-mini
+AI_SPEECH_TO_TEXT_API_KEY=
+AI_SPEECH_TO_TEXT_BASE_URL=https://api.meta.ai
+AI_SPEECH_TO_TEXT_MODEL=muse-voice-transcribe-1.0
+AI_SPEECH_TO_TEXT_PROVIDER=meta
 ```
 
 ### All `config.toml` keys

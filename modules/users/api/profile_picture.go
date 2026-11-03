@@ -1,12 +1,14 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/aristorinjuang/lesstruct/kernel"
 	"github.com/aristorinjuang/lesstruct/kernel/httpx"
+	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
 	"github.com/aristorinjuang/lesstruct/modules/users/domain/profilepicture"
 )
 
@@ -54,6 +56,10 @@ func (h *ProfilePictureHandler) UploadProfilePicture(w http.ResponseWriter, r *h
 	pictureURL, err := h.service.Upload(r.Context(), principal, file, header)
 	if err != nil {
 		h.logger.Error("Failed to upload profile picture: %v", err)
+		if errors.Is(err, mediadomain.ErrPrivacyScanFailed) {
+			httpx.Error(w, http.StatusInternalServerError, "PRIVACY_SCAN_FAILED", "Privacy scan failed", nil)
+			return
+		}
 		httpx.Error(w, http.StatusBadRequest, "UPLOAD_FAILED", "Failed to upload profile picture", nil)
 		return
 	}
@@ -123,6 +129,10 @@ func (h *ProfilePictureHandler) AdminUploadUserPicture(w http.ResponseWriter, r 
 	pictureURL, err := h.service.Upload(r.Context(), kernel.Principal{ID: strconv.Itoa(userID), Username: targetUser.Username}, file, header)
 	if err != nil {
 		h.logger.Error("Failed to upload profile picture: %v", err)
+		if errors.Is(err, mediadomain.ErrPrivacyScanFailed) {
+			httpx.Error(w, http.StatusInternalServerError, "PRIVACY_SCAN_FAILED", "Privacy scan failed", nil)
+			return
+		}
 		httpx.Error(w, http.StatusBadRequest, "UPLOAD_FAILED", "Failed to upload profile picture", nil)
 		return
 	}

@@ -1,0 +1,120 @@
+// Package __MODULE_NAME__ is the __MODULE_NAME__ module: <what it owns>.
+//
+// The composition root supplies every collaborator via WithXxx options;
+// direct construction without options yields a standalone module that
+// serves nothing. Handlers (api overlay) are built once in New; Init only
+// validates presence (tables do not exist yet — migrations run after
+// InitAll, which core drives).
+package __MODULE_NAME__
+
+import (
+	"github.com/aristorinjuang/lesstruct/kernel"
+)
+
+const (
+	// Name is the registry key for this module.
+	Name = "__MODULE_NAME__"
+
+	// Version is the module version reported via Module.Version.
+	Version = "0.1.0"
+)
+
+// Compile-time witness that Module satisfies the kernel lifecycle.
+var _ kernel.Module = (*Module)(nil)
+
+// Option configures a Module. The composition root supplies every option.
+type Option func(*Module)
+
+// WithLogger attaches the module logger. Without one handler failures are
+// dropped (discard sink).
+func WithLogger(logger kernel.Logger) Option {
+	return func(m *Module) {
+		if logger != nil {
+			m.logger = logger
+		}
+	}
+}
+
+// Module is the __MODULE_NAME__ kernel module.
+type Module struct {
+	logger kernel.Logger
+}
+
+// Name returns the registry key.
+func (m *Module) Name() string {
+	return Name
+}
+
+// Version returns the module version.
+func (m *Module) Version() string {
+	return Version
+}
+
+// Requires lists hard dependencies. Keep it minimal: every entry is a
+// transitive-disable edge (kernel/prune.go). No entry when the module is
+// a leaf. Never foreign-key another module's tables — index the reference
+// column instead.
+func (m *Module) Requires() []string {
+	return nil
+}
+
+// Optional lists soft dependencies. None.
+func (m *Module) Optional() []string {
+	return nil
+}
+
+// Init wires the module. Handlers are already built by New; Init only
+// validates presence. Migration execution is core-driven (it needs the
+// live *sql.DB, which modules never touch directly).
+func (m *Module) Init(_ kernel.Kernel) error {
+	return nil
+}
+
+// Shutdown releases module resources. There are none beyond memory.
+func (m *Module) Shutdown() error {
+	return nil
+}
+
+// Provider surfaces (uncomment the design needs; keep lifecycle minimal
+// otherwise). Exemplars: modules/cart/module.go (PublicRouteProvider +
+// Migrator), modules/media/module.go (explicit dual handlers +
+// AdminManifest), modules/posttypes-basic/module.go (both route surfaces
+// + manifest).
+//
+// // RegisterRoutes mounts the authenticated surface (see
+// // modules/posttypes-basic/module.go).
+// // func (m *Module) RegisterRoutes(router chi.Router) {}
+//
+// // RegisterPublicRoutes mounts the anonymous surface (see
+// // modules/cart/module.go).
+// // func (m *Module) RegisterPublicRoutes(router chi.Router) {}
+//
+// // RegisterDualRoutes mounts the dual-realm surface with full
+// // /api/v1/... patterns (see kernel DualAuthProvider).
+// // func (m *Module) RegisterDualRoutes(reg kernel.DualAuthRegistrar) {}
+//
+// // Migrations returns the embedded migration FS with bare driver dirs
+// // (see modules/cart/module.go, modules/media/module.go).
+// // func (m *Module) Migrations() fs.FS {
+// // 	sub, _ := fs.Sub(migrationsFS, "migrations")
+// // 	return sub
+// // }
+//
+// // PostTypes declares content types (see
+// // modules/posttypes-basic/module.go).
+// // func (m *Module) PostTypes() []kernel.PostTypeDef { return nil }
+//
+// // AdminManifest declares admin-shell extensions (see
+// // modules/media/module.go).
+// // func (m *Module) AdminManifest() kernel.AdminExtensionManifest {
+// // 	return admin.Manifest()
+// // }
+
+// New builds the module, adopting the composition root's wiring.
+func New(opts ...Option) *Module {
+	m := &Module{}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}

@@ -1,0 +1,16 @@
+package __MODULE_NAME__
+
+import "embed"
+
+var (
+	//go:embed migrations
+	migrationsFS embed.FS
+)
+
+// // Migrations exposes the embedded migration FS with bare driver dirs
+// // ({sqlite,postgresql,mysql}/) for the core runner (which selects the
+// // subdir via Driver.MigrationDir()).
+// // func (m *Module) Migrations() fs.FS {
+// // 	sub, _ := fs.Sub(migrationsFS, "migrations")
+// // 	return sub
+// // }

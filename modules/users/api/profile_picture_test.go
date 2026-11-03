@@ -2,7 +2,9 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -154,6 +156,77 @@ func TestProfilePictureHandler_AdminUploadUserPicture_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	data := resp["data"].(map[string]any)
 	require.Contains(t, data["profilePicture"], "targetuser_")
+}
+
+// failingPictureRedactor is a profile-picture Redactor double whose scan
+// always fails, exercising the fail-closed handler branch.
+type failingPictureRedactor struct{}
+
+func (failingPictureRedactor) Redact(_ context.Context, _ []byte) ([]byte, error) {
+	return nil, errors.New("scan boom")
+}
+
+func TestProfilePictureHandler_Upload_PrivacyScanFailed(t *testing.T) {
+	tests := []struct {
+		name   string
+		admin  bool
+		target string
+	}{
+		{
+			name:   "self upload maps scan failure",
+			admin:  false,
+			target: "/api/profile/picture",
+		},
+		{
+			name:   "admin upload maps scan failure",
+			admin:  true,
+			target: "/api/admin/users/5/picture",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage := &stubPictureStorage{}
+			picRepo := &stubPictureRepo{picture: ""}
+			userRepo := &stubUserRepo{
+				users: map[int]*userdomain.User{
+					1: {ID: 1, Username: "testuser", ProfilePicture: ""},
+					5: {ID: 5, Username: "targetuser", ProfilePicture: ""},
+				},
+			}
+
+			service := profilepicture.NewService(
+				picRepo,
+				storage,
+				profilepicture.NewProcessor(),
+				profilepicture.WithRedactor(failingPictureRedactor{}),
+			)
+			handler := api.NewProfilePictureHandler(service, userRepo, nil)
+
+			body, contentType := createProfilePictureMultipartForm(t)
+			req := httptest.NewRequest(http.MethodPut, tt.target, body)
+			req.Header.Set("Content-Type", contentType)
+			req = requestWithPrincipal(req, "1", "testuser")
+			if tt.admin {
+				req.SetPathValue("id", "5")
+			}
+			w := httptest.NewRecorder()
+			if tt.admin {
+				handler.AdminUploadUserPicture(w, req)
+			} else {
+				handler.UploadProfilePicture(w, req)
+			}
+
+			require.Equal(t, http.StatusInternalServerError, w.Code)
+
+			var resp map[string]any
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			errObj, ok := resp["error"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "PRIVACY_SCAN_FAILED", errObj["code"])
+			require.Empty(t, storage.files)
+		})
+	}
 }
 
 func TestProfilePictureHandler_AdminDeleteUserPicture_Success(t *testing.T) {

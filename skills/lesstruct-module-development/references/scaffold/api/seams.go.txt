@@ -1,0 +1,27 @@
+package api
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+
+	"github.com/aristorinjuang/lesstruct/kernel"
+	domain "github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__/domain"
+)
+
+// principalID parses the principal's decimal ID for repository calls,
+// mirroring identity.IntID (fail closed on the kernel sentinel).
+func principalID(principal kernel.Principal) (int64, error) {
+	id, err := strconv.ParseInt(principal.ID, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %q", kernel.ErrInvalidPrincipalID, principal.ID)
+	}
+	return id, nil
+}
+
+// WidgetStore is the narrow collaborator subset this package's handlers
+// touch. The domain repository (or service) satisfies it structurally
+// wherever the method sets already match.
+type WidgetStore interface {
+	Get(ctx context.Context, id int64) (*domain.Widget, error)
+}

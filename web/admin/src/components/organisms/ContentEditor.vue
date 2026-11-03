@@ -10,6 +10,7 @@ import Toast from '@/components/molecules/Toast.vue'
 import TipTapEditor from '@/components/organisms/TipTapEditor.vue'
 import HtmlCodeEditor from '@/components/organisms/HtmlCodeEditor.vue'
 import HtmlAiPromptModal from '@/components/molecules/HtmlAiPromptModal.vue'
+import DictationPreviewModal from '@/components/organisms/DictationPreviewModal.vue'
 import MediaPanel from '@/components/organisms/MediaPanel.vue'
 import { useContentStore } from '@/stores/domain/content'
 import CustomFieldRenderer from '@/components/molecules/CustomFieldRenderer.vue'
@@ -24,6 +25,7 @@ import type { Media } from '@/stores/domain/media'
 import { validateCustomField, validateCustomFields } from '@/utils/validation'
 import { useAuth } from '@/composables/useAuth'
 import { useConfig } from '@/composables/useConfig'
+import { useSpeechRecorder } from '@/composables/useSpeechRecorder'
 import { useRoleStore } from '@/stores/domain/role'
 import api from '@/utils/request'
 
@@ -86,6 +88,37 @@ const isEnhancing = ref(false)
 const isTranslating = ref(false)
 const showHtmlAiModal = ref(false)
 const lastHtmlPrompt = ref('')
+
+// Voice dictation availability and state
+const speechToTextAvailable = ref(false)
+const isTranscribing = ref(false)
+const showDictationModal = ref(false)
+const dictationTranscript = ref('')
+const dictationContent = ref('')
+const dictationTitle = ref('')
+const dictationMetaDescription = ref('')
+
+const {
+  status: recorderStatus,
+  elapsedSeconds: recordingSeconds,
+  startRecording,
+  stopRecording,
+  cancelRecording,
+} = useSpeechRecorder({
+  onAutoStop: (audio) => {
+    void handleDictationAudio(audio)
+  },
+})
+
+const isRecording = computed(() => recorderStatus.value === 'recording')
+const recordingDuration = computed(() => {
+  const minutes = Math.floor(recordingSeconds.value / 60)
+  const seconds = recordingSeconds.value % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+})
+const showDictateButton = computed(
+  () => speechToTextAvailable.value && !isHTMLContent.value && activeLanguage.value === primaryLanguage(),
+)
 
 const form = ref({
   title: '',
@@ -191,12 +224,14 @@ onUnmounted(() => {
 })
 
 onMounted(async () => {
-  // Check AI text generation availability
+  // Check AI text generation and speech-to-text availability
   try {
-    const health = await api.get<{ features?: { textGeneration?: boolean } }>('/api/health')
+    const health = await api.get<{ features?: { textGeneration?: boolean; speechToText?: boolean } }>('/api/health')
     textGenAvailable.value = health.data.features?.textGeneration === true
+    speechToTextAvailable.value = health.data.features?.speechToText === true
   } catch {
     textGenAvailable.value = false
+    speechToTextAvailable.value = false
   }
 
   try {
@@ -861,6 +896,91 @@ async function handleTranslate() {
   }
 }
 
+async function startDictation() {
+  if (isRecording.value || isTranscribing.value) return
+  try {
+    await startRecording()
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Could not start recording'
+    displayToast(message, 'error')
+  }
+}
+
+async function stopAndTranscribe() {
+  if (!isRecording.value || isTranscribing.value) return
+  try {
+    const audio = await stopRecording()
+    await handleDictationAudio(audio)
+  } catch (err: unknown) {
+    const error = err as { message?: string; response?: { data?: { error?: { message?: string } } } }
+    const msg = error.response?.data?.error?.message || error.message || 'Failed to transcribe audio'
+    displayToast(msg, 'error')
+  }
+}
+
+async function handleDictationAudio(audio: Blob) {
+  if (isTranscribing.value) return
+  isTranscribing.value = true
+  try {
+    // The provider auto-detects the spoken language.
+    const dictated = await contentStore.transcribeAudio(audio)
+    dictationTranscript.value = dictated.transcript
+    dictationContent.value = dictated.content
+    dictationTitle.value = dictated.title ?? ''
+    dictationMetaDescription.value = dictated.metaDescription ?? ''
+    showDictationModal.value = true
+  } catch (err: unknown) {
+    const error = err as { message?: string; response?: { data?: { error?: { message?: string } } } }
+    const msg = error.response?.data?.error?.message || error.message || 'Failed to transcribe audio'
+    displayToast(msg, 'error')
+  } finally {
+    isTranscribing.value = false
+  }
+}
+
+function isEmptyTipTapDoc(doc: unknown): boolean {
+  if (typeof doc !== 'object' || doc === null) return true
+  const content = (doc as { content?: unknown }).content
+  if (!Array.isArray(content)) return true
+  if (content.length === 0) return true
+  if (content.length > 1) return false
+  const first = content[0] as { content?: unknown } | undefined
+  if (!first || typeof first !== 'object') return true
+  const inner = first.content
+  return !Array.isArray(inner) || inner.length === 0
+}
+
+function insertDictation(payload: { title: string; metaDescription: string }) {
+  const editor = editorRef.value?.editor ?? null
+  if (!editor) {
+    displayToast('Editor is not ready', 'error')
+    return
+  }
+  try {
+    const doc = JSON.parse(dictationContent.value)
+    const nodes = Array.isArray(doc?.content) ? doc.content : doc
+    if (isEmptyTipTapDoc(editor.getJSON())) {
+      editor.commands.setContent(doc)
+    } else {
+      editor.commands.insertContent(nodes)
+    }
+    form.value.content = JSON.stringify(editor.getJSON())
+    // The AI also suggests SEO metadata. Title and OG title share one
+    // value; suggestions never overwrite the user's existing text.
+    if (payload.title && !form.value.title.trim()) {
+      form.value.title = payload.title
+      form.value.ogTitle = payload.title
+    }
+    if (payload.metaDescription && !form.value.metaDescription.trim()) {
+      form.value.metaDescription = payload.metaDescription
+    }
+    showDictationModal.value = false
+    displayToast('Dictation inserted successfully')
+  } catch {
+    displayToast('Failed to insert dictation', 'error')
+  }
+}
+
 function focusValidationField(slug: string) {
   const el = document.querySelector(`[data-field-slug='${slug}']`)?.querySelector('input, select, textarea') as HTMLElement
   el?.focus()
@@ -1028,6 +1148,29 @@ function focusValidationField(slug: string) {
         >
           {{ isTranslating ? 'Translating...' : 'Translate with AI' }}
         </Button>
+        <!-- Dictate (rich text, primary language) -->
+        <Button
+          v-if="showDictateButton && !isRecording"
+          type="button"
+          variant="neutral"
+          :is-loading="isTranscribing"
+          :disabled="isTranscribing"
+          @click="startDictation"
+        >
+          {{ isTranscribing ? 'Transcribing...' : 'Dictate with AI' }}
+        </Button>
+      </div>
+
+      <!-- Recording indicator -->
+      <div v-if="isRecording" class="content-editor__recording" role="status" aria-live="polite">
+        <span class="content-editor__recording-dot" aria-hidden="true"></span>
+        <span class="content-editor__recording-text">Recording {{ recordingDuration }} — speak now, up to 5:00</span>
+        <Button type="button" size="small" variant="primary" @click="stopAndTranscribe">
+          Stop &amp; transcribe
+        </Button>
+        <Button type="button" size="small" variant="neutral" @click="cancelRecording">
+          Cancel
+        </Button>
       </div>
     </FormField>
 
@@ -1039,6 +1182,19 @@ function focusValidationField(slug: string) {
       :initial-prompt="lastHtmlPrompt"
       @generate="handleGenerateHTML"
       @close="showHtmlAiModal = false"
+    />
+
+    <!-- Dictation Preview Modal -->
+    <DictationPreviewModal
+      v-if="showDictationModal"
+      :transcript="dictationTranscript"
+      :content="dictationContent"
+      :suggested-title="dictationTitle"
+      :suggested-meta-description="dictationMetaDescription"
+      :title-taken="!!form.title.trim()"
+      :meta-description-taken="!!form.metaDescription.trim()"
+      @insert="insertDictation"
+      @close="showDictationModal = false"
     />
 
     <FormField label="Tags" v-if="showTags">
@@ -1477,7 +1633,40 @@ function focusValidationField(slug: string) {
 }
 
 .content-editor__ai-buttons {
+  display: flex;
+  gap: .5rem;
   margin-top: 1rem;
+}
+
+.content-editor__recording {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.content-editor__recording-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  background-color: #dc2626;
+  animation: content-editor-recording-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes content-editor-recording-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.content-editor__recording-text {
+  font-size: 0.875rem;
+  color: var(--brand-dark-1);
 }
 
 @media (min-width: 1024px) {

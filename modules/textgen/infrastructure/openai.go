@@ -522,6 +522,30 @@ Every example below uses theme tokens — your real output must do the same.
 - Preserve all URLs (href, src, action), class names, IDs, tag structure, and attribute names.
 - Preserve all HTML tags, attributes, and structural whitespace.
 - Keep image alt text translations accurate and natural in the target language.`
+
+	// dictationSystemPromptBase is the system prompt for voice dictation: it
+	// turns a raw speech-to-text transcript into a polished TipTap document.
+	// The transcript has no reliable punctuation or capitalization and may
+	// carry spoken formatting cues ("heading two", "bullet list", "quote
+	// this"), which the model applies as structure instead of printing them
+	// literally. The JSON envelope shape is shared with enhancement
+	// (ParseEnhanceEnvelope): the method appends tiptapSchemaPrompt.
+	dictationSystemPromptBase = `You are an expert editor that turns raw speech-to-text transcripts into polished, well-structured rich-text content.
+
+The user dictated the text you receive. It has no reliable punctuation or capitalization, and it may contain spoken formatting instructions. Your job:
+
+- Restore punctuation, capitalization, and paragraph breaks where the speaker's phrasing and pauses imply them.
+- Interpret spoken formatting cues and apply them as structure instead of printing them literally: "heading two ..." starts a level-2 heading, "bullet list ..." a bullet list, "numbered list ..." an ordered list, "quote ..." a blockquote, "new paragraph" or "next paragraph" breaks the paragraph, "bold ...", "italic ...", "underline ..." apply marks, "link to ..." creates a link, "code ..." a code block, "horizontal rule" a divider, spoken math ("x squared", "the integral from zero to infinity of ...") becomes inline or block math, and a spoken row-by-row enumeration becomes a table.
+- Remove filler words (um, uh, you know), false starts, and repeated words, but preserve the speaker's meaning, wording, and original language — do NOT translate.
+- Organize long dictations with headings (level 2 or higher — never level 1) and lists where the structure implies them.
+- Keep emoji, YouTube references, and image mentions as the matching TipTap nodes only when the speaker clearly refers to them; otherwise keep plain text.
+
+Also write SEO metadata for the content in its original language:
+- "title": a compelling, SEO-friendly page title, at most 60 characters. It doubles as the social share (OG) title, so keep it punchy and self-contained.
+- "metaDescription": a compelling one-to-two sentence summary, at most 160 characters, that entices a searcher to click.
+
+Output ONLY a JSON object with exactly these keys — no markdown fences, no explanation, no commentary:
+{"title": "...", "metaDescription": "...", "content": <TipTap document>}`
 )
 
 // buildHTMLSystemPrompt assembles the full HTML system prompt from the base
@@ -765,6 +789,21 @@ func (s *OpenAITextService) TranslateText(
 		sourceLangName, targetLangName, title, metaDescription, content)
 
 	return s.callChatCompletionTranslatedEnvelope(ctx, systemPrompt, userPrompt, textgendomain.FormatTiptap)
+}
+
+// EnhanceTranscription turns a raw speech-to-text transcript into a polished
+// TipTap document with AI-generated SEO metadata. Spoken formatting cues
+// ("heading two", "bullet list", ...) are applied as structure by the
+// dictation prompt; the JSON envelope is validated like enhancement.
+func (s *OpenAITextService) EnhanceTranscription(
+	ctx context.Context,
+	transcript string,
+) (textgendomain.EnhanceResult, error) {
+	systemPrompt := dictationSystemPromptBase + "\n\n" + tiptapSchemaPrompt
+
+	userPrompt := "Turn this dictated transcript into polished content. Write its SEO title and meta description. Output only the JSON envelope:\n\n" + transcript
+
+	return s.callChatCompletionEnhancedTiptap(ctx, systemPrompt, userPrompt)
 }
 
 // NewOpenAITextService creates a new OpenAI-compatible text generation service.

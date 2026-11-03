@@ -64,4 +64,8 @@ type TextGenerationService interface {
 		ctx context.Context,
 		content, title, metaDescription, sourceLang, targetLang, format string,
 	) (TranslateResult, error)
+	EnhanceTranscription(
+		ctx context.Context,
+		transcript string,
+	) (EnhanceResult, error)
 }

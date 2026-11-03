@@ -37,7 +37,12 @@ func TestImageGenerationService_SupportsImageReferences(t *testing.T) {
 		},
 		{
 			name:      "gpt image supports reference images",
-			service:   mediainfra.NewGPTImageService("key", "gpt-image-1", ""),
+			service:   mediainfra.NewGPTImageService("key", "", "gpt-image-1", ""),
+			supported: true,
+		},
+		{
+			name:      "muse image supports reference images",
+			service:   mediainfra.NewGPTImageService("key", "https://api.meta.ai/v1", "muse-image-1.0", ""),
 			supported: true,
 		},
 	}
@@ -49,12 +54,13 @@ func TestImageGenerationService_SupportsImageReferences(t *testing.T) {
 	}
 }
 
-func TestGPTImageService_GenerateImageWithReferences_SendsNamedFiles(t *testing.T) {
+func TestGPTImageService_GenerateImageWithReferences_PartNaming(t *testing.T) {
 	pngData := encodeTestImage(t, "png", 8, 6)
 	jpegData := encodeTestImage(t, "jpeg", 6, 8)
 
 	var (
 		gotPrompt       string
+		gotFieldNames   []string
 		gotFilenames    []string
 		gotContentTypes []string
 	)
@@ -68,8 +74,9 @@ func TestGPTImageService_GenerateImageWithReferences_SendsNamedFiles(t *testing.
 			return
 		}
 		gotPrompt = r.FormValue("prompt")
-		for _, headers := range r.MultipartForm.File {
+		for fieldName, headers := range r.MultipartForm.File {
 			for _, h := range headers {
+				gotFieldNames = append(gotFieldNames, fieldName)
 				gotFilenames = append(gotFilenames, h.Filename)
 				gotContentTypes = append(gotContentTypes, h.Header.Get("Content-Type"))
 			}
@@ -79,18 +86,45 @@ func TestGPTImageService_GenerateImageWithReferences_SendsNamedFiles(t *testing.
 	}))
 	defer server.Close()
 
-	t.Setenv("OPENAI_BASE_URL", server.URL)
+	tests := []struct {
+		name       string
+		baseURL    string
+		wantFields []string
+	}{
+		{
+			name:       "openai keeps the SDK image array naming",
+			baseURL:    "",
+			wantFields: []string{"image[]", "image[]"},
+		},
+		{
+			name:       "compatible providers get indexed part names",
+			baseURL:    server.URL,
+			wantFields: []string{"image[0]", "image[1]"},
+		},
+	}
 
-	service := mediainfra.NewGPTImageService("test-key", "gpt-image-1", "")
-	out, err := service.GenerateImage(context.Background(), "a sunset", []mediadomain.ImageReference{
-		{Data: pngData, MimeType: "image/png"},
-		{Data: jpegData, MimeType: "image/jpeg"},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, pngData, out)
-	assert.Equal(t, "a sunset", gotPrompt)
-	assert.ElementsMatch(t, []string{"reference-1.png", "reference-2.jpg"}, gotFilenames)
-	assert.ElementsMatch(t, []string{"image/png", "image/jpeg"}, gotContentTypes)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPrompt = ""
+			gotFieldNames = nil
+			gotFilenames = nil
+			gotContentTypes = nil
+			if tt.baseURL == "" {
+				t.Setenv("OPENAI_BASE_URL", server.URL)
+			}
+			service := mediainfra.NewGPTImageService("test-key", tt.baseURL, "gpt-image-1", "")
+			out, err := service.GenerateImage(context.Background(), "a sunset", []mediadomain.ImageReference{
+				{Data: pngData, MimeType: "image/png"},
+				{Data: jpegData, MimeType: "image/jpeg"},
+			})
+			require.NoError(t, err)
+			assert.Equal(t, pngData, out)
+			assert.Equal(t, "a sunset", gotPrompt)
+			assert.ElementsMatch(t, tt.wantFields, gotFieldNames)
+			assert.ElementsMatch(t, []string{"reference-1.png", "reference-2.jpg"}, gotFilenames)
+			assert.ElementsMatch(t, []string{"image/png", "image/jpeg"}, gotContentTypes)
+		})
+	}
 }
 
 // encodeTestImage builds small valid image bytes in the given format.

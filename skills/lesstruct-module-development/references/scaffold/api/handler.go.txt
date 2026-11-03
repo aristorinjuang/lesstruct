@@ -1,0 +1,46 @@
+package api
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/aristorinjuang/lesstruct/kernel"
+	"github.com/aristorinjuang/lesstruct/kernel/httpx"
+	domain "github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__/domain"
+)
+
+// Handler serves the __MODULE_NAME__ HTTP surface. It is built once by the
+// module's New and mounted by the composition root (RouteProvider for the
+// protected group, PublicRouteProvider for the anonymous group — never
+// both for one method set).
+type Handler struct {
+	store  WidgetStore
+	logger kernel.Logger
+}
+
+// GetWidget serves the widget read. Errors map with errors.Is at the seam;
+// the envelope always goes through kernel/httpx.
+func (h *Handler) GetWidget(w http.ResponseWriter, r *http.Request) {
+	principal, ok := kernel.PrincipalFromContext(r.Context())
+	if !ok || principal.IsAnonymous() {
+		httpx.Error(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required", nil)
+		return
+	}
+	_ = principal
+	widget, err := h.store.Get(r.Context(), 1)
+	if err != nil {
+		if errors.Is(err, domain.ErrWidgetNotFound) {
+			httpx.Error(w, http.StatusNotFound, "NOT_FOUND", "widget not found", nil)
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error", nil)
+		return
+	}
+	httpx.Success(w, widget)
+}
+
+// New builds the handler over its seams. A nil logger degrades to discard
+// inside the kernel host; handlers keep their own nil guard anyway.
+func New(store WidgetStore, logger kernel.Logger) *Handler {
+	return &Handler{store: store, logger: logger}
+}

@@ -57,6 +57,8 @@ func handleMediaError(w http.ResponseWriter, err error) {
 	}
 
 	switch {
+	case errors.Is(err, mediadomain.ErrPrivacyScanFailed):
+		httpx.Error(w, http.StatusInternalServerError, "PRIVACY_SCAN_FAILED", "privacy scan failed", nil)
 	case errors.Is(err, mediadomain.ErrMediaNotFound):
 		httpx.Error(w, http.StatusNotFound, "NOT_FOUND", "Media not found", nil)
 	case errors.Is(err, mediadomain.ErrUnauthorized):

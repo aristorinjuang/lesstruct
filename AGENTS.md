@@ -277,7 +277,7 @@ The docs under `docs/` are contracts, not afterthoughts. When you change code th
 | `modules/site-ssr/`, `modules/theme-default/`, `modules/theme-storefront/`, theme CSS/JS contracts | `docs/theme-development.md` AND `skills/lesstruct-theme-development/references/theme-development.md` (user-facing snapshot) |
 | `modules/theme-default/pages/*.gohtml` (formatting/whitespace) | `docs/coding-standards/html.md` |
 | `internal/plugin/` (SDK/hooks/capabilities), `pkg/sdk/` | `docs/plugin-development.md`, `docs/plugin-capabilities.md` AND the matching snapshots under `skills/lesstruct-plugin-development/references/` |
-| `modules/<name>/` (new/changed module layout, seams, gating, wiring) | `docs/module-development.md` |
+| `modules/<name>/` (new/changed module layout, seams, gating, wiring) | `docs/module-development.md` AND the matching snapshots under `skills/lesstruct-module-development/references/` |
 | `modules/<name>/` (module added/removed, `Requires()` changed, admin manifest entries changed) | `docs/built-in-modules.md` |
 | `cmd/lesstruct-cli/` (command, subcommand, or flag surface — not architecture-level wiring) | `docs/cli.md` |
 | `internal/api/handlers/agent/`, `internal/api/middleware/apikey.go`, `/api/v1` route shape, response envelope | `docs/api-reference.md` |

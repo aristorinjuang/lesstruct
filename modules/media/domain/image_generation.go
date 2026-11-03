@@ -3,6 +3,9 @@ package media
 import (
 	"context"
 	"net/http"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // OpenGraphPromptSuffix guides the model toward a wide social-preview
@@ -33,6 +36,29 @@ func BuildGenerationPrompt(prompt string, og bool) string {
 		return prompt
 	}
 	return prompt + " " + OpenGraphPromptSuffix
+}
+
+// AltTextFromPrompt derives alt text for a generated image from the generation
+// prompt. Alt text caps at MaxAltTextLength runes, so over-long prompts are
+// cut at the last whitespace boundary inside the cap — or hard-cut when a
+// single token exceeds it.
+func AltTextFromPrompt(prompt string) string {
+	trimmed := strings.TrimSpace(prompt)
+	if utf8.RuneCountInString(trimmed) <= MaxAltTextLength {
+		return trimmed
+	}
+	cut := []rune(trimmed)[:MaxAltTextLength]
+	boundary := -1
+	for i := len(cut) - 1; i >= 0; i-- {
+		if unicode.IsSpace(cut[i]) {
+			boundary = i
+			break
+		}
+	}
+	if boundary > 0 {
+		cut = cut[:boundary]
+	}
+	return strings.TrimSpace(string(cut))
 }
 
 // NewImageReference validates raw bytes as an AI image-generation reference and

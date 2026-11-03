@@ -10,6 +10,12 @@
 > time. Both live on one event bus of concepts: modules own the kernel
 > contracts, plugins consume hook payloads shaped like them.
 
+> If you are working with an AI agent, run the **module development
+> skill** at `skills/lesstruct-module-development/` — its `references/`
+> snapshot this guide plus the kernel reality matrix, integration
+> recipes, and tiered scaffold for offline work. The checkout's copy of
+> this file stays authoritative when they disagree.
+
 The kernel (`kernel/`, Go module
 `github.com/aristorinjuang/lesstruct/kernel`, currently `v1.0.0`) is the
 contract. Read [kernel-versioning.md](kernel-versioning.md) first: semver

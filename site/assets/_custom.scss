@@ -528,6 +528,60 @@
   border-top-color: var(--color-link);
 }
 
+/* "Unlock the full potential of Lesstruct with Meta AI" strip on the landing.
+   A horizontal-scroll wrapper keeps the two-column table readable on small
+   screens without breaking the page layout. */
+.landing-meta-ai {
+  padding: 2.25rem 0 2rem;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.landing-meta-ai h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.6rem;
+}
+
+.meta-ai-table-wrap {
+  overflow-x: auto;
+}
+
+.meta-ai-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.meta-ai-table th,
+.meta-ai-table td {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--gray-200);
+  text-align: left;
+  vertical-align: top;
+}
+
+.meta-ai-table thead th {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gray-600);
+  border-bottom: 2px solid var(--gray-300);
+}
+
+.meta-ai-table tbody th[scope="row"] {
+  white-space: nowrap;
+  color: var(--body-font-color);
+}
+
+.meta-ai-table td {
+  color: var(--gray-600);
+}
+
+.meta-ai-table code {
+  font-size: 0.85em;
+}
+
 /* "One server, one CLI" strip on the landing. */
 .landing-products {
   padding: 2.25rem 0 2rem;

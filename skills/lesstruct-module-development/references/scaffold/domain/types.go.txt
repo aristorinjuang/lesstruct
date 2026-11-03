@@ -1,0 +1,14 @@
+package __MODULE_NAME__
+
+import "errors"
+
+var (
+	// ErrWidgetNotFound marks a missing widget lookup.
+	ErrWidgetNotFound = errors.New("__MODULE_NAME__: widget not found")
+)
+
+// Widget is the <domain entity, one paragraph>.
+type Widget struct {
+	ID   int64
+	Name string
+}

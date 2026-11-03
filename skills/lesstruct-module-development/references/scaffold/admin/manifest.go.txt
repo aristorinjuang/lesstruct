@@ -1,0 +1,14 @@
+// Package admin declares the __MODULE_NAME__ admin-shell extensions: the
+// declarative UI the admin shell renders (menu, settings, editor
+// extensions). One shell renders everything — modules never ship a
+// mini-SPA.
+package admin
+
+import "github.com/aristorinjuang/lesstruct/kernel"
+
+// Manifest returns this module's admin-shell extensions. Empty when the
+// module surfaces data-driven (content editor, existing APIs) with no
+// shell entries of its own.
+func Manifest() kernel.AdminExtensionManifest {
+	return kernel.AdminExtensionManifest{}
+}

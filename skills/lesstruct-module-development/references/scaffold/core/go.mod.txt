@@ -1,0 +1,10 @@
+module github.com/aristorinjuang/lesstruct/modules/__MODULE_NAME__
+
+go 1.27
+
+toolchain go1.27.3
+
+require (
+	github.com/aristorinjuang/lesstruct/kernel __KERNEL_VERSION__
+	github.com/stretchr/testify v1.11.1
+)

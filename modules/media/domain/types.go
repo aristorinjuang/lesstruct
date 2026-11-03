@@ -29,6 +29,9 @@ var (
 	// ErrImageReferencesNotSupported is returned when reference images are
 	// provided but the configured AI model only supports text-to-image generation
 	ErrImageReferencesNotSupported = errors.New("reference images are not supported by the configured AI model")
+	// ErrPrivacyScanFailed is returned when the SAM privacy scan fails. The
+	// upload is rejected fail-closed and nothing is stored.
+	ErrPrivacyScanFailed = errors.New("privacy scan failed")
 )
 
 // getFileExtension extracts the file extension from a filename

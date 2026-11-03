@@ -59,6 +59,10 @@ func handleMediaError(w http.ResponseWriter, err error) {
 		statusCode = http.StatusBadRequest
 		code = "invalid_user_id"
 		message = "Invalid user ID"
+	case errors.Is(err, media.ErrPrivacyScanFailed):
+		statusCode = http.StatusInternalServerError
+		code = "privacy_scan_failed"
+		message = "Privacy scan failed. The upload was rejected and nothing was stored"
 	case errors.Is(err, media.ErrInvalidFile), errors.Is(err, media.ErrInvalidMimeType), errors.Is(err, media.ErrInvalidFileContent):
 		statusCode = http.StatusBadRequest
 		code = "invalid_file"
@@ -489,7 +493,9 @@ func (h *MediaHandler) GenerateImage(w http.ResponseWriter, r *http.Request) {
 		originalFilename = fmt.Sprintf("ai-generated-og-%s.webp", stamp)
 	}
 
-	generatedMedia, err := h.mediaService.GenerateFromBytes(ctx, imageBytes, principal, prompt, originalFilename)
+	altText := media.AltTextFromPrompt(params.prompt)
+
+	generatedMedia, err := h.mediaService.GenerateFromBytes(ctx, imageBytes, principal, altText, originalFilename)
 	if err != nil {
 		h.logger.Error("Failed to save generated image: %v", err)
 		handleMediaError(w, err)

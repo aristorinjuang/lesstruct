@@ -34,7 +34,13 @@ GOTOOLCHAIN_VERSION := go1.27.3
 # SUBMODULES lists every nested Go module covered by the test/lint gates
 # alongside the root module. Add each new modules/<name> here on creation.
 # `make release` derives the per-release tag list from it as well.
-SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/importers modules/adminpanel modules/users modules/auth
+SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/speech modules/importers modules/adminpanel modules/users modules/auth modules/privacy
+
+# WORKTREE_SYNC lists the untracked agent/tooling state that a fresh linked
+# worktree misses (`git worktree add` checks out tracked files only; these
+# are all gitignored). Copied by `make worktree-sync`; extend per run with
+# WORKTREE_EXTRA, e.g. WORKTREE_EXTRA="data".
+WORKTREE_SYNC := .agents .claude .deepseek .opencode _bmad _bmad-output .env
 
 lint: modernize depguard stylecheck
 	GOTOOLCHAIN=$(GOTOOLCHAIN_VERSION) go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
@@ -154,8 +160,10 @@ release:
 		-require=github.com/aristorinjuang/lesstruct/modules/orders@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/payments@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/posttypes-basic@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/privacy@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/seo@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/site-ssr@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/speech@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/textgen@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/theme-default@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/theme-storefront@$(VERSION) \
@@ -171,8 +179,10 @@ release:
 	edge orders kernel; \
 	edge payments kernel; \
 	edge posttypes-basic kernel; \
+	edge privacy kernel; \
 	edge seo kernel; \
 	edge site-ssr kernel modules/comments modules/media modules/posttypes-basic modules/theme-default; \
+	edge speech kernel modules/textgen; \
 	edge textgen kernel modules/media; \
 	edge theme-default kernel; \
 	edge theme-storefront kernel; \
@@ -193,7 +203,10 @@ release:
 	@echo "next: review (git diff), run make lint test vulncheck, then:"
 	@echo "  git commit -m 'build: release $(VERSION)'"
 	@echo "  git tag $(VERSION) $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
-	@echo "  git push origin main --tags"
+	@echo "  git push origin main $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
+	@echo "  git push origin $(VERSION)   # alone — last: fires the Release workflow"
+	@echo "(push the version tag separately: more than three tags in one push"
+	@echo " drops workflow events, and CI on main needs the submodule tags first)"
 	@echo "verify once the proxy picks the tags up:"
 	@echo "  GOWORK=off go mod tidy (in ./ and every SUBMODULE; expect no go.mod changes)"
 	@echo "  go install github.com/aristorinjuang/lesstruct@$(VERSION)"
@@ -201,6 +214,34 @@ release:
 install: build-admin build-cli
 	go install
 	go install -ldflags "$(CLI_LDFLAGS)" ./cmd/lesstruct-cli
+
+# make worktree <path> [start-point] — creates a linked worktree at <path>
+# (branch defaults to the path basename, as with `git worktree add`) and
+# copies the untracked agent/tooling state into it via worktree-sync.
+# Examples: make worktree feature-x | make worktree ../feature-x |
+# make worktree ../fix existing-branch
+worktree:
+	@args="$(filter-out $@,$(MAKECMDGOALS))"; \
+	path="$(firstword $(filter-out $@,$(MAKECMDGOALS)))"; \
+	test -n "$$args" || { echo "usage: make worktree <path> [start-point] (e.g. make worktree ../feature-x)"; exit 1; }; \
+	git worktree add $$args && $(MAKE) worktree-sync DIR="$$path" || \
+		{ echo "hint: branch may already exist — try: git worktree add $$args <existing-branch> && make worktree-sync DIR=\"$$path\""; exit 1; }
+
+# make worktree-sync DIR=<path> — copies the untracked agent/tooling state
+# listed in WORKTREE_SYNC from the main checkout into the worktree at DIR.
+# The source resolves via git, so this also runs from inside the worktree
+# (make worktree-sync DIR=. is a no-op). Copy-if-missing: re-running never
+# overwrites worktree-local changes. Extend per run with WORKTREE_EXTRA, e.g.
+# make worktree-sync DIR=../feature-x WORKTREE_EXTRA="data".
+worktree-sync:
+	@test -n "$(DIR)" || { echo "usage: make worktree-sync DIR=path/to/worktree"; exit 1; }
+	@root=$$(git worktree list --porcelain | sed -n 's/^worktree //p' | head -n 1); \
+	echo "syncing agent state from $$root into $(DIR)"; \
+	for item in $(WORKTREE_SYNC) $(WORKTREE_EXTRA); do \
+		if [ -e "$$root/$$item" ] && [ ! -e "$(DIR)/$$item" ]; then \
+			cp -a "$$root/$$item" "$(DIR)/$$item"; echo "  copied $$item"; \
+		fi; \
+	done
 
 clean-bin:
 	rm -rf bin
@@ -241,3 +282,11 @@ screenshots:
 
 screenshots-clean:
 	rm -f site/static/screenshots/*.png site/static/screenshots/*.webp docs/assets/screenshots/*.png docs/assets/screenshots/*.webp
+
+# Positional-argument guard for `make worktree <path>`: swallows the path so
+# make does not fail with "No rule to make target". Scoped to worktree
+# invocations only — every other misspelled target still fails loudly.
+ifneq (,$(filter worktree,$(MAKECMDGOALS)))
+%:
+	@:
+endif

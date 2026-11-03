@@ -3,6 +3,7 @@ package profilepicture
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -55,11 +56,32 @@ type UserRepo interface {
 	DeleteProfilePicture(ctx context.Context, userID int) error
 }
 
+// Redactor blurs plates and nudity while keeping faces visible. The
+// composition root adapts the privacy service onto it; a nil Redactor
+// keeps the legacy pipeline byte-identical.
+type Redactor interface {
+	Redact(ctx context.Context, imageBytes []byte) ([]byte, error)
+}
+
+// ServiceOption configures a Service.
+type ServiceOption func(*Service)
+
+// WithRedactor adopts the privacy redactor (composition root, nil when
+// AI_SAM_API_KEY is unset). Without one uploads skip the scan entirely.
+func WithRedactor(redactor Redactor) ServiceOption {
+	return func(s *Service) {
+		if redactor != nil {
+			s.redactor = redactor
+		}
+	}
+}
+
 // Service handles profile picture operations
 type Service struct {
 	userRepo  UserRepo
 	storage   kernelstorage.Storage
 	processor *Processor
+	redactor  Redactor
 }
 
 // Upload handles the upload of a profile picture for the acting principal.
@@ -103,8 +125,25 @@ func (s *Service) Upload(
 		return "", fmt.Errorf("failed to reset file reader: %w", err)
 	}
 
+	// Privacy redaction precedes crop/convert so variants inherit blurred
+	// pixels. Faces stay visible; plates and nudity blur. Any scan failure
+	// rejects fail-closed and stores nothing.
+	cropSource := io.Reader(file)
+	if s.redactor != nil {
+		_, _ = file.Seek(0, io.SeekStart)
+		raw, err := io.ReadAll(file)
+		if err != nil {
+			return "", fmt.Errorf("failed to read file: %w", err)
+		}
+		redacted, err := s.redactor.Redact(ctx, raw)
+		if err != nil {
+			return "", fmt.Errorf("privacy redaction failed: %w", errors.Join(mediadomain.ErrPrivacyScanFailed, err))
+		}
+		cropSource = bytes.NewReader(redacted)
+	}
+
 	// Process image: crop and convert to WebP
-	webpData, err := s.processor.CropAndConvertToWebP(file, ProfilePictureSize)
+	webpData, err := s.processor.CropAndConvertToWebP(cropSource, ProfilePictureSize)
 	if err != nil {
 		return "", fmt.Errorf("failed to process image: %w", err)
 	}
@@ -179,10 +218,15 @@ func NewService(
 	userRepo UserRepo,
 	storage kernelstorage.Storage,
 	processor *Processor,
+	opts ...ServiceOption,
 ) *Service {
-	return &Service{
+	s := &Service{
 		userRepo:  userRepo,
 		storage:   storage,
 		processor: processor,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }

@@ -44,11 +44,11 @@
 ## Why Lesstruct?
 
 - **One binary, no Docker.** A single static Go binary runs the whole CMS. SQLite is built in. No runtime, no container, no `node_modules` in production.
-- **Everything is a module.** Eleven built-in features are independent modules with a declared dependency graph — disable what you don't need with `[modules] disabled` and dependents cascade. Per-module reference: [`docs/built-in-modules.md`](docs/built-in-modules.md).
+- **Everything is a module.** Twelve built-in features are independent modules with a declared dependency graph — disable what you don't need with `[modules] disabled` and dependents cascade. Per-module reference: [`docs/built-in-modules.md`](docs/built-in-modules.md).
 - **Multi-database, your choice.** SQLite by default; PostgreSQL and MySQL supported via `DB_DRIVER`. Migrations run on first start.
 - **Custom fields, no plugins needed.** Define post types, user profile fields, and validation rules in `config.toml`. The admin form, storage, and queries all read from that file.
 - **Extend with WebAssembly plugins.** Drop a compiled `.wasm` into `plugins/` and it hooks into `before_save`, `after_create`, and `after_publish`. Plugins are sandboxed, immutable, and can call host functions for HTTP, DB, and logging.
-- **AI integrations are opt-in.** Bring your own OpenAI-compatible key for text, or a Google / OpenAI key for image generation. The admin panel surfaces them as buttons; nothing else changes.
+- **AI integrations are opt-in.** Bring your own OpenAI-compatible key for text, a Meta or OpenAI-compatible key for speech-to-text dictation, or a Google / OpenAI / Meta key for image generation. The admin panel surfaces them as buttons; nothing else changes.
 - **Built for humans AND AI agents.** A versioned REST API at `/api/v1`, a `lesstruct-cli` client, Markdown as a first-class ingest format, and installable agent skills (`npx skills add aristorinjuang/lesstruct`).
 
 ## Quick start
@@ -136,15 +136,16 @@ The only required value is `JWT_SECRET` (≥ 32 characters). Everything else has
 
 ## AI Agent Skills
 
-Lesstruct ships two skills that turn your AI agent into a Lesstruct expert. They work from your installed site (themes/ and plugins/ directories) — no access to the source tree required.
+Lesstruct ships three skills that turn your AI agent into a Lesstruct expert. Theme and plugin skills work from your installed site (themes/ and plugins/ directories); the module skill works from a cloned source checkout (modules/ and internal/editions/) — no access to the source tree is required for themes/plugins, while modules build against it.
 
 ```bash
-# Install both skills — the CLI auto-detects your agent(s) and their skill paths
+# Install all skills — the CLI auto-detects your agent(s) and their skill paths
 npx skills add aristorinjuang/lesstruct
 
 # Or install just one
 npx skills add aristorinjuang/lesstruct --skill lesstruct-theme-development
 npx skills add aristorinjuang/lesstruct --skill lesstruct-plugin-development
+npx skills add aristorinjuang/lesstruct --skill lesstruct-module-development
 ```
 
 This works with **30+ agents** — Claude Code, OpenCode, Cursor, Codex, Gemini CLI, GitHub Copilot, Cline, Roo Code, Windsurf, and more. The CLI detects which are installed and installs to the right path for each; pass `-g` for a global (user-wide) install, or `-a <agent>` to target a specific one. See each skill's `references/install-paths.md` for manual `cp -r` fallbacks and the full agent list.
@@ -153,6 +154,21 @@ Once installed, ask your agent things like:
 
 - "Help me build a dark theme for my Lesstruct site."
 - "Help me write a WASM plugin that enriches content from an external API."
+- "Help me write a Lesstruct Go module for guest wishlists in my checkout."
+
+Pair them with the [recommended Meta AI models](#unlock-the-full-potential-of-lesstruct-with-meta-ai) below to power the CMS features your agents build on.
+
+## Unlock the full potential of Lesstruct with Meta AI
+
+Lesstruct's AI features are opt-in and bring-your-own-key — set the keys in `.env` (see [Configuration](#configuration)). Any OpenAI-compatible endpoint works, but these are the Meta models Lesstruct recommends:
+
+| Model | Features |
+|---|---|
+| **Muse Wonder** | Extend Lesstruct further with the Lesstruct Module Development skill — optimized for Muse Code and Muse Wonder. |
+| **Muse Spark** | Enhance your writing and translate content into any language you've defined in `config.toml`. |
+| **Muse Voice Transcribe** | Speech-to-content: record your voice in the editor and Lesstruct turns it into publish-ready content — transcribed by Muse Voice Transcribe, then enhanced and formatted by Muse Spark. |
+| **Muse Image** | Generate any image you want, including exact 1200×630 Open Graph previews — guided by up to three reference images. |
+| **Muse SAM** | Keeps the platform safe by blurring faces, license plates, and nudity in images users upload, before anything is stored. |
 
 ## Plugin Development
 
@@ -169,6 +185,7 @@ Every first-party feature — users, auth, media, comments, SEO, and more — is
 - Module development guide: [`docs/module-development.md`](docs/module-development.md)
 - The kernel: [`docs/kernel.md`](docs/kernel.md) · versioning policy: [`docs/kernel-versioning.md`](docs/kernel-versioning.md)
 - Built-in modules reference: [`docs/built-in-modules.md`](docs/built-in-modules.md)
+- AI-assisted workflow: [`skills/lesstruct-module-development/`](skills/lesstruct-module-development/)
 
 ## Theme Development
 
