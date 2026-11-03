@@ -31,13 +31,13 @@
 
 {{ define "main" }}
 <section class="landing-release">
-  <a href="/docs/getting-started-ecommerce/"><span class="landing-release-chip">v1.1</span> The eCommerce edition is here. Open your store today — manual transfer or Midtrans Snap.&nbsp;&rarr;</a>
+  <a href="#meta-ai"><span class="landing-release-chip">v1.2</span> Unlock the full potential of Lesstruct with Meta AI. Speech dictation, privacy blurring, and the Module Development skill.&nbsp;&rarr;</a>
 </section>
 
 <section class="landing-hero">
   <div class="landing-hero-inner">
     <img class="landing-logo" src="/brand/lesstruct-320.webp" width="96" height="96" alt="Lesstruct logo">
-    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.1</a></p>
+    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.2</a></p>
     <h1>{{ .Title | default .Site.Title }}</h1>
     <p class="landing-tagline">{{ .Description | default .Site.Params.description }}</p>
     <div class="landing-cta">
@@ -51,26 +51,26 @@
 </section>
 
 <section class="landing-spotlight" id="whats-new">
-  <h2>What&rsquo;s new in v1.1</h2>
+  <h2>What&rsquo;s new in v1.2</h2>
   <p class="landing-section-lede">
-    The eCommerce edition turns the CMS into a store: products, cart,
-    checkout, payments, and delivery in one binary.
+    Unlock the full potential of Lesstruct with Meta AI: a recommended
+    model for every AI feature, from dictation to safe uploads.
   </p>
   <div class="landing-spotlight-grid">
-    <a class="spotlight-tile" href="/docs/getting-started-ecommerce/">
-      <span class="spotlight-kicker">The eCommerce edition</span>
-      <h3>Open your store today</h3>
-      <p>Publish products, take manual-transfer orders, and work them through to delivery — with the storefront theme included.</p>
+    <a class="spotlight-tile" href="/docs/features/#ai">
+      <span class="spotlight-kicker">Meta AI models</span>
+      <h3>One Muse model per feature</h3>
+      <p>Muse Spark enhances and translates, Muse Voice Transcribe dictates, Muse Image illustrates, and Muse SAM keeps uploads safe — one key each, in <code>.env</code>.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/features/#deploy-run">
-      <span class="spotlight-kicker">Catalog, orders &amp; payments</span>
-      <h3>Commerce that fits in config</h3>
-      <p>Minor-unit pricing with variant matrices, verified payment proofs, Midtrans Snap checkout, and per-order invoice PDFs.</p>
+    <a class="spotlight-tile" href="/docs/features/#ai">
+      <span class="spotlight-kicker">Speech dictation</span>
+      <h3>Speak your content</h3>
+      <p>Record up to five minutes in the editor and Lesstruct turns your voice into formatted, publish-ready content — transcribed by Muse Voice Transcribe, enhanced by Muse Spark.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/cli/">
-      <span class="spotlight-kicker">Lesstruct CLI</span>
-      <h3>Built for AI agents</h3>
-      <p>Agents live on command lines. The Lesstruct CLI drives content, media, and exports over the versioned API — no browser needed.</p>
+    <a class="spotlight-tile" href="/docs/features/#media-images">
+      <span class="spotlight-kicker">Privacy blurring</span>
+      <h3>Uploads, screened on arrival</h3>
+      <p>Opt in with a SAM key and every image is scanned and blurred — faces, plates, nudity — before anything is stored.</p>
     </a>
   </div>
 </section>
@@ -91,7 +91,7 @@
     <a class="feature-card" href="/docs/built-in-modules/">
       <span class="feature-glyph" aria-hidden="true">🧩</span>
       <h3>Modular &amp; lean</h3>
-      <p>Eleven built-in modules with a declared graph — disable what you don't need and the binary stays one lean whole.</p>
+      <p>Eighteen built-in modules with a declared graph — disable what you don't need and the binary stays one lean whole.</p>
     </a>
     <a class="feature-card" href="/docs/features/#deploy-run">
       <span class="feature-glyph" aria-hidden="true">🔌</span>

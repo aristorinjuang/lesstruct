@@ -44,7 +44,7 @@
 ## Why Lesstruct?
 
 - **One binary, no Docker.** A single static Go binary runs the whole CMS. SQLite is built in. No runtime, no container, no `node_modules` in production.
-- **Everything is a module.** Twelve built-in features are independent modules with a declared dependency graph — disable what you don't need with `[modules] disabled` and dependents cascade. Per-module reference: [`docs/built-in-modules.md`](docs/built-in-modules.md).
+- **Everything is a module.** Eighteen built-in modules with a declared dependency graph — disable what you don't need with `[modules] disabled` and dependents cascade. Per-module reference: [`docs/built-in-modules.md`](docs/built-in-modules.md).
 - **Multi-database, your choice.** SQLite by default; PostgreSQL and MySQL supported via `DB_DRIVER`. Migrations run on first start.
 - **Custom fields, no plugins needed.** Define post types, user profile fields, and validation rules in `config.toml`. The admin form, storage, and queries all read from that file.
 - **Extend with WebAssembly plugins.** Drop a compiled `.wasm` into `plugins/` and it hooks into `before_save`, `after_create`, and `after_publish`. Plugins are sandboxed, immutable, and can call host functions for HTTP, DB, and logging.
