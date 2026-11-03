@@ -20,6 +20,7 @@ require (
 	github.com/aristorinjuang/lesstruct/modules/privacy v1.2.0
 	github.com/aristorinjuang/lesstruct/modules/seo v1.2.0
 	github.com/aristorinjuang/lesstruct/modules/site-ssr v1.2.0
+	github.com/aristorinjuang/lesstruct/modules/speech v1.2.0
 	github.com/aristorinjuang/lesstruct/modules/textgen v1.2.0
 	github.com/aristorinjuang/lesstruct/modules/theme-default v1.2.0
 	github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.2.0
@@ -51,7 +52,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
-	github.com/aristorinjuang/lesstruct/modules/speech v1.2.0
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.35 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.35 // indirect

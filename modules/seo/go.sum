@@ -1,5 +1,5 @@
-github.com/aristorinjuang/lesstruct/kernel v1.1.2 h1:pb3zFTY7mJuIxzIr/T+oVmlny8fMdyf3pQ5KRBe7bj8=
-github.com/aristorinjuang/lesstruct/kernel v1.1.2/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
+github.com/aristorinjuang/lesstruct/kernel v1.2.0 h1:kUUANnR1himOZJF4jTqp5FX3BWc/LnRJEq1YkPn9cnQ=
+github.com/aristorinjuang/lesstruct/kernel v1.2.0/go.mod h1:PKcoH5C03h9Uebt/5eFRENjn0/VLE1HeYoVn1lfBuRA=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
