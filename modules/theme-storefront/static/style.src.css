@@ -1917,11 +1917,8 @@
 		font-size: 0.75rem;
 	}
 
-	.brand__name {
-		max-width: 42vw;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.site-header .brand__name {
+		display: none;
 	}
 
 	.product-grid {
