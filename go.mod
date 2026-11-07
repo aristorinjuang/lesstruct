@@ -6,25 +6,25 @@ toolchain go1.27.3
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/aristorinjuang/lesstruct/kernel v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/adminpanel v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/auth v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/cart v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/catalog v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/comments v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/importers v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/media v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/orders v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/payments v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/privacy v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/seo v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/site-ssr v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/speech v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/textgen v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/theme-default v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.2.1
-	github.com/aristorinjuang/lesstruct/modules/users v1.2.1
+	github.com/aristorinjuang/lesstruct/kernel v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/adminpanel v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/auth v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/cart v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/catalog v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/comments v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/importers v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/media v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/orders v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/payments v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/privacy v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/seo v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/site-ssr v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/speech v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/textgen v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/theme-default v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.2.2
+	github.com/aristorinjuang/lesstruct/modules/users v1.2.2
 	github.com/aws/aws-sdk-go-v2 v1.43.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.0
