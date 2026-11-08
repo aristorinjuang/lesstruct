@@ -5,11 +5,11 @@ go 1.27
 toolchain go1.27.3
 
 require (
-	github.com/aristorinjuang/lesstruct/kernel v1.2.2
-	github.com/aristorinjuang/lesstruct/modules/comments v1.2.2
-	github.com/aristorinjuang/lesstruct/modules/media v1.2.2
-	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.2.2
-	github.com/aristorinjuang/lesstruct/modules/theme-default v1.2.2
+	github.com/aristorinjuang/lesstruct/kernel v1.3.0
+	github.com/aristorinjuang/lesstruct/modules/comments v1.3.0
+	github.com/aristorinjuang/lesstruct/modules/media v1.3.0
+	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.3.0
+	github.com/aristorinjuang/lesstruct/modules/theme-default v1.3.0
 	github.com/stretchr/testify v1.11.1
 )
 
