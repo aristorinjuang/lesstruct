@@ -225,7 +225,7 @@ type DownloadOptions struct {
 
 // Client is a typed HTTP client over the /api/v1 surface. It depends only on
 // the JSON contract (stdlib) — it imports no server internals — which is what
-// lets a future MCP server reuse it. Construct it with New.
+// lets the lesstruct-cli and lesstruct-mcp binaries share it. Construct it with New.
 type Client struct {
 	baseURL *url.URL
 	apiKey  string
@@ -379,6 +379,22 @@ func (c *Client) doRequestWithClient(
 	}
 
 	return env.Data, env.Meta, nil
+}
+
+// Do sends an arbitrary JSON request with the given method to path and returns
+// the decoded data and meta payloads, or an *APIError on failure. It is the
+// escape hatch behind the lesstruct-mcp generic api tool and ad-hoc callers:
+// prefer the typed methods (CreateContent, OrdersList, ...) when one exists,
+// since they encode the endpoint's contract. The path must be an /api/v1/... route;
+// the body, when non-nil, is marshaled as JSON.
+func (c *Client) Do(
+	ctx context.Context,
+	method string,
+	path string,
+	query url.Values,
+	body any,
+) (json.RawMessage, json.RawMessage, error) {
+	return c.do(ctx, method, path, query, body)
 }
 
 // CreateContent POSTs a content-create request to /api/v1/content and returns
@@ -924,7 +940,7 @@ func (c *Client) GetHugoImportStatus(
 // path avoids a silent double-prefix when callers proxy under a path. The
 // returned Client follows redirects but strips the API key on cross-host hops.
 // A default 30s per-request timeout is applied so a hung server cannot block
-// the CLI indefinitely.
+// the caller indefinitely.
 func New(baseURL, apiKey string) (*Client, error) {
 	trimmed := strings.TrimRight(baseURL, "/")
 	parsed, err := url.Parse(trimmed)

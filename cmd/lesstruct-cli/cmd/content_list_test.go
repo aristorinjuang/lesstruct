@@ -356,7 +356,7 @@ func TestContentList_AuthorFlagNonAdminReturns403(t *testing.T) {
 		&out,
 		&errOut,
 	)
-	// The CLI's exit-code scheme (cmd/lesstruct-cli/internal/client/exitcode.go)
+	// The CLI's exit-code scheme (pkg/apiv1/exitcode.go)
 	// maps 4xx → ExitValidation (5) — there is no separate Forbidden exit code
 	// today. The surface signal is the FORBIDDEN code + message printed to stderr.
 	assert.Equal(t, 5, code, "4xx maps to ExitValidation in the documented scheme")

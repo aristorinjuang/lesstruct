@@ -7,6 +7,7 @@
 MODULE := github.com/aristorinjuang/lesstruct
 VERSION ?= $(shell git describe --tags --match "v*" --always --dirty 2>/dev/null || echo dev)
 CLI_LDFLAGS := -X $(MODULE)/cmd/lesstruct-cli/cmd.version=$(VERSION)
+MCP_LDFLAGS := -X $(MODULE)/cmd/lesstruct-mcp/cmd.version=$(VERSION)
 
 # MODERNIZE_VERSION pins the standalone gopls modernize runner. Keep it in
 # sync with the gopls version your editor runs so CI and editor suggestions
@@ -110,6 +111,9 @@ build-admin:
 
 build-cli:
 	mkdir -p bin && go build -ldflags "$(CLI_LDFLAGS)" -o bin/lesstruct-cli ./cmd/lesstruct-cli
+
+build-mcp:
+	mkdir -p bin && go build -ldflags "$(MCP_LDFLAGS)" -o bin/lesstruct-mcp ./cmd/lesstruct-mcp
 
 # build-server compiles the server edition: the root package with the
 # nosqlite build tag — postgres/mysql only, no embedded sqlite.

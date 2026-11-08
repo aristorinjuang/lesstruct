@@ -26,6 +26,36 @@ go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli@latest
 Point it at a running server and create an API key from the admin panel. The
 full command reference lives in the [API Reference](/docs/api-reference/).
 
+## Connect your AI agent
+
+`lesstruct-mcp` exposes the same API as 44 MCP tools over stdio, so any
+MCP-native agent (Muse Code, Claude Code, OpenCode, Cursor) can operate the
+site and the store with the same API key — no browser session needed.
+
+```bash
+go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp@latest
+```
+
+**Muse Code** — add the server under `mcpServers` in
+`~/.config/muse/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "lesstruct": {
+      "command": "lesstruct-mcp",
+      "env": {
+        "LESSTRUCT_API_KEY": "lesstruct_<keyID>_<secret>",
+        "LESSTRUCT_BASE_URL": "http://localhost:8080"
+      }
+    }
+  }
+}
+```
+
+Claude Code, OpenCode, and Cursor snippets live in the
+[MCP guide](/docs/mcp/).
+
 ## Where to go next
 
 - **Evaluating Lesstruct?** Browse the full [Features](/docs/features/) catalog, or [see it in action](/tour/) with screenshots from a running demo.

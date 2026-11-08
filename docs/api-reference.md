@@ -1,6 +1,6 @@
 # Lesstruct API Reference (`/api/v1`)
 
-Lesstruct exposes a versioned, API-key-authenticated REST API at `/api/v1` for creating, reading, updating, and deleting **Content** and **Media** — plus the commerce admin surface (catalog, orders, payments, invoice settings) on eCommerce builds, and media deletion. It is designed for programmatic consumers — the [`lesstruct-cli`](cli.md), MCP servers, AI agents (Claude Code, OpenCode, Hermes, …), and human integrators — and accepts Markdown as a first-class authoring format.
+Lesstruct exposes a versioned, API-key-authenticated REST API at `/api/v1` for creating, reading, updating, and deleting **Content** and **Media** — plus the commerce admin surface (catalog, orders, payments, invoice settings) on eCommerce builds, and media deletion. It is designed for programmatic consumers — [`lesstruct-cli`](cli.md), MCP servers (see [`lesstruct-mcp`](mcp.md)), AI agents (Claude Code, OpenCode, Hermes, …), and human integrators — and accepts Markdown as a first-class authoring format.
 
 This reference documents the **implemented** surface. For the design intent, see `_bmad-output/planning-artifacts/architecture-ai-cli.md`.
 

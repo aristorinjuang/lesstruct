@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/internal/client"
+	"github.com/aristorinjuang/lesstruct/pkg/apiv1"
 )
 
 // defaultDownloadTimeout caps one archive pull end to end; large exports of

@@ -22,6 +22,7 @@ section — each doc states its scope at the top._
 | Commerce order model: checkout invariants, lifecycle, Money, invoices | [ddd/orders-bounded-context.md](ddd/orders-bounded-context.md) |
 | The `/api/v1` REST API (auth, envelope, error catalog) | [api-reference.md](api-reference.md) |
 | The `lesstruct-cli` terminal client (install, auth, commands, workflows) | [cli.md](cli.md) |
+| The `lesstruct-mcp` MCP server for AI agents (setup, tool catalog) | [mcp.md](mcp.md) |
 | `config.toml` schema or environment variables | [configuration.md](configuration.md) |
 | Writing a Go module (Tier 1: layout, seams, gating, wiring) | [module-development.md](module-development.md) |
 | What a built-in module owns / what disabling it does | [built-in-modules.md](built-in-modules.md) |

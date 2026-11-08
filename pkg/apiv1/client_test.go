@@ -6,10 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
-	"github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/internal/client"
+	"github.com/aristorinjuang/lesstruct/pkg/apiv1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1403,4 +1404,100 @@ func TestClient_DoRaw_EmptySuccess(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "INTERNAL_ERROR", apiErr.Code)
 	})
+}
+
+func TestClient_Do(t *testing.T) {
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		query       url.Values
+		body        any
+		status      int
+		respBody    string
+		wantData    string
+		wantPayload map[string]any
+		wantMethod  string
+		wantPath    string
+		wantQuery   string
+		wantErr     bool
+		wantCode    string
+	}{
+		{
+			name:        "success - GET with query",
+			method:      http.MethodGet,
+			path:        "/api/v1/orders",
+			query:       url.Values{"status": []string{"pending"}},
+			body:        nil,
+			status:      http.StatusOK,
+			respBody:    `{"data":[{"id":1}],"meta":{"pagination":{"hasMore":false}}}`,
+			wantData:    `[{"id":1}]`,
+			wantPayload: nil,
+			wantMethod:  http.MethodGet,
+			wantPath:    "/api/v1/orders",
+			wantQuery:   "status=pending",
+			wantErr:     false,
+			wantCode:    "",
+		},
+		{
+			name:        "success - POST with JSON body",
+			method:      http.MethodPost,
+			path:        "/api/v1/orders/1/status",
+			query:       nil,
+			body:        map[string]any{"status": "shipped"},
+			status:      http.StatusOK,
+			respBody:    `{"data":{"order":{"id":1,"status":"shipped"}}}`,
+			wantData:    `{"order":{"id":1,"status":"shipped"}}`,
+			wantPayload: map[string]any{"status": "shipped"},
+			wantMethod:  http.MethodPost,
+			wantPath:    "/api/v1/orders/1/status",
+			wantQuery:   "",
+			wantErr:     false,
+			wantCode:    "",
+		},
+		{
+			name:        "error - error envelope surfaces code",
+			method:      http.MethodGet,
+			path:        "/api/v1/orders/9",
+			query:       nil,
+			body:        nil,
+			status:      http.StatusForbidden,
+			respBody:    `{"error":{"code":"FORBIDDEN","message":"nope"}}`,
+			wantData:    "",
+			wantPayload: nil,
+			wantMethod:  "",
+			wantPath:    "",
+			wantQuery:   "",
+			wantErr:     true,
+			wantCode:    "FORBIDDEN",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &recordingHandler{status: tt.status, body: tt.respBody}
+			srv := httptest.NewServer(h)
+			defer srv.Close()
+
+			c, err := client.New(srv.URL, "k")
+			require.NoError(t, err)
+
+			data, _, err := c.Do(context.Background(), tt.method, tt.path, tt.query, tt.body)
+			if tt.wantErr {
+				require.Error(t, err)
+				apiErr, ok := err.(*client.APIError)
+				require.True(t, ok)
+				assert.Equal(t, tt.wantCode, apiErr.Code)
+				return
+			}
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.wantData, string(data))
+			if tt.wantPayload != nil {
+				assert.Equal(t, tt.wantPayload, h.gotPayload)
+			}
+			assert.Equal(t, tt.wantMethod, h.gotMethod)
+			assert.Equal(t, tt.wantPath, h.gotPath)
+			assert.Equal(t, tt.wantQuery, h.gotQuery)
+		})
+	}
 }

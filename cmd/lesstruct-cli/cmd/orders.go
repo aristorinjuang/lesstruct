@@ -6,7 +6,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/internal/client"
+	"github.com/aristorinjuang/lesstruct/pkg/apiv1"
 	"github.com/spf13/cobra"
 )
 

@@ -49,7 +49,7 @@
 - **Custom fields, no plugins needed.** Define post types, user profile fields, and validation rules in `config.toml`. The admin form, storage, and queries all read from that file.
 - **Extend with WebAssembly plugins.** Drop a compiled `.wasm` into `plugins/` and it hooks into `before_save`, `after_create`, and `after_publish`. Plugins are sandboxed, immutable, and can call host functions for HTTP, DB, and logging.
 - **AI integrations are opt-in.** Bring your own OpenAI-compatible key for text, a Meta or OpenAI-compatible key for speech-to-text dictation, or a Google / OpenAI / Meta key for image generation. The admin panel surfaces them as buttons; nothing else changes.
-- **Built for humans AND AI agents.** A versioned REST API at `/api/v1`, a `lesstruct-cli` client, Markdown as a first-class ingest format, and installable agent skills (`npx skills add aristorinjuang/lesstruct`).
+- **Built for humans AND AI agents.** A versioned REST API at `/api/v1`, a `lesstruct-cli` client, a `lesstruct-mcp` MCP server, Markdown as a first-class ingest format, and installable agent skills (`npx skills add aristorinjuang/lesstruct`).
 
 ## Quick start
 
@@ -65,7 +65,7 @@ Open <http://localhost:8080/admin>, **sign in as `admin` / `admin`** and set a n
 
 ### Option A — Download a release binary (recommended)
 
-Grab the latest build for your platform from the [releases page](https://github.com/aristorinjuang/lesstruct/releases). Each release ships static binaries for `linux`, `darwin`, and `windows` on `amd64` and `arm64` — the default (blog) edition as `lesstruct-<os>-<arch>`, the Core edition (headless engine) as `lesstruct-core-<os>-<arch>`, the eCommerce edition as `lesstruct-ecommerce-<os>-<arch>`, and the CLI as `lesstruct-cli-<os>-<arch>`.
+Grab the latest build for your platform from the [releases page](https://github.com/aristorinjuang/lesstruct/releases). Each release ships static binaries for `linux`, `darwin`, and `windows` on `amd64` and `arm64` — the default (blog) edition as `lesstruct-<os>-<arch>`, the Core edition (headless engine) as `lesstruct-core-<os>-<arch>`, the eCommerce edition as `lesstruct-ecommerce-<os>-<arch>`, the CLI as `lesstruct-cli-<os>-<arch>`, and the MCP server as `lesstruct-mcp-<os>-<arch>`.
 
 | OS | amd64 | arm64 |
 |---|---|---|
@@ -208,6 +208,15 @@ Point it at a running server and create an API key from the admin panel to get s
 
 - API reference: [`docs/api-reference.md`](docs/api-reference.md)
 - Build from source: `make build-cli` → `bin/lesstruct-cli`
+
+`lesstruct-mcp` is a stdio MCP server over the same API — 44 tools across content, media, catalog, orders, payments, users, comments, and import/export — so any MCP-native agent can operate the site. Install it with Go:
+
+```bash
+go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp@latest
+```
+
+- MCP setup and tool catalog: [`docs/mcp.md`](docs/mcp.md)
+- Build from source: `make build-mcp` → `bin/lesstruct-mcp`
 
 ## Support this project
 

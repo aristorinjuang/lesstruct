@@ -46,6 +46,13 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Output mode: `--output text|json` (default `text`)
 - `--version` prints the build version (injected via `-ldflags` in `make build-cli`/`install`, git-derived; defaults to `dev`)
 - Built via `make build-cli` → `bin/lesstruct-cli`; integration tests via `make test-cli` (tag `integration`)
+- The typed HTTP client lives in `pkg/apiv1` (package `client`) so both binaries share it; the move from `cmd/lesstruct-cli/internal/client` keeps the HTTP API as the hard boundary
+
+### MCP Server (`cmd/lesstruct-mcp`)
+- Stdio MCP server over `/api/v1` for AI agents (Claude Code, OpenCode, Cursor); official `modelcontextprotocol/go-sdk` v1.6.1, 44 tools across content, media, catalog, orders, payments, users, invoice-settings, comment, import, export, ssg, plus the `lesstruct_api` escape hatch
+- Reuses `pkg/apiv1` and the CLI's credential precedence (flag → env → config file); auth errors surface before serving; stdout is protocol-only, diagnostics go to stderr
+- New tools go in `cmd/lesstruct-mcp/cmd/tools_<group>.go` as `make*Handler` closures over the shared client; tests drive them end-to-end through `New` + in-memory MCP transports
+- Built via `make build-mcp` → `bin/lesstruct-mcp` (`--version` injected via `-ldflags` like the CLI)
 
 ### Admin Panel (Frontend) — `web/admin/`
 - **Vue 3** 3.5.31 — Composition API + `<script setup>` only
@@ -137,6 +144,7 @@ Quick routing — confirm the exact package by reading the matching `internal/` 
 | A content format converter | `internal/content/<format>/` (tipTap JSON converters); HTML-format content is stored directly via the content service (no converter needed) |
 | A plugin host function or hook | `internal/plugin/` |
 | A CLI subcommand | `cmd/lesstruct-cli/` |
+| An MCP tool | `cmd/lesstruct-mcp/cmd/tools_<group>.go` (handler maker + `register<Group>Tools`, wired in `registerTools`) |
 | Admin UI | `web/admin/src/` following atomic design (`atoms/` → `molecules/` → `organisms/` → `views/`); the **Pinia store action** makes the API call — components only call store actions |
 
 ---

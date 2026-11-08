@@ -31,7 +31,7 @@ jobs:
         run: make build-admin
 
       - name: Build Binaries (blog, core, and eCommerce editions plus the
-          CLI; the sqlite-free server edition from `make build-server` is
+          CLI and MCP server; the sqlite-free server edition from `make build-server` is
           not shipped as a release asset yet)
         env:
           VERSION: ${{ github.ref_name }}
@@ -54,6 +54,9 @@ jobs:
               # CLI — carries the release version like `make install` does.
               CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
                 go build -ldflags="-s -w -X github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli/cmd.version=${VERSION}" -o "dist/lesstruct-cli-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-cli
+              # MCP server — same version stamping as the CLI.
+              CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
+                go build -ldflags="-s -w -X github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp/cmd.version=${VERSION}" -o "dist/lesstruct-mcp-${GOOS}-${GOARCH}${SUFFIX}" ./cmd/lesstruct-mcp
             done
           done
 
@@ -75,6 +78,11 @@ jobs:
           cli_out=$(./dist/lesstruct-cli-linux-amd64 --version)
           if [ "$cli_out" != "lesstruct-cli version ${VERSION}" ]; then
             echo "::error::lesstruct-cli --version printed '$cli_out', want 'lesstruct-cli version ${VERSION}'"
+            exit 1
+          fi
+          mcp_out=$(./dist/lesstruct-mcp-linux-amd64 --version)
+          if [ "$mcp_out" != "lesstruct-mcp version ${VERSION}" ]; then
+            echo "::error::lesstruct-mcp --version printed '$mcp_out', want 'lesstruct-mcp version ${VERSION}'"
             exit 1
           fi
           revision=$(git rev-parse HEAD)
