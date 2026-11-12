@@ -30,7 +30,7 @@ MOCKERY_VERSION := v3.8.1
 # `go run pkg@version` invocations below also bypass PATH entirely, so stale
 # tool binaries elsewhere on the system cannot shadow the pinned versions.
 # Keep the version in sync with the `toolchain` directive in go.mod.
-GOTOOLCHAIN_VERSION := go1.27.3
+GOTOOLCHAIN_VERSION := go1.27.4
 
 # SUBMODULES lists every nested Go module covered by the test/lint gates
 # alongside the root module. Add each new modules/<name> here on creation.
