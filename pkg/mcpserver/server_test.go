@@ -1,4 +1,4 @@
-package cmd_test
+package mcpserver_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp/cmd"
+	"github.com/aristorinjuang/lesstruct/pkg/mcpserver"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,7 +79,7 @@ func testSession(t *testing.T, h *backendHandler) *mcp.ClientSession {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 
-	ms, err := cmd.New("k", srv.URL)
+	ms, err := mcpserver.New("k", srv.URL, "test")
 	require.NoError(t, err)
 
 	serverTrans, clientTrans := mcp.NewInMemoryTransports()
@@ -141,59 +141,13 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv, err := cmd.New(tt.apiKey, tt.baseURL)
+			srv, err := mcpserver.New(tt.apiKey, tt.baseURL, "test")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
 			assert.NotNil(t, srv)
-		})
-	}
-}
-
-func TestExecuteArgs(t *testing.T) {
-	tests := []struct {
-		name       string
-		args       []string
-		env        map[string]string
-		wantCode   int
-		wantStderr string
-	}{
-		{
-			name:       "success - version flag",
-			args:       []string{"--version"},
-			env:        nil,
-			wantCode:   0,
-			wantStderr: "",
-		},
-		{
-			name:       "error - unknown flag",
-			args:       []string{"--nope"},
-			env:        nil,
-			wantCode:   1,
-			wantStderr: "unknown flag",
-		},
-		{
-			name:       "error - missing API key",
-			args:       []string{},
-			env:        map[string]string{"LESSTRUCT_API_KEY": "", "LESSTRUCT_CONFIG": "/nonexistent-config.toml"},
-			wantCode:   1,
-			wantStderr: "no API key found",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			for k, v := range tt.env {
-				t.Setenv(k, v)
-			}
-			var out, errOut strings.Builder
-			code := cmd.ExecuteArgs(tt.args, &out, &errOut)
-			assert.Equal(t, tt.wantCode, code)
-			if tt.wantStderr != "" {
-				assert.Contains(t, errOut.String(), tt.wantStderr)
-			}
 		})
 	}
 }

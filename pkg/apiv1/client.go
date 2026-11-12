@@ -640,6 +640,7 @@ func (c *Client) ReencodeMedia(
 	ctx context.Context,
 ) (json.RawMessage, json.RawMessage, error) {
 	reencodeClient := &http.Client{
+		Transport:     c.http.Transport,
 		CheckRedirect: redirectPolicy,
 		Timeout:       ReencodeTimeout,
 	}
@@ -828,6 +829,7 @@ func (c *Client) ImportWordPress(
 	// Use a separate HTTP client without a hard timeout for the upload
 	// (the caller controls the deadline via ctx).
 	uploadClient := &http.Client{
+		Transport:     c.http.Transport,
 		CheckRedirect: redirectPolicy,
 	}
 
@@ -913,6 +915,7 @@ func (c *Client) ImportHugo(
 	// Use a separate HTTP client without a hard timeout for the upload
 	// (the caller controls the deadline via ctx).
 	uploadClient := &http.Client{
+		Transport:     c.http.Transport,
 		CheckRedirect: redirectPolicy,
 	}
 
@@ -942,6 +945,16 @@ func (c *Client) GetHugoImportStatus(
 // A default 30s per-request timeout is applied so a hung server cannot block
 // the caller indefinitely.
 func New(baseURL, apiKey string) (*Client, error) {
+	return NewWithClient(baseURL, apiKey, nil)
+}
+
+// NewWithClient is New with a caller-supplied HTTP client, so a transport
+// front-end can route /api/v1 calls without a network hop (the server's /mcp
+// endpoint dispatches them into its own router). A nil httpClient applies the
+// same redirect policy and 30s timeout as New; a supplied client is cloned and
+// only gains the safe cross-host redirect policy when it has none, so the
+// caller keeps its transport, timeout, and jar.
+func NewWithClient(baseURL, apiKey string, httpClient *http.Client) (*Client, error) {
 	trimmed := strings.TrimRight(baseURL, "/")
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
@@ -962,12 +975,21 @@ func New(baseURL, apiKey string) (*Client, error) {
 			baseURL,
 		)
 	}
+	if httpClient == nil {
+		httpClient = &http.Client{
+			CheckRedirect: redirectPolicy,
+			Timeout:       30 * time.Second,
+		}
+	} else {
+		cloned := *httpClient
+		httpClient = &cloned
+		if httpClient.CheckRedirect == nil {
+			httpClient.CheckRedirect = redirectPolicy
+		}
+	}
 	return &Client{
 		baseURL: parsed,
 		apiKey:  apiKey,
-		http: &http.Client{
-			CheckRedirect: redirectPolicy,
-			Timeout:       30 * time.Second,
-		},
+		http:    httpClient,
 	}, nil
 }

@@ -209,7 +209,7 @@ Point it at a running server and create an API key from the admin panel to get s
 - API reference: [`docs/api-reference.md`](docs/api-reference.md)
 - Build from source: `make build-cli` → `bin/lesstruct-cli`
 
-`lesstruct-mcp` is a stdio MCP server over the same API — 44 tools across content, media, catalog, orders, payments, users, comments, and import/export — so any MCP-native agent can operate the site. Install it with Go:
+`lesstruct-mcp` is a stdio MCP server over the same API — 44 tools across content, media, catalog, orders, payments, users, comments, and import/export — so any MCP-native agent can operate the site. The same tool surface is available over the network as MCP Streamable HTTP at `POST /mcp` when `[mcp] enabled = true` is set in `config.toml`. Install the stdio binary with Go:
 
 ```bash
 go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp@latest

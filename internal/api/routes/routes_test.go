@@ -112,11 +112,19 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 	return setupTestRouterWithFlags(t, false, true, nil, nil)
 }
 
-// setupTestRouterWithFlags is setupTestRouterWithBearerDeps with the headless and
-// comments feature flags configurable, plus optional SPA handler/handler stubs so
-// tests can prove what headless mode mounts (or unmounts). A nil spaHandler keeps
-// the behavior of the default helper (no content-site catch-all registered at all).
+// setupTestRouterWithFlags is setupTestRouterWithOptions with the MCP endpoint
+// disabled (the production default) and the headless and comments feature
+// flags configurable, plus optional SPA handler/handler stubs so tests can
+// prove what headless mode mounts (or unmounts). A nil spaHandler keeps the
+// behavior of the default helper (no content-site catch-all registered at all).
 func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd)
+}
+
+// setupTestRouterWithOptions is setupTestRouterWithFlags with the MCP endpoint
+// toggle exposed, so the /mcp mount can be exercised on the real router.
+func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
 	t.Helper()
 
 	// Create test auth handler
@@ -312,6 +320,7 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 		[]string{"en"},
 		nil,
 		headlessEnabled,
+		mcpEnabled,
 		commentsEnabled,
 		"local",
 		middleware.NewCapabilityResolver(role.NewService()),
@@ -474,6 +483,7 @@ func TestSetup(t *testing.T) {
 		nil,
 		[]string{"en"},
 		nil,
+		false,
 		false,
 		true,
 		"local",
@@ -1890,6 +1900,68 @@ func TestAgentUsersRoutes_AdminGated(t *testing.T) {
 
 			assert.Equal(t, tt.wantCode, code)
 			assert.Equal(t, tt.wantEnvelope, envelope)
+		})
+	}
+}
+
+// TestMCPSurface proves the opt-in /mcp mount end to end: unmounted by default
+// (404), Bearer-gated when enabled (401 without a key), and protocol-capable
+// with a valid key (initialize returns the lesstruct-mcp server info as JSON).
+func TestMCPSurface(t *testing.T) {
+	const initializeBody = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"route-test","version":"1"}}}`
+
+	tests := []struct {
+		name     string
+		enabled  bool
+		withKey  bool
+		wantCode int
+		wantBody string
+	}{
+		{
+			name:     "disabled - route is not mounted",
+			enabled:  false,
+			wantCode: http.StatusNotFound,
+		},
+		{
+			name:     "enabled - missing key is rejected",
+			enabled:  true,
+			wantCode: http.StatusUnauthorized,
+			wantBody: "UNAUTHORIZED",
+		},
+		{
+			name:     "enabled - initialize succeeds",
+			enabled:  true,
+			withKey:  true,
+			wantCode: http.StatusOK,
+			wantBody: "lesstruct-mcp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil)
+			if tt.withKey {
+				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
+				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
+				deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+				deps.user.EXPECT().GetUserByID(mock.Anything, testBearerUserID).
+					Return(&user.User{ID: testBearerUserID, Username: "agent", Role: "Admin", Status: "verified"}, nil)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(initializeBody))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			if tt.withKey {
+				req.Header.Set("Authorization", "Bearer "+testBearerToken)
+			}
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.wantCode, w.Code)
+			if tt.wantBody != "" {
+				assert.Contains(t, w.Body.String(), tt.wantBody)
+			}
 		})
 	}
 }

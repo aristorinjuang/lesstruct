@@ -1,4 +1,4 @@
-package cmd_test
+package mcpserver_test
 
 import (
 	"encoding/base64"

@@ -1,4 +1,4 @@
-package cmd
+package mcpserver
 
 import (
 	"context"
@@ -93,19 +93,32 @@ func (s *Server) Connect(ctx context.Context, t mcp.Transport) (*mcp.ServerSessi
 	return s.mcpServer.Connect(ctx, t, nil)
 }
 
-// New builds a Server targeting baseURL with apiKey. The key is resolved by
-// the caller (flag → env → config file); the client validates the base URL
-// shape. Every tool group registers here, so a new group is one register call
-// plus its tools_*.go file.
-func New(apiKey, baseURL string) (*Server, error) {
+// MCP returns the underlying SDK server so a transport front-end (the server's
+// /mcp endpoint) can attach its own session handling.
+func (s *Server) MCP() *mcp.Server {
+	return s.mcpServer
+}
+
+// New builds a Server targeting baseURL with apiKey and reports version in the
+// MCP handshake. The key is resolved by the caller (flag → env → config file);
+// the client validates the base URL shape. Every tool group registers here, so
+// a new group is one register call plus its tools_*.go file.
+func New(apiKey, baseURL, version string) (*Server, error) {
 	c, err := client.New(baseURL, apiKey)
 	if err != nil {
 		return nil, err
 	}
+	return NewWithClient(c, version), nil
+}
+
+// NewWithClient builds a Server over an existing /api/v1 client. The HTTP
+// front-end uses this to bind each request's API key to its own in-process
+// client; New is the flag/env/config specialization.
+func NewWithClient(c *client.Client, version string) *Server {
 	ms := mcp.NewServer(
 		&mcp.Implementation{Name: serverName, Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions},
 	)
 	registerTools(ms, c)
-	return &Server{mcpServer: ms, client: c}, nil
+	return &Server{mcpServer: ms, client: c}
 }

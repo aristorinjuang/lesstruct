@@ -5,16 +5,19 @@ linkTitle: "MCP"
 
 # Lesstruct MCP Server
 
-> **Scope.** This page documents `lesstruct-mcp`, the Model Context Protocol
-> (stdio) server that exposes Lesstruct to AI agents. Endpoint semantics live
-> in [api-reference.md](api-reference.md); the terminal client is documented
+> **Scope.** This page documents `lesstruct-mcp` (the stdio server) and the
+> server's optional Streamable HTTP MCP endpoint (`POST /mcp`) that exposes
+> Lesstruct to AI agents. Endpoint semantics live in
+> [api-reference.md](api-reference.md); the terminal client is documented
 > in [cli.md](cli.md).
 
-`lesstruct-mcp` is a stdio MCP server over `/api/v1` for AI agents. The agent
+Lesstruct speaks MCP two ways. `lesstruct-mcp` is a stdio server: the agent
 spawns the binary, speaks JSON-RPC over stdin/stdout, and every tool call runs
 as the API key's user — the same RBAC scoping as the browser admin and
-[`lesstruct-cli`](cli.md). It shares the typed `pkg/apiv1` client with the
-CLI, so one setup serves both binaries.
+[`lesstruct-cli`](cli.md). The server binary also carries the same tool surface
+as an opt-in **Streamable HTTP endpoint** at `POST /mcp` for hosts that connect
+over the network. Both front-ends share the `pkg/mcpserver` tool surface, so a
+tool added once serves both.
 
 ## Install
 
@@ -53,11 +56,11 @@ a key-bearing file that is group/world-readable triggers a warning on stderr
 (`chmod 600` it). Stdout is protocol-only — every diagnostic goes to stderr,
 so logs never corrupt the JSON-RPC stream.
 
-## Connecting an agent
+## Connecting a local agent (stdio)
 
-The server speaks stdio: the agent launches it and talks over its
-stdin/stdout. Pass the key via the environment (never the command line —
-argv is visible to other local users and lands in shell history).
+The stdio server is launched by the agent and talks over its stdin/stdout. Pass
+the key via the environment (never the command line — argv is visible to other
+local users and lands in shell history).
 
 **Muse Code** — add the server under `mcpServers` in
 `~/.config/muse/settings.json`:
@@ -118,6 +121,65 @@ claude mcp add --transport stdio lesstruct \
 }
 ```
 
+## Connecting a remote host (Streamable HTTP)
+
+The running server can expose the same tools over the network. Enable the
+endpoint in `config.toml` and restart:
+
+```toml
+[mcp]
+enabled = true
+```
+
+The endpoint answers at `POST https://cms.example.com/mcp` — register the full
+path exactly as written; nothing is appended. Every request authenticates with
+the same `Authorization: Bearer lesstruct_<keyID>_<secret>` API key, and each
+tool call runs as that key's user through the same middleware, rate limits,
+capability checks, and edition gating as a direct `/api/v1` call.
+
+Properties:
+
+- **Transport.** MCP Streamable HTTP (JSON-RPC 2.0 over `POST`), stateless,
+  answering `application/json`. No separate process, port, or SSE stream is
+  needed beyond the site itself.
+- **Protocol.** `initialize` → `tools/list` → `tools/call`; the server
+  negotiates the protocol version the host announces (`2025-06-18` and the
+  versions this SDK supports).
+- **No loopback hop.** Tools dispatch into the server's own router in-process,
+  so there is no self-DNS or proxy dependency and the API key is not replayed
+  to a second address.
+- **Default off.** Without `[mcp] enabled = true`, `/mcp` is not mounted and
+  returns 404.
+
+A typical remote-host entry (keys vary by host — consult its documentation):
+
+```json
+{
+  "mcpServers": {
+    "lesstruct": {
+      "url": "https://cms.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer lesstruct_<keyID>_<secret>"
+      }
+    }
+  }
+}
+```
+
+### Host-side limits
+
+Hosted MCP clients impose their own budgets, which can be tighter than the API:
+
+| Limit | Effect on Lesstruct |
+|---|---|
+| ~15s per request, ~20s per turn | `media_reencode` (minutes), `export_content`/`ssg_generate` (archives), and large imports exceed the window. Start an import, then poll `import_status`/`hugo_import_status`; run re-encode from the CLI. |
+| ~1 MiB response body | Large `content_get`/`content_list` payloads are truncated host-side. Paginate with a small `limit` and fetch one item at a time. |
+| ~20,000 chars of tool text | The host truncates long tool results; keep list calls small and fetch one item at a time. |
+| HTTPS + public IP, no redirects | Put `/mcp` behind your normal TLS reverse proxy and register the final public URL; some hosts do not follow 3xx responses. |
+| Protocol version | A host that hard-rejects `2025-06-18` cannot connect yet; the server speaks the version the host announces. |
+
+These are host-side constraints, not Lesstruct settings.
+
 ## Tool catalog
 
 44 tools, grouped by resource. Successful results are the server's
@@ -168,3 +230,9 @@ Conventions:
   the capability (admin-only tools need an Admin key).
 - Tool error `NOT_FOUND` on a shared path — the item does not exist or the
   caller may not see it (existence is never disclosed to unauthorized callers).
+- `404` on `POST /mcp` — the endpoint is not enabled: set `[mcp] enabled =
+  true` in `config.toml` and restart.
+- `401 UNAUTHORIZED` on `POST /mcp` — missing or invalid Bearer key; the
+  endpoint accepts API keys only (no browser session cookie).
+- `405 Method Not Allowed` on `GET /mcp` — the stateless endpoint serves
+  `POST` only; hosts that open a standalone SSE stream should disable it.

@@ -372,6 +372,7 @@ func startServer(
 	languages []string,
 	aliasRedirectHandler *handlers.AliasRedirectHandler,
 	headlessEnabled bool,
+	mcpEnabled bool,
 	commentsEnabled bool,
 	storageDriver string,
 	authorize kernel.CapabilityResolver,
@@ -418,6 +419,7 @@ func startServer(
 		languages,
 		aliasRedirectHandler,
 		headlessEnabled,
+		mcpEnabled,
 		commentsEnabled,
 		storageDriver,
 		authorize,
@@ -480,6 +482,12 @@ func Run(edition Edition) {
 		log.Fatalf("Failed to load headless config: %v", err)
 	}
 	headlessEnabled := headlessConfig.Enabled
+
+	mcpConfig, err := config.LoadMCP(cfg)
+	if err != nil {
+		log.Fatalf("Failed to load mcp config: %v", err)
+	}
+	mcpEnabled := mcpConfig.Enabled
 
 	commentsConfig, err := config.LoadComments(cfg)
 	if err != nil {
@@ -1268,6 +1276,7 @@ func Run(edition Edition) {
 		languages,
 		hs.AliasRedirect,
 		headlessEnabled,
+		mcpEnabled,
 		commentsEnabled,
 		cfg.StorageDriver,
 		authorize,

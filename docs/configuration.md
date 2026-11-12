@@ -293,6 +293,7 @@ The first line is silently overridden by the empty second line — Lesstruct end
 | `[csp]` | table | empty (default CSP applied) | Content-Security-Policy configuration — per-directive source appends, extra directives, report-only mode, and a full-override escape hatch. See below. |
 | `[[thumbnail]]` | array of tables | `[{max_width=64, suffix="_thumb"}, {max_width=280, suffix="_medium"}, {max_width=616, suffix="_large"}]` | Image processing variants. See below. |
 | `[headless]` | table | disabled | Headless-mode toggle. When enabled, the server-rendered content site is not served. See below. |
+| `[mcp]` | table | disabled | Streamable HTTP MCP endpoint toggle. When enabled, `POST /mcp` serves the agent tool surface over the network. See below. |
 | `[comments]` | table | enabled | Comment-system toggle. When disabled, the comment system is hard-disabled end to end. See below. |
 | `[modules]` | table | empty (nothing disabled) | First-party modules to skip at startup, with cascade. `disabled = ["comments"]` equals the comments toggle. See below. |
 | `[[role]]` | array of tables | three built-in roles | Custom user roles, or overrides of the built-in roles. See below. |
@@ -545,6 +546,42 @@ Effects of headless mode:
 - The admin SPA, SSG export, WordPress/Hugo import, and the agent API all keep working unchanged.
 
 Absent block → headless disabled (the default; fully backward compatible).
+
+### `[mcp]`
+
+Optional. When `enabled = true`, the server mounts the Model Context Protocol
+endpoint at `POST /mcp`, exposing the same 44 tools as the `lesstruct-mcp`
+stdio binary over **Streamable HTTP**. A remote MCP host then drives the site
+with a Bearer API key — no local binary, no separate port.
+
+```toml
+[mcp]
+enabled = true
+```
+
+Endpoint properties:
+
+- **Path.** Exactly `/mcp` — register `https://your-host/mcp` in the host; no
+  suffix is appended.
+- **Auth.** `Authorization: Bearer lesstruct_<keyID>_<secret>`, the same API
+  keys as `/api/v1`. There is no browser-session path: a missing or invalid
+  key returns `401 UNAUTHORIZED`.
+- **Transport.** Stateless Streamable HTTP over JSON-RPC 2.0 `POST`, answering
+  `application/json`. `GET /mcp` returns `405 Method Not Allowed` (no
+  standalone SSE stream).
+- **In-process tool calls.** Each tool call runs inside the server's own
+  router, so it passes the same API-key auth, per-key rate limits, RBAC, and
+  edition gating as a direct `/api/v1` call. Nothing loops back over the
+  network and the key is not replayed.
+- **Body cap.** 160 MiB per request, sized for a base64-encoded import archive
+  (~4/3 of `IMPORT_MAX_SIZE_MB`, default 100 MB) plus JSON overhead.
+
+The endpoint is independent of `[headless]`: it works with the content site on
+or off. Behind a TLS reverse proxy, terminate HTTPS there and forward `/mcp`
+unchanged. See [mcp.md](mcp.md) for host entry examples and host-side limits.
+
+Absent block → the endpoint is not mounted and `/mcp` returns 404 (the
+default; opt in only when a remote host needs it).
 
 ### `[comments]`
 
@@ -1307,6 +1344,12 @@ comments = false                 # may post comments
 enabled = true                   # absent: follows [comments]
 default_role = "Commentator"
 admin_approval = false           # true: admin must approve after email verification
+
+[headless]
+enabled = false                  # true = no server-rendered content site
+
+[mcp]
+enabled = false                  # true = mount POST /mcp (Streamable HTTP)
 ```
 
 ### All field types

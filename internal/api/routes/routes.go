@@ -11,6 +11,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers"
 	"github.com/aristorinjuang/lesstruct/internal/api/handlers/agent"
+	mcphandler "github.com/aristorinjuang/lesstruct/internal/api/handlers/mcp"
 	"github.com/aristorinjuang/lesstruct/internal/api/middleware"
 	"github.com/aristorinjuang/lesstruct/internal/api/response"
 	apikey "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
@@ -331,6 +332,7 @@ func Setup(
 	languages []string,
 	aliasRedirectHandler *handlers.AliasRedirectHandler,
 	headlessEnabled bool,
+	mcpEnabled bool,
 	commentsEnabled bool,
 	storageDriver string,
 	authorize kernel.CapabilityResolver,
@@ -595,6 +597,23 @@ func Setup(
 				authMiddleware.RequireAuth(
 					maxBodySizeMiddleware(1<<20)(http.HandlerFunc(mediaHandler.DeleteMedia))))),
 	))
+
+	// Streamable HTTP MCP endpoint (opt-in via [mcp] enabled = true). The tool
+	// surface calls this same router in-process, so every tool call walks the
+	// agent stack above — API-key auth, per-key rate limits, capability gates,
+	// edition-specific routes — with no loopback TCP and no key duplication.
+	// The body cap covers the largest tool payload: an import archive is
+	// base64-encoded (~4/3 of IMPORT_MAX_SIZE_MB, default 100MB) plus JSON
+	// overhead. Auth runs before the cap, so unauthenticated bodies are never
+	// read.
+	if mcpEnabled {
+		mcpHandler := mcphandler.New(r)
+		r.Group(func(r chi.Router) {
+			r.Use(rateLimitMiddleware.AgentAuthFailureHandler)
+			r.Use(apiKeyAuthMiddleware.Handler)
+			r.With(maxBodySizeMiddleware(160<<20)).Handle("/mcp", mcpHandler)
+		})
+	}
 
 	// API routes (highest priority) — all rate-limited
 	r.Route("/api", func(r chi.Router) {

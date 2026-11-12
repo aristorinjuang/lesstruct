@@ -556,11 +556,13 @@ boundary, with webhook dedup resolving through a blind-index column.
   (dual-realm commerce endpoints plus the agent user admin), so agents can run the operator loop —
   upsert catalog data, list and transition orders, set shipping, decide payment proofs,
   triage registrations, suspend accounts, and edit invoice settings — without a browser session.
-- **[`lesstruct-mcp`](mcp.md).** A stdio MCP server over the same API — 44 tools
+- **[`lesstruct-mcp`](mcp.md).** An MCP server over the same API — 44 tools
   across content, media, catalog, orders, payments, users, invoice settings,
   comments, import/export/SSG, plus a `lesstruct_api` escape hatch — so any
   MCP-native agent (Claude Code, OpenCode, Cursor) can operate the site and the
-  store with the same Admin API key, no browser session needed.
+  store with the same Admin API key, no browser session needed. Ships as a
+  stdio binary and, with `[mcp] enabled = true`, as a Streamable HTTP endpoint
+  at `POST /mcp` for remote hosts.
 - **Public content & author APIs.** Unauthenticated `/api/v1/public/*` endpoints
   serve rendered content, search, post types, and a **published-authors listing**
   (`/v1/public/authors`) for author directories and "most active contributors"

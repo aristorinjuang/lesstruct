@@ -56,6 +56,11 @@ go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp@latest
 Claude Code, OpenCode, and Cursor snippets live in the
 [MCP guide](/docs/mcp/).
 
+When the agent runs on another machine, enable `[mcp] enabled = true` in
+`config.toml` and point it at `https://your-site/mcp` with the same Bearer key:
+the server exposes the identical 44 tools over MCP Streamable HTTP. The
+[MCP guide](/docs/mcp/) covers the host entry, protocol, and host-side limits.
+
 ## Where to go next
 
 - **Evaluating Lesstruct?** Browse the full [Features](/docs/features/) catalog, or [see it in action](/tour/) with screenshots from a running demo.

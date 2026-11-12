@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/aristorinjuang/lesstruct/pkg/mcpserver"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +54,7 @@ func run(ctx context.Context, errOut io.Writer, apiKey, baseURL string) error {
 
 	warnInsecureConfig(errOut)
 
-	srv, err := New(key, url)
+	srv, err := mcpserver.New(key, url, version)
 	if err != nil {
 		return fmt.Errorf("lesstruct-mcp: %w", err)
 	}
