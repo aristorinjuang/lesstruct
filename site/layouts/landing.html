@@ -31,13 +31,13 @@
 
 {{ define "main" }}
 <section class="landing-release">
-  <a href="#meta-ai"><span class="landing-release-chip">v1.2</span> Unlock the full potential of Lesstruct with Meta AI. Speech dictation, privacy blurring, and the Module Development skill.&nbsp;&rarr;</a>
+  <a href="#whats-new"><span class="landing-release-chip">v1.4</span> Meet the remote MCP endpoint. The same 44 tools that drive Lesstruct from the terminal, now over Streamable HTTP.&nbsp;&rarr;</a>
 </section>
 
 <section class="landing-hero">
   <div class="landing-hero-inner">
     <img class="landing-logo" src="/brand/lesstruct-320.webp" width="96" height="96" alt="Lesstruct logo">
-    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.2</a></p>
+    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.4</a></p>
     <h1>{{ .Title | default .Site.Title }}</h1>
     <p class="landing-tagline">{{ .Description | default .Site.Params.description }}</p>
     <div class="landing-cta">
@@ -51,26 +51,26 @@
 </section>
 
 <section class="landing-spotlight" id="whats-new">
-  <h2>What&rsquo;s new in v1.2</h2>
+  <h2>What&rsquo;s new in v1.4</h2>
   <p class="landing-section-lede">
-    Unlock the full potential of Lesstruct with Meta AI: a recommended
-    model for every AI feature, from dictation to safe uploads.
+    One MCP surface, two transports. The tool set that drives Lesstruct from
+    your terminal now works from anywhere — no binary on the client machine.
   </p>
   <div class="landing-spotlight-grid">
-    <a class="spotlight-tile" href="/docs/features/#ai">
-      <span class="spotlight-kicker">Meta AI models</span>
-      <h3>One Muse model per feature</h3>
-      <p>Muse Spark enhances and translates, Muse Voice Transcribe dictates, Muse Image illustrates, and Muse SAM keeps uploads safe — one key each, in <code>.env</code>.</p>
+    <a class="spotlight-tile" href="/docs/mcp/">
+      <span class="spotlight-kicker">Remote MCP</span>
+      <h3>Streamable HTTP, built in</h3>
+      <p>Set <code>[mcp] enabled = true</code> and point any MCP host at <code>https://your-site/mcp</code> with the same Bearer API key.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/features/#ai">
-      <span class="spotlight-kicker">Speech dictation</span>
-      <h3>Speak your content</h3>
-      <p>Record up to five minutes in the editor and Lesstruct turns your voice into formatted, publish-ready content — transcribed by Muse Voice Transcribe, enhanced by Muse Spark.</p>
+    <a class="spotlight-tile" href="/docs/mcp/">
+      <span class="spotlight-kicker">One tool surface</span>
+      <h3>44 tools, two front-ends</h3>
+      <p>The stdio binary and the network endpoint share one implementation: content, media, catalog, orders, payments, users, import/export, and the API escape hatch.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/features/#media-images">
-      <span class="spotlight-kicker">Privacy blurring</span>
-      <h3>Uploads, screened on arrival</h3>
-      <p>Opt in with a SAM key and every image is scanned and blurred — faces, plates, nudity — before anything is stored.</p>
+    <a class="spotlight-tile" href="/docs/mcp/">
+      <span class="spotlight-kicker">Same guardrails</span>
+      <h3>Nothing bypasses the API</h3>
+      <p>Every remote tool call runs through the server&rsquo;s own router — API-key auth, per-key rate limits, RBAC, and edition gating all apply.</p>
     </a>
   </div>
 </section>
