@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/aristorinjuang/lesstruct/kernel v1.5.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect

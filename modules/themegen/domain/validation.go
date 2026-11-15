@@ -95,6 +95,19 @@ func isAllowedThemePath(path string) bool {
 	return false
 }
 
+// isScannableMarkup reports whether a theme path can reach a visitor as
+// executable markup: page templates, installable same-origin HTML, and
+// static SVG (script-capable when embedded via object or embed).
+func isScannableMarkup(path string) bool {
+	if strings.HasPrefix(path, "templates/") && strings.HasSuffix(path, ".html") {
+		return true
+	}
+	if strings.HasPrefix(path, "static/") && (strings.HasSuffix(path, ".html") || strings.HasSuffix(path, ".svg")) {
+		return true
+	}
+	return false
+}
+
 // ValidateThemeName reports whether name is an installable theme slug:
 // lowercase alphanumerics and dashes, 2–50 runes, not reserved.
 func ValidateThemeName(name string) error {
@@ -157,19 +170,6 @@ func ValidateBrief(brief Brief) error {
 		return ErrInvalidBrief
 	}
 	return nil
-}
-
-// isScannableMarkup reports whether a theme path can reach a visitor as
-// executable markup: page templates, installable same-origin HTML, and
-// static SVG (script-capable when embedded via object or embed).
-func isScannableMarkup(path string) bool {
-	if strings.HasPrefix(path, "templates/") && strings.HasSuffix(path, ".html") {
-		return true
-	}
-	if strings.HasPrefix(path, "static/") && (strings.HasSuffix(path, ".html") || strings.HasSuffix(path, ".svg")) {
-		return true
-	}
-	return false
 }
 
 // ScanGeneratedThemeFiles flags executable content a generated theme must
