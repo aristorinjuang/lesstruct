@@ -1,0 +1,15 @@
+info:
+  name: Delete Theme
+  type: http
+  seq: 6
+
+http:
+  method: DELETE
+  url: "{{BASE_URL}}/api/v1/themegen/themes/paper-light"
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

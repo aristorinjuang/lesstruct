@@ -20,7 +20,9 @@ const (
 		"(follow meta.pagination.nextCursor while meta.pagination.hasMore is true). " +
 		"IDs are numeric. State-changing tools (create/update/delete/transition) " +
 		"take effect immediately — confirm with the user first when the action " +
-		"is destructive (delete, reject, suspend, soft-delete)."
+		"is destructive (delete, reject, suspend, soft-delete). " +
+		"Theme tools generate validated themes (generation can take minutes; " +
+		"the result auto-installs inactive — theme_activate applies it)."
 )
 
 // toolResult renders a successful /api/v1 call as the MCP text result: the
@@ -70,6 +72,7 @@ func registerTools(ms *mcp.Server, c *client.Client) {
 	registerUserTools(ms, c)
 	registerCommentTools(ms, c)
 	registerTransferTools(ms, c)
+	registerThemeTools(ms, c)
 	registerAPITools(ms, c)
 }
 

@@ -72,6 +72,8 @@ export const useNavigationStore = defineStore('navigation', () => {
   const postFooterNavigationItems: NavigationItem[] = [
     { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
     { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
+    { path: '/theme-generator', label: 'Theme Generator', icon: 'photo', permission: 'admin' },
+    { path: '/themes', label: 'Themes', icon: 'photo', permission: 'admin' },
     { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
     { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
   ]

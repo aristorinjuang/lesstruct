@@ -1,0 +1,23 @@
+info:
+  name: Generate Theme
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/themegen/generate"
+  body:
+    type: json
+    data: |-
+      {
+        "description": "A dark editorial theme with serif headings",
+        "style": "dark",
+        "templateOverrides": true
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

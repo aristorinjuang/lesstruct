@@ -181,6 +181,23 @@ type TextGenSurface interface {
 	Translate(http.ResponseWriter, *http.Request)
 }
 
+// ThemGenSurface is the browser-realm AI theme generator surface the routes
+// mount. It is satisfied by the themegen module's handler; the structural
+// seam keeps routes.go from importing the module so the surface stays
+// removable. The themGenEnabled feature flag gates mounting.
+type ThemGenSurface interface {
+	Generate(http.ResponseWriter, *http.Request)
+	List(http.ResponseWriter, *http.Request)
+	Download(http.ResponseWriter, *http.Request)
+	Activate(http.ResponseWriter, *http.Request)
+	Deactivate(http.ResponseWriter, *http.Request)
+	Delete(http.ResponseWriter, *http.Request)
+	Preview(http.ResponseWriter, *http.Request)
+	PreviewStatus(http.ResponseWriter, *http.Request)
+	Snapshot(http.ResponseWriter, *http.Request)
+	StopPreview(http.ResponseWriter, *http.Request)
+}
+
 // SpeechSurface is the browser-realm voice-dictation surface the routes
 // mount. It is satisfied by the speech module's handler; the structural seam
 // keeps routes.go from importing the module so the surface stays removable.
@@ -327,6 +344,9 @@ func Setup(
 	imageReferenceEnabled bool,
 	textGenEnabled bool,
 	textGenHandler TextGenSurface,
+	themGenEnabled bool,
+	themGenHandler ThemGenSurface,
+	themeValidationFailed bool,
 	speechEnabled bool,
 	speechHandler SpeechSurface,
 	languages []string,
@@ -373,8 +393,10 @@ func Setup(
 		imageGenEnabled := imageGenEnabled
 		imageReferenceEnabled := imageReferenceEnabled
 		textGenEnabled := textGenEnabled
+		themGenEnabled := themGenEnabled
 		speechEnabled := speechEnabled
-		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v,"speechToText":%v}}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled, speechEnabled); err != nil {
+		themeValidationFailed := themeValidationFailed
+		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v,"themeGeneration":%v,"speechToText":%v},"themeValidationFailed":%v}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled, themGenEnabled, speechEnabled, themeValidationFailed); err != nil {
 			log.Printf("Failed to write response: %v", err)
 		}
 	})
@@ -597,6 +619,44 @@ func Setup(
 				authMiddleware.RequireAuth(
 					maxBodySizeMiddleware(1<<20)(http.HandlerFunc(mediaHandler.DeleteMedia))))),
 	))
+
+	// Dual-realm theme generation surface — one registration per path serves
+	// both the API-key agent and the JWT browser, dispatched by credential
+	// like the co-owned media paths above. Both realms are admin-only:
+	// generated themes restyle the whole site and generation burns AI
+	// credit, so a non-admin key gets 403 and a non-admin browser user is
+	// forbidden the same way. Preview and snapshot stay browser-only in the
+	// /api/v1 subrouter below: their per-browser cookie and session framing
+	// are meaningless for an API key. Each branch mirrors its realm group's
+	// stack — agent per-key rate limits plus API-key auth plus the admin
+	// gate, browser global API rate limit plus CSRF plus the admin role gate,
+	// both capped at the 1MB JSON body limit. Mounted only when the themegen
+	// module wires a handler.
+	if themGenEnabled && themGenHandler != nil {
+		dual := dualAuthRegistrar{
+			root: r,
+			agent: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.AgentAuthFailureHandler(
+					rateLimitMiddleware.AgentIPHandler(
+						rateLimitMiddleware.APIKeyHandler(
+							apiKeyAuthMiddleware.Handler(
+								agentAdminOnly(authorize)(
+									maxBodySizeMiddleware(1 << 20)(next))))))
+			},
+			browser: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.Handler(
+					csrfMiddleware.Handler(
+						adminMiddleware.AdminOnly(
+							maxBodySizeMiddleware(1 << 20)(next))))
+			},
+		}
+		dual.Post("/api/v1/themegen/generate", themGenHandler.Generate)
+		dual.Get("/api/v1/themegen/themes", themGenHandler.List)
+		dual.Get("/api/v1/themegen/themes/{name}/download", themGenHandler.Download)
+		dual.Post("/api/v1/themegen/themes/{name}/activate", themGenHandler.Activate)
+		dual.Post("/api/v1/themegen/themes/deactivate", themGenHandler.Deactivate)
+		dual.Delete("/api/v1/themegen/themes/{name}", themGenHandler.Delete)
+	}
 
 	// Streamable HTTP MCP endpoint (opt-in via [mcp] enabled = true). The tool
 	// surface calls this same router in-process, so every tool call walks the
@@ -830,6 +890,21 @@ func Setup(
 				if textGenEnabled && textGenHandler != nil {
 					r.Post("/text/enhance", textGenHandler.Enhance)
 					r.Post("/text/translate", textGenHandler.Translate)
+				}
+
+				// AI theme generation routes (require authentication + feature enabled).
+				// The generation surface (generate/list/download/activate/
+				// deactivate/delete) is dual-realm at the router root above;
+				// only the cookie-scoped preview trio stays browser-only here.
+				// Stop/status live at the flat /themegen/preview path on
+				// purpose: a static themes/preview leaf would compete with
+				// the dual themes/{name} leaf and chi matches those in map
+				// order, so the flat path keeps routing deterministic.
+				if themGenEnabled && themGenHandler != nil {
+					r.Delete("/themegen/preview", themGenHandler.StopPreview)
+					r.Get("/themegen/preview", themGenHandler.PreviewStatus)
+					r.Get("/themegen/themes/{name}/snapshot", themGenHandler.Snapshot)
+					r.Post("/themegen/themes/{name}/preview", themGenHandler.Preview)
 				}
 			})
 

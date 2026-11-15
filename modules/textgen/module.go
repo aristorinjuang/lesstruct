@@ -47,12 +47,23 @@ func WithLogger(logger kernel.Logger) Option {
 	}
 }
 
+// WithThemeRefresher attaches the callback the edition invokes after a
+// theme reload so AI HTML generation follows the new brand without a
+// restart. The callback receives the active theme's minified base.css and
+// style.css.
+func WithThemeRefresher(fn func(baseCSS, styleCSS string)) Option {
+	return func(m *Module) {
+		m.refresher = fn
+	}
+}
+
 // Module is the textgen kernel module.
 type Module struct {
-	service textgendomain.TextGenerationService
-	media   api.MediaLister
-	logger  kernel.Logger
-	handler *api.TextGenHandler
+	service   textgendomain.TextGenerationService
+	media     api.MediaLister
+	logger    kernel.Logger
+	refresher func(baseCSS, styleCSS string)
+	handler   *api.TextGenHandler
 }
 
 // Name returns the registry key.
@@ -109,6 +120,14 @@ func (m *Module) Handler() *api.TextGenHandler {
 // the module's lifetime.
 func (m *Module) Service() textgendomain.TextGenerationService {
 	return m.service
+}
+
+// RefreshThemeStyles forwards the active theme's styles to the refresher the
+// composition root attached (nil-safe: without one the call is a no-op).
+func (m *Module) RefreshThemeStyles(baseCSS, styleCSS string) {
+	if m.refresher != nil {
+		m.refresher(baseCSS, styleCSS)
+	}
 }
 
 // New builds the module, adopting the composition root's wiring. The handler

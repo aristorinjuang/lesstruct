@@ -109,6 +109,18 @@ const router = createRouter({
           meta: { title: 'Export' },
         },
         {
+          path: 'theme-generator',
+          name: 'theme-generator',
+          component: () => import('../views/ThemeGeneratorView.vue'),
+          meta: { title: 'Theme Generator' },
+        },
+        {
+          path: 'themes',
+          name: 'themes',
+          component: () => import('../views/ThemesView.vue'),
+          meta: { title: 'Themes' },
+        },
+        {
           path: 'settings/invoice',
           name: 'settings-invoice',
           component: () => import('../views/InvoiceSettingsView.vue'),

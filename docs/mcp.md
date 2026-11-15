@@ -1,6 +1,7 @@
 ---
 title: "Lesstruct MCP Server"
 linkTitle: "MCP"
+weight: 62
 ---
 
 # Lesstruct MCP Server
@@ -182,7 +183,7 @@ These are host-side constraints, not Lesstruct settings.
 
 ## Tool catalog
 
-44 tools, grouped by resource. Successful results are the server's
+49 tools, grouped by resource. Successful results are the server's
 `{data, meta}` envelope as JSON (follow `meta.pagination.nextCursor` while
 `meta.pagination.hasMore` is true); failures are MCP tool errors carrying the
 `CODE: message` line (e.g. `FORBIDDEN: …`, `NOT_FOUND: …`) so the agent can
@@ -199,6 +200,7 @@ react to them.
 | users | `users_list`, `users_pending`, `users_approve`, `users_reject`, `users_mark_spam`, `users_suspend`, `users_unsuspend`, `users_soft_delete` (`reject`/`mark_spam`/`soft_delete` require `confirm: true`) |
 | comment | `comment_create`, `comment_list`, `comment_delete`, `comment_moderate` (admin only: `approved`/`rejected`/`spam`) |
 | transfer | `import_wordpress`, `import_status`, `import_hugo`, `hugo_import_status`, `export_content`, `ssg_generate` |
+| theme | `theme_generate` (minutes-long — returns name, rationale, validation, and file paths, not contents), `theme_list`, `theme_activate`, `theme_deactivate`, `theme_delete` (requires `confirm: true`) — all admin only |
 | escape hatch | `lesstruct_api` — any `GET`/`POST`/`PUT`/`PATCH`/`DELETE` on a `/api/v1/` path with query/body |
 
 Conventions:
@@ -219,6 +221,12 @@ Conventions:
 - **Archives ride base64.** `export_content`/`ssg_generate` return
   `{filename, bytes, contentBase64}` with a 50 MiB default cap — raise
   `maxBytes` explicitly for large sites.
+- **Themes generate curated, not raw.** `theme_generate` returns
+  `{name, edition, rationale, validation, fileNames}` — the file bodies
+  would blow past host truncation limits, so full contents ride the
+  `lesstruct_api` escape hatch or `lesstruct-cli theme download`.
+  Activation states report `requiresRestart` when the edition cannot
+  hot-apply.
 
 ## Troubleshooting
 

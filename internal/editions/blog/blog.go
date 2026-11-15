@@ -40,6 +40,11 @@ import (
 	textgendomain "github.com/aristorinjuang/lesstruct/modules/textgen/domain"
 	textgeninfra "github.com/aristorinjuang/lesstruct/modules/textgen/infrastructure"
 	themedefault "github.com/aristorinjuang/lesstruct/modules/theme-default"
+	themenmodule "github.com/aristorinjuang/lesstruct/modules/themegen"
+	themenapi "github.com/aristorinjuang/lesstruct/modules/themegen/api"
+	themegendomain "github.com/aristorinjuang/lesstruct/modules/themegen/domain"
+	themeninfra "github.com/aristorinjuang/lesstruct/modules/themegen/infrastructure"
+	themenstore "github.com/aristorinjuang/lesstruct/modules/themegen/store"
 )
 
 // loadUICatalog loads the embedded UI translation catalog for the
@@ -108,10 +113,37 @@ type state struct {
 	commentsModule  *comments.Module
 	seoModule       *seo.Module
 	textgenModule   *textgenmodule.Module
+	themegenModule  *themenmodule.Module
 	speechModule    *speechmodule.Module
 	importersModule *importers.Module
 
 	theme *sitessr.Theme
+
+	// Live SSR surfaces for hot theme reload (2b): set in Mount, swapped
+	// in place by Reload without remounting routes.
+	templates        *sitessr.Templates
+	staticFiles      *sitessr.StaticFilesHandler
+	rootHandler      *sitessr.ThemeRootHandler
+	textgenRefresher func(baseCSS, styleCSS string)
+	cfg              *config.Config
+
+	// validator composes the domain theme checks with template render
+	// validation. Boot, hot reload, and activation all share it.
+	validator themegendomain.ThemeValidator
+
+	// snapshotSlugs and snapshotCatalog feed the admin theme snapshots:
+	// the installed theme's homepage rendered with populated sample data.
+	// Set in Mount alongside the live surfaces.
+	snapshotSlugs   []string
+	snapshotCatalog *i18n.Catalog
+
+	// Live preview (v1.5): per-request theme resolution via a signed
+	// cookie. previewBuilder builds a full handler stack for a theme and
+	// is set in Mount; previews caches built stacks by theme directory.
+	previewKey     []byte
+	previewSecure  bool
+	previews       *previewCache
+	previewBuilder func(theme *sitessr.Theme) (http.Handler, *sitessr.StaticFilesHandler, error)
 
 	themeProvider kernel.ThemeProvider
 }
@@ -121,6 +153,7 @@ type state struct {
 func (s *state) wire(core *app.Core) error {
 	hs := core.Handlers()
 	cfg := core.Cfg
+	s.cfg = cfg
 
 	// Comments live in their module since Phase 3.3b: the service is built on
 	// the per-driver comment repository with the content-backed AllowComments
@@ -182,9 +215,22 @@ func (s *state) wire(core *app.Core) error {
 	// Initialize theme for content site (templates and static files).
 	// Built here — ahead of module registration — so the textgen module
 	// adopts the active theme's styles instead of a nil placeholder.
-	if cfg.ThemeDir != "" {
-		s.theme = &sitessr.Theme{Dir: cfg.ThemeDir}
+	// Precedence: THEME_DIR wins (legacy manual override), then [theme]
+	// active at THEMES_DIR/<name>, otherwise the embedded default. A broken
+	// active theme logs a warning and falls back to embedded (never bricks
+	// startup); the flag surfaces on /api/health.
+	//
+	// The validator composes the domain CSS/file checks with template parse +
+	// smoke render against the real site-ssr stack. The same instance runs at
+	// boot, on hot reload, and before install/activation.
+	themeValidator := newThemeValidator(core.PostTypeSlugs)
+	s.validator = themeValidator
+	theme, themeFailed, themeErr := resolveActiveTheme(cfg, themeValidator)
+	if themeErr != nil {
+		log.Printf("Warning: %v, using embedded default", themeErr)
 	}
+	s.theme = theme
+	core.ThemeValidationFailed = themeFailed
 
 	// Read the active theme's minified base.css + style.css so AI-generated
 	// HTML/CSS reuses the site's design tokens and component classes instead
@@ -213,6 +259,77 @@ func (s *state) wire(core *app.Core) error {
 	)
 	core.Candidates = append(core.Candidates, s.textgenModule)
 	hs.TextGen = s.textgenModule.Handler()
+
+	// The refresher re-bakes the textgen HTML system prompt from the active
+	// theme's styles after a hot reload. Without a generation service it
+	// stays nil and reload skips it.
+	if textGenService != nil {
+		if svc, ok := textGenService.(*textgeninfra.OpenAITextService); ok {
+			s.textgenRefresher = svc.RefreshThemeStyles
+		}
+	}
+
+	// Initialize AI theme generation service. The system prompt grounds on the
+	// active edition's readable sources (stylesheets always, page templates
+	// when the brief opts in); without sources it generates from the distilled
+	// contract alone. The edition-side validator adds template parse and
+	// smoke-render checks to the domain file/CSS gate.
+	themGenEdition := themegendomain.EditionBlog
+	if s.themeProvider != nil && s.themeProvider.Name() == "theme-storefront" {
+		themGenEdition = themegendomain.EditionStorefront
+	}
+	var themenService *themegendomain.Service
+	if cfg.IsThemeGenerationEnabled() {
+		themeSources := themeBaseCSS
+		if themeStyleCSS != "" {
+			themeSources += "\n--- style ---\n" + themeStyleCSS
+		}
+		generation := themeninfra.NewOpenAIThemeService(
+			cmp.Or(cfg.AIThemGenAPIKey, cfg.AITextGenerationAPIKey),
+			cfg.EffectiveThemGenBaseURL(),
+			cfg.EffectiveThemGenModel(),
+		)
+		activation := NewThemeActivation(cfg)
+		store := themenstore.NewStore(cfg.ThemesRoot(), func() string {
+			return activation.ActiveTheme(context.Background())
+		}, func() string {
+			return cfg.ThemeDir
+		})
+		// The generation service receives the same material the prompts used
+		// to bake in: the active stylesheets plus the edition's page
+		// templates. The service decides per brief whether templates matter.
+		sources := themegendomain.NewThemeSources(
+			themeSources,
+			readThemeTemplateSources(themeModule.ThemeFiles()),
+		)
+		themenService = themegendomain.NewService(
+			generation,
+			themeValidator,
+			store,
+			func(context.Context, themegendomain.Edition) themegendomain.ThemeSources {
+				return sources
+			},
+			themGenEdition,
+		)
+	}
+	// Live preview (v1.5): the cookie-signing key is derived from the
+	// server secret once — the raw secret never leaves config — and Secure
+	// mirrors the site origin. The preview cache starts empty.
+	s.previewKey = themenapi.DerivePreviewKey(cfg.JWTSecret)
+	s.previewSecure = strings.HasPrefix(strings.ToLower(cfg.SiteURL), "https://")
+	s.previews = newPreviewCache()
+
+	s.themegenModule = themenmodule.New(
+		themenmodule.WithService(themenService),
+		themenmodule.WithActivations(NewThemeActivation(cfg)),
+		themenmodule.WithReloader(s),
+		themenmodule.WithPreviewKey(s.previewKey, s.previewSecure),
+		themenmodule.WithSnapshotRenderer(s),
+		themenmodule.WithEdition(themGenEdition),
+		themenmodule.WithLogger(modules.NewLogger(core.Logger)),
+	)
+	core.Candidates = append(core.Candidates, s.themegenModule)
+	hs.ThemGen = s.themegenModule.Handler()
 
 	// Initialize speech-to-text service (voice dictation). The Meta adapter
 	// is the default; the OpenAI-compatible adapter serves Whisper, Groq,
@@ -309,12 +426,15 @@ func (s *state) mount(core *app.Core) error {
 	cfg := core.Cfg
 
 	uiCatalog := loadUICatalog(core.Languages)
+	s.snapshotCatalog = uiCatalog
+	s.snapshotSlugs = core.PostTypeSlugs
 
 	// Initialize content site templates and renderer
 	contentTemplates, err := sitessr.NewTemplates(s.theme, uiCatalog, core.PostTypeSlugs...)
 	if err != nil {
 		log.Fatalf("Failed to load content templates: %v", err)
 	}
+	s.templates = contentTemplates
 	tiptapRenderer := tiptap.NewRenderer(func(src string) []tiptap.ImageVariant {
 		hash := mediadomain.ExtractHashFromURL(src)
 		if hash == "" {
@@ -411,17 +531,61 @@ func (s *state) mount(core *app.Core) error {
 	// through the HTML sanitizer on every path.
 	contentPageHandler = contentPageHandler.WithIFrameHosts(core.IFrameHosts...)
 
-	// Static file handler for content site (uses theme from above)
-	hs.Static = sitessr.StaticFiles(s.theme)
+	// Live preview (v1.5): builds a full handler stack for an installed
+	// theme on demand. The preview cache calls it on a miss; failures fall
+	// back to the main surfaces, so a broken preview never breaks rendering.
+	s.previewBuilder = func(theme *sitessr.Theme) (http.Handler, *sitessr.StaticFilesHandler, error) {
+		previewTemplates, err := sitessr.NewTemplates(theme, uiCatalog, core.PostTypeSlugs...)
+		if err != nil {
+			return nil, nil, err
+		}
+		previewHandler := sitessr.NewContentPageHandler(
+			ssrReader,
+			core.PostTypeService,
+			core.PostTypeService,
+			userProvider,
+			previewTemplates,
+			tiptapRenderer,
+			core.MediaRepo,
+			core.Languages,
+			ssrSections,
+			ssrSiteConfig,
+			cfg.PostPerPage,
+			core.CommentsEnabled,
+			core.RegistrationEnabled,
+		)
+		previewHandler = previewHandler.WithPublicFieldRegistry(core.PublicFieldRegistry)
+		previewHandler = previewHandler.WithBaseURL(core.BaseURL)
+		previewHandler = previewHandler.WithUICatalog(uiCatalog)
+		previewHandler.Assembler().WithLegal(sitessr.LegalOptions{
+			Overrides:           core.LegalOverrides,
+			Nav:                 core.LegalNav,
+			CheckoutConsent:     core.CheckoutConsent,
+			RegistrationConsent: core.RegistrationConsent,
+			CookieNotice:        core.LegalNotice,
+		})
+		previewHandler = previewHandler.WithIFrameHosts(core.IFrameHosts...)
+		return previewHandler, sitessr.StaticFiles(theme), nil
+	}
+
+	// Static file handler for content site (uses theme from above). The
+	// concrete handler is kept so Reload can swap its filesystem in place.
+	// Preview-cookie requests dispatch to the cached preview files instead.
+	s.staticFiles = sitessr.StaticFiles(s.theme)
+	hs.Static = &previewStaticDispatch{main: s.staticFiles, state: s}
 
 	// Alias redirect handler wraps the content site catch-all to serve 301s.
 	// Theme root files (theme's root/ directory, e.g. webpushr-sw.js) sit
 	// between the alias lookup and the content renderer so they are served at
-	// the site root on the dynamic server too.
+	// the site root on the dynamic server too. The wrapper is kept so Reload
+	// can swap its filesystem in place. Preview-cookie requests dispatch to
+	// the cached preview pages instead; root files are not previewed.
+	pageHandler := &previewPageDispatch{main: contentPageHandler, state: s}
+	s.rootHandler = sitessr.RootFilesHandler(s.theme, pageHandler)
 	hs.AliasRedirect = handlers.NewAliasRedirectHandler(
 		core.AliasService,
 		core.ContentService,
-		sitessr.RootFilesHandler(s.theme, contentPageHandler),
+		s.rootHandler,
 	)
 
 	// Initialize static site generator (Phase 3) — generates a fully rendered

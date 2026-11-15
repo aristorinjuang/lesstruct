@@ -183,6 +183,23 @@ type Config struct {
 	AITextGenerationBaseURL string
 	AITextGenerationModel   string
 
+	// AIThemGenAPIKey enables the AI theme generator: a dedicated key for
+	// theme CSS generation. Empty falls back to AITextGenerationAPIKey.
+	// Read via AI_THEMGEN_API_KEY.
+	AIThemGenAPIKey string
+	// AIThemGenBaseURL is the OpenAI-compatible base URL for theme
+	// generation. Empty falls back to AITextGenerationBaseURL.
+	// Read via AI_THEMGEN_BASE_URL.
+	AIThemGenBaseURL string
+	// AIThemGenModel is the chat model for theme generation. Empty falls
+	// back to AITextGenerationModel, then to gpt-5-mini.
+	// Read via AI_THEMGEN_MODEL.
+	AIThemGenModel string
+
+	// ThemesDir is the filesystem root for installed (generated or manual)
+	// themes: one directory per theme. Read via THEMES_DIR.
+	ThemesDir string
+
 	// AISamAPIKey enables the privacy redaction pass: when set, every
 	// media and profile-picture upload is scanned with SAM 3.1 and
 	// sensitive regions are blurred before anything is stored. Empty
@@ -232,6 +249,33 @@ func (c *Config) IsImageGenerationEnabled() bool {
 // IsTextGenerationEnabled returns true if the AI text generation API key is configured
 func (c *Config) IsTextGenerationEnabled() bool {
 	return c.AITextGenerationAPIKey != ""
+}
+
+// IsThemeGenerationEnabled returns true when the theme generator can run:
+// a dedicated AI_THEMGEN_API_KEY or the shared text-generation key.
+func (c *Config) IsThemeGenerationEnabled() bool {
+	return c.AIThemGenAPIKey != "" || c.AITextGenerationAPIKey != ""
+}
+
+// EffectiveThemGenBaseURL resolves the theme generation base URL: the
+// dedicated value when set, otherwise the shared text-generation URL.
+func (c *Config) EffectiveThemGenBaseURL() string {
+	if c.AIThemGenBaseURL != "" {
+		return c.AIThemGenBaseURL
+	}
+	return c.AITextGenerationBaseURL
+}
+
+// EffectiveThemGenModel resolves the theme generation model: the dedicated
+// value when set, otherwise the shared text-generation model, then gpt-5-mini.
+func (c *Config) EffectiveThemGenModel() string {
+	if c.AIThemGenModel != "" {
+		return c.AIThemGenModel
+	}
+	if c.AITextGenerationModel != "" {
+		return c.AITextGenerationModel
+	}
+	return "gpt-5-mini"
 }
 
 // IsSamEnabled returns true when the SAM API key is configured. The privacy
@@ -370,6 +414,11 @@ func Load() (*Config, error) {
 		AITextGenerationAPIKey:  getEnv("AI_TEXT_GENERATION_API_KEY", ""),
 		AITextGenerationBaseURL: getEnv("AI_TEXT_GENERATION_BASE_URL", ""),
 		AITextGenerationModel:   getEnv("AI_TEXT_GENERATION_MODEL", "gpt-5-mini"),
+
+		AIThemGenAPIKey:  getEnv("AI_THEMGEN_API_KEY", ""),
+		AIThemGenBaseURL: getEnv("AI_THEMGEN_BASE_URL", ""),
+		AIThemGenModel:   getEnv("AI_THEMGEN_MODEL", ""),
+		ThemesDir:        getEnv("THEMES_DIR", "themes"),
 
 		AISamAPIKey:   getEnv("AI_SAM_API_KEY", ""),
 		AISamModel:    getEnv("AI_SAM_MODEL", "sam-3.1"),

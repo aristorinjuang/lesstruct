@@ -5,6 +5,7 @@ import (
 
 	"github.com/aristorinjuang/lesstruct/kernel"
 	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
+	themenapi "github.com/aristorinjuang/lesstruct/modules/themegen/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,9 +17,10 @@ import (
 // returning-visitor negotiation with no other test failing.
 func TestNoCookieAllowlistMatchesEngine(t *testing.T) {
 	allowed := noCookieAllowlist()
-	require.Len(t, allowed, 4)
+	require.Len(t, allowed, 5)
 	assert.Contains(t, allowed, sitessr.LangCookieName)
 	assert.Contains(t, allowed, sitessr.ConsentCookieName)
 	assert.Contains(t, allowed, kernel.SessionCookieName)
 	assert.Contains(t, allowed, kernel.AuthHintCookieName)
+	assert.Contains(t, allowed, themenapi.PreviewCookieName)
 }

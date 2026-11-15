@@ -73,26 +73,28 @@ describe('Sidebar', () => {
       expect(wrapper.find('.sidebar__nav').exists()).toBe(true)
     })
 
-    it('should render all 8 navigation items', () => {
+    it('should render all 10 navigation items', () => {
       const wrapper = createWrapper()
 
       const links = wrapper.findAll('.sidebar__link')
-      expect(links).toHaveLength(8)
+      expect(links).toHaveLength(10)
     })
 
     it('should render navigation item labels when sidebar is not collapsed', () => {
       const wrapper = createWrapper()
 
       const labels = wrapper.findAll('.sidebar__label')
-      expect(labels).toHaveLength(8)
+      expect(labels).toHaveLength(10)
       expect(labels[0]?.text()).toBe('Dashboard')
       expect(labels[1]?.text()).toBe('Comments')
       expect(labels[2]?.text()).toBe('Posts')
       expect(labels[3]?.text()).toBe('Pages')
       expect(labels[4]?.text()).toBe('Media')
       expect(labels[5]?.text()).toBe('Users')
-      expect(labels[6]?.text()).toBe('Import')
-      expect(labels[7]?.text()).toBe('Export')
+      expect(labels[6]?.text()).toBe('Theme Generator')
+      expect(labels[7]?.text()).toBe('Themes')
+      expect(labels[8]?.text()).toBe('Import')
+      expect(labels[9]?.text()).toBe('Export')
     })
 
     it('should hide labels when sidebar is collapsed', async () => {
@@ -289,7 +291,7 @@ describe('Sidebar', () => {
       const wrapper = createWrapper()
 
       const icons = wrapper.findAll('.sidebar__icon')
-      expect(icons).toHaveLength(8)
+      expect(icons).toHaveLength(10)
     })
   })
 

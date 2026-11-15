@@ -1,3 +1,7 @@
+---
+weight: 61
+---
+
 # Lesstruct CLI
 
 > **Scope.** This page documents `lesstruct-cli`, the terminal client for
@@ -280,6 +284,29 @@ Default writes `lesstruct-site-<timestamp>.tar.gz` into `--output-dir`;
 exclusive). Same download bounds as `export`: `--timeout` (default `30m`)
 and `--max-download-size` (default `2GiB`, `0` disables); an interrupted
 download leaves at most a `.part` file behind.
+
+### `theme` — AI theme generation
+
+```bash
+lesstruct-cli theme generate --description "A dark editorial theme" --style dark
+lesstruct-cli theme list
+lesstruct-cli theme download midnight-serif --output-dir /path/to/themes
+lesstruct-cli theme activate midnight-serif
+lesstruct-cli theme deactivate
+lesstruct-cli theme delete paper-light
+```
+
+Generates a validated theme from a natural-language brief — the same
+endpoint the admin panel's Theme Generator drives, over an admin API key
+(non-admin keys get `403`). Stylesheet-only is the default;
+`--template-overrides` also generates page templates, and `--edition`
+(`blog` or `storefront`) picks the sources to ground on (default: server
+edition). Generation can take minutes (the repair loop retries up to
+twice): `--timeout` (default `5m`, `0` disables) caps the whole call.
+A failed gate prints the first error finding
+(`Generation failed: static/style.css has unbalanced braces`); warnings
+print as guidance lines. `activate`/`deactivate` report whether a restart
+is needed, mirroring the panel.
 
 ## Workflows
 

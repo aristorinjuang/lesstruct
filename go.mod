@@ -24,6 +24,7 @@ require (
 	github.com/aristorinjuang/lesstruct/modules/textgen v1.4.0
 	github.com/aristorinjuang/lesstruct/modules/theme-default v1.4.0
 	github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.4.0
+	github.com/aristorinjuang/lesstruct/modules/themegen v1.4.0
 	github.com/aristorinjuang/lesstruct/modules/users v1.4.0
 	github.com/aws/aws-sdk-go-v2 v1.43.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
@@ -106,6 +107,8 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
+	github.com/tdewolff/minify/v2 v2.24.3 // indirect
+	github.com/tdewolff/parse/v2 v2.8.6 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -131,3 +134,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+replace github.com/aristorinjuang/lesstruct/modules/themegen => ./modules/themegen

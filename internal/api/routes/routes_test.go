@@ -47,6 +47,8 @@ import (
 	posttypesbasic "github.com/aristorinjuang/lesstruct/modules/posttypes-basic"
 	posttype "github.com/aristorinjuang/lesstruct/modules/posttypes-basic/domain"
 	seoapi "github.com/aristorinjuang/lesstruct/modules/seo/api"
+	themenapi "github.com/aristorinjuang/lesstruct/modules/themegen/api"
+	themegendomain "github.com/aristorinjuang/lesstruct/modules/themegen/domain"
 	usersapi "github.com/aristorinjuang/lesstruct/modules/users/api"
 	"github.com/aristorinjuang/lesstruct/modules/users/domain"
 	"github.com/go-chi/chi/v5"
@@ -119,12 +121,20 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 // behavior of the default helper (no content-site catch-all registered at all).
 func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd)
+	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd, nil)
+}
+
+// setupTestRouterWithThemGen is setupTestRouterWithOptions with the AI theme
+// generator surface mounted, so preview (and other themegen) routes can be
+// exercised on the real router. A nil themGen keeps the surface unmounted.
+func setupTestRouterWithThemGen(t *testing.T, themGen routes.ThemGenSurface) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen)
 }
 
 // setupTestRouterWithOptions is setupTestRouterWithFlags with the MCP endpoint
 // toggle exposed, so the /mcp mount can be exercised on the real router.
-func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
+func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler, themGen routes.ThemGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
 
 	// Create test auth handler
@@ -304,7 +314,9 @@ func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled b
 		agentCommentHandler,
 		adminMiddleware,
 		corsMiddleware,
-		middleware.NewNoCookieMiddleware(logger, kernel.SessionCookieName, kernel.AuthHintCookieName),
+		// Mirrors app.noCookieAllowlist (including the preview cookie) so
+		// Set-Cookie assertions on this router match production behavior.
+		middleware.NewNoCookieMiddleware(logger, kernel.SessionCookieName, kernel.AuthHintCookieName, "lesstruct_lang", "lesstruct_consent", "lesstruct_theme_preview"),
 		csrfMiddleware,
 		rateLimitMiddleware,
 		secHeaderMW,
@@ -315,6 +327,9 @@ func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled b
 		false,
 		false,
 		nil,
+		themGen != nil,
+		themGen,
+		false,
 		false,
 		nil,
 		[]string{"en"},
@@ -481,6 +496,9 @@ func TestSetup(t *testing.T) {
 		nil,
 		false,
 		nil,
+		false,
+		false,
+		nil,
 		[]string{"en"},
 		nil,
 		false,
@@ -492,6 +510,404 @@ func TestSetup(t *testing.T) {
 	)
 
 	assert.NotNil(t, r, "Setup() returned nil router")
+}
+
+// testThemGenSurface records which themegen leaf the router dispatched to.
+// Handlers answer 200 so mount tests prove reachability on the real router.
+type testThemGenSurface struct {
+	last string
+}
+
+func (s *testThemGenSurface) Generate(w http.ResponseWriter, _ *http.Request) {
+	s.last = "generate"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) List(w http.ResponseWriter, _ *http.Request) {
+	s.last = "list"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) Download(w http.ResponseWriter, _ *http.Request) {
+	s.last = "download"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) Activate(w http.ResponseWriter, _ *http.Request) {
+	s.last = "activate"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) Deactivate(w http.ResponseWriter, _ *http.Request) {
+	s.last = "deactivate"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) Delete(w http.ResponseWriter, _ *http.Request) {
+	s.last = "delete"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) Preview(w http.ResponseWriter, _ *http.Request) {
+	s.last = "preview"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) StopPreview(w http.ResponseWriter, _ *http.Request) {
+	s.last = "stopPreview"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) Snapshot(w http.ResponseWriter, _ *http.Request) {
+	s.last = "snapshot"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testThemGenSurface) PreviewStatus(w http.ResponseWriter, _ *http.Request) {
+	s.last = "previewStatus"
+	w.WriteHeader(http.StatusOK)
+}
+
+// TestThemGenRoutesMounted proves the theme generator surface (including the
+// preview endpoints) is reachable on the real router: an admin JWT dispatches to
+// the right leaf, anonymous callers are rejected, and the static deactivate
+// path is not swallowed by the {name} leaves.
+func TestThemGenRoutesMounted(t *testing.T) {
+	stub := &testThemGenSurface{}
+	r, deps := setupTestRouterWithThemGen(t, stub)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		withAuth   bool
+		wantStatus int
+		wantLast   string
+		wantErr    bool
+	}{
+		{
+			name:       "success - generate mounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/generate",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "generate",
+		},
+		{
+			name:       "success - list mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/themes",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "list",
+		},
+		{
+			name:       "success - preview mounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/themes/midnight-serif/preview",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "preview",
+		},
+		{
+			name:       "success - stop preview mounted",
+			method:     http.MethodDelete,
+			target:     "/api/v1/themegen/preview",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "stopPreview",
+		},
+		{
+			name:       "success - preview status mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/preview",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "previewStatus",
+		},
+		{
+			name:       "success - snapshot mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/themes/midnight-serif/snapshot",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "snapshot",
+		},
+		{
+			name:       "success - delete literally named preview reaches delete leaf",
+			method:     http.MethodDelete,
+			target:     "/api/v1/themegen/themes/preview",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "delete",
+		},
+		{
+			name:       "success - static deactivate not swallowed by name leaves",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/themes/deactivate",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "deactivate",
+		},
+		{
+			name:       "error - anonymous preview is unauthorized",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/themes/midnight-serif/preview",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+}
+
+// TestAgentThemGen_DispatchAndAdminOnly proves the six generation endpoints
+// serve the agent realm at the same paths as the browser: an admin API key
+// dispatches to the same leaves, a non-admin key is forbidden, and callers
+// without credentials never reach them. The browser realm is admin-gated
+// too — a non-admin JWT is forbidden on mutations. The cookie-scoped preview
+// trio is deliberately absent from the agent realm — a Bearer key is rejected
+// there.
+func TestAgentThemGen_DispatchAndAdminOnly(t *testing.T) {
+	tests := []struct {
+		name         string
+		method       string
+		target       string
+		role         string
+		withKey      bool
+		sendKey      bool
+		jwtRole      string
+		wantCode     int
+		wantEnvelope string
+		wantLast     string
+	}{
+		{
+			name:     "generate - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/themegen/generate",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "generate",
+		},
+		{
+			name:     "list - admin key dispatches",
+			method:   http.MethodGet,
+			target:   "/api/v1/themegen/themes",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "list",
+		},
+		{
+			name:     "download - admin key dispatches",
+			method:   http.MethodGet,
+			target:   "/api/v1/themegen/themes/midnight-serif/download",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "download",
+		},
+		{
+			name:     "activate - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/themegen/themes/midnight-serif/activate",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "activate",
+		},
+		{
+			name:     "deactivate - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/themegen/themes/deactivate",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "deactivate",
+		},
+		{
+			name:     "delete - admin key dispatches",
+			method:   http.MethodDelete,
+			target:   "/api/v1/themegen/themes/midnight-serif",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "delete",
+		},
+		{
+			name:         "generate - non-admin key is forbidden",
+			method:       http.MethodPost,
+			target:       "/api/v1/themegen/generate",
+			role:         "Commentator",
+			withKey:      true,
+			sendKey:      true,
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "delete - non-admin key is forbidden",
+			method:       http.MethodDelete,
+			target:       "/api/v1/themegen/themes/midnight-serif",
+			role:         "Contributor",
+			withKey:      true,
+			sendKey:      true,
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "generate - unauthenticated is rejected",
+			method:       http.MethodPost,
+			target:       "/api/v1/themegen/generate",
+			wantCode:     http.StatusUnauthorized,
+			wantEnvelope: "MISSING_TOKEN",
+		},
+		{
+			name:         "activate - non-admin JWT is forbidden",
+			method:       http.MethodPost,
+			target:       "/api/v1/themegen/themes/midnight-serif/activate",
+			jwtRole:      "Commentator",
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "list - non-admin JWT is forbidden",
+			method:       http.MethodGet,
+			target:       "/api/v1/themegen/themes",
+			jwtRole:      "Commentator",
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:     "preview - agent key is rejected",
+			method:   http.MethodPost,
+			target:   "/api/v1/themegen/themes/midnight-serif/preview",
+			role:     "Admin",
+			sendKey:  true,
+			wantCode: http.StatusUnauthorized,
+		},
+		{
+			name:     "stop preview - agent key is rejected",
+			method:   http.MethodDelete,
+			target:   "/api/v1/themegen/preview",
+			role:     "Admin",
+			sendKey:  true,
+			wantCode: http.StatusUnauthorized,
+		},
+		{
+			name:     "preview status - agent key is rejected",
+			method:   http.MethodGet,
+			target:   "/api/v1/themegen/preview",
+			role:     "Admin",
+			sendKey:  true,
+			wantCode: http.StatusUnauthorized,
+		},
+		{
+			name:     "snapshot - agent key is rejected",
+			method:   http.MethodGet,
+			target:   "/api/v1/themegen/themes/midnight-serif/snapshot",
+			role:     "Admin",
+			sendKey:  true,
+			wantCode: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stub := &testThemGenSurface{}
+			r, deps := setupTestRouterWithThemGen(t, stub)
+
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.sendKey {
+				req.Header.Set("Authorization", "Bearer "+testBearerToken)
+			}
+			if tt.jwtRole != "" {
+				jwt, err := deps.jwtManager.GenerateToken("1", "browser", tt.jwtRole, 0)
+				require.NoError(t, err)
+				req.Header.Set("Authorization", "Bearer "+jwt)
+			}
+			if tt.withKey {
+				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
+				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
+				deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+				deps.user.EXPECT().GetUserByID(mock.Anything, testBearerUserID).
+					Return(&user.User{ID: testBearerUserID, Username: "admin", Role: tt.role, Status: "verified"}, nil)
+			}
+
+			code, envelope := envelopeCode(t, r, req)
+
+			assert.Equal(t, tt.wantCode, code)
+			if tt.wantEnvelope != "" {
+				assert.Equal(t, tt.wantEnvelope, envelope)
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+}
+
+// stubSnapshotRenderer renders a fixed document behind the real themegen
+// handler so the framing test proves the snapshot endpoint overrides the
+// router's global DENY headers end to end.
+type stubSnapshotRenderer struct {
+	doc string
+}
+
+func (s stubSnapshotRenderer) SnapshotTheme(string) (string, error) {
+	return s.doc, nil
+}
+
+// TestThemGenSnapshot_OverridesFramingHeaders proves the snapshot document
+// survives the router's global security headers: the middleware stamps
+// X-Frame-Options DENY and frame-ancestors 'none' on every response, which
+// blocks admin-panel iframes unless the snapshot endpoint overrides them.
+// A stub reporting DENY would fail this test the way Firefox did.
+func TestThemGenSnapshot_OverridesFramingHeaders(t *testing.T) {
+	h := themenapi.NewThemGenHandler(nil, nil, nil, themegendomain.EditionBlog, nil)
+	h.SetSnapshotRenderer(stubSnapshotRenderer{doc: "<!DOCTYPE html><html><body>Snapshot</body></html>"})
+	r, deps := setupTestRouterWithThemGen(t, h)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/themegen/themes/midnight-serif/snapshot", nil)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Snapshot")
+	assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
+	csp := w.Header().Get("Content-Security-Policy")
+	assert.Contains(t, csp, "frame-ancestors 'self'")
+	assert.Contains(t, csp, "script-src 'none'")
+	assert.NotContains(t, csp, "frame-ancestors 'none'")
 }
 
 // TestModulePostTypesMounted proves the posttypes-basic module serves its
@@ -632,7 +1048,8 @@ func TestHealthRoute(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code, "Health route status")
 
 	assert.Contains(t, w.Body.String(), `"status":"ok"`, "Health route body should contain status ok")
-	assert.Contains(t, w.Body.String(), `"features":{"imageGeneration":false,"imageReference":false,"textGeneration":false,"speechToText":false}`, "Health route body should contain features")
+	assert.Contains(t, w.Body.String(), `"themeGeneration":false`, "Health route body should contain themeGeneration")
+	assert.Contains(t, w.Body.String(), `"themeValidationFailed":false`, "Health route body should contain themeValidationFailed")
 }
 
 func TestLoginRoute_ValidRequest(t *testing.T) {
@@ -1939,7 +2356,7 @@ func TestMCPSurface(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil)
+			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil, nil)
 			if tt.withKey {
 				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
 				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)

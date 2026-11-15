@@ -191,7 +191,10 @@ Every first-party feature — users, auth, media, comments, SEO, and more — is
 
 Themes are a `themes/<name>/` directory containing CSS, optional JS, and optional HTML template overrides — pointed at with `THEME_DIR=themes/<name>`. The embedded theme serves as a working starting point — the default blog theme, or the storefront theme in the eCommerce edition — and the contract (CSS variables, layout/body blocks, standalone commerce pages, JS DOM ids, CDN assets) is documented so a fork-and-modify workflow is safe.
 
+Prefer describing over hand-editing? The AI Theme Generator builds a validated theme from a natural-language brief — in the admin panel, via `lesstruct-cli theme`, or through MCP theme tools.
+
 - Full contract: [`docs/theme-development.md`](docs/theme-development.md)
+- Generating themes: [`docs/theme-generation.md`](docs/theme-generation.md)
 - AI-assisted workflow: [`skills/lesstruct-theme-development/`](skills/lesstruct-theme-development/)
 
 ## API & CLI
@@ -209,7 +212,7 @@ Point it at a running server and create an API key from the admin panel to get s
 - API reference: [`docs/api-reference.md`](docs/api-reference.md)
 - Build from source: `make build-cli` → `bin/lesstruct-cli`
 
-`lesstruct-mcp` is a stdio MCP server over the same API — 44 tools across content, media, catalog, orders, payments, users, comments, and import/export — so any MCP-native agent can operate the site. The same tool surface is available over the network as MCP Streamable HTTP at `POST /mcp` when `[mcp] enabled = true` is set in `config.toml`. Install the stdio binary with Go:
+`lesstruct-mcp` is a stdio MCP server over the same API — 49 tools across content, media, catalog, orders, payments, users, comments, import/export, and AI theme generation — so any MCP-native agent can operate the site. The same tool surface is available over the network as MCP Streamable HTTP at `POST /mcp` when `[mcp] enabled = true` is set in `config.toml`. Install the stdio binary with Go:
 
 ```bash
 go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp@latest

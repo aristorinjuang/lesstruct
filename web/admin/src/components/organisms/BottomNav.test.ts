@@ -45,12 +45,12 @@ describe('BottomNav', () => {
   }
 
   describe('rendering', () => {
-    it('should render bottom navigation with 8 items', async () => {
+    it('should render bottom navigation with 10 items', async () => {
       const wrapper = mountBottomNav()
       await wrapper.vm.$nextTick()
 
       const navItems = wrapper.findAll('.bottom-nav__item')
-      expect(navItems).toHaveLength(8)
+      expect(navItems).toHaveLength(10)
     })
 
     it('should have correct navigation items', async () => {
@@ -66,6 +66,8 @@ describe('BottomNav', () => {
       expect(labelTexts).toContain('Posts')
       expect(labelTexts).toContain('Media')
       expect(labelTexts).toContain('Users')
+      expect(labelTexts).toContain('Theme Generator')
+      expect(labelTexts).toContain('Themes')
       expect(labelTexts).toContain('Import')
       expect(labelTexts).toContain('Export')
     })
@@ -75,7 +77,7 @@ describe('BottomNav', () => {
       await wrapper.vm.$nextTick()
 
       const icons = wrapper.findAll('.bottom-nav__icon')
-      expect(icons).toHaveLength(8)
+      expect(icons).toHaveLength(10)
     })
   })
 

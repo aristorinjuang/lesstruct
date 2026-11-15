@@ -984,8 +984,12 @@ func (_c *MockRepository_UpdateFileSize_Call) Run(run func(ctx context.Context, 
 	return _c
 }
 
-// Return is a helper method to define mock.On call
-func (_c *MockRepository_UpdateFileSize_Call) Return(_a0 error) *MockRepository_UpdateFileSize_Call {
-	_c.Call.Return(_a0)
+func (_c *MockRepository_UpdateFileSize_Call) Return(err error) *MockRepository_UpdateFileSize_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockRepository_UpdateFileSize_Call) RunAndReturn(run func(ctx context.Context, id int, size int64) error) *MockRepository_UpdateFileSize_Call {
+	_c.Call.Return(run)
 	return _c
 }

@@ -35,7 +35,7 @@ GOTOOLCHAIN_VERSION := go1.27.4
 # SUBMODULES lists every nested Go module covered by the test/lint gates
 # alongside the root module. Add each new modules/<name> here on creation.
 # `make release` derives the per-release tag list from it as well.
-SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/speech modules/importers modules/adminpanel modules/users modules/auth modules/privacy
+SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/themegen modules/speech modules/importers modules/adminpanel modules/users modules/auth modules/privacy
 
 # WORKTREE_SYNC lists the untracked agent/tooling state that a fresh linked
 # worktree misses (`git worktree add` checks out tracked files only; these
@@ -169,6 +169,7 @@ release:
 		-require=github.com/aristorinjuang/lesstruct/modules/site-ssr@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/speech@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/textgen@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/themegen@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/theme-default@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/theme-storefront@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/users@$(VERSION)); \
@@ -188,6 +189,7 @@ release:
 	edge site-ssr kernel modules/comments modules/media modules/posttypes-basic modules/theme-default; \
 	edge speech kernel modules/textgen; \
 	edge textgen kernel modules/media; \
+	edge themegen kernel; \
 	edge theme-default kernel; \
 	edge theme-storefront kernel; \
 	edge users kernel modules/media

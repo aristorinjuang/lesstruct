@@ -792,6 +792,63 @@ Translate content between languages, along with its SEO title and meta descripti
 - `format=tiptap` → returns translated TipTap JSON in `content` preserving structure, plus translated `title` and `metaDescription`.
 - `format=html` → returns translated HTML in `content` preserving tags, styles, and URLs — only visible text and `alt` attributes are translated — plus translated `title` and `metaDescription`.
 
+## AI theme generation
+
+> Requires `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `themeGeneration`.
+
+### Generate
+
+```
+POST /api/v1/themegen/generate
+```
+
+Generate a theme from a natural-language brief. Validates and auto-installs as inactive. Stylesheet-only is the default; `templateOverrides: true` also generates `templates/*.html` page overrides, which are parse-tested and smoke-rendered with populated sample data before install.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `description` | string | yes | Natural-language brief (max 5,000 chars). |
+| `style` | string | no | Preset: `""` (auto), `dark`, `light`, `minimal`, `playful`, `editorial`, `brutalist`. |
+| `templateOverrides` | bool | no | Generate page templates too. Failures feed a repair loop of at most two attempts; the request timeout rises to 180 seconds. |
+| `edition` | string | no | `"blog"` or `"storefront"` (defaults to server edition). |
+
+**Response:** `200 OK` with `{ "data": { "theme": { "name": "...", "edition": "...", "rationale": "...", "files": { "static/base.css": "...", "templates/index.html": "..." } }, "validation": { "valid": true, "findings": [] } } }`. Template files appear only for template-override generations.
+
+Warnings (for example an external `url()` host) keep `valid: true` and surface in `validation.findings`. The admin panel no longer renders the report — it toasts the first error finding instead — but `validation.findings` stays in the contract for machine consumers (MCP/CLI). When the validation gate still fails after the repair loop, the API answers `500 generation_failed` and repeats the final findings in `error.details` (`{ "valid": false, "findings": [...] }`).
+
+### List / Download / Activate / Deactivate / Delete
+
+```
+GET /api/v1/themegen/themes
+GET /api/v1/themegen/themes/{name}/download
+POST /api/v1/themegen/themes/{name}/activate
+POST /api/v1/themegen/themes/deactivate
+DELETE /api/v1/themegen/themes/{name}
+```
+
+List returns installed themes with active markers and edition. Download streams `<name>.zip` with `THEME_DIR` install steps. Activate validates, writes `[theme] active`, and hot-applies the theme (`requiresRestart: false`); without a reload-capable edition it keeps the restart hint (`requiresRestart: true`). A reload failure reverts the config write. Deactivate clears back to the embedded default, hot-applying the same way; delete refuses `409 theme_active` while active or while the theme is the live `THEME_DIR` target.
+
+These six endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`). The preview trio and the snapshot endpoint below are browser-only — preview needs its per-browser signed cookie, and snapshots frame the session-authenticated HTML.
+
+### Preview
+
+```
+POST /api/v1/themegen/themes/{name}/preview
+GET /api/v1/themegen/preview
+DELETE /api/v1/themegen/preview
+```
+
+Preview renders an installed theme on the real site for the requesting browser only, without changing anything server-side: the validated theme sets a signed `lesstruct_theme_preview` cookie (HttpOnly, 15-minute expiry) and the content site resolves that theme while the cookie is present and valid. Previewed responses carry `Cache-Control: no-store`. `THEME_DIR` still wins when set; theme `root/` files are not previewed. Stop preview clears the cookie. Get preview status reports the requesting browser's selection (`{ "data": { "preview": true, "theme": "..." } }`, or `{ "preview": false }` with no valid cookie) so the admin panel only offers Stop preview while one is active. Deleting the previewed theme clears its cookie in the same response.
+
+### Snapshot
+
+```
+GET /api/v1/themegen/themes/{name}/snapshot
+```
+
+Renders the installed theme's homepage to a standalone HTML document with populated sample data, for the admin panel's snapshot frames. Browser-only like preview (no Bearer access): unknown or broken themes degrade to a placeholder document instead of an error, and missing render support answers `503 snapshot_unavailable`. Responses carry `Cache-Control: private, max-age=300`. The endpoint overrides the global anti-framing headers (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`, scripts forbidden) so the panel may frame it; the frames themselves run `sandbox="allow-same-origin"` without scripts.
+
 ## AI voice dictation
 
 > Requires `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `speechToText`.

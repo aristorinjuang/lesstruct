@@ -235,6 +235,19 @@ When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhanc
 | `AI_TEXT_GENERATION_BASE_URL` | empty | Override the API base URL. Default is OpenAI's API. For other providers: `https://api.deepseek.com`, `https://openrouter.ai/api/v1`, `http://localhost:11434/v1` (Ollama), etc. |
 | `AI_TEXT_GENERATION_MODEL` | `gpt-5-mini` | Chat model name. Examples by provider: OpenAI `gpt-5-mini`, DeepSeek `deepseek-chat`, OpenRouter `openai/gpt-5-mini`, Together `meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8`, Ollama `llama3`. |
 
+### AI theme generation (optional)
+
+When `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Theme Generator: validated themes (`static/base.css` + `static/style.css`, plus opt-in `templates/*.html` page overrides) from a natural-language brief, downloadable as `.zip` or activatable in place with a hot reload. Templates are parse-tested and smoke-rendered before install or activation, and a failing theme gets up to two repair attempts before it is refused with the findings surfaced. Each `AI_THEMGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_THEMGEN_API_KEY` | empty | Dedicated API key for theme generation. Falls back to `AI_TEXT_GENERATION_API_KEY`. |
+| `AI_THEMGEN_BASE_URL` | empty | Override the API base URL. Falls back to `AI_TEXT_GENERATION_BASE_URL`. |
+| `AI_THEMGEN_MODEL` | empty | Chat model name. Falls back to `AI_TEXT_GENERATION_MODEL`, then `gpt-5-mini`. |
+| `THEMES_DIR` | `themes` | Filesystem root for installed themes (one dir per theme). |
+
+The `[theme]` block in `config.toml` holds the active installed theme (`active = ""` = embedded default). It is managed by `POST /api/v1/themegen/themes/{name}/activate`; `THEME_DIR` overrides it when set.
+
 ### Privacy redaction via SAM 3.1 (optional)
 
 When `AI_SAM_API_KEY` is set, every media upload and profile-picture upload is scanned with Meta SAM 3.1 and sensitive regions are blurred before anything is stored. Scanning sends the uploaded image bytes to Meta's Model API, so enabling the key means PII in uploads leaves the host. Redaction precedes WebP conversion and thumbnail derivation so variants inherit blurred pixels; any scan failure rejects the upload fail-closed and stores nothing. Faces stay visible only in profile pictures, blurred everywhere else. Empty keeps the legacy pipeline byte-identical. There is no admin UI toggle (env-driven), no backfill of the existing library, and no importer-download or AI-generated image scanning in v1.
@@ -550,7 +563,7 @@ Absent block → headless disabled (the default; fully backward compatible).
 ### `[mcp]`
 
 Optional. When `enabled = true`, the server mounts the Model Context Protocol
-endpoint at `POST /mcp`, exposing the same 44 tools as the `lesstruct-mcp`
+endpoint at `POST /mcp`, exposing the same 49 tools as the `lesstruct-mcp`
 stdio binary over **Streamable HTTP**. A remote MCP host then drives the site
 with a Bearer API key — no local binary, no separate port.
 

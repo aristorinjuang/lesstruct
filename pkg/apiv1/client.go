@@ -33,8 +33,9 @@ type envelope struct {
 
 // errorInfo is the structured error object the server returns under envelope.error.
 type errorInfo struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string          `json:"code"`
+	Message string          `json:"message"`
+	Details json.RawMessage `json:"details,omitempty"`
 }
 
 // codeForStatus maps a bare HTTP status to a best-effort UPPER_SNAKE code when
@@ -77,10 +78,14 @@ func redirectPolicy(req *http.Request, via []*http.Request) error {
 // APIError is returned by Client methods when the request fails or the server
 // returns an error envelope. StatusCode carries the HTTP status (0 for a
 // transport-level failure); Code/Message come from the server's error object.
+// Details carries the raw error.details payload when the server sent one
+// (e.g. the theme generator's validation findings on a failed gate) so
+// callers can surface the reason, not just the code.
 type APIError struct {
 	StatusCode int
 	Code       string
 	Message    string
+	Details    json.RawMessage
 }
 
 // Error implements the error interface.
@@ -368,6 +373,7 @@ func (c *Client) doRequestWithClient(
 			StatusCode: resp.StatusCode,
 			Code:       env.Error.Code,
 			Message:    env.Error.Message,
+			Details:    env.Error.Details,
 		}
 	}
 	if resp.StatusCode >= 400 {

@@ -1,0 +1,15 @@
+info:
+  name: Preview Theme
+  type: http
+  seq: 7
+
+http:
+  method: POST
+  url: "{{BASE_URL}}/api/v1/themegen/themes/midnight-serif/preview"
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

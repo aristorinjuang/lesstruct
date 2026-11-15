@@ -28,6 +28,51 @@ func TestModule_AdminManifest(t *testing.T) {
 	assert.Empty(t, manifest.MenuEntries)
 }
 
+func TestModule_RefreshThemeStyles(t *testing.T) {
+	tests := []struct {
+		name         string
+		withRefresher bool
+		baseCSS      string
+		styleCSS     string
+		wantBase     string
+		wantStyle    string
+	}{
+		{
+			name:          "success - forwards styles to refresher",
+			withRefresher: true,
+			baseCSS:       ":root{}",
+			styleCSS:      ".btn{}",
+			wantBase:      ":root{}",
+			wantStyle:     ".btn{}",
+		},
+		{
+			name:          "success - nil refresher is a no-op",
+			withRefresher: false,
+			baseCSS:       ":root{}",
+			styleCSS:      ".btn{}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotBase, gotStyle string
+			var opts []textgen.Option
+			if tt.withRefresher {
+				opts = append(opts, textgen.WithThemeRefresher(func(baseCSS, styleCSS string) {
+					gotBase, gotStyle = baseCSS, styleCSS
+				}))
+			}
+			module := textgen.New(opts...)
+			require.NotNil(t, module)
+			module.RefreshThemeStyles(tt.baseCSS, tt.styleCSS)
+			if tt.withRefresher {
+				assert.Equal(t, tt.wantBase, gotBase)
+				assert.Equal(t, tt.wantStyle, gotStyle)
+			}
+		})
+	}
+}
+
 func TestModule_Handlers(t *testing.T) {
 	tests := []struct {
 		name string

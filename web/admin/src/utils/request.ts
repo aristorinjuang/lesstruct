@@ -1,12 +1,14 @@
 export class ApiError extends Error {
   statusCode: number
   code?: string
+  details?: unknown
 
-  constructor(message: string, statusCode: number, code?: string) {
+  constructor(message: string, statusCode: number, code?: string, details?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.statusCode = statusCode
     this.code = code
+    this.details = details
   }
 }
 
@@ -61,6 +63,7 @@ async function download(
     if (!response.ok) {
       let code: string | undefined
       let message = response.statusText
+      let details: unknown
       try {
         const body = await response.json()
         if (body?.error?.code) {
@@ -69,10 +72,11 @@ async function download(
         if (body?.error?.message) {
           message = body.error.message
         }
+        details = body?.error?.details
       } catch {
         // Response body not parseable as JSON, use status text
       }
-      throw new ApiError(message, response.status, code)
+      throw new ApiError(message, response.status, code, details)
     }
 
     const blob = await response.blob()
@@ -140,6 +144,7 @@ async function request<T>(
       // Try to parse structured error response from backend
       let code: string | undefined
       let message = response.statusText
+      let details: unknown
 
       try {
         const body = await response.json()
@@ -149,6 +154,7 @@ async function request<T>(
         if (body?.error?.message) {
           message = body.error.message
         }
+        details = body?.error?.details
       } catch {
         // Response body not parseable as JSON, use status text
       }
@@ -158,10 +164,11 @@ async function request<T>(
           'Your session could not be verified. Please refresh the page and try again.',
           response.status,
           code,
+          details,
         )
       }
 
-      throw new ApiError(message, response.status, code)
+      throw new ApiError(message, response.status, code, details)
     }
 
     const json = response.status === 204 ? null : await response.json()

@@ -129,6 +129,13 @@ by contract), `content`, `customfield`, `database` (Driver/Dialect),
 - **Manifests validate centrally.** `Manifest()` returns your data;
   `AdminExtensionManifest.Validate()` (labels present, paths absolute, no
   duplicate paths) is the shared check — never copy it per module.
+- **Hot reload swaps state, never routes.** When activation must take effect
+  without a restart, keep the long-lived handler identity and swap its
+  internals behind an atomic pointer or mutex: parse a full replacement off
+  to the side first, then swap (a parse failure leaves the live set
+  untouched). Revert the config write when the swap fails so the operation
+  stays transactional. The theme reload (`site-ssr` template view plus
+  static/root filesystems, `textgen` brand refresh) is the pattern.
 
 ## Gating your module
 

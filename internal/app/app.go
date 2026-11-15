@@ -367,6 +367,9 @@ func startServer(
 	imageReferenceEnabled bool,
 	textGenEnabled bool,
 	textGenHandler routes.TextGenSurface,
+	themGenEnabled bool,
+	themGenHandler routes.ThemGenSurface,
+	themeValidationFailed bool,
 	speechEnabled bool,
 	speechHandler routes.SpeechSurface,
 	languages []string,
@@ -414,6 +417,9 @@ func startServer(
 		imageReferenceEnabled,
 		textGenEnabled,
 		textGenHandler,
+		themGenEnabled,
+		themGenHandler,
+		themeValidationFailed,
 		speechEnabled,
 		speechHandler,
 		languages,
@@ -451,12 +457,14 @@ func startServer(
 
 // noCookieAllowlist names the only cookies allowed past the NoCookie guard:
 // the SSR engine's language preference, the GDPR consent choice, the
-// browser session cookie, and its JS-readable auth hint. It exists so
-// TestNoCookieAllowlistMatchesEngine can pin the wiring against the engine's
-// canonical constants (importing the engine here would link the SSR stack
+// browser session cookie, its JS-readable auth hint, and the signed theme
+// preview selection (themegen api PreviewCookieName, inlined here so the
+// platform does not import the module — the pin test keeps both in sync).
+// It exists so TestNoCookieAllowlistMatchesEngine can pin the wiring against
+// the canonical constants (importing the engine here would link the SSR stack
 // into lean binaries like lesstruct-core).
 func noCookieAllowlist() []string {
-	return []string{"lesstruct_lang", "lesstruct_consent", kernel.SessionCookieName, kernel.AuthHintCookieName}
+	return []string{"lesstruct_lang", "lesstruct_consent", kernel.SessionCookieName, kernel.AuthHintCookieName, "lesstruct_theme_preview"}
 }
 
 // Run boots an edition: loads config, wires the shared platform services,
@@ -1271,6 +1279,9 @@ func Run(edition Edition) {
 		imageReferenceEnabled,
 		cfg.IsTextGenerationEnabled() && hs.TextGen != nil,
 		hs.TextGen,
+		cfg.IsThemeGenerationEnabled() && hs.ThemGen != nil,
+		hs.ThemGen,
+		core.ThemeValidationFailed,
 		cfg.IsSpeechToTextEnabled() && cfg.IsTextGenerationEnabled() && hs.Speech != nil,
 		hs.Speech,
 		languages,

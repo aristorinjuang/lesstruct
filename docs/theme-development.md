@@ -14,6 +14,22 @@
 Lesstruct supports custom themes for the public-facing content site. Themes override the
 default CSS, JavaScript, and (optionally) HTML templates without modifying the core source.
 
+## Theme Generator
+
+The admin panel ships an AI Theme Generator (`/admin/theme-generator`): describe a theme in plain language, get a validated theme grounded on the active edition's sources. Stylesheet-only is the default (`static/base.css` + `static/style.css`); tick **Generate page templates** (`templateOverrides: true`) to also generate `templates/*.html` overrides. Every result passes the same validation gate the engine uses before install and before activation: file contract + CSS parse for all themes, plus `html/template` parse and smoke renders of every page with populated sample data when templates are present. Generated output additionally passes a content scan — no `<script>` elements, inline event handlers, or `javascript:` URLs in renderable markup, and no `root/` files — while manual operator themes stay trusted and skip the scan. A failing theme is sent back to the model with its findings (at most two repair attempts against the original readable output); still failing → refused, with the reason reported to the admin. CSS is minified at install time, so validation and repairs always see the model's own formatting. Download as `.zip` for manual `THEME_DIR` install, or install and activate in place via `/admin/themes` (`POST /api/v1/themegen/themes/{name}/activate` writes `[theme] active` and hot-applies it — no restart; a failed reload reverts the config write). Resolution precedence: `THEME_DIR` wins, then `[theme] active` at `THEMES_DIR/<name>/`, otherwise the embedded default. The live `THEME_DIR` target lists as active and cannot be deleted. The same validator runs at boot and on hot reload; a broken active theme logs a warning and falls back to embedded at boot (`themeValidationFailed` on `/api/health`), while a reload refuses the swap and activation reverts the config write.
+
+### Live preview
+
+`/admin/themes` offers Preview next to every installed theme. It validates the theme, sets a signed `lesstruct_theme_preview` cookie (HttpOnly, 15 minutes), and the content site renders that theme for your browser only — nothing changes server-side, so visitors keep seeing the active theme. Previewed pages and `/static/` files serve with `Cache-Control: no-store`. `THEME_DIR` still wins when set (a manual override is never hijacked by a preview), and theme `root/` files are not previewed — they keep serving from the active theme. Preview needs the production admin (same origin as the site); in `DEV_MODE` the admin dev server is a different origin, so open `/` on the Go server to see it.
+
+Every installed theme card — and the just-generated theme card on
+`/admin/theme-generator` — also frames a snapshot: the theme's homepage
+rendered server-side with populated sample data (`GET
+/api/v1/themegen/themes/{name}/snapshot`, sandboxed in a scaled iframe).
+Snapshots cover generated and manually dropped themes alike; an unknown or
+broken theme degrades to a placeholder document instead of breaking the
+listing. Same same-origin note as preview.
+
 ## How Themes Work
 
 1. Create a theme directory with your custom files.
@@ -878,7 +894,7 @@ static-site archives.
 | `reset-password.js` | `reset_password.html` | Reads `?token=` from the URL; POSTs to `/api/auth/reset-password`; expects `#new-password` input. |
 | `highlight.min.js` | `layout.html` | Provides the global `hljs`. The default layout also runs `hljs.highlightAll()` on `DOMContentLoaded`. |
 
-Both embedded layouts inline the theme stylesheets with `{{inlineStyles}}` instead of linking them, so first paint never blocks on theme CSS. The Inter variable font is self-hosted (`static/inter-latin-var.woff2`, declared in `base.css`, preloaded from the layout), so pages need no third-party font origin; KaTeX/highlight.js in the default theme keep the deferred `media="print"` + `onload` pattern. The trade-off is deliberate: every HTML response carries the CSS (~21 KB blog, ~37 KB storefront, less compressed) instead of using the immutable static cache on repeat views. `{{assetURL "base.css"}}` / `{{assetURL "style.css"}}` remain for child themes that prefer linked stylesheets: they emit content-hashed filenames with immutable cache headers. Plain `/static/` files carry `Cache-Control: public, max-age=86400` (hashed CSS stays immutable); `/static/base.css` and `/static/style.css` still work for backward compatibility.
+Both embedded layouts inline the theme stylesheets with `{{inlineStyles}}` instead of linking them, so first paint never blocks on theme CSS. The Inter variable font is self-hosted (`static/inter-latin-var.woff2`, declared in `base.css`, preloaded from the layout), so pages need no third-party font origin; KaTeX/highlight.js in the default theme keep the deferred `media="print"` + `onload` pattern. The trade-off is deliberate: every HTML response carries the CSS (~21 KB blog, ~37 KB storefront, less compressed) instead of using the immutable static cache on repeat views. `{{assetURL "base.css"}}` / `{{assetURL "style.css"}}` remain for child themes that prefer linked stylesheets: they emit content-hashed filenames with immutable cache headers. Plain `/static/` files carry `Cache-Control: public, max-age=86400` on embedded-only installs (hashed CSS stays immutable); once an installed theme is active the plain TTL drops to five minutes so a hot-swapped theme stops serving stale files the same day. `/static/base.css` and `/static/style.css` still work for backward compatibility.
 
 ### Favicons
 

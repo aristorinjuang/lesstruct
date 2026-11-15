@@ -58,6 +58,7 @@ type HandlerSet struct {
 	AliasRedirect  *handlers.AliasRedirectHandler
 	TextGen        routes.TextGenSurface
 	Speech         routes.SpeechSurface
+	ThemGen        routes.ThemGenSurface
 
 	// ConfigExtras contributes edition-specific keys to the public
 	// GET /api/v1/config payload (e.g. the catalog block). Nil or empty
@@ -73,7 +74,6 @@ type HandlerSet struct {
 type Core struct {
 	Cfg    *config.Config
 	Logger *util.Logger
-
 	// Database and module machinery.
 	DB       *sql.DB
 	Dialect  database.Dialect
@@ -119,6 +119,11 @@ type Core struct {
 	// the CSP frame-src allowlist for the HTML sanitizer.
 	PublicFieldRegistry *config.PublicFieldRegistry
 	IFrameHosts         []string
+
+	// ThemeValidationFailed marks a boot where the active installed theme
+	// failed validation: the engine serves the embedded default and
+	// /api/health reports the detail so the AI output never bricks startup.
+	ThemeValidationFailed bool
 
 	// Platform handlers every edition serves.
 	ContentHandler      *handlers.ContentHandler

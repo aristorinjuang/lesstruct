@@ -630,3 +630,136 @@ func TestRenderContent_PerSlugOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderLayoutScriptsIntact(t *testing.T) {
+	tests := []struct {
+		name   string
+		render func(templates *sitessr.Templates, w *httptest.ResponseRecorder) error
+	}{
+		{
+			name: "success - index keeps script includes intact",
+			render: func(templates *sitessr.Templates, w *httptest.ResponseRecorder) error {
+				return templates.RenderIndex(w, sitessr.IndexData{
+					LayoutData: sitessr.LayoutData{
+						Title:     "Test Site",
+						PageTitle: "Test Site",
+						Lang:      "en",
+					},
+				})
+			},
+		},
+		{
+			name: "success - not found keeps script includes intact",
+			render: func(templates *sitessr.Templates, w *httptest.ResponseRecorder) error {
+				return templates.RenderNotFound(w, sitessr.NotFoundData{
+					LayoutData: sitessr.LayoutData{
+						Title:     "Not Found",
+						PageTitle: "Not Found - Test Site",
+						Lang:      "en",
+					},
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			templates, err := sitessr.NewTemplates(nil, nil)
+			require.NoError(t, err)
+			w := httptest.NewRecorder()
+			require.NoError(t, tt.render(templates, w))
+			body := w.Body.String()
+			assert.Contains(t, body, `<script src="/static/nav-auth.js" defer></script>`)
+			assert.Contains(t, body, `<script src="/static/search.js" defer></script>`)
+			assert.NotContains(t, body, `\x3Cscript`)
+			assert.NotContains(t, body, `\x3cscript`)
+		})
+	}
+}
+
+func TestStaticFilesThemedTTL(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T) *sitessr.Theme
+		path    string
+		wantTTL string
+	}{
+		{
+			name: "success - themed css uses short ttl",
+			setup: func(t *testing.T) *sitessr.Theme {
+				return &sitessr.Theme{Dir: t.TempDir()}
+			},
+			path:    "/style.css",
+			wantTTL: "public, max-age=300",
+		},
+		{
+			name: "success - themed js uses short ttl",
+			setup: func(t *testing.T) *sitessr.Theme {
+				return &sitessr.Theme{Dir: t.TempDir()}
+			},
+			path:    "/nav-auth.js",
+			wantTTL: "public, max-age=300",
+		},
+		{
+			name: "success - embedded css keeps day ttl",
+			setup: func(t *testing.T) *sitessr.Theme {
+				return nil
+			},
+			path:    "/style.css",
+			wantTTL: "public, max-age=86400",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := sitessr.StaticFiles(tt.setup(t))
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, tt.wantTTL, w.Header().Get("Cache-Control"))
+		})
+	}
+}
+
+func TestStaticFilesReloadTTL(t *testing.T) {
+	tests := []struct {
+		name    string
+		initial func(t *testing.T) *sitessr.Theme
+		reload  func(t *testing.T) *sitessr.Theme
+		wantTTL string
+	}{
+		{
+			name: "success - reload to themed shortens ttl",
+			initial: func(t *testing.T) *sitessr.Theme {
+				return nil
+			},
+			reload: func(t *testing.T) *sitessr.Theme {
+				return &sitessr.Theme{Dir: t.TempDir()}
+			},
+			wantTTL: "public, max-age=300",
+		},
+		{
+			name: "success - reload to embedded restores day ttl",
+			initial: func(t *testing.T) *sitessr.Theme {
+				return &sitessr.Theme{Dir: t.TempDir()}
+			},
+			reload: func(t *testing.T) *sitessr.Theme {
+				return nil
+			},
+			wantTTL: "public, max-age=86400",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := sitessr.StaticFiles(tt.initial(t))
+			handler.Reload(tt.reload(t))
+			req := httptest.NewRequest(http.MethodGet, "/style.css", nil)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Equal(t, tt.wantTTL, w.Header().Get("Cache-Control"))
+		})
+	}
+}

@@ -78,6 +78,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newImportCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newExportCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newSSGCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newThemeCmd(&apiKey, &baseURL, &output))
 	return root
 }
 

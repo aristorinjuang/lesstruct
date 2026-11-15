@@ -213,3 +213,10 @@ suffix = "_medium"
 [[thumbnail]]
 max_width = 616
 suffix = "_large"
+
+# ── Theme (optional) ────────────────────────────────────────────────
+# Installed theme the content site layers over the embedded default.
+# Managed by POST /api/v1/themegen/themes/{name}/activate (restart to apply);
+# edit only to clear manually. THEME_DIR overrides this when set.
+# [theme]
+# active = ""   # installed theme name; empty = embedded default

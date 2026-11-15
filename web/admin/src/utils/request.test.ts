@@ -59,7 +59,13 @@ describe('download', () => {
   })
 
   it('throws ApiError with the structured error code and message on failure', async () => {
-    const errorBody = { error: { code: 'export_error', message: 'Failed to export content' } }
+    const errorBody = {
+      error: {
+        code: 'export_error',
+        message: 'Failed to export content',
+        details: { valid: false, findings: [] },
+      },
+    }
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -73,7 +79,12 @@ describe('download', () => {
     const promise = api.download('/api/admin/export', 'lesstruct-export.tar.gz')
 
     await expect(promise).rejects.toThrow(ApiError)
-    await expect(promise).rejects.toMatchObject({ statusCode: 500, code: 'export_error', message: 'Failed to export content' })
+    await expect(promise).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'export_error',
+      message: 'Failed to export content',
+      details: { valid: false, findings: [] },
+    })
     expect(createObjectURLSpy).not.toHaveBeenCalled()
   })
 })

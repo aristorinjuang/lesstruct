@@ -38,6 +38,7 @@ compiles against, see [The Kernel](kernel.md).
 | `theme-default` | — | The default blog theme (layouts, styles, root files) | — |
 | `theme-storefront` | — | The eCommerce storefront theme (layouts, styles, cart/checkout/tracking pages) | — |
 | `textgen` | — | AI text enhance/translate and HTML generation | — |
+| `themegen` | — | AI theme generation: stylesheet-only themes with opt-in template overrides, validated install/activate | Themes |
 | `speech` | — | Voice dictation: speech-to-text transcription enhanced into content | — |
 | `importers` | — | WordPress (WXR) and Hugo importers | Import |
 | `catalog` | — | Commerce catalog (pricing, variants, stock, SKUs) | Catalog panel |
@@ -154,6 +155,17 @@ supported child-theme path. Leaf.
 AI text features: enhance, translate, and on-brand HTML generation
 (theme-aware prompts, media context). Bring-your-own key via the AI text
 settings. Leaf.
+
+### themegen
+
+AI theme generation: stylesheet-only themes by default (`static/base.css` +
+`static/style.css`), with opt-in page template overrides, from a natural-language
+brief. Every result is validated before install and before activation — CSS
+parse always, plus template parse and smoke renders when templates are present
+— with a bounded two-attempt repair loop feeding findings back to the model.
+Downloadable as `.zip` or activatable in place (`[theme]` active, hot-applied).
+Bring-your-own key via the AI theme settings (`AI_THEMGEN_*`, falling back to
+`AI_TEXT_GENERATION_*`). Leaf.
 
 ### speech
 

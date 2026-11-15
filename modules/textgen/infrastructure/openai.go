@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -571,19 +573,22 @@ func stripJSONFences(responseText string) string {
 }
 
 // OpenAITextService implements textgendomain.TextGenerationService using any
-// OpenAI-compatible API.
+// OpenAI-compatible API. The HTML system prompt is held behind an atomic
+// pointer so RefreshThemeStyles can hot-apply a new theme's styles while
+// generations are in flight.
 type OpenAITextService struct {
-	client           *openai.Client // singleton client
+	client           *openai.Client // singleton client, built once via clientOnce
+	clientOnce       sync.Once
 	apiKey           string
 	baseURL          string
 	model            string
-	htmlSystemPrompt string // precomputed at construction from base + theme CSS + examples
+	htmlSystemPrompt atomic.Pointer[string] // precomputed from base + theme CSS + examples
 }
 
 var _ textgendomain.TextGenerationService = (*OpenAITextService)(nil)
 
 func (s *OpenAITextService) ensureClient() {
-	if s.client == nil {
+	s.clientOnce.Do(func() {
 		opts := []option.RequestOption{
 			option.WithAPIKey(s.apiKey),
 		}
@@ -592,7 +597,7 @@ func (s *OpenAITextService) ensureClient() {
 		}
 		client := openai.NewClient(opts...)
 		s.client = &client
-	}
+	})
 }
 
 func (s *OpenAITextService) completeChat(ctx context.Context, systemPrompt, userPrompt string) (string, error) {
@@ -693,7 +698,7 @@ func (s *OpenAITextService) EnhanceText(
 			userPrompt += "\n\n" + mediaContext
 		}
 
-		generated, err := s.callChatCompletionHTML(ctx, s.htmlSystemPrompt, userPrompt)
+		generated, err := s.callChatCompletionHTML(ctx, s.htmlPrompt(), userPrompt)
 		if err != nil {
 			return textgendomain.EnhanceResult{}, err
 		}
@@ -806,6 +811,23 @@ func (s *OpenAITextService) EnhanceTranscription(
 	return s.callChatCompletionEnhancedTiptap(ctx, systemPrompt, userPrompt)
 }
 
+// htmlPrompt returns the active HTML system prompt, falling back to the
+// themeless contract when no prompt was ever stored.
+func (s *OpenAITextService) htmlPrompt() string {
+	if prompt := s.htmlSystemPrompt.Load(); prompt != nil {
+		return *prompt
+	}
+	return buildHTMLSystemPrompt("", "")
+}
+
+// RefreshThemeStyles rebuilds the HTML system prompt from the active theme's
+// styles so later generations follow the new brand without a restart. Safe
+// for concurrent use with in-flight generations.
+func (s *OpenAITextService) RefreshThemeStyles(themeBaseCSS, themeStyleCSS string) {
+	prompt := buildHTMLSystemPrompt(themeBaseCSS, themeStyleCSS)
+	s.htmlSystemPrompt.Store(&prompt)
+}
+
 // NewOpenAITextService creates a new OpenAI-compatible text generation service.
 // baseURL is optional — pass "" to use the OpenAI default.
 // model is the chat model name (e.g. "gpt-5-mini", "gpt-5.4-mini", "openai/gpt-5-mini" for OpenRouter).
@@ -815,10 +837,12 @@ func (s *OpenAITextService) EnhanceTranscription(
 // component classes instead of inventing off-brand styles. Pass empty strings
 // when no theme is available (the embedded defaults are still a reasonable brief).
 func NewOpenAITextService(apiKey, baseURL, model, themeBaseCSS, themeStyleCSS string) *OpenAITextService {
-	return &OpenAITextService{
-		apiKey:           apiKey,
-		baseURL:          baseURL,
-		model:            model,
-		htmlSystemPrompt: buildHTMLSystemPrompt(themeBaseCSS, themeStyleCSS),
+	svc := &OpenAITextService{
+		apiKey:  apiKey,
+		baseURL: baseURL,
+		model:   model,
 	}
+	prompt := buildHTMLSystemPrompt(themeBaseCSS, themeStyleCSS)
+	svc.htmlSystemPrompt.Store(&prompt)
+	return svc
 }

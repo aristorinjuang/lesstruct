@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // readEmbeddedPage reads a template file from the embedded pages filesystem.
@@ -256,29 +257,45 @@ func ResolveFSForTest(theme *Theme, embedded fs.FS, subPath string) fs.FS {
 	return resolveFS(theme, embedded, subPath)
 }
 
-// rootFilesHandler serves files from the theme's optional root/ directory at
+// ThemeRootHandler serves files from the theme's optional root/ directory at
 // the site root (e.g. /webpushr-sw.js for push service workers, which must
 // live at a fixed root scope). Requests that do not map to an existing regular
-// file fall through to next.
-type rootFilesHandler struct {
+// file fall through to next. The filesystem swaps under a read-write mutex so
+// Reload can hot-apply a new theme while requests are in flight. The wrapper
+// always exists (even when the theme ships no root/ directory) so a later
+// reload can start serving root files without remounting routes.
+type ThemeRootHandler struct {
+	mu   sync.RWMutex
 	fsys fs.FS
 	next http.Handler
 }
 
-func (h *rootFilesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *ThemeRootHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	fsys := h.fsys
+	next := h.next
+	h.mu.RUnlock()
 	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
-	if name != "" && !strings.Contains(name, "..") {
-		if f, err := h.fsys.Open(name); err == nil {
+	if fsys != nil && name != "" && !strings.Contains(name, "..") {
+		if f, err := fsys.Open(name); err == nil {
 			info, statErr := f.Stat()
 			_ = f.Close()
 			if statErr == nil && !info.IsDir() {
-				http.FileServerFS(h.fsys).ServeHTTP(w, r)
+				http.FileServerFS(fsys).ServeHTTP(w, r)
 				return
 			}
 		}
 	}
 
-	h.next.ServeHTTP(w, r)
+	next.ServeHTTP(w, r)
+}
+
+// Reload recomputes the theme's root/ filesystem so later requests serve the
+// new theme's site-root files without a restart.
+func (h *ThemeRootHandler) Reload(theme *Theme) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.fsys = RootFilesFS(theme)
 }
 
 // RootFilesFS returns a filesystem over the theme's optional root/ directory,
@@ -300,13 +317,9 @@ func RootFilesFS(theme *Theme) fs.FS {
 }
 
 // RootFilesHandler wraps next with site-root serving of the theme's root/
-// directory. When the theme provides no root/ directory, next is returned
-// unchanged.
-func RootFilesHandler(theme *Theme, next http.Handler) http.Handler {
-	fsys := RootFilesFS(theme)
-	if fsys == nil {
-		return next
-	}
-
-	return &rootFilesHandler{fsys: fsys, next: next}
+// directory. The wrapper always exists (even when the theme ships no root/
+// directory) so a later Reload can start serving root files without
+// remounting routes.
+func RootFilesHandler(theme *Theme, next http.Handler) *ThemeRootHandler {
+	return &ThemeRootHandler{fsys: RootFilesFS(theme), next: next}
 }

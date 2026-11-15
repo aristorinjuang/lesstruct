@@ -11,9 +11,24 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aristorinjuang/lesstruct/kernel/i18n"
+)
+
+const (
+	// staticPlainTTL is the Cache-Control TTL for plain /static/ URLs on an
+	// embedded-only install: they change across releases, so they must not
+	// be immutable, but a day is fine when no theme can be hot-swapped.
+	staticPlainTTL = "public, max-age=86400"
+
+	// staticThemedTTL is the Cache-Control TTL for plain /static/ URLs once
+	// an installed theme is active. Installed theme files have no content
+	// hashes, so a short TTL keeps a theme switch from serving stale files
+	// for a day. Versioned hashed CSS stays immutable regardless.
+	staticThemedTTL = "public, max-age=300"
 )
 
 var (
@@ -57,6 +72,188 @@ func inlineThemeStyles(theme *Theme) template.HTML {
 	b.WriteString(styleCSS)
 	b.WriteString("</style>")
 	return template.HTML(b.String())
+}
+
+// templatesView is the swappable render state behind Templates: every parsed
+// template of one theme resolution. ReloadFromDisk builds a full replacement
+// off to the side and swaps the pointer, so renders in flight never observe
+// a half-parsed set.
+type templatesView struct {
+	index          *template.Template
+	home           *template.Template
+	pages          map[string]*template.Template
+	content        map[string]*template.Template
+	contentBySlug  map[string]*template.Template
+	contentDefault *template.Template
+	author         *template.Template
+	tag            *template.Template
+	notFound       *template.Template
+	login          *template.Template
+	register       *template.Template
+	forgotPassword *template.Template
+	verifyEmail    *template.Template
+	resetPassword  *template.Template
+}
+
+// parseWithLayout clones layout and parses source into the clone. Errors
+// return instead of panicking so ReloadFromDisk can refuse a broken theme
+// while the live set keeps serving.
+func parseWithLayout(layout *template.Template, source string) (*template.Template, error) {
+	clone, err := layout.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone layout: %w", err)
+	}
+	parsed, err := clone.Parse(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template: %w", err)
+	}
+	return parsed, nil
+}
+
+// buildTemplatesView parses the full template set for theme from the theme
+// filesystem and the i18n catalog. It loads the shared layout, the fixed
+// pages, the content templates (per post type plus per-slug overrides), and
+// the standalone pages the theme declares through ThemePageProvider.
+func buildTemplatesView(theme *Theme, catalog *i18n.Catalog, postTypeSlugs []string) (*templatesView, error) {
+	tFunc := func(lang, key string) string { return key }
+	if catalog != nil {
+		tFunc = catalog.T
+	}
+
+	assetHash := ComputeAssetHash(theme)
+
+	inlineCSS := inlineThemeStyles(theme)
+
+	funcs := template.FuncMap{
+		"urlpath": url.PathEscape,
+		"t":       tFunc,
+		"upper":   strings.ToUpper,
+		"assetURL": func(name string) string {
+			ext := ".css"
+			base := strings.TrimSuffix(name, ext)
+			return "/static/" + base + "." + assetHash + ext
+		},
+		"inlineStyles": func() template.HTML {
+			return inlineCSS
+		},
+		"formatDate":     FormatDate,
+		"formatDateTime": FormatDateTime,
+	}
+	// Theme funcs extend the engine vocabulary; engine names always win so a
+	// theme cannot shadow urlpath, t, upper, assetURL, inlineStyles, or the
+	// date formatters.
+	for name, fn := range themeFuncs {
+		if _, exists := funcs[name]; !exists {
+			funcs[name] = fn
+		}
+	}
+
+	layout := template.New("layout").Funcs(funcs)
+	for _, source := range readLayoutSources(theme) {
+		var err error
+		layout, err = layout.Parse(source)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse layout: %w", err)
+		}
+	}
+
+	view := &templatesView{}
+
+	var err error
+	if view.index, err = parseWithLayout(layout, readThemeFile(theme, "index.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse index: %w", err)
+	}
+	if view.home, err = parseWithLayout(layout, readThemeFile(theme, "homepage.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse homepage: %w", err)
+	}
+	if view.author, err = parseWithLayout(layout, readThemeFile(theme, "author.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse author: %w", err)
+	}
+	if view.tag, err = parseWithLayout(layout, readThemeFile(theme, "tag.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse tag: %w", err)
+	}
+	if view.notFound, err = parseWithLayout(layout, readThemeFile(theme, "not_found.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse not_found: %w", err)
+	}
+	if view.login, err = parseWithLayout(layout, readThemeFile(theme, "login.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse login: %w", err)
+	}
+	if view.register, err = parseWithLayout(layout, readThemeFile(theme, "register.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse register: %w", err)
+	}
+	if view.forgotPassword, err = parseWithLayout(layout, readThemeFile(theme, "forgot_password.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse forgot_password: %w", err)
+	}
+	if view.verifyEmail, err = parseWithLayout(layout, readThemeFile(theme, "verify_email.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse verify_email: %w", err)
+	}
+	if view.resetPassword, err = parseWithLayout(layout, readThemeFile(theme, "reset_password.html")); err != nil {
+		return nil, fmt.Errorf("failed to parse reset_password: %w", err)
+	}
+
+	// Load the default content template (post.gohtml).
+	if view.contentDefault, err = parseWithLayout(layout, readContentTemplate(theme, "post")); err != nil {
+		return nil, fmt.Errorf("failed to parse post content: %w", err)
+	}
+
+	// Load per-post-type content templates.
+	view.content = make(map[string]*template.Template)
+	if len(postTypeSlugs) == 0 {
+		postTypeSlugs = []string{"post"}
+	}
+	for _, slug := range postTypeSlugs {
+		if slug == "post" {
+			continue
+		}
+		var tpl *template.Template
+		if tpl, err = parseWithLayout(layout, readContentTemplate(theme, slug)); err != nil {
+			return nil, fmt.Errorf("failed to parse %s content: %w", slug, err)
+		}
+		view.content[slug] = tpl
+	}
+
+	// Load per-slug content template overrides (e.g. page-about.html). These
+	// take precedence over the per-post-type templates above when both the
+	// post type and the slug match. Files without a matching post-type prefix
+	// are ignored; per-post-type templates themselves (e.g. page.html) do not
+	// have a hyphen and so are skipped.
+	knownPostTypes := make(map[string]bool, len(postTypeSlugs)+1)
+	knownPostTypes["post"] = true
+	for _, slug := range postTypeSlugs {
+		knownPostTypes[slug] = true
+	}
+	view.contentBySlug = make(map[string]*template.Template)
+	for key, tplContent := range findPerSlugTemplateOverrides(theme, knownPostTypes) {
+		var tpl *template.Template
+		if tpl, err = parseWithLayout(layout, tplContent); err != nil {
+			return nil, fmt.Errorf("failed to parse %s content override: %w", key, err)
+		}
+		view.contentBySlug[key] = tpl
+	}
+
+	// Load the standalone pages the theme declares (cart, checkout, order
+	// tracking). They render through the shared layout so chrome and site
+	// config stay consistent; their data hydrates client-side. A declared
+	// page without a template is skipped, so a partial theme still boots and
+	// the path falls through to content/404.
+	view.pages = make(map[string]*template.Template, len(themePages))
+	for _, page := range themePages {
+		page = strings.Trim(page, "/")
+		if page == "" {
+			continue
+		}
+		body := readThemeFile(theme, standalonePageTemplate(page))
+		if body == "" {
+			continue
+		}
+		var tpl *template.Template
+		if tpl, err = parseWithLayout(layout, body); err != nil {
+			return nil, fmt.Errorf("failed to parse %s page: %w", page, err)
+		}
+		view.pages[page] = tpl
+	}
+
+	return view, nil
 }
 
 // SetEmbeddedFS installs the default theme artifact filesystem. The
@@ -125,36 +322,73 @@ func ReadThemeStyles(theme *Theme) (baseCSS, styleCSS string) {
 	return baseCSS, styleCSS
 }
 
-// staticHandler rewrites versioned CSS requests (<name>.<hash>.css) to serve
-// <name>.css with immutable Cache-Control headers. It handles both base.css
-// and style.css (and any future hashed assets). Every other file gets a
-// bounded one-day TTL: plain /static/ URLs change across releases, so they
-// must not be immutable.
-type staticHandler struct {
-	fs        fs.FS
+// StaticFilesHandler serves the content site's static assets (CSS, JS),
+// rewriting versioned CSS requests (<name>.<hash>.css) to serve <name>.css
+// with immutable Cache-Control headers. It handles both base.css and
+// style.css (and any future hashed assets). Every other file gets a bounded
+// TTL: one day on embedded-only installs, five minutes once an installed
+// theme is active (installed files carry no content hash, so a hot-swapped
+// theme must not linger in caches for a day). The resolved filesystem, asset
+// hash, and themed flag swap under a read-write mutex so Reload can
+// hot-apply a new theme while requests are in flight.
+type StaticFilesHandler struct {
+	mu        sync.RWMutex
+	fsys      fs.FS
 	assetHash string
+	themed    bool
 }
 
-func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.fs == nil {
+func (h *StaticFilesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	fsys := h.fsys
+	assetHash := h.assetHash
+	themed := h.themed
+	h.mu.RUnlock()
+	if fsys == nil {
 		http.NotFound(w, r)
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/")
-	if h.assetHash != "" && strings.HasSuffix(path, ".css") {
-		hashSuffix := "." + h.assetHash + ".css"
+	if assetHash != "" && strings.HasSuffix(path, ".css") {
+		hashSuffix := "." + assetHash + ".css"
 		if strings.Contains(path, hashSuffix) {
 			originalName := strings.Replace(path, hashSuffix, ".css", 1)
 			r2 := *r
 			r2.URL = &url.URL{Path: originalName}
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			http.FileServer(http.FS(h.fs)).ServeHTTP(w, &r2)
+			http.FileServer(http.FS(fsys)).ServeHTTP(w, &r2)
 			return
 		}
 	}
 
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	http.FileServer(http.FS(h.fs)).ServeHTTP(w, r)
+	ttl := staticPlainTTL
+	if themed {
+		ttl = staticThemedTTL
+	}
+	w.Header().Set("Cache-Control", ttl)
+	http.FileServer(http.FS(fsys)).ServeHTTP(w, r)
+}
+
+// Reload recomputes the resolved static filesystem and asset hash for theme
+// so later requests serve the new theme's files without a restart.
+func (h *StaticFilesHandler) Reload(theme *Theme) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.fsys = resolveFS(theme, embeddedFS, "static")
+	h.assetHash = ComputeAssetHash(theme)
+	h.themed = theme != nil && theme.Dir != ""
+}
+
+// StaticFiles returns a handler that serves the content site's static assets
+// (CSS, JS). When a non-nil Theme with a non-empty Dir is provided, files on
+// disk in that directory are served first, falling back to the embedded
+// defaults for any file not present in the theme directory.
+func StaticFiles(theme *Theme) *StaticFilesHandler {
+	return &StaticFilesHandler{
+		fsys:      resolveFS(theme, embeddedFS, "static"),
+		assetHash: ComputeAssetHash(theme),
+		themed:    theme != nil && theme.Dir != "",
+	}
 }
 
 type NavigationItem struct {
@@ -233,10 +467,10 @@ type LayoutData struct {
 	FooterItems   []NavigationItem
 	Legal         LegalData
 	CurrentPath   string
-	Lang            string
-	LanguageLinks   []LanguageLink
-	Languages       []LanguageLink
-	SiteConfig      SiteConfig
+	Lang          string
+	LanguageLinks []LanguageLink
+	Languages     []LanguageLink
+	SiteConfig    SiteConfig
 	// NoIndex asks the layout to emit a robots noindex directive. Standalone
 	// application pages (cart, checkout, order tracking) set it because their
 	// server-rendered shells carry no indexable content.
@@ -344,11 +578,11 @@ type ContentData struct {
 	// CustomFieldGalleries carries the resolved gallery-typed custom fields,
 	// keyed by field slug in schema order. Themes prefer it over the raw
 	// lines fallback for gallery fields (e.g. product images).
-	CustomFieldGalleries  map[string][]GalleryImage
-	Related               []PostItem
-	Comments              []CommentItem
-	PostType              string
-	PostScripts           template.HTML
+	CustomFieldGalleries map[string][]GalleryImage
+	Related              []PostItem
+	Comments             []CommentItem
+	PostType             string
+	PostScripts          template.HTML
 }
 
 type AuthorData struct {
@@ -398,39 +632,26 @@ type StandalonePageData struct {
 }
 
 type Templates struct {
-	layout         *template.Template
-	index          *template.Template
-	home           *template.Template
-	pages          map[string]*template.Template
-	content        map[string]*template.Template
-	contentBySlug  map[string]*template.Template
-	contentDefault *template.Template
-	author         *template.Template
-	tag            *template.Template
-	notFound       *template.Template
-	login          *template.Template
-	register       *template.Template
-	forgotPassword *template.Template
-	verifyEmail    *template.Template
-	resetPassword  *template.Template
-	catalog        *i18n.Catalog
+	view          atomic.Pointer[templatesView]
+	catalog       *i18n.Catalog
+	postTypeSlugs []string
 }
 
 func (t *Templates) RenderIndex(w http.ResponseWriter, data IndexData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.index.Execute(w, data)
+	return t.view.Load().index.Execute(w, data)
 }
 
 func (t *Templates) RenderHome(w http.ResponseWriter, data IndexData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.home.Execute(w, data)
+	return t.view.Load().home.Execute(w, data)
 }
 
 // HasPage reports whether the installed theme declares a standalone page at
 // the given key ("cart", "checkout", "orders/track"). The handler checks it
 // before falling through to content so a declared page always renders.
 func (t *Templates) HasPage(page string) bool {
-	_, ok := t.pages[page]
+	_, ok := t.view.Load().pages[page]
 	return ok
 }
 
@@ -438,7 +659,8 @@ func (t *Templates) HasPage(page string) bool {
 // be declared by the theme; NewTemplates already skipped undeclared or
 // templateless pages, so a miss here is a wiring bug, not a 404.
 func (t *Templates) RenderPage(w http.ResponseWriter, data StandalonePageData) error {
-	tpl, ok := t.pages[data.Page]
+	view := t.view.Load()
+	tpl, ok := view.pages[data.Page]
 	if !ok {
 		return fmt.Errorf("theme does not declare the %q page", data.Page)
 	}
@@ -447,16 +669,17 @@ func (t *Templates) RenderPage(w http.ResponseWriter, data StandalonePageData) e
 }
 
 func (t *Templates) RenderContent(w http.ResponseWriter, data ContentData) error {
+	view := t.view.Load()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if data.PostType != "" && data.Slug != "" {
-		if tpl, ok := t.contentBySlug[data.PostType+":"+data.Slug]; ok {
+		if tpl, ok := view.contentBySlug[data.PostType+":"+data.Slug]; ok {
 			return tpl.Execute(w, data)
 		}
 	}
 
-	tpl := t.contentDefault
-	if specific, ok := t.content[data.PostType]; ok {
+	tpl := view.contentDefault
+	if specific, ok := view.content[data.PostType]; ok {
 		tpl = specific
 	}
 	return tpl.Execute(w, data)
@@ -464,43 +687,43 @@ func (t *Templates) RenderContent(w http.ResponseWriter, data ContentData) error
 
 func (t *Templates) RenderAuthor(w http.ResponseWriter, data AuthorData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.author.Execute(w, data)
+	return t.view.Load().author.Execute(w, data)
 }
 
 func (t *Templates) RenderTag(w http.ResponseWriter, data TagData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.tag.Execute(w, data)
+	return t.view.Load().tag.Execute(w, data)
 }
 
 func (t *Templates) RenderNotFound(w http.ResponseWriter, data NotFoundData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusNotFound)
-	return t.notFound.Execute(w, data)
+	return t.view.Load().notFound.Execute(w, data)
 }
 
 func (t *Templates) RenderLogin(w http.ResponseWriter, data AuthPageData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.login.Execute(w, data)
+	return t.view.Load().login.Execute(w, data)
 }
 
 func (t *Templates) RenderRegister(w http.ResponseWriter, data AuthPageData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.register.Execute(w, data)
+	return t.view.Load().register.Execute(w, data)
 }
 
 func (t *Templates) RenderForgotPassword(w http.ResponseWriter, data AuthPageData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.forgotPassword.Execute(w, data)
+	return t.view.Load().forgotPassword.Execute(w, data)
 }
 
 func (t *Templates) RenderVerifyEmail(w http.ResponseWriter, data VerifyEmailData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.verifyEmail.Execute(w, data)
+	return t.view.Load().verifyEmail.Execute(w, data)
 }
 
 func (t *Templates) RenderResetPassword(w http.ResponseWriter, data ResetPasswordData) error {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	return t.resetPassword.Execute(w, data)
+	return t.view.Load().resetPassword.Execute(w, data)
 }
 
 func (t *Templates) renderToString(tmpl *template.Template, data any) (string, error) {
@@ -512,45 +735,70 @@ func (t *Templates) renderToString(tmpl *template.Template, data any) (string, e
 }
 
 func (t *Templates) RenderIndexToString(data IndexData) (string, error) {
-	return t.renderToString(t.index, data)
+	return t.renderToString(t.view.Load().index, data)
 }
 
 func (t *Templates) RenderHomeToString(data IndexData) (string, error) {
-	return t.renderToString(t.home, data)
+	return t.renderToString(t.view.Load().home, data)
 }
 
 func (t *Templates) RenderContentToString(data ContentData) (string, error) {
+	view := t.view.Load()
 	if data.PostType != "" && data.Slug != "" {
-		if tpl, ok := t.contentBySlug[data.PostType+":"+data.Slug]; ok {
+		if tpl, ok := view.contentBySlug[data.PostType+":"+data.Slug]; ok {
 			return t.renderToString(tpl, data)
 		}
 	}
 
-	tmpl := t.contentDefault
-	if specific, ok := t.content[data.PostType]; ok {
+	tmpl := view.contentDefault
+	if specific, ok := view.content[data.PostType]; ok {
 		tmpl = specific
 	}
 	return t.renderToString(tmpl, data)
 }
 
 func (t *Templates) RenderAuthorToString(data AuthorData) (string, error) {
-	return t.renderToString(t.author, data)
+	return t.renderToString(t.view.Load().author, data)
 }
 
 func (t *Templates) RenderTagToString(data TagData) (string, error) {
-	return t.renderToString(t.tag, data)
+	return t.renderToString(t.view.Load().tag, data)
 }
 
 func (t *Templates) RenderNotFoundToString(data NotFoundData) (string, error) {
-	return t.renderToString(t.notFound, data)
+	return t.renderToString(t.view.Load().notFound, data)
 }
 
 func (t *Templates) RenderLoginToString(data AuthPageData) (string, error) {
-	return t.renderToString(t.login, data)
+	return t.renderToString(t.view.Load().login, data)
 }
 
 func (t *Templates) RenderRegisterToString(data AuthPageData) (string, error) {
-	return t.renderToString(t.register, data)
+	return t.renderToString(t.view.Load().register, data)
+}
+
+func (t *Templates) RenderForgotPasswordToString(data AuthPageData) (string, error) {
+	return t.renderToString(t.view.Load().forgotPassword, data)
+}
+
+func (t *Templates) RenderVerifyEmailToString(data VerifyEmailData) (string, error) {
+	return t.renderToString(t.view.Load().verifyEmail, data)
+}
+
+func (t *Templates) RenderResetPasswordToString(data ResetPasswordData) (string, error) {
+	return t.renderToString(t.view.Load().resetPassword, data)
+}
+
+// ReloadFromDisk reparses the full template set for theme off to the side
+// and swaps it in atomically. A parse failure returns an error and leaves
+// the live set untouched, so a broken theme never takes rendering down.
+func (t *Templates) ReloadFromDisk(theme *Theme) error {
+	view, err := buildTemplatesView(theme, t.catalog, t.postTypeSlugs)
+	if err != nil {
+		return err
+	}
+	t.view.Store(view)
+	return nil
 }
 
 // NewTemplates builds the template set from the theme filesystem and the
@@ -558,124 +806,17 @@ func (t *Templates) RenderRegisterToString(data AuthPageData) (string, error) {
 // templates (per post type plus per-slug overrides), and the standalone pages
 // the theme declares through ThemePageProvider.
 func NewTemplates(theme *Theme, catalog *i18n.Catalog, postTypeSlugs ...string) (*Templates, error) {
-	tFunc := func(lang, key string) string { return key }
-	if catalog != nil {
-		tFunc = catalog.T
+	slugs := append([]string(nil), postTypeSlugs...)
+	view, err := buildTemplatesView(theme, catalog, slugs)
+	if err != nil {
+		return nil, err
 	}
-
-	assetHash := ComputeAssetHash(theme)
-
-	inlineCSS := inlineThemeStyles(theme)
-
-	funcs := template.FuncMap{
-		"urlpath": url.PathEscape,
-		"t":       tFunc,
-		"upper":   strings.ToUpper,
-		"assetURL": func(name string) string {
-			ext := ".css"
-			base := strings.TrimSuffix(name, ext)
-			return "/static/" + base + "." + assetHash + ext
-		},
-		"inlineStyles": func() template.HTML {
-			return inlineCSS
-		},
-		"formatDate":     FormatDate,
-		"formatDateTime": FormatDateTime,
-	}
-	// Theme funcs extend the engine vocabulary; engine names always win so a
-	// theme cannot shadow urlpath, t, upper, assetURL, inlineStyles, or the
-	// date formatters.
-	for name, fn := range themeFuncs {
-		if _, exists := funcs[name]; !exists {
-			funcs[name] = fn
-		}
-	}
-
-	layout := template.New("layout").Funcs(funcs)
-	for _, source := range readLayoutSources(theme) {
-		layout = template.Must(layout.Parse(source))
-	}
-
 	t := &Templates{
-		layout:  layout,
-		catalog: catalog,
+		catalog:       catalog,
+		postTypeSlugs: slugs,
 	}
-
-	t.index = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "index.html")))
-	t.home = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "homepage.html")))
-	t.author = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "author.html")))
-	t.tag = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "tag.html")))
-	t.notFound = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "not_found.html")))
-	t.login = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "login.html")))
-	t.register = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "register.html")))
-	t.forgotPassword = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "forgot_password.html")))
-	t.verifyEmail = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "verify_email.html")))
-	t.resetPassword = template.Must(template.Must(t.layout.Clone()).Parse(readThemeFile(theme, "reset_password.html")))
-
-	// Load the default content template (post.gohtml).
-	t.contentDefault = template.Must(template.Must(t.layout.Clone()).Parse(readContentTemplate(theme, "post")))
-
-	// Load per-post-type content templates.
-	t.content = make(map[string]*template.Template)
-	if len(postTypeSlugs) == 0 {
-		postTypeSlugs = []string{"post"}
-	}
-	for _, slug := range postTypeSlugs {
-		if slug == "post" {
-			continue
-		}
-		tplContent := readContentTemplate(theme, slug)
-		t.content[slug] = template.Must(template.Must(t.layout.Clone()).Parse(tplContent))
-	}
-
-	// Load per-slug content template overrides (e.g. page-about.html). These
-	// take precedence over the per-post-type templates above when both the
-	// post type and the slug match. Files without a matching post-type prefix
-	// are ignored; per-post-type templates themselves (e.g. page.html) do not
-	// have a hyphen and so are skipped.
-	knownPostTypes := make(map[string]bool, len(postTypeSlugs)+1)
-	knownPostTypes["post"] = true
-	for _, slug := range postTypeSlugs {
-		knownPostTypes[slug] = true
-	}
-	t.contentBySlug = make(map[string]*template.Template)
-	for key, tplContent := range findPerSlugTemplateOverrides(theme, knownPostTypes) {
-		t.contentBySlug[key] = template.Must(template.Must(t.layout.Clone()).Parse(tplContent))
-	}
-
-	// Load the standalone pages the theme declares (cart, checkout, order
-	// tracking). They render through the shared layout so chrome and site
-	// config stay consistent; their data hydrates client-side. A declared
-	// page without a template is skipped, so a partial theme still boots and
-	// the path falls through to content/404.
-	t.pages = make(map[string]*template.Template, len(themePages))
-	for _, page := range themePages {
-		page = strings.Trim(page, "/")
-		if page == "" {
-			continue
-		}
-		body := readThemeFile(theme, standalonePageTemplate(page))
-		if body == "" {
-			continue
-		}
-		t.pages[page] = template.Must(template.Must(t.layout.Clone()).Parse(body))
-	}
-
+	t.view.Store(view)
 	return t, nil
-}
-
-// StaticFiles returns an http.Handler that serves the content site's static
-// assets (CSS, JS). When a non-nil Theme with a non-empty Dir is provided,
-// files on disk in that directory are served first, falling back to the
-// embedded defaults for any file not present in the theme directory.
-func StaticFiles(theme *Theme) http.Handler {
-	handlerFS := resolveFS(theme, embeddedFS, "static")
-	assetHash := ComputeAssetHash(theme)
-
-	return &staticHandler{
-		fs:        handlerFS,
-		assetHash: assetHash,
-	}
 }
 
 // EmbeddedStaticFS returns the built-in static assets served under /static/
