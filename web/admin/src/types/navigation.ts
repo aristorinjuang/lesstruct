@@ -19,6 +19,9 @@ export type NavigationItemIcon =
   | 'shopping-bag'
   | 'arrow-down-tray'
   | 'arrow-up-tray'
+  | 'puzzle-piece'
+  | 'sparkles'
+  | 'swatch'
 
 export interface NavigationItem {
   path: string

@@ -121,7 +121,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 // behavior of the default helper (no content-site catch-all registered at all).
 func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd, nil)
+	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd, nil, nil)
 }
 
 // setupTestRouterWithThemGen is setupTestRouterWithOptions with the AI theme
@@ -129,12 +129,21 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 // exercised on the real router. A nil themGen keeps the surface unmounted.
 func setupTestRouterWithThemGen(t *testing.T, themGen routes.ThemGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen)
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen, nil)
+}
+
+// setupTestRouterWithPlugGen is setupTestRouterWithOptions with the AI plugin
+// generator surface mounted, so generate/build (and other plugingen) routes
+// can be exercised on the real router. A nil plugGen keeps the surface
+// unmounted.
+func setupTestRouterWithPlugGen(t *testing.T, plugGen routes.PlugGenSurface) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, plugGen)
 }
 
 // setupTestRouterWithOptions is setupTestRouterWithFlags with the MCP endpoint
 // toggle exposed, so the /mcp mount can be exercised on the real router.
-func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler, themGen routes.ThemGenSurface) (*chi.Mux, bearerDeps) {
+func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler, themGen routes.ThemGenSurface, plugGen routes.PlugGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
 
 	// Create test auth handler
@@ -329,6 +338,9 @@ func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled b
 		nil,
 		themGen != nil,
 		themGen,
+		plugGen != nil,
+		plugGen,
+		false,
 		false,
 		false,
 		nil,
@@ -497,6 +509,9 @@ func TestSetup(t *testing.T) {
 		false,
 		nil,
 		false,
+		nil,
+		false,
+		false,
 		false,
 		nil,
 		[]string{"en"},
@@ -656,6 +671,121 @@ func TestThemGenRoutesMounted(t *testing.T) {
 			name:       "error - anonymous preview is unauthorized",
 			method:     http.MethodPost,
 			target:     "/api/v1/themegen/themes/midnight-serif/preview",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+}
+
+// testPlugGenSurface records which plugingen leaf the router dispatched to.
+// Handlers answer 200 so mount tests prove reachability on the real router.
+type testPlugGenSurface struct {
+	last string
+}
+
+func (s *testPlugGenSurface) Generate(w http.ResponseWriter, _ *http.Request) {
+	s.last = "generate"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testPlugGenSurface) Build(w http.ResponseWriter, _ *http.Request) {
+	s.last = "build"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testPlugGenSurface) List(w http.ResponseWriter, _ *http.Request) {
+	s.last = "list"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testPlugGenSurface) Download(w http.ResponseWriter, _ *http.Request) {
+	s.last = "download"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testPlugGenSurface) Delete(w http.ResponseWriter, _ *http.Request) {
+	s.last = "delete"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testPlugGenSurface) Status(w http.ResponseWriter, _ *http.Request) {
+	s.last = "status"
+	w.WriteHeader(http.StatusOK)
+}
+
+// TestPlugGenRoutesMounted proves the plugin generator surface (including
+// the build endpoint) is reachable on the real router.
+func TestPlugGenRoutesMounted(t *testing.T) {
+	stub := &testPlugGenSurface{}
+	r, deps := setupTestRouterWithPlugGen(t, stub)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		withAuth   bool
+		wantStatus int
+		wantLast   string
+		wantErr    bool
+	}{
+		{
+			name:       "success - generate mounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/plugingen/generate",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "generate",
+		},
+		{
+			name:       "success - build mounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/plugingen/projects/my-plugin/build",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "build",
+		},
+		{
+			name:       "success - list mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/plugingen/projects",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "list",
+		},
+		{
+			name:       "success - status mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/plugins",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "status",
+		},
+		{
+			name:       "error - anonymous build is unauthorized",
+			method:     http.MethodPost,
+			target:     "/api/v1/plugingen/projects/my-plugin/build",
 			withAuth:   false,
 			wantStatus: http.StatusUnauthorized,
 			wantErr:    true,
@@ -871,6 +1001,152 @@ func TestAgentThemGen_DispatchAndAdminOnly(t *testing.T) {
 	}
 }
 
+// TestAgentPlugGen_DispatchAndAdminOnly proves the plugin generation
+// endpoints serve the agent realm at the same paths as the browser: an admin
+// API key dispatches to the same leaves, a non-admin key is forbidden, and
+// callers without credentials never reach them. The browser realm is
+// admin-gated too — a non-admin JWT is forbidden on mutations.
+func TestAgentPlugGen_DispatchAndAdminOnly(t *testing.T) {
+	tests := []struct {
+		name         string
+		method       string
+		target       string
+		role         string
+		withKey      bool
+		sendKey      bool
+		jwtRole      string
+		wantCode     int
+		wantEnvelope string
+		wantLast     string
+	}{
+		{
+			name:     "generate - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/plugingen/generate",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "generate",
+		},
+		{
+			name:     "build - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/plugingen/projects/my-plugin/build",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "build",
+		},
+		{
+			name:     "list - admin key dispatches",
+			method:   http.MethodGet,
+			target:   "/api/v1/plugingen/projects",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "list",
+		},
+		{
+			name:     "status - admin key dispatches",
+			method:   http.MethodGet,
+			target:   "/api/v1/plugins",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "status",
+		},
+		{
+			name:     "delete - admin key dispatches",
+			method:   http.MethodDelete,
+			target:   "/api/v1/plugingen/projects/my-plugin",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "delete",
+		},
+		{
+			name:         "build - non-admin key is forbidden",
+			method:       http.MethodPost,
+			target:       "/api/v1/plugingen/projects/my-plugin/build",
+			role:         "Commentator",
+			withKey:      true,
+			sendKey:      true,
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "delete - non-admin key is forbidden",
+			method:       http.MethodDelete,
+			target:       "/api/v1/plugingen/projects/my-plugin",
+			role:         "Contributor",
+			withKey:      true,
+			sendKey:      true,
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "build - unauthenticated is rejected",
+			method:       http.MethodPost,
+			target:       "/api/v1/plugingen/projects/my-plugin/build",
+			wantCode:     http.StatusUnauthorized,
+			wantEnvelope: "MISSING_TOKEN",
+		},
+		{
+			name:         "build - non-admin JWT is forbidden",
+			method:       http.MethodPost,
+			target:       "/api/v1/plugingen/projects/my-plugin/build",
+			jwtRole:      "Commentator",
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "list - non-admin JWT is forbidden",
+			method:       http.MethodGet,
+			target:       "/api/v1/plugingen/projects",
+			jwtRole:      "Commentator",
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stub := &testPlugGenSurface{}
+			r, deps := setupTestRouterWithPlugGen(t, stub)
+
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.sendKey {
+				req.Header.Set("Authorization", "Bearer "+testBearerToken)
+			}
+			if tt.jwtRole != "" {
+				jwt, err := deps.jwtManager.GenerateToken("1", "browser", tt.jwtRole, 0)
+				require.NoError(t, err)
+				req.Header.Set("Authorization", "Bearer "+jwt)
+			}
+			if tt.withKey {
+				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
+				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
+				deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+				deps.user.EXPECT().GetUserByID(mock.Anything, testBearerUserID).
+					Return(&user.User{ID: testBearerUserID, Username: "admin", Role: tt.role, Status: "verified"}, nil)
+			}
+
+			code, envelope := envelopeCode(t, r, req)
+
+			assert.Equal(t, tt.wantCode, code)
+			if tt.wantEnvelope != "" {
+				assert.Equal(t, tt.wantEnvelope, envelope)
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+}
+
 // stubSnapshotRenderer renders a fixed document behind the real themegen
 // handler so the framing test proves the snapshot endpoint overrides the
 // router's global DENY headers end to end.
@@ -1049,6 +1325,8 @@ func TestHealthRoute(t *testing.T) {
 
 	assert.Contains(t, w.Body.String(), `"status":"ok"`, "Health route body should contain status ok")
 	assert.Contains(t, w.Body.String(), `"themeGeneration":false`, "Health route body should contain themeGeneration")
+	assert.Contains(t, w.Body.String(), `"pluginGeneration":false`, "Health route body should contain pluginGeneration")
+	assert.Contains(t, w.Body.String(), `"pluginBuild":false`, "Health route body should contain pluginBuild")
 	assert.Contains(t, w.Body.String(), `"themeValidationFailed":false`, "Health route body should contain themeValidationFailed")
 }
 
@@ -2356,7 +2634,7 @@ func TestMCPSurface(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil, nil)
+			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil, nil, nil)
 			if tt.withKey {
 				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
 				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)

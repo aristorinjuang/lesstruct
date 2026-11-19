@@ -81,7 +81,7 @@ func TestHandler_InitializeAndListTools(t *testing.T) {
 
 	tools, err := session.ListTools(context.Background(), nil)
 	require.NoError(t, err)
-	assert.Len(t, tools.Tools, 49)
+	assert.Len(t, tools.Tools, 54)
 }
 
 func TestHandler_ToolCallUsesRequestKey(t *testing.T) {
@@ -116,6 +116,22 @@ func TestHandler_ToolCallUsesRequestKey(t *testing.T) {
 			args:       map[string]any{},
 			wantPath:   "/api/v1/themegen/themes",
 			wantMethod: http.MethodGet,
+		},
+		{
+			name:       "success - plugin_status traverses the in-process router",
+			token:      "lesstruct_key_abc",
+			tool:       "plugin_status",
+			args:       map[string]any{},
+			wantPath:   "/api/v1/plugins",
+			wantMethod: http.MethodGet,
+		},
+		{
+			name:       "success - plugin_build traverses the in-process router",
+			token:      "lesstruct_key_def",
+			tool:       "plugin_build",
+			args:       map[string]any{"name": "my-plugin"},
+			wantPath:   "/api/v1/plugingen/projects/my-plugin/build",
+			wantMethod: http.MethodPost,
 		},
 	}
 

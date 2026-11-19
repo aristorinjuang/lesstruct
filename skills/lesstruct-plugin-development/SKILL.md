@@ -59,7 +59,8 @@ mkdir -p plugins
 
 Read the contents of `plugins/`. For each `.wasm` file, check whether a
 matching `<name>.manifest` exists. Pair them up. Note any `.wasm` files
-that have no manifest (they get zero host functions — hooks only).
+that have no manifest: plugins importing no host functions load hooks-only,
+but ones importing `lesstruct.*` fail to load until the sidecar is restored.
 
 ### Step 3: Plan the plugin
 

@@ -110,14 +110,19 @@ go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-ecommerce@latest
 module layout. For an older version, use a release binary or build from
 source.
 
-From source:
+From source (`install-*` puts the binary on PATH in `$GOBIN`;
+`build-*` produces a local `./bin/` artifact instead):
 
 ```bash
-make install          # blog edition + admin panel + CLI into $GOBIN
-make build-core       # the Core edition
-make build-ecommerce  # the eCommerce edition
-make build-server     # blog edition without the embedded SQLite driver
-                      # (~6 MB leaner, for PostgreSQL/MySQL deployments)
+make install            # blog edition + admin panel + CLI into $GOBIN
+make install-cli        # the Lesstruct CLI
+make install-core       # the Core edition
+make install-ecommerce  # the eCommerce edition
+make install-mcp        # the MCP server
+make build-core         # the Core edition
+make build-ecommerce    # the eCommerce edition
+make build-server       # blog edition without the embedded SQLite driver
+                        # (~6 MB leaner, for PostgreSQL/MySQL deployments)
 ```
 
 ## Switching editions

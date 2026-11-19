@@ -308,6 +308,32 @@ A failed gate prints the first error finding
 print as guidance lines. `activate`/`deactivate` report whether a restart
 is needed, mirroring the panel.
 
+### `plugin` — AI plugin generation
+
+```bash
+lesstruct-cli plugin generate --description "Uppercase titles" --hooks before_save --capabilities log_info
+lesstruct-cli plugin list
+lesstruct-cli plugin download my-plugin --output-dir /path/to/projects
+lesstruct-cli plugin build my-plugin
+lesstruct-cli plugin status
+lesstruct-cli plugin delete my-plugin
+```
+
+Generates a validated WASM plugin project from a natural-language brief —
+the same endpoint the admin panel's Plugin Generator drives, over an admin
+API key (non-admin keys get `403`). `--hooks` (comma-separated, required)
+selects the hook suffixes to implement; `--capabilities` (comma-separated)
+declares the host functions needed; `--language` is `go` in v1.
+Generation can take minutes (the repair loop retries up to twice):
+`--timeout` (default `5m`, `0` disables) caps the whole call.
+A failed gate prints the first error finding; warnings print as guidance
+lines. `status` lists the loaded `.wasm` plugins with their hook
+registrations. Install a generated project by compiling with TinyGo
+(`tinygo build -o <name>.wasm -target=wasi main.go`) and dropping the
+`.wasm` into `plugins/` — or run `plugin build` on a build-enabled server
+(`PLUGIN_BUILD_ENABLED=true` plus TinyGo; `503 build_unavailable`
+otherwise) and restart unless the server hot-reloads it.
+
 ## Workflows
 
 **Authoring loop** — write Markdown, create, publish, iterate:

@@ -8,6 +8,7 @@ MODULE := github.com/aristorinjuang/lesstruct
 VERSION ?= $(shell git describe --tags --match "v*" --always --dirty 2>/dev/null || echo dev)
 CLI_LDFLAGS := -X $(MODULE)/cmd/lesstruct-cli/cmd.version=$(VERSION)
 MCP_LDFLAGS := -X $(MODULE)/cmd/lesstruct-mcp/cmd.version=$(VERSION)
+EDITION_LDFLAGS := -X main.version=$(VERSION)
 
 # MODERNIZE_VERSION pins the standalone gopls modernize runner. Keep it in
 # sync with the gopls version your editor runs so CI and editor suggestions
@@ -35,7 +36,7 @@ GOTOOLCHAIN_VERSION := go1.27.4
 # SUBMODULES lists every nested Go module covered by the test/lint gates
 # alongside the root module. Add each new modules/<name> here on creation.
 # `make release` derives the per-release tag list from it as well.
-SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/themegen modules/speech modules/importers modules/adminpanel modules/users modules/auth modules/privacy
+SUBMODULES := kernel modules/posttypes-basic modules/cart modules/catalog modules/orders modules/payments modules/media modules/comments modules/seo modules/theme-default modules/theme-storefront modules/site-ssr modules/textgen modules/themegen modules/plugingen modules/speech modules/importers modules/adminpanel modules/users modules/auth modules/privacy
 
 # WORKTREE_SYNC lists the untracked agent/tooling state that a fresh linked
 # worktree misses (`git worktree add` checks out tracked files only; these
@@ -115,8 +116,9 @@ build-cli:
 build-mcp:
 	mkdir -p bin && go build -ldflags "$(MCP_LDFLAGS)" -o bin/lesstruct-mcp ./cmd/lesstruct-mcp
 
-# build-server compiles the server edition: the root package with the
-# nosqlite build tag — postgres/mysql only, no embedded sqlite.
+# build-server compiles the blog edition with the nosqlite build tag —
+# postgres/mysql only, no embedded sqlite (about 6 MB leaner, for
+# PostgreSQL/MySQL deployments).
 build-server:
 	mkdir -p bin && go build -tags nosqlite -o bin/lesstruct-server .
 
@@ -124,12 +126,12 @@ build-server:
 # content, media, plugins) without the SSR/theme/comment/textgen/importer
 # modules. Install path: ./cmd/lesstruct-core.
 build-core:
-	mkdir -p bin && go build -o bin/lesstruct-core ./cmd/lesstruct-core
+	mkdir -p bin && go build -ldflags "$(EDITION_LDFLAGS)" -o bin/lesstruct-core ./cmd/lesstruct-core
 
 # build-ecommerce compiles the eCommerce edition: blog plus the catalog
 # module (pricing, variants, stock). Install path: ./cmd/lesstruct-ecommerce.
 build-ecommerce:
-	mkdir -p bin && go build -o bin/lesstruct-ecommerce ./cmd/lesstruct-ecommerce
+	mkdir -p bin && go build -ldflags "$(EDITION_LDFLAGS)" -o bin/lesstruct-ecommerce ./cmd/lesstruct-ecommerce
 
 # release rewrites every Lesstruct require across the workspace to VERSION
 # (lockstep: root vX.Y.Z, kernel/vX.Y.Z, modules/*/vX.Y.Z share one number),
@@ -170,6 +172,7 @@ release:
 		-require=github.com/aristorinjuang/lesstruct/modules/speech@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/textgen@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/themegen@$(VERSION) \
+		-require=github.com/aristorinjuang/lesstruct/modules/plugingen@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/theme-default@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/theme-storefront@$(VERSION) \
 		-require=github.com/aristorinjuang/lesstruct/modules/users@$(VERSION)); \
@@ -190,6 +193,7 @@ release:
 	edge speech kernel modules/textgen; \
 	edge textgen kernel modules/media; \
 	edge themegen kernel; \
+	edge plugingen kernel; \
 	edge theme-default kernel; \
 	edge theme-storefront kernel; \
 	edge users kernel modules/media
@@ -220,9 +224,23 @@ release:
 	@echo "  GOWORK=off go mod tidy (in ./ and every SUBMODULE; expect no go.mod changes)"
 	@echo "  go install github.com/aristorinjuang/lesstruct@$(VERSION)"
 
-install: build-admin build-cli
-	go install
+# Per-binary install targets — each version-stamped into $GOBIN. build-*
+# targets above produce local ./bin/ artifacts instead; install-* targets
+# put the binary on PATH.
+install-cli:
 	go install -ldflags "$(CLI_LDFLAGS)" ./cmd/lesstruct-cli
+
+install-core:
+	go install -ldflags "$(EDITION_LDFLAGS)" ./cmd/lesstruct-core
+
+install-ecommerce:
+	go install -ldflags "$(EDITION_LDFLAGS)" ./cmd/lesstruct-ecommerce
+
+install-mcp:
+	go install -ldflags "$(MCP_LDFLAGS)" ./cmd/lesstruct-mcp
+
+install: build-admin install-cli
+	go install -ldflags "$(EDITION_LDFLAGS)"
 
 # make worktree <path> [start-point] — creates a linked worktree at <path>
 # (branch defaults to the path basename, as with `git worktree add`) and

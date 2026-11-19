@@ -31,13 +31,13 @@
 
 {{ define "main" }}
 <section class="landing-release">
-  <a href="#whats-new"><span class="landing-release-chip">v1.5</span> Meet the AI Theme Generator. Describe a theme — the AI builds, validates, and installs it.&nbsp;&rarr;</a>
+  <a href="#whats-new"><span class="landing-release-chip">v1.6</span> The CMS that builds its own plugins. Describe one — the AI writes, validates, and installs it.&nbsp;&rarr;</a>
 </section>
 
 <section class="landing-hero">
   <div class="landing-hero-inner">
     <img class="landing-logo" src="/brand/lesstruct-320.webp" width="96" height="96" alt="Lesstruct logo">
-    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.5</a></p>
+    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.6</a></p>
     <h1>{{ .Title | default .Site.Title }}</h1>
     <p class="landing-tagline">{{ .Description | default .Site.Params.description }}</p>
     <div class="landing-cta">
@@ -51,26 +51,27 @@
 </section>
 
 <section class="landing-spotlight" id="whats-new">
-  <h2>What&rsquo;s new in v1.5</h2>
+  <h2>What&rsquo;s new in v1.6</h2>
   <p class="landing-section-lede">
-    Re-skin your whole site from one sentence. The generator grounds every
-    theme on your edition&rsquo;s real sources, then proves it before installing.
+    A plugin used to be a compiler and a spec sheet. Now it&rsquo;s a
+    sentence. The generator writes every plugin from your brief, proves it
+    against the host contract, and installs it where it runs.
   </p>
   <div class="landing-spotlight-grid">
-    <a class="spotlight-tile" href="/docs/theme-generation/">
-      <span class="spotlight-kicker">Describe it, ship it</span>
-      <h3>Brief in, theme out</h3>
-      <p>Pick a style preset or write your own brief. The AI derives tokens and components from your theme sources, validates the result, and auto-installs it — activate in one click.</p>
+    <a class="spotlight-tile" href="/docs/plugin-generation/">
+      <span class="spotlight-kicker">Brief in, plugin out</span>
+      <h3>Describe the hook, ship the WASM</h3>
+      <p>Pick the hooks and host functions in plain language. The AI writes TinyGo source from your brief and refuses anything that fails the hook-export and capability gates.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/theme-generation/">
-      <span class="spotlight-kicker">Page templates, opt-in</span>
-      <h3>Markup that must prove itself</h3>
-      <p>Stylesheet-only by default; tick one box for page templates. Every template is parse-tested and smoke-rendered with sample data before it can install.</p>
+    <a class="spotlight-tile" href="/docs/plugin-generation/">
+      <span class="spotlight-kicker">One click to running</span>
+      <h3>Built and installed on the server</h3>
+      <p>Build &amp; install compiles the project with TinyGo, load-checks the binary, and drops the manifest plus <code>.wasm</code> into <code>plugins/</code> — hot-reloaded in dev, one restart in production.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/theme-generation/">
-      <span class="spotlight-kicker">Admin-only everywhere</span>
-      <h3>Panel, CLI, and MCP</h3>
-      <p>Generate from the admin UI, <code>lesstruct-cli theme</code>, or five MCP tools. Every install passes a generated-content scan — smuggled scripts go back to the model, not to your visitors.</p>
+    <a class="spotlight-tile" href="/docs/plugin-capabilities/">
+      <span class="spotlight-kicker">Grants, not promises</span>
+      <h3>Capabilities with teeth</h3>
+      <p>Every host call rides a capability manifest — URL patterns, database permissions, logging. Checked at load and on every call, across the panel, CLI, and MCP tools.</p>
     </a>
   </div>
 </section>
@@ -116,7 +117,7 @@
     <a class="feature-card" href="/docs/features/#extensibility">
       <span class="feature-glyph" aria-hidden="true">🪄</span>
       <h3>WebAssembly plugins</h3>
-      <p>Drop a <code>.wasm</code> into <code>plugins/</code> to hook <code>before_save</code>, <code>after_create</code>, <code>after_publish</code>.</p>
+      <p>Drop a <code>.wasm</code> into <code>plugins/</code> to hook <code>before_save</code>, <code>after_create</code>, <code>after_publish</code> — every host call checked against a capability manifest.</p>
     </a>
     <a class="feature-card" href="/docs/features/#media-images">
       <span class="feature-glyph" aria-hidden="true">🖼️</span>
@@ -132,6 +133,16 @@
       <span class="feature-glyph" aria-hidden="true">🎨</span>
       <h3>AI Theme Generator</h3>
       <p>Describe a theme in plain language. The AI builds it from your edition&rsquo;s real sources, validates it, and installs it — with a snapshot on every card and a live preview.</p>
+    </a>
+    <a class="feature-card" href="/docs/plugin-generation/">
+      <span class="feature-glyph" aria-hidden="true">✨</span>
+      <h3>AI Plugin Generator</h3>
+      <p>Describe a plugin in plain language. The AI writes the TinyGo source and validates it against the hook contract — then build and install it on the server in one click.</p>
+    </a>
+    <a class="feature-card" href="/docs/features/#content-authoring">
+      <span class="feature-glyph" aria-hidden="true">🛒</span>
+      <h3>Commerce built in</h3>
+      <p>Catalog products with pricing, variants, stock, and SKUs; token-keyed guest carts; first-class orders with checkout — the eCommerce edition ships the whole stack behind a storefront theme.</p>
     </a>
     <a class="feature-card" href="/docs/features/#internationalization">
       <span class="feature-glyph" aria-hidden="true">🌍</span>
@@ -224,7 +235,7 @@
     </div>
     <div class="product-tile">
       <h3>lesstruct-mcp <span class="product-badge">mcp</span></h3>
-      <p>The MCP server for AI agents: the same API as 49 tools over stdio or, with <code>[mcp]</code> enabled, the network.</p>
+      <p>The MCP server for AI agents: the same API as 54 tools over stdio or, with <code>[mcp]</code> enabled, the network.</p>
     </div>
   </div>
 </section>

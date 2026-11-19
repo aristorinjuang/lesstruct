@@ -18,6 +18,7 @@ use (
 	./modules/site-ssr
 	./modules/speech
 	./modules/textgen
+	./modules/plugingen
 	./modules/themegen
 	./modules/theme-default
 	./modules/theme-storefront

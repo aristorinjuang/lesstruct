@@ -206,6 +206,19 @@ type SpeechSurface interface {
 	Transcribe(http.ResponseWriter, *http.Request)
 }
 
+// PlugGenSurface is the browser-realm AI plugin generator surface the routes
+// mount. It is satisfied by the plugingen module's handler; the structural
+// seam keeps routes.go from importing the module so the surface stays
+// removable. The plugGenEnabled feature flag gates mounting.
+type PlugGenSurface interface {
+	Generate(http.ResponseWriter, *http.Request)
+	Build(http.ResponseWriter, *http.Request)
+	List(http.ResponseWriter, *http.Request)
+	Download(http.ResponseWriter, *http.Request)
+	Delete(http.ResponseWriter, *http.Request)
+	Status(http.ResponseWriter, *http.Request)
+}
+
 // WordPressSurface is the browser-and-agent WordPress import surface the
 // routes mount. It is satisfied by the importers module's handler; the
 // structural seam keeps routes.go from importing the module so the surface
@@ -346,6 +359,9 @@ func Setup(
 	textGenHandler TextGenSurface,
 	themGenEnabled bool,
 	themGenHandler ThemGenSurface,
+	plugGenEnabled bool,
+	plugGenHandler PlugGenSurface,
+	plugGenBuildEnabled bool,
 	themeValidationFailed bool,
 	speechEnabled bool,
 	speechHandler SpeechSurface,
@@ -394,9 +410,11 @@ func Setup(
 		imageReferenceEnabled := imageReferenceEnabled
 		textGenEnabled := textGenEnabled
 		themGenEnabled := themGenEnabled
+		plugGenEnabled := plugGenEnabled
+		plugGenBuildEnabled := plugGenBuildEnabled
 		speechEnabled := speechEnabled
 		themeValidationFailed := themeValidationFailed
-		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v,"themeGeneration":%v,"speechToText":%v},"themeValidationFailed":%v}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled, themGenEnabled, speechEnabled, themeValidationFailed); err != nil {
+		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v,"themeGeneration":%v,"pluginGeneration":%v,"pluginBuild":%v,"speechToText":%v},"themeValidationFailed":%v}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled, themGenEnabled, plugGenEnabled, plugGenBuildEnabled, speechEnabled, themeValidationFailed); err != nil {
 			log.Printf("Failed to write response: %v", err)
 		}
 	})
@@ -656,6 +674,38 @@ func Setup(
 		dual.Post("/api/v1/themegen/themes/{name}/activate", themGenHandler.Activate)
 		dual.Post("/api/v1/themegen/themes/deactivate", themGenHandler.Deactivate)
 		dual.Delete("/api/v1/themegen/themes/{name}", themGenHandler.Delete)
+	}
+
+	// Dual-realm plugin generation surface — one registration per path serves
+	// both the API-key agent and the JWT browser, dispatched by credential
+	// like the co-owned media paths above. Both realms are admin-only:
+	// generation burns AI credit, so a non-admin key gets 403 and a non-admin
+	// browser user is forbidden the same way. Mounted only when the plugingen
+	// module wires a handler.
+	if plugGenEnabled && plugGenHandler != nil {
+		dual := dualAuthRegistrar{
+			root: r,
+			agent: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.AgentAuthFailureHandler(
+					rateLimitMiddleware.AgentIPHandler(
+						rateLimitMiddleware.APIKeyHandler(
+							apiKeyAuthMiddleware.Handler(
+								agentAdminOnly(authorize)(
+									maxBodySizeMiddleware(1 << 20)(next))))))
+			},
+			browser: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.Handler(
+					csrfMiddleware.Handler(
+						adminMiddleware.AdminOnly(
+							maxBodySizeMiddleware(1 << 20)(next))))
+			},
+		}
+		dual.Post("/api/v1/plugingen/generate", plugGenHandler.Generate)
+		dual.Post("/api/v1/plugingen/projects/{name}/build", plugGenHandler.Build)
+		dual.Get("/api/v1/plugingen/projects", plugGenHandler.List)
+		dual.Get("/api/v1/plugingen/projects/{name}/download", plugGenHandler.Download)
+		dual.Delete("/api/v1/plugingen/projects/{name}", plugGenHandler.Delete)
+		dual.Get("/api/v1/plugins", plugGenHandler.Status)
 	}
 
 	// Streamable HTTP MCP endpoint (opt-in via [mcp] enabled = true). The tool

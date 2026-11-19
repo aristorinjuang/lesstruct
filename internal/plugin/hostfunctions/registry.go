@@ -10,7 +10,10 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-const moduleName = "lesstruct"
+// HostModuleName is the wazero host module name capability functions are
+// registered under. Guests import it (e.g. log_info); the loader
+// instantiates it from the plugin's capability manifest.
+const HostModuleName = "lesstruct"
 
 // Registry holds the host-side resources that host functions can access.
 // Each plugin instantiation creates a filtered view based on its manifest.
@@ -40,7 +43,7 @@ func (r *Registry) InstantiateModule(
 		return nil, nil
 	}
 
-	b := rt.NewHostModuleBuilder(moduleName)
+	b := rt.NewHostModuleBuilder(HostModuleName)
 
 	if manifest.HasHTTP() {
 		b.NewFunctionBuilder().
@@ -124,7 +127,7 @@ func (r *Registry) InstantiateModule(
 
 	r.logger(fmt.Sprintf(
 		"Host functions module %q instantiated (http=%v, db=%v)",
-		moduleName,
+		HostModuleName,
 		manifest.HasHTTP(),
 		manifest.HasDatabase(),
 	))

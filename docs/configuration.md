@@ -248,6 +248,19 @@ When `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin pane
 
 The `[theme]` block in `config.toml` holds the active installed theme (`active = ""` = embedded default). It is managed by `POST /api/v1/themegen/themes/{name}/activate`; `THEME_DIR` overrides it when set.
 
+### AI plugin generation (optional)
+
+When `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Plugin Generator: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief, downloadable as `.zip`. Generated projects pass the file-contract gate plus dependency-free Go parse and host-function policy with grant coverage, plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Install the result by compiling with TinyGo (`tinygo build -o <name>.wasm -target=wasi main.go`) and dropping the `.wasm` into `plugins/` — or, with `PLUGIN_BUILD_ENABLED=true` and TinyGo on the host, build and install on the server (see [plugin-generation.md](plugin-generation.md)). Each `AI_PLUGGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_PLUGGEN_API_KEY` | empty | Dedicated API key for plugin generation. Falls back to `AI_TEXT_GENERATION_API_KEY`. |
+| `AI_PLUGGEN_BASE_URL` | empty | Override the API base URL. Falls back to `AI_TEXT_GENERATION_BASE_URL`. |
+| `AI_PLUGGEN_MODEL` | empty | Chat model name. Falls back to `AI_TEXT_GENERATION_MODEL`, then `gpt-5-mini`. |
+| `PLUGIN_BUILD_ENABLED` | `false` | Opt in to server-side plugin builds: compile with TinyGo and install into `plugins/` on the server. |
+| `TINYGO_PATH` | `tinygo` | TinyGo binary used for server-side builds (PATH lookup by default). |
+| `PLUGIN_BUILD_TIMEOUT` | `5m` | Overall deadline for one server-side build (Go duration). |
+
 ### Privacy redaction via SAM 3.1 (optional)
 
 When `AI_SAM_API_KEY` is set, every media upload and profile-picture upload is scanned with Meta SAM 3.1 and sensitive regions are blurred before anything is stored. Scanning sends the uploaded image bytes to Meta's Model API, so enabling the key means PII in uploads leaves the host. Redaction precedes WebP conversion and thumbnail derivation so variants inherit blurred pixels; any scan failure rejects the upload fail-closed and stores nothing. Faces stay visible only in profile pictures, blurred everywhere else. Empty keeps the legacy pipeline byte-identical. There is no admin UI toggle (env-driven), no backfill of the existing library, and no importer-download or AI-generated image scanning in v1.
@@ -258,7 +271,6 @@ When `AI_SAM_API_KEY` is set, every media upload and profile-picture upload is s
 | `AI_SAM_MODEL` | `sam-3.1` | SAM checkpoint name sent to the Model API (`POST /v1/responses` on `https://api.meta.ai/v1`). |
 | `AI_SAM_CONCEPTS` | `face,license plate,nudity` | Comma-separated scan vocabulary (plain noun phrases — concrete nouns match best). `face` is exempted for profile pictures only. |
 
-### AI speech-to-text / voice dictation (optional)
 ### AI speech-to-text / voice dictation (optional)
 
 When **both** `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` are set, the content editor shows a "Dictate with AI" button: the author records up to five minutes of speech, the audio is transcribed, and the transcript is enhanced into TipTap content (punctuation, headings, lists, links, tables, math) with an AI-suggested title and meta description. The suggestion is previewed first and applied only to empty fields.
@@ -563,7 +575,7 @@ Absent block → headless disabled (the default; fully backward compatible).
 ### `[mcp]`
 
 Optional. When `enabled = true`, the server mounts the Model Context Protocol
-endpoint at `POST /mcp`, exposing the same 49 tools as the `lesstruct-mcp`
+endpoint at `POST /mcp`, exposing the same 54 tools as the `lesstruct-mcp`
 stdio binary over **Streamable HTTP**. A remote MCP host then drives the site
 with a Bearer API key — no local binary, no separate port.
 
@@ -1306,6 +1318,12 @@ AI_IMAGE_GENERATION_ASPECT_RATIO=
 AI_TEXT_GENERATION_API_KEY=
 AI_TEXT_GENERATION_BASE_URL=
 AI_TEXT_GENERATION_MODEL=gpt-5-mini
+AI_PLUGGEN_API_KEY=
+AI_PLUGGEN_BASE_URL=
+AI_PLUGGEN_MODEL=
+PLUGIN_BUILD_ENABLED=false
+TINYGO_PATH=tinygo
+PLUGIN_BUILD_TIMEOUT=5m
 AI_SPEECH_TO_TEXT_API_KEY=
 AI_SPEECH_TO_TEXT_BASE_URL=https://api.meta.ai
 AI_SPEECH_TO_TEXT_MODEL=muse-voice-transcribe-1.0

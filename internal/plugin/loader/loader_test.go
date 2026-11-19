@@ -38,6 +38,24 @@ var addWasm = []byte{
 	0x0b,
 }
 
+// hostImportWasm imports lesstruct.log_info alongside linear memory and a
+// hook_before_save export — the shape of a capability-using plugin built
+// without its manifest sidecar.
+var hostImportWasm = []byte{
+	0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+	0x01, 0x0c, 0x02, 0x60, 0x02, 0x7f, 0x7f, 0x00,
+	0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f, 0x02, 0x16,
+	0x01, 0x09, 0x6c, 0x65, 0x73, 0x73, 0x74, 0x72,
+	0x75, 0x63, 0x74, 0x08, 0x6c, 0x6f, 0x67, 0x5f,
+	0x69, 0x6e, 0x66, 0x6f, 0x00, 0x00, 0x03, 0x02,
+	0x01, 0x01, 0x05, 0x03, 0x01, 0x00, 0x01, 0x07,
+	0x1d, 0x02, 0x06, 0x6d, 0x65, 0x6d, 0x6f, 0x72,
+	0x79, 0x02, 0x00, 0x10, 0x68, 0x6f, 0x6f, 0x6b,
+	0x5f, 0x62, 0x65, 0x66, 0x6f, 0x72, 0x65, 0x5f,
+	0x73, 0x61, 0x76, 0x65, 0x00, 0x01, 0x0a, 0x06,
+	0x01, 0x04, 0x00, 0x41, 0x00, 0x0b,
+}
+
 func TestEnsurePluginsDir(t *testing.T) {
 	t.Run("creates missing directory", func(t *testing.T) {
 		dir := t.TempDir()
@@ -433,6 +451,25 @@ func TestLoad(t *testing.T) {
 		require.Error(t, err)
 		assert.Nil(t, manifest)
 		assert.Equal(t, plugin.StatusFailed, plg.Status)
+	})
+
+	t.Run("missing manifest names the sidecar for host imports", func(t *testing.T) {
+		dir := t.TempDir()
+		pluginsDir := filepath.Join(dir, "plugins")
+		require.NoError(t, os.MkdirAll(pluginsDir, 0o755))
+
+		wasmPath := filepath.Join(pluginsDir, "hostless.wasm")
+		require.NoError(t, os.WriteFile(wasmPath, hostImportWasm, 0o644))
+
+		l, ctx := newTestLoader(t, pluginsDir)
+
+		plg, manifest, err := l.Load(ctx, wasmPath)
+		require.Error(t, err)
+		assert.Nil(t, manifest)
+		assert.Equal(t, plugin.StatusFailed, plg.Status)
+		assert.ErrorIs(t, err, plugin.ErrPluginLoadFailed)
+		assert.Contains(t, err.Error(), "hostless.manifest")
+		assert.Contains(t, err.Error(), "host functions")
 	})
 
 	t.Run("returns error for non-existent file", func(t *testing.T) {

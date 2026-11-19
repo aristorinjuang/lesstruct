@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/plugin/capability"
+	plugingen "github.com/aristorinjuang/lesstruct/modules/plugingen/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -296,4 +297,37 @@ func writeTempManifest(t *testing.T, content string) string {
 	require.NoError(t, err)
 
 	return path
+}
+
+// TestSynthesizedManifestLoads proves the generator's manifest renderer and
+// the host's manifest parser agree: a synthesized sidecar must load and
+// validate with identical grants. The two vocabularies (plugingen known lists
+// vs capability.validateDBPermission) are maintained separately, so this is
+// the only test that pins them together.
+func TestSynthesizedManifestLoads(t *testing.T) {
+	project := plugingen.NewProject(
+		"my-plugin",
+		"go",
+		[]string{"before_save"},
+		nil,
+		map[string]string{"main.go": "package main"},
+		"rational",
+	)
+	project.HTTPPatterns = []string{"https://api.example.com/*"}
+	project.DBPermissions = []string{"read:content", "write:media"}
+
+	rendered, err := plugingen.SynthesizeManifest(project)
+	require.NoError(t, err)
+	path := writeTempManifest(t, rendered)
+
+	m, err := capability.LoadManifest(path)
+	require.NoError(t, err)
+	require.NoError(t, m.Validate())
+	assert.Equal(t, "my-plugin", m.Name)
+	assert.Equal(t, []string{"https://api.example.com/*"}, m.Capabilities.HTTP)
+	assert.Equal(t, []string{"read:content", "write:media"}, m.Capabilities.Database)
+	assert.True(t, m.HasHTTP())
+	assert.True(t, m.HasDBPermission("read:content"))
+	assert.True(t, m.IsHTTPURLAllowed("https://api.example.com/hook"))
+	assert.False(t, m.IsHTTPURLAllowed("https://other.example.com/hook"))
 }

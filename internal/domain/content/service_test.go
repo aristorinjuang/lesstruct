@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -5040,6 +5041,184 @@ func TestService_Create_HookIntegration(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
 	})
+
+	t.Run("create with hook that uppercases title stores uppercased title", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			c := args.Get(1).(*contentdomain.Content)
+			c.ID = 1
+		})
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		mockHook := &mockHookExecutor{
+			transform: func(hookName plugin.HookName, data []byte) ([]byte, error) {
+				if hookName == plugin.HookBeforeSave {
+					var m map[string]any
+					_ = json.Unmarshal(data, &m)
+					m["title"] = "TEST TITLE"
+					b, _ := json.Marshal(m)
+					return b, nil
+				}
+				return nil, nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{},
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+		}
+
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+
+		require.NoError(t, err)
+		assert.Equal(t, "TEST TITLE", result.Title)
+		mockRepo.AssertExpectations(t)
+	})
+
+	t.Run("create with hook returning only customFields leaves title unchanged", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+		mockRepo.On("Create", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil).Run(func(args mock.Arguments) {
+			c := args.Get(1).(*contentdomain.Content)
+			c.ID = 1
+		})
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{
+			{Name: "Price", Slug: "price", Type: customfield.FieldTypeNumber},
+		}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		mockHook := &mockHookExecutor{
+			transform: func(hookName plugin.HookName, _ []byte) ([]byte, error) {
+				if hookName == plugin.HookBeforeSave {
+					return []byte(`{"customFields":{"price":19.99}}`), nil
+				}
+				return nil, nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{},
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+			CustomFields: map[string]any{
+				"price": 29.99,
+			},
+		}
+
+		result, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+
+		require.NoError(t, err)
+		assert.Equal(t, "Test Title", result.Title)
+		assert.Equal(t, 19.99, result.CustomFields["price"])
+	})
+
+	t.Run("create with hook returning empty title returns error", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+
+		mockHook := &mockHookExecutor{
+			transform: func(hookName plugin.HookName, _ []byte) ([]byte, error) {
+				if hookName == plugin.HookBeforeSave {
+					return []byte(`{"title":""}`), nil
+				}
+				return nil, nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{},
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+		}
+
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidTitle)
+	})
+
+	t.Run("create with hook returning overlong title returns error", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+
+		mockHook := &mockHookExecutor{
+			transform: func(hookName plugin.HookName, _ []byte) ([]byte, error) {
+				if hookName == plugin.HookBeforeSave {
+					return []byte(`{"title":"` + strings.Repeat("a", 201) + `"}`), nil
+				}
+				return nil, nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{},
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+		}
+
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidTitle)
+	})
+
+	t.Run("create with hook returning HTML title returns error", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("CheckSlugUnique", mock.Anything, "test-title", "en").Return(true, nil)
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+
+		mockHook := &mockHookExecutor{
+			transform: func(hookName plugin.HookName, _ []byte) ([]byte, error) {
+				if hookName == plugin.HookBeforeSave {
+					return []byte(`{"title":"<b>Bold</b>"}`), nil
+				}
+				return nil, nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := contentdomain.CreateContentRequest{
+			Title:    "Test Title",
+			Content:  testTipTapJSON("Test content"),
+			Tags:     []string{},
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+		}
+
+		_, err := service.Create(context.Background(), identity.New(1, "admin", contentdomain.RoleAdmin), req)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, contentdomain.ErrHTMLInTitle)
+	})
 }
 
 func TestService_Update_HookIntegration(t *testing.T) {
@@ -5415,6 +5594,87 @@ func TestService_Update_HookIntegration(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, 29.99, result.CustomFields["price"])
+	})
+
+	t.Run("update with hook that uppercases title stores uppercased title", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
+			ID:        1,
+			UserID:    1,
+			Title:     "Test",
+			Slug:      "test",
+			Content:   testTipTapJSON("Content"),
+			PostType:  "product",
+			Status:    contentdomain.StatusDraft,
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
+		}, nil)
+		mockRepo.On("Update", mock.Anything, mock.AnythingOfType("*content.Content")).Return(nil)
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+		mockPostType.On("GetFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+		mockPostType.On("GetSystemFieldsByPostType", "product").Return([]customfield.FieldSchema{}, nil)
+
+		mockHook := &mockHookExecutor{
+			transform: func(_ plugin.HookName, data []byte) ([]byte, error) {
+				var m map[string]any
+				_ = json.Unmarshal(data, &m)
+				m["title"] = "UPDATED TITLE"
+				b, _ := json.Marshal(m)
+				return b, nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := content.UpdateContentRequest{
+			Title:    "Updated Title",
+			Content:  testTipTapJSON("Content"),
+			Tags:     []string{},
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+		}
+
+		result, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
+
+		require.NoError(t, err)
+		assert.Equal(t, "UPDATED TITLE", result.Title)
+	})
+
+	t.Run("update with hook returning invalid title returns error", func(t *testing.T) {
+		mockRepo := &mocks.MockRepository{}
+		mockRepo.On("GetByID", mock.Anything, 1).Return(&contentdomain.Content{
+			ID:        1,
+			UserID:    1,
+			Title:     "Test",
+			Slug:      "test",
+			Content:   testTipTapJSON("Content"),
+			PostType:  "product",
+			Status:    contentdomain.StatusDraft,
+			UpdatedAt: time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC),
+		}, nil)
+
+		mockPostType := &mocks.MockPostTypeServiceInterface{}
+		mockPostType.On("GetBySlug", "product").Return(content.PostType{Slug: "product"}, nil)
+
+		mockHook := &mockHookExecutor{
+			transform: func(_ plugin.HookName, _ []byte) ([]byte, error) {
+				return []byte(`{"title":""}`), nil
+			},
+		}
+
+		service := content.NewServiceWithHooks(mockRepo, nil, mockPostType, mockHook)
+		req := content.UpdateContentRequest{
+			Title:    "Updated Title",
+			Content:  testTipTapJSON("Content"),
+			Tags:     []string{},
+			Status:   contentdomain.StatusDraft,
+			PostType: "product",
+		}
+
+		_, err := service.Update(context.Background(), 1, identity.New(1, "admin", ""), req)
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, contentdomain.ErrInvalidTitle)
 	})
 }
 

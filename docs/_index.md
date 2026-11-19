@@ -33,6 +33,7 @@ section — each doc states its scope at the top._
 | Plugin capabilities / host functions | [plugin-capabilities.md](plugin-capabilities.md) |
 | Building or overriding a theme (CSS, templates, JS) | [theme-development.md](theme-development.md) |
 | Generating themes with AI (panel, CLI, MCP) | [theme-generation.md](theme-generation.md) |
+| Generating plugins with AI (panel, CLI, MCP) | [plugin-generation.md](plugin-generation.md) |
 | GOHTML / Go template formatting (`.gohtml` files) | [coding-standards/html.md](coding-standards/html.md) |
 | Brand assets (logo, colors, typography) | [brands.md](brands.md) |
 

@@ -196,6 +196,31 @@ type Config struct {
 	// Read via AI_THEMGEN_MODEL.
 	AIThemGenModel string
 
+	// AIPlugGenAPIKey enables the AI plugin generator: a dedicated key for
+	// plugin project generation. Empty falls back to AITextGenerationAPIKey.
+	// Read via AI_PLUGGEN_API_KEY.
+	AIPlugGenAPIKey string
+	// AIPlugGenBaseURL is the OpenAI-compatible base URL for plugin
+	// generation. Empty falls back to AITextGenerationBaseURL.
+	// Read via AI_PLUGGEN_BASE_URL.
+	AIPlugGenBaseURL string
+	// AIPlugGenModel is the chat model for plugin generation. Empty falls
+	// back to AITextGenerationModel, then to gpt-5-mini.
+	// Read via AI_PLUGGEN_MODEL.
+	AIPlugGenModel string
+
+	// PluginBuildEnabled gates server-side plugin builds: compiling a
+	// generated project with TinyGo and installing the .wasm into plugins/.
+	// Explicit opt-in — a host never shells out to a compiler by accident.
+	// Read via PLUGIN_BUILD_ENABLED.
+	PluginBuildEnabled bool
+	// TinyGoPath names the TinyGo binary used for server-side plugin builds.
+	// Read via TINYGO_PATH.
+	TinyGoPath string
+	// PluginBuildTimeout caps one server-side plugin build end to end.
+	// Read via PLUGIN_BUILD_TIMEOUT.
+	PluginBuildTimeout time.Duration
+
 	// ThemesDir is the filesystem root for installed (generated or manual)
 	// themes: one directory per theme. Read via THEMES_DIR.
 	ThemesDir string
@@ -271,6 +296,33 @@ func (c *Config) EffectiveThemGenBaseURL() string {
 func (c *Config) EffectiveThemGenModel() string {
 	if c.AIThemGenModel != "" {
 		return c.AIThemGenModel
+	}
+	if c.AITextGenerationModel != "" {
+		return c.AITextGenerationModel
+	}
+	return "gpt-5-mini"
+}
+
+// IsPluginGenerationEnabled returns true when the plugin generator can run:
+// a dedicated AI_PLUGGEN_API_KEY or the shared text-generation key.
+func (c *Config) IsPluginGenerationEnabled() bool {
+	return c.AIPlugGenAPIKey != "" || c.AITextGenerationAPIKey != ""
+}
+
+// EffectivePlugGenBaseURL resolves the plugin generation base URL: the
+// dedicated value when set, otherwise the shared text-generation URL.
+func (c *Config) EffectivePlugGenBaseURL() string {
+	if c.AIPlugGenBaseURL != "" {
+		return c.AIPlugGenBaseURL
+	}
+	return c.AITextGenerationBaseURL
+}
+
+// EffectivePlugGenModel resolves the plugin generation model: the dedicated
+// value when set, otherwise the shared text-generation model, then gpt-5-mini.
+func (c *Config) EffectivePlugGenModel() string {
+	if c.AIPlugGenModel != "" {
+		return c.AIPlugGenModel
 	}
 	if c.AITextGenerationModel != "" {
 		return c.AITextGenerationModel
@@ -419,6 +471,14 @@ func Load() (*Config, error) {
 		AIThemGenBaseURL: getEnv("AI_THEMGEN_BASE_URL", ""),
 		AIThemGenModel:   getEnv("AI_THEMGEN_MODEL", ""),
 		ThemesDir:        getEnv("THEMES_DIR", "themes"),
+
+		AIPlugGenAPIKey:  getEnv("AI_PLUGGEN_API_KEY", ""),
+		AIPlugGenBaseURL: getEnv("AI_PLUGGEN_BASE_URL", ""),
+		AIPlugGenModel:   getEnv("AI_PLUGGEN_MODEL", ""),
+
+		PluginBuildEnabled: getEnvBool("PLUGIN_BUILD_ENABLED", false),
+		TinyGoPath:         getEnv("TINYGO_PATH", "tinygo"),
+		PluginBuildTimeout: getEnvDuration("PLUGIN_BUILD_TIMEOUT", 5*time.Minute),
 
 		AISamAPIKey:   getEnv("AI_SAM_API_KEY", ""),
 		AISamModel:    getEnv("AI_SAM_MODEL", "sam-3.1"),

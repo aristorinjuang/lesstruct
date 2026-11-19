@@ -22,7 +22,9 @@ const (
 		"take effect immediately — confirm with the user first when the action " +
 		"is destructive (delete, reject, suspend, soft-delete). " +
 		"Theme tools generate validated themes (generation can take minutes; " +
-		"the result auto-installs inactive — theme_activate applies it)."
+		"the result auto-installs inactive — theme_activate applies it). " +
+		"Plugin tools generate validated WASM plugin projects (generation can take " +
+		"minutes; the result installs as a source project — compile with TinyGo, build on a build-enabled server, or drop the .wasm into plugins/)."
 )
 
 // toolResult renders a successful /api/v1 call as the MCP text result: the
@@ -73,6 +75,7 @@ func registerTools(ms *mcp.Server, c *client.Client) {
 	registerCommentTools(ms, c)
 	registerTransferTools(ms, c)
 	registerThemeTools(ms, c)
+	registerPluginTools(ms, c)
 	registerAPITools(ms, c)
 }
 

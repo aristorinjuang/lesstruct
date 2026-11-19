@@ -10,6 +10,7 @@ import (
 	"github.com/aristorinjuang/lesstruct/internal/api/routes"
 	"github.com/aristorinjuang/lesstruct/internal/config"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
+	plugindomain "github.com/aristorinjuang/lesstruct/internal/domain/plugin"
 	role "github.com/aristorinjuang/lesstruct/internal/domain/role"
 	"github.com/aristorinjuang/lesstruct/internal/email"
 	"github.com/aristorinjuang/lesstruct/internal/repository"
@@ -44,6 +45,16 @@ type Edition struct {
 	Mount    func(*Core) error
 }
 
+// PluginSystemSnapshot is the read-only inspection seam over the host
+// plugin system: loaded-plugin metadata plus hook registrations. The
+// composition root sets it from the live PluginSystem before edition Wire
+// runs; editions adopt it for read-only surfaces like the plugin status
+// endpoint.
+type PluginSystemSnapshot interface {
+	Plugins() []plugindomain.Plugin
+	Hooks() map[plugindomain.HookName][]plugindomain.HookRegistration
+}
+
 // HandlerSet holds the edition-optional HTTP surfaces. A nil field unmounts
 // that surface's routes (routes.Setup nil-checks each one); an edition simply
 // leaves the fields it does not carry at their zero values.
@@ -59,6 +70,7 @@ type HandlerSet struct {
 	TextGen        routes.TextGenSurface
 	Speech         routes.SpeechSurface
 	ThemGen        routes.ThemGenSurface
+	PlugGen        routes.PlugGenSurface
 
 	// ConfigExtras contributes edition-specific keys to the public
 	// GET /api/v1/config payload (e.g. the catalog block). Nil or empty
@@ -124,6 +136,15 @@ type Core struct {
 	// failed validation: the engine serves the embedded default and
 	// /api/health reports the detail so the AI output never bricks startup.
 	ThemeValidationFailed bool
+
+	// PluginSystem is the live host plugin system snapshot, set by the
+	// composition root before edition Wire runs. Editions adopt it for
+	// read-only plugin inspection (never for hook execution).
+	PluginSystem PluginSystemSnapshot
+	// PluginBuildReady reports whether server-side plugin builds are
+	// available: explicitly enabled plus a TinyGo binary on PATH. The
+	// edition sets it during Wire; /api/health reports it.
+	PluginBuildReady bool
 
 	// Platform handlers every edition serves.
 	ContentHandler      *handlers.ContentHandler

@@ -19,6 +19,9 @@ import IconChatBubble from './IconChatBubble.vue'
 import IconShoppingBag from './IconShoppingBag.vue'
 import IconArrowDownTray from './IconArrowDownTray.vue'
 import IconArrowUpTray from './IconArrowUpTray.vue'
+import IconPuzzlePiece from './IconPuzzlePiece.vue'
+import IconSparkles from './IconSparkles.vue'
+import IconSwatch from './IconSwatch.vue'
 
 export const icons = {
   dashboard: IconDashboard,
@@ -37,6 +40,9 @@ export const icons = {
   'shopping-bag': IconShoppingBag,
   'arrow-down-tray': IconArrowDownTray,
   'arrow-up-tray': IconArrowUpTray,
+  'puzzle-piece': IconPuzzlePiece,
+  sparkles: IconSparkles,
+  swatch: IconSwatch,
 }
 
 export type IconName = keyof typeof icons
@@ -58,6 +64,9 @@ export {
   IconShoppingBag,
   IconArrowDownTray,
   IconArrowUpTray,
+  IconPuzzlePiece,
+  IconSparkles,
+  IconSwatch,
 }
 
 /**

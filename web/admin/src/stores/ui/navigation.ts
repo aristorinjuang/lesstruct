@@ -44,7 +44,7 @@ export const useNavigationStore = defineStore('navigation', () => {
         }
       }
     },
-    { immediate: false }
+    { immediate: false },
   )
 
   // Static navigation items (non-post-type). The Comments entry is hidden
@@ -58,13 +58,28 @@ export const useNavigationStore = defineStore('navigation', () => {
     ]
     if (orders.value) {
       items.push({ path: '/orders', label: 'Orders', icon: 'shopping-bag', permission: 'admin' })
-      items.push({ path: '/settings/invoice', label: 'Invoice settings', icon: 'document', permission: 'admin' })
+      items.push({
+        path: '/settings/invoice',
+        label: 'Invoice settings',
+        icon: 'document',
+        permission: 'admin',
+      })
     }
     if (payments.value) {
-      items.push({ path: '/payments', label: 'Payments', icon: 'document-text', permission: 'admin' })
+      items.push({
+        path: '/payments',
+        label: 'Payments',
+        icon: 'document-text',
+        permission: 'admin',
+      })
     }
     if (commentsEnabled.value) {
-      items.push({ path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' })
+      items.push({
+        path: '/comment',
+        label: 'Comments',
+        icon: 'chat-bubble',
+        permission: 'commentator',
+      })
     }
     return items
   })
@@ -72,8 +87,10 @@ export const useNavigationStore = defineStore('navigation', () => {
   const postFooterNavigationItems: NavigationItem[] = [
     { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
     { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
-    { path: '/theme-generator', label: 'Theme Generator', icon: 'photo', permission: 'admin' },
-    { path: '/themes', label: 'Themes', icon: 'photo', permission: 'admin' },
+    { path: '/theme-generator', label: 'Theme Generator', icon: 'sparkles', permission: 'admin' },
+    { path: '/themes', label: 'Themes', icon: 'swatch', permission: 'admin' },
+    { path: '/plugin-generator', label: 'Plugin Generator', icon: 'sparkles', permission: 'admin' },
+    { path: '/plugins', label: 'Plugins', icon: 'puzzle-piece', permission: 'admin' },
     { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
     { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
   ]
@@ -88,17 +105,13 @@ export const useNavigationStore = defineStore('navigation', () => {
     // caller can actually manage (the backend also scopes the post-type list for
     // non-admins). Without capabilities the legacy behavior is preserved.
     const manageable = new Set(roleStore.me?.postTypes ?? [])
-    const scoped = roleStore.me
-      ? allTypes.filter(pt => manageable.has(pt.slug))
-      : allTypes
+    const scoped = roleStore.me ? allTypes.filter((pt) => manageable.has(pt.slug)) : allTypes
 
-    const hiddenSlugs = new Set(
-      scoped.filter(pt => pt.hidden).map(pt => pt.slug)
-    )
+    const hiddenSlugs = new Set(scoped.filter((pt) => pt.hidden).map((pt) => pt.slug))
 
     const customTypes = scoped
-      .filter(pt => !DEDICATED_POST_TYPES.includes(pt.slug))
-      .filter(pt => !pt.hidden)
+      .filter((pt) => !DEDICATED_POST_TYPES.includes(pt.slug))
+      .filter((pt) => !pt.hidden)
       .sort((a, b) => a.name.localeCompare(b.name))
 
     // Built-in types with dedicated entries. A hidden or unmanageable post type
@@ -108,11 +121,27 @@ export const useNavigationStore = defineStore('navigation', () => {
     // post-type list loads, so there is no flash on normal instances.
     const capabilityScoped = Boolean(roleStore.me)
     const items: NavigationItem[] = []
-    if ((!capabilityScoped || scoped.some(pt => pt.slug === 'post')) && !hiddenSlugs.has('post')) {
-      items.push({ path: '/content?type=post', label: 'Posts', icon: 'document-text', permission: 'content_creator' })
+    if (
+      (!capabilityScoped || scoped.some((pt) => pt.slug === 'post')) &&
+      !hiddenSlugs.has('post')
+    ) {
+      items.push({
+        path: '/content?type=post',
+        label: 'Posts',
+        icon: 'document-text',
+        permission: 'content_creator',
+      })
     }
-    if ((!capabilityScoped || scoped.some(pt => pt.slug === 'page')) && !hiddenSlugs.has('page')) {
-      items.push({ path: '/content?type=page', label: 'Pages', icon: 'document', permission: 'content_creator' })
+    if (
+      (!capabilityScoped || scoped.some((pt) => pt.slug === 'page')) &&
+      !hiddenSlugs.has('page')
+    ) {
+      items.push({
+        path: '/content?type=page',
+        label: 'Pages',
+        icon: 'document',
+        permission: 'content_creator',
+      })
     }
 
     for (const pt of customTypes) {

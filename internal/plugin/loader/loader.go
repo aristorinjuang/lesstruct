@@ -20,6 +20,21 @@ func failedPlugin() LoadedPlugin {
 	return LoadedPlugin{Plugin: plugin.Plugin{Status: plugin.StatusFailed}}
 }
 
+// importsHostModule reports whether the compiled guest declares an import
+// from the lesstruct host module (a capability function such as
+// log_info). Such a guest only instantiates once the loader provides the
+// host module from the plugin's capability manifest.
+func importsHostModule(compiled wazero.CompiledModule) bool {
+	for _, fn := range compiled.ImportedFunctions() {
+		// Imported functions carry their module/name on Import, not on
+		// the ModuleName/Name accessors (those describe exports).
+		if moduleName, _, isImport := fn.Import(); isImport && moduleName == hostfunctions.HostModuleName {
+			return true
+		}
+	}
+	return false
+}
+
 type Loader struct {
 	rt            runtime.Runtime
 	pluginsDir    string
@@ -109,6 +124,20 @@ func (l Loader) Load(
 			WithStartFunctions(),
 	)
 	if err != nil {
+		// A guest that imports host functions without a manifest sidecar
+		// fails here with the raw wazero "module[lesstruct] not
+		// instantiated" line. Name the missing file and the fix instead:
+		// the usual cause is a manually copied .wasm whose .manifest
+		// was left behind.
+		if manifest == nil && importsHostModule(compiled) {
+			_ = compiled.Close(ctx)
+			return failedPlugin(), nil, fmt.Errorf(
+				"%w: %s imports host functions but %s is missing — install via Build, or author the capability manifest",
+				plugin.ErrPluginLoadFailed,
+				pluginName,
+				manifestPath,
+			)
+		}
 		_ = compiled.Close(ctx)
 		return failedPlugin(), manifest, fmt.Errorf(
 			"%w: %v",

@@ -849,6 +849,58 @@ GET /api/v1/themegen/themes/{name}/snapshot
 
 Renders the installed theme's homepage to a standalone HTML document with populated sample data, for the admin panel's snapshot frames. Browser-only like preview (no Bearer access): unknown or broken themes degrade to a placeholder document instead of an error, and missing render support answers `503 snapshot_unavailable`. Responses carry `Cache-Control: private, max-age=300`. The endpoint overrides the global anti-framing headers (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`, scripts forbidden) so the panel may frame it; the frames themselves run `sandbox="allow-same-origin"` without scripts.
 
+## AI plugin generation
+
+> Requires `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flags are `pluginGeneration` and (for builds) `pluginBuild`.
+
+### Generate
+
+```
+POST /api/v1/plugingen/generate
+```
+
+Generate a WASM plugin project from a natural-language brief. Validates and installs as a source project under `plugins/src`. Language is `go` (TinyGo, WASI target) in v1.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `description` | string | yes | Natural-language brief (max 5,000 chars). |
+| `language` | string | no | `"go"` (default). |
+| `hooks` | string[] | yes | Hook suffixes to implement (e.g. `["before_save", "after_create"]`). |
+| `capabilities` | string[] | no | Host functions needed (e.g. `["http_get", "log_info"]`). |
+| `httpPatterns` | string[] | no | URL grants for `http_get`/`http_post` calls — exact URLs or a trailing-`*` prefix (e.g. `["https://api.example.com/*"]`). Calls without the matching grant are denied at runtime and fail validation. |
+| `dbPermissions` | string[] | no | Table grants for `db_query` (`read:*`) / `db_exec` (`write:*`) calls (e.g. `["read:content"]`). Calls without the matching grant fail validation. |
+
+**Response:** `200 OK` with `{ "data": { "project": { "name": "...", "language": "go", "hooks": [...], "capabilities": [...], "httpPatterns": [...], "dbPermissions": [...], "rationale": "...", "files": { "main.go": "...", "go.mod": "...", "README.md": "...", "build.sh": "...", "project.json": "..." } }, "validation": { "valid": true, "findings": [] } } }`.
+
+> `go.mod` must be dependency-free: `require`/`replace` directives fail validation (builds run offline). Server-side builds accept only projects whose host calls are covered by grants.
+
+Warnings keep `valid: true` and surface in `validation.findings`. When the validation gate still fails after the repair loop, the API answers `500 generation_failed` and repeats the final findings in `error.details` (`{ "valid": false, "findings": [...] }`). Compile the result with TinyGo (`tinygo build -o <name>.wasm -target=wasi main.go`) and drop the `.wasm` into `plugins/`.
+
+### Build
+
+```
+POST /api/v1/plugingen/projects/{name}/build
+```
+
+Compile an installed project on the server with TinyGo and install the `.wasm` plus the synthesized capability manifest into `plugins/`. Requires `PLUGIN_BUILD_ENABLED=true` and a TinyGo binary on the server (`TINYGO_PATH`); otherwise answers `503 build_unavailable`. A second server-wide build in flight answers `429 build_busy`; building over an installed plugin answers `409 plugin_exists`.
+
+**Response:** `200 OK` with `{ "data": { "installed": true, "requiresRestart": false } }`. In `DEV_MODE` the watcher hot-reloads the plugin (`requiresRestart: false`); otherwise restart the server to apply it.
+
+### List / Download / Delete / Status
+
+```
+GET /api/v1/plugingen/projects
+GET /api/v1/plugingen/projects/{name}/download
+DELETE /api/v1/plugingen/projects/{name}
+GET /api/v1/plugins
+```
+
+List returns installed projects with language and hooks. Download streams `<name>.zip` with TinyGo build and install steps. Delete removes the project (no active-state guard — projects are inert source until compiled). Status returns the loaded `.wasm` plugins with their hook registrations (read-only inspection).
+
+These six endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+
 ## AI voice dictation
 
 > Requires `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `speechToText`.

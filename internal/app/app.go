@@ -33,6 +33,7 @@ import (
 	apikeydomain "github.com/aristorinjuang/lesstruct/internal/domain/apikey"
 	contentdomain "github.com/aristorinjuang/lesstruct/internal/domain/content"
 	dashboarddomain "github.com/aristorinjuang/lesstruct/internal/domain/dashboard"
+	plugindomain "github.com/aristorinjuang/lesstruct/internal/domain/plugin"
 	"github.com/aristorinjuang/lesstruct/internal/email"
 	"github.com/aristorinjuang/lesstruct/internal/modules"
 	pluginadapter "github.com/aristorinjuang/lesstruct/internal/plugin"
@@ -369,6 +370,9 @@ func startServer(
 	textGenHandler routes.TextGenSurface,
 	themGenEnabled bool,
 	themGenHandler routes.ThemGenSurface,
+	plugGenEnabled bool,
+	plugGenHandler routes.PlugGenSurface,
+	plugGenBuildEnabled bool,
 	themeValidationFailed bool,
 	speechEnabled bool,
 	speechHandler routes.SpeechSurface,
@@ -419,6 +423,9 @@ func startServer(
 		textGenHandler,
 		themGenEnabled,
 		themGenHandler,
+		plugGenEnabled,
+		plugGenHandler,
+		plugGenBuildEnabled,
 		themeValidationFailed,
 		speechEnabled,
 		speechHandler,
@@ -465,6 +472,27 @@ func startServer(
 // into lean binaries like lesstruct-core).
 func noCookieAllowlist() []string {
 	return []string{"lesstruct_lang", "lesstruct_consent", kernel.SessionCookieName, kernel.AuthHintCookieName, "lesstruct_theme_preview"}
+}
+
+// pluginSystemSnapshot adapts the live PluginSystem to the read-only
+// PluginSystemSnapshot seam editions adopt for plugin inspection (loaded
+// plugins, registered hooks). It never exposes hook execution.
+type pluginSystemSnapshot struct {
+	sys *bootstrap.PluginSystem
+}
+
+func (a pluginSystemSnapshot) Plugins() []plugindomain.Plugin {
+	if a.sys == nil {
+		return nil
+	}
+	return a.sys.Plugins()
+}
+
+func (a pluginSystemSnapshot) Hooks() map[plugindomain.HookName][]plugindomain.HookRegistration {
+	if a.sys == nil {
+		return nil
+	}
+	return a.sys.Registry().Hooks()
 }
 
 // Run boots an edition: loads config, wires the shared platform services,
@@ -991,6 +1019,7 @@ func Run(edition Edition) {
 		Languages:           languages,
 		PrimaryLanguage:     primaryLanguage,
 		BaseURL:             baseURL,
+		PluginSystem:        pluginSystemSnapshot{sys: pluginSys},
 		LegalResolution:     legalResolution,
 		LegalOverrides:      legalOverrides,
 		LegalNav:            legalConfig.Nav(),
@@ -1281,6 +1310,9 @@ func Run(edition Edition) {
 		hs.TextGen,
 		cfg.IsThemeGenerationEnabled() && hs.ThemGen != nil,
 		hs.ThemGen,
+		cfg.IsPluginGenerationEnabled() && hs.PlugGen != nil,
+		hs.PlugGen,
+		core.PluginBuildReady,
 		core.ThemeValidationFailed,
 		cfg.IsSpeechToTextEnabled() && cfg.IsTextGenerationEnabled() && hs.Speech != nil,
 		hs.Speech,

@@ -106,11 +106,11 @@ make install   # builds the admin panel (npm), the server, and the CLI into $GOB
 Two builds of one product: `go install` / `make install` ships Lesstruct
 with every module and every database driver — the **blog edition**, the
 default. `go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-core@latest`
-(or `make build-core`) builds the **Core edition**: the headless engine —
+(or `make install-core`, `make build-core` for a local artifact) builds the **Core edition**: the headless engine —
 identity, content, media, plugins; no comment system, no SSR theme engine,
 no AI text generation, no importers — for sites that render their own
 frontend against `/api/v1`. `go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-ecommerce@latest`
-(or `make build-ecommerce`) builds the **eCommerce edition**: the blog
+(or `make install-ecommerce`, `make build-ecommerce` for a local artifact) builds the **eCommerce edition**: the blog
 platform plus the commerce stack (catalog pricing and stock, guest carts,
 and orders with checkout), served by the embedded storefront theme —
 product pages, cart, checkout, and order tracking. Editions share
@@ -176,6 +176,7 @@ Plugins are sandboxed WebAssembly modules with a WordPress-familiar hook model �
 
 - Full contract: [`docs/plugin-development.md`](docs/plugin-development.md)
 - Capability manifest & host functions: [`docs/plugin-capabilities.md`](docs/plugin-capabilities.md)
+- Generating plugins: [`docs/plugin-generation.md`](docs/plugin-generation.md)
 - AI-assisted workflow: [`skills/lesstruct-plugin-development/`](skills/lesstruct-plugin-development/)
 
 ## Module Development
@@ -210,16 +211,16 @@ go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-cli@latest
 Point it at a running server and create an API key from the admin panel to get started.
 
 - API reference: [`docs/api-reference.md`](docs/api-reference.md)
-- Build from source: `make build-cli` → `bin/lesstruct-cli`
+- Build from source: `make install-cli` (on PATH) or `make build-cli` → `bin/lesstruct-cli`
 
-`lesstruct-mcp` is a stdio MCP server over the same API — 49 tools across content, media, catalog, orders, payments, users, comments, import/export, and AI theme generation — so any MCP-native agent can operate the site. The same tool surface is available over the network as MCP Streamable HTTP at `POST /mcp` when `[mcp] enabled = true` is set in `config.toml`. Install the stdio binary with Go:
+`lesstruct-mcp` is a stdio MCP server over the same API — 54 tools across content, media, catalog, orders, payments, users, comments, import/export, and AI theme and plugin generation — so any MCP-native agent can operate the site. The same tool surface is available over the network as MCP Streamable HTTP at `POST /mcp` when `[mcp] enabled = true` is set in `config.toml`. Install the stdio binary with Go:
 
 ```bash
 go install github.com/aristorinjuang/lesstruct/cmd/lesstruct-mcp@latest
 ```
 
 - MCP setup and tool catalog: [`docs/mcp.md`](docs/mcp.md)
-- Build from source: `make build-mcp` → `bin/lesstruct-mcp`
+- Build from source: `make install-mcp` (on PATH) or `make build-mcp` → `bin/lesstruct-mcp`
 
 ## Support this project
 

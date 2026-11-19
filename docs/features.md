@@ -372,7 +372,6 @@ boundary, with webhook dedup resolving through a blind-index column.
   image" mode generates an exact 1200x630 social preview (center-cropped) and,
   from the editor, inserts it at the top of the content — og:image is always
   the content's first image.
-- **AI theme generator.** Describe a theme in plain language; the generator returns a validated theme — stylesheet-only by default (`static/base.css` + `static/style.css`), or with page templates when you tick **Generate page templates** — grounded on the active edition's sources. Every result is validated before install and before activation (CSS parse, plus template parse and smoke renders when templates are present, plus a generated-content scan for scripts, handlers, `javascript:` URLs, and `root/` files); failures are repaired up to twice and then refused with the reason reported. Download as `.zip` for manual `THEME_DIR` install, install and activate in place — activation applies immediately — preview any installed theme on the real content site first via a 15-minute signed preview, or glance at every installed theme's rendered snapshot right on the Themes grid. The same surface is available to agents and scripts via `lesstruct-cli theme` (admin API key) and MCP theme tools. See [configuration.md](configuration.md) and [theme-development.md](theme-development.md).
 
 ## Internationalization {#internationalization}
 
@@ -416,6 +415,8 @@ boundary, with webhook dedup resolving through a blind-index column.
   picked from the library) to guide the result. Open Graph mode produces an
   exact 1200x630 preview, auto-inserted at the top of the content it was
   generated from.
+- **AI theme generator.** Describe a theme in plain language; the generator returns a validated theme — stylesheet-only by default (`static/base.css` + `static/style.css`), or with page templates when you tick **Generate page templates** — grounded on the active edition's sources. Every result is validated before install and before activation (CSS parse, plus template parse and smoke renders when templates are present, plus a generated-content scan for scripts, handlers, `javascript:` URLs, and `root/` files); failures are repaired up to twice and then refused with the reason reported. Download as `.zip` for manual `THEME_DIR` install, install and activate in place — activation applies immediately — preview any installed theme on the real content site first via a 15-minute signed preview, or glance at every installed theme's rendered snapshot right on the Themes grid. The same surface is available to agents and scripts via `lesstruct-cli theme` (admin API key) and MCP theme tools. See [configuration.md](configuration.md) and [theme-development.md](theme-development.md).
+- **AI plugin generator.** Describe a plugin in plain language; the generator returns a validated WASM plugin project (`main.go` + `go.mod` + a `project.json` manifest) implementing the hooks you select, grounded on the distilled SDK contract. Every result is validated before install (file contract, dependency-free Go parse, hook-export and host-function policy with grant coverage, plus a generated-content scan); failures are repaired up to twice and then refused with the reason reported. Download as `.zip`, compile with TinyGo, and drop the `.wasm` into `plugins/` — or build on the server with **Build & install** when builds are enabled. The same surface is available to agents and scripts via `lesstruct-cli plugin` (admin API key) and MCP plugin tools. See [configuration.md](configuration.md) and [plugin-development.md](plugin-development.md).
 - **Recommended Meta models.** AI features accept any OpenAI-compatible
   endpoint, but these are the Meta models Lesstruct recommends (configure the
   keys in [configuration](configuration.md)): **Muse Wonder** powers the
@@ -557,9 +558,9 @@ boundary, with webhook dedup resolving through a blind-index column.
   (dual-realm commerce endpoints plus the agent user admin), so agents can run the operator loop —
   upsert catalog data, list and transition orders, set shipping, decide payment proofs,
   triage registrations, suspend accounts, and edit invoice settings — without a browser session.
-- **[`lesstruct-mcp`](mcp.md).** An MCP server over the same API — 49 tools
+- **[`lesstruct-mcp`](mcp.md).** An MCP server over the same API — 54 tools
   across content, media, catalog, orders, payments, users, invoice settings,
-  comments, import/export/SSG, theme generation, plus a `lesstruct_api` escape hatch — so any
+  comments, import/export/SSG, theme and plugin generation, plus a `lesstruct_api` escape hatch — so any
   MCP-native agent (Claude Code, OpenCode, Cursor) can operate the site and the
   store with the same Admin API key, no browser session needed. Ships as a
   stdio binary and, with `[mcp] enabled = true`, as a Streamable HTTP endpoint

@@ -121,6 +121,18 @@ const router = createRouter({
           meta: { title: 'Themes' },
         },
         {
+          path: 'plugin-generator',
+          name: 'plugin-generator',
+          component: () => import('../views/PluginGeneratorView.vue'),
+          meta: { title: 'Plugin Generator' },
+        },
+        {
+          path: 'plugins',
+          name: 'plugins',
+          component: () => import('../views/PluginsView.vue'),
+          meta: { title: 'Plugins' },
+        },
+        {
           path: 'settings/invoice',
           name: 'settings-invoice',
           component: () => import('../views/InvoiceSettingsView.vue'),
@@ -197,7 +209,7 @@ async function checkFirstLoginStatus(): Promise<boolean | null> {
 
   try {
     const response = await request.get<{ data: { firstLoginComplete: boolean } }>(
-      '/api/auth/first-login'
+      '/api/auth/first-login',
     )
     const complete = response.data.data.firstLoginComplete
     sessionStorage.setItem('first_login_complete', String(complete))

@@ -39,6 +39,7 @@ compiles against, see [The Kernel](kernel.md).
 | `theme-storefront` | — | The eCommerce storefront theme (layouts, styles, cart/checkout/tracking pages) | — |
 | `textgen` | — | AI text enhance/translate and HTML generation | — |
 | `themegen` | — | AI theme generation: stylesheet-only themes with opt-in template overrides, validated install/activate | Themes |
+| `plugingen` | — | AI plugin generation: validated WASM plugin projects from a natural-language brief, downloadable as `.zip` | Plugins |
 | `speech` | — | Voice dictation: speech-to-text transcription enhanced into content | — |
 | `importers` | — | WordPress (WXR) and Hugo importers | Import |
 | `catalog` | — | Commerce catalog (pricing, variants, stock, SKUs) | Catalog panel |
@@ -166,6 +167,10 @@ parse always, plus template parse and smoke renders when templates are present
 Downloadable as `.zip` or activatable in place (`[theme]` active, hot-applied).
 Bring-your-own key via the AI theme settings (`AI_THEMGEN_*`, falling back to
 `AI_TEXT_GENERATION_*`). Leaf.
+
+### plugingen
+
+AI plugin generation: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief. Every result is validated before install — file contract, Go parse (dependency-free `go.mod`), hook-export and host-function policy with grant coverage, plus a generated-content scan — with a bounded two-attempt repair loop feeding findings back to the model. Downloadable as `.zip`; install by compiling with TinyGo and dropping the `.wasm` into `plugins/`, or build on the server (explicit opt-in plus TinyGo: the builder compiles, load-checks in wazero, and installs the `.wasm` with the synthesized manifest, hot-reloaded in `DEV_MODE`). Bring-your-own key via the AI plugin settings (`AI_PLUGGEN_*`, falling back to `AI_TEXT_GENERATION_*`). Leaf.
 
 ### speech
 

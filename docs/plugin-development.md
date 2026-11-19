@@ -16,7 +16,7 @@ Lesstruct supports WebAssembly (WASM) plugins that extend functionality through 
 ## How Plugins Work
 
 1. Compile your plugin to a `.wasm` file targeting the WASI runtime.
-2. Place the `.wasm` file (and an optional `.manifest` file) in the `plugins/` directory.
+2. Place the `.wasm` file (plus its `.manifest` sidecar when it imports host functions) in the `plugins/` directory.
 3. Lesstruct discovers and loads the plugin at startup.
 4. The plugin system calls exported hook functions at the appropriate lifecycle points.
 
@@ -41,7 +41,10 @@ http = ["https://api.example.com/*"]
 database = ["read:content"]
 ```
 
-If no `.manifest` file exists, the plugin runs with **zero** host functions — hooks only.
+If no `.manifest` file exists, the loader provides no host functions at
+all: a plugin that imports none loads hooks-only, but a plugin that
+imports `lesstruct.*` without its sidecar fails to load with
+`plugin load failed` naming the missing file. Copy both files together.
 
 ### Available Host Functions
 
@@ -214,10 +217,36 @@ func hookBeforeSave(offset uint32, length uint32) uint32 {
 
 ### What the Host Reads Back from the Result
 
-The host only reads back the `customFields` key from the hook's result. The
-plugin may write other keys (`title`, `tags`, etc.) into its result JSON, but
-the host ignores them. To mutate the content item, the plugin must write
-`customFields` and return a JSON object containing it.
+The host reads back the `title` and `customFields` keys from the hook's
+result. Other keys (`content`, `tags`, `status`, `postType`, `userId`,
+`contentId`, etc.) are ignored, so a plugin that needs to influence the
+saved item must write `title` and/or `customFields` and return a JSON
+object containing them. A missing `title` key leaves the request title
+unchanged; a present `title` replaces it and is re-validated exactly like
+a user-submitted title (required, at most 200 runes, no HTML) — an
+invalid hook-set title aborts the save with an error. The create slug is
+derived from the request title before the hook runs, so a hook-modified
+title does not regenerate an auto-generated slug.
+
+### Title Transformation Example
+
+```go
+//export hook_before_save
+func hookBeforeSave(offset uint32, length uint32) uint32 {
+    input := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(offset))), length)
+
+    var data map[string]any
+    json.Unmarshal(input, &data)
+
+    if title, ok := data["title"].(string); ok {
+        data["title"] = strings.ToUpper(title)
+    }
+
+    modified, _ := json.Marshal(data)
+    copy(resultBuf[:], modified)
+    return uint32(uintptr(unsafe.Pointer(&resultBuf[0])))
+}
+```
 
 ### Important Notes
 

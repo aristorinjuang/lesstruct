@@ -23,9 +23,11 @@ item is a hard pass / fail.
       deletion has nothing to write back), so only error/abort
       semantics apply. Verify the plugin does not expect result
       mutations to persist on this hook.
-- [ ] Each hook's result is a JSON object containing (at most)
-      `customFields` for mutation. The host reads only `customFields`
-      back; other fields in the result are ignored.
+- [ ] Each `before_save` hook's result is a JSON object containing (at most)
+      `title` and `customFields` for mutation. The host reads only those
+      two keys back; other fields in the result are ignored. A present
+      `title` is re-validated like a user-submitted title, so an empty,
+      overlong, or HTML title aborts the save.
 - [ ] `__hook_result_len` is exported only if the result length differs
       from the input length. The export is optional; the host uses
       `inputLen` as the result length when the export is missing.
@@ -82,7 +84,7 @@ item is a hard pass / fail.
 
 - [ ] Run the smoke test from
       [`SKILL.md` Step 8](../../SKILL.md#step-8-verify-manual) and
-      confirm the relevant hook fires and any `customFields`
+      confirm the relevant hook fires and any `title` / `customFields`
       modification is reflected in the saved item.
 - [ ] For host function calls, check the Lesstruct log for
       "blocked" messages. If the call was permitted, no log line is

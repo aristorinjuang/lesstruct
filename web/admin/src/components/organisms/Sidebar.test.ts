@@ -73,18 +73,18 @@ describe('Sidebar', () => {
       expect(wrapper.find('.sidebar__nav').exists()).toBe(true)
     })
 
-    it('should render all 10 navigation items', () => {
+    it('should render all 12 navigation items', () => {
       const wrapper = createWrapper()
 
       const links = wrapper.findAll('.sidebar__link')
-      expect(links).toHaveLength(10)
+      expect(links).toHaveLength(12)
     })
 
     it('should render navigation item labels when sidebar is not collapsed', () => {
       const wrapper = createWrapper()
 
       const labels = wrapper.findAll('.sidebar__label')
-      expect(labels).toHaveLength(10)
+      expect(labels).toHaveLength(12)
       expect(labels[0]?.text()).toBe('Dashboard')
       expect(labels[1]?.text()).toBe('Comments')
       expect(labels[2]?.text()).toBe('Posts')
@@ -93,8 +93,10 @@ describe('Sidebar', () => {
       expect(labels[5]?.text()).toBe('Users')
       expect(labels[6]?.text()).toBe('Theme Generator')
       expect(labels[7]?.text()).toBe('Themes')
-      expect(labels[8]?.text()).toBe('Import')
-      expect(labels[9]?.text()).toBe('Export')
+      expect(labels[8]?.text()).toBe('Plugin Generator')
+      expect(labels[9]?.text()).toBe('Plugins')
+      expect(labels[10]?.text()).toBe('Import')
+      expect(labels[11]?.text()).toBe('Export')
     })
 
     it('should hide labels when sidebar is collapsed', async () => {
@@ -122,9 +124,9 @@ describe('Sidebar', () => {
       const wrapper = createWrapper()
       await wrapper.vm.$nextTick()
 
-      const activeLink = wrapper.findAll('.sidebar__link').find((link) =>
-        link.classes().includes('sidebar__link--active')
-      )
+      const activeLink = wrapper
+        .findAll('.sidebar__link')
+        .find((link) => link.classes().includes('sidebar__link--active'))
 
       expect(activeLink?.exists()).toBe(true)
     })
@@ -269,9 +271,9 @@ describe('Sidebar', () => {
       const wrapper = createWrapper()
       await wrapper.vm.$nextTick()
 
-      const activeLink = wrapper.findAll('.router-link-stub').find((link) =>
-        link.classes().includes('sidebar__link--active')
-      )
+      const activeLink = wrapper
+        .findAll('.router-link-stub')
+        .find((link) => link.classes().includes('sidebar__link--active'))
 
       // The router-link stub should pass through aria-current attribute
       // Check if it has the attribute set
@@ -291,7 +293,7 @@ describe('Sidebar', () => {
       const wrapper = createWrapper()
 
       const icons = wrapper.findAll('.sidebar__icon')
-      expect(icons).toHaveLength(10)
+      expect(icons).toHaveLength(12)
     })
   })
 

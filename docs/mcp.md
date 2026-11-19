@@ -183,7 +183,7 @@ These are host-side constraints, not Lesstruct settings.
 
 ## Tool catalog
 
-49 tools, grouped by resource. Successful results are the server's
+54 tools, grouped by resource. Successful results are the server's
 `{data, meta}` envelope as JSON (follow `meta.pagination.nextCursor` while
 `meta.pagination.hasMore` is true); failures are MCP tool errors carrying the
 `CODE: message` line (e.g. `FORBIDDEN: …`, `NOT_FOUND: …`) so the agent can
@@ -201,6 +201,7 @@ react to them.
 | comment | `comment_create`, `comment_list`, `comment_delete`, `comment_moderate` (admin only: `approved`/`rejected`/`spam`) |
 | transfer | `import_wordpress`, `import_status`, `import_hugo`, `hugo_import_status`, `export_content`, `ssg_generate` |
 | theme | `theme_generate` (minutes-long — returns name, rationale, validation, and file paths, not contents), `theme_list`, `theme_activate`, `theme_deactivate`, `theme_delete` (requires `confirm: true`) — all admin only |
+| plugin | `plugin_generate` (minutes-long — returns name, rationale, validation, and file paths, not contents), `plugin_build` (minutes-long, needs a build-enabled server), `plugin_projects`, `plugin_status`, `plugin_delete` (requires `confirm: true`) — all admin only |
 | escape hatch | `lesstruct_api` — any `GET`/`POST`/`PUT`/`PATCH`/`DELETE` on a `/api/v1/` path with query/body |
 
 Conventions:
@@ -227,6 +228,14 @@ Conventions:
   `lesstruct_api` escape hatch or `lesstruct-cli theme download`.
   Activation states report `requiresRestart` when the edition cannot
   hot-apply.
+- **Plugins generate curated, not raw.** `plugin_generate` returns
+  `{name, language, rationale, validation, fileNames, hooks, capabilities}` —
+  the file bodies would blow past host truncation limits, so full contents
+  travel via `lesstruct-cli plugin download` (a zip archive), which the MCP
+  surface omits as binary. The result installs as a source project under
+  `plugins/src` — compile with TinyGo and drop the `.wasm` into `plugins/`,
+  or run `plugin_build` on a build-enabled server (restart unless `DEV_MODE`
+  hot-reloads the plugin).
 
 ## Troubleshooting
 

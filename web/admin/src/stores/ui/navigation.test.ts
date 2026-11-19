@@ -140,16 +140,38 @@ describe('NavigationStore', () => {
     it('should have all required navigation items', () => {
       const store = useNavigationStore()
 
-      expect(store.navigationItems).toHaveLength(10)
+      expect(store.navigationItems).toHaveLength(12)
       expect(store.navigationItems).toEqual([
         { path: '/dashboard', label: 'Dashboard', icon: 'chart-bars', permission: 'admin' },
         { path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' },
-        { path: '/content?type=post', label: 'Posts', icon: 'document-text', permission: 'content_creator' },
-        { path: '/content?type=page', label: 'Pages', icon: 'document', permission: 'content_creator' },
+        {
+          path: '/content?type=post',
+          label: 'Posts',
+          icon: 'document-text',
+          permission: 'content_creator',
+        },
+        {
+          path: '/content?type=page',
+          label: 'Pages',
+          icon: 'document',
+          permission: 'content_creator',
+        },
         { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
         { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
-        { path: '/theme-generator', label: 'Theme Generator', icon: 'photo', permission: 'admin' },
-        { path: '/themes', label: 'Themes', icon: 'photo', permission: 'admin' },
+        {
+          path: '/theme-generator',
+          label: 'Theme Generator',
+          icon: 'sparkles',
+          permission: 'admin',
+        },
+        { path: '/themes', label: 'Themes', icon: 'swatch', permission: 'admin' },
+        {
+          path: '/plugin-generator',
+          label: 'Plugin Generator',
+          icon: 'sparkles',
+          permission: 'admin',
+        },
+        { path: '/plugins', label: 'Plugins', icon: 'puzzle-piece', permission: 'admin' },
         { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
         { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
       ])
@@ -167,11 +189,28 @@ describe('NavigationStore', () => {
       expect(store.navigationItems).toEqual([
         { path: '/dashboard', label: 'Dashboard', icon: 'chart-bars', permission: 'admin' },
         { path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' },
-        { path: '/content?type=page', label: 'Pages', icon: 'document', permission: 'content_creator' },
+        {
+          path: '/content?type=page',
+          label: 'Pages',
+          icon: 'document',
+          permission: 'content_creator',
+        },
         { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
         { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
-        { path: '/theme-generator', label: 'Theme Generator', icon: 'photo', permission: 'admin' },
-        { path: '/themes', label: 'Themes', icon: 'photo', permission: 'admin' },
+        {
+          path: '/theme-generator',
+          label: 'Theme Generator',
+          icon: 'sparkles',
+          permission: 'admin',
+        },
+        { path: '/themes', label: 'Themes', icon: 'swatch', permission: 'admin' },
+        {
+          path: '/plugin-generator',
+          label: 'Plugin Generator',
+          icon: 'sparkles',
+          permission: 'admin',
+        },
+        { path: '/plugins', label: 'Plugins', icon: 'puzzle-piece', permission: 'admin' },
         { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
         { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
       ])
@@ -186,7 +225,7 @@ describe('NavigationStore', () => {
       ]
       const store = useNavigationStore()
 
-      const paths = store.navigationItems.map(item => item.path)
+      const paths = store.navigationItems.map((item) => item.path)
       expect(paths).toContain('/content?type=visible')
       expect(paths).not.toContain('/content?type=secret')
       expect(paths).toContain('/content?type=post')
@@ -210,7 +249,7 @@ describe('NavigationStore', () => {
       ]
       const store = useNavigationStore()
 
-      const paths = store.navigationItems.map(item => item.path)
+      const paths = store.navigationItems.map((item) => item.path)
       expect(paths).toContain('/content?type=article')
       expect(paths).not.toContain('/content?type=post')
       expect(paths).not.toContain('/content?type=page')
@@ -232,12 +271,10 @@ describe('NavigationStore', () => {
         isAdmin: false,
       }
       roleStoreState.capabilitiesLoaded = true
-      postTypesRef.value = [
-        { name: 'Post', slug: 'post', supports: ['title', 'content'] },
-      ]
+      postTypesRef.value = [{ name: 'Post', slug: 'post', supports: ['title', 'content'] }]
       const store = useNavigationStore()
 
-      const paths = store.navigationItems.map(item => item.path)
+      const paths = store.navigationItems.map((item) => item.path)
       expect(paths).toContain('/media')
       expect(paths).not.toContain('/content?type=post')
       expect(paths).not.toContain('/dashboard')
@@ -245,11 +282,11 @@ describe('NavigationStore', () => {
 
     it('should show the orders entry only on commerce installs', () => {
       const store = useNavigationStore()
-      expect(store.navigationItems.map(item => item.path)).not.toContain('/orders')
-      expect(store.navigationItems.map(item => item.path)).not.toContain('/settings/invoice')
+      expect(store.navigationItems.map((item) => item.path)).not.toContain('/orders')
+      expect(store.navigationItems.map((item) => item.path)).not.toContain('/settings/invoice')
 
       ordersRef.value = { currency: 'IDR' }
-      const paths = store.navigationItems.map(item => item.path)
+      const paths = store.navigationItems.map((item) => item.path)
       expect(paths).toContain('/orders')
       expect(store.navigationItems).toContainEqual({
         path: '/orders',
@@ -268,10 +305,10 @@ describe('NavigationStore', () => {
 
     it('should show the payments entry only on commerce installs', () => {
       const store = useNavigationStore()
-      expect(store.navigationItems.map(item => item.path)).not.toContain('/payments')
+      expect(store.navigationItems.map((item) => item.path)).not.toContain('/payments')
 
       paymentsRef.value = { methods: ['manual'], gateway: false }
-      const paths = store.navigationItems.map(item => item.path)
+      const paths = store.navigationItems.map((item) => item.path)
       expect(paths).toContain('/payments')
       expect(store.navigationItems).toContainEqual({
         path: '/payments',
@@ -335,7 +372,7 @@ describe('NavigationStore', () => {
       store.toggleSidebar()
 
       // Wait for watch to trigger
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       expect(setItemSpy).toHaveBeenCalledWith('sidebarCollapsed', 'true')
     })
@@ -366,7 +403,7 @@ describe('NavigationStore', () => {
       store.setSidebarCollapsed(true)
 
       // Wait for watch to trigger
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
 
       expect(setItemSpy).toHaveBeenCalledWith('sidebarCollapsed', 'true')
     })

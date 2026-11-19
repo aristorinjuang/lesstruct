@@ -41,6 +41,14 @@ type hookData struct {
 	CustomFields map[string]any `json:"customFields,omitempty"`
 }
 
+// hookResult is the parse view of a before_save hook's returned JSON. Title
+// is a pointer so an absent key (no change) is distinguishable from an
+// explicit empty string (invalid, rejected by ValidateTitle).
+type hookResult struct {
+	Title        *string        `json:"title"`
+	CustomFields map[string]any `json:"customFields,omitempty"`
+}
+
 func validateFieldValue(
 	field customfield.FieldSchema,
 	value any,
@@ -379,24 +387,38 @@ func (s *Service) buildHookDataForUpdate(existing *contentdomain.Content, req Up
 	return b
 }
 
-func (s *Service) applyHookResult(req *contentdomain.CreateContentRequest, result []byte) {
-	var parsed hookData
+func (s *Service) applyHookResult(req *contentdomain.CreateContentRequest, result []byte) error {
+	var parsed hookResult
 	if err := json.Unmarshal(result, &parsed); err != nil {
-		return
+		return nil
 	}
 	if parsed.CustomFields != nil {
 		req.CustomFields = parsed.CustomFields
 	}
+	if parsed.Title != nil {
+		req.Title = *parsed.Title
+		if err := contentdomain.ValidateTitle(req.Title); err != nil {
+			return fmt.Errorf("before_save hook returned invalid title: %w", err)
+		}
+	}
+	return nil
 }
 
-func (s *Service) applyHookResultForUpdate(req *UpdateContentRequest, result []byte) {
-	var parsed hookData
+func (s *Service) applyHookResultForUpdate(req *UpdateContentRequest, result []byte) error {
+	var parsed hookResult
 	if err := json.Unmarshal(result, &parsed); err != nil {
-		return
+		return nil
 	}
 	if parsed.CustomFields != nil {
 		req.CustomFields = parsed.CustomFields
 	}
+	if parsed.Title != nil {
+		req.Title = *parsed.Title
+		if err := contentdomain.ValidateTitle(req.Title); err != nil {
+			return fmt.Errorf("before_save hook returned invalid title: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) diffSystemFieldValues(
@@ -914,7 +936,9 @@ func (s *Service) Create(ctx context.Context, principal kernel.Principal, req co
 		return nil, fmt.Errorf("before_save hook failed: %w", hookErr)
 	}
 	if hookResult != nil {
-		s.applyHookResult(&req, hookResult)
+		if err := s.applyHookResult(&req, hookResult); err != nil {
+			return nil, err
+		}
 	}
 
 	// Detect which system fields the plugin added/modified
@@ -1474,7 +1498,9 @@ func (s *Service) Update(ctx context.Context, id int, principal kernel.Principal
 		return nil, fmt.Errorf("before_save hook failed: %w", hookErr)
 	}
 	if hookResult != nil {
-		s.applyHookResultForUpdate(&req, hookResult)
+		if err := s.applyHookResultForUpdate(&req, hookResult); err != nil {
+			return nil, err
+		}
 	}
 
 	// Detect which system fields the plugin added/modified.

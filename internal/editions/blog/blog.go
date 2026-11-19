@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -31,6 +32,10 @@ import (
 	hugo "github.com/aristorinjuang/lesstruct/modules/importers/hugo"
 	wordpress "github.com/aristorinjuang/lesstruct/modules/importers/wordpress"
 	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
+	plugingenmodule "github.com/aristorinjuang/lesstruct/modules/plugingen"
+	plugingendomain "github.com/aristorinjuang/lesstruct/modules/plugingen/domain"
+	plugingeninfra "github.com/aristorinjuang/lesstruct/modules/plugingen/infrastructure"
+	plugingenstore "github.com/aristorinjuang/lesstruct/modules/plugingen/store"
 	"github.com/aristorinjuang/lesstruct/modules/seo"
 	sitessr "github.com/aristorinjuang/lesstruct/modules/site-ssr"
 	speechmodule "github.com/aristorinjuang/lesstruct/modules/speech"
@@ -114,6 +119,7 @@ type state struct {
 	seoModule       *seo.Module
 	textgenModule   *textgenmodule.Module
 	themegenModule  *themenmodule.Module
+	plugingenModule *plugingenmodule.Module
 	speechModule    *speechmodule.Module
 	importersModule *importers.Module
 
@@ -330,6 +336,47 @@ func (s *state) wire(core *app.Core) error {
 	)
 	core.Candidates = append(core.Candidates, s.themegenModule)
 	hs.ThemGen = s.themegenModule.Handler()
+
+	// Initialize AI plugin generation service. The prompt grounds on the
+	// distilled SDK contract plus the hook payload example; without sources
+	// it generates from the distilled contract alone. v1 ships generate →
+	// validate → repair → store as source projects under plugins/src.
+	var plugenService *plugingendomain.Service
+	var plugenBuilder plugingendomain.Builder
+	if cfg.IsPluginGenerationEnabled() {
+		generation := plugingeninfra.NewOpenAIPluginService(
+			cmp.Or(cfg.AIPlugGenAPIKey, cfg.AITextGenerationAPIKey),
+			cfg.EffectivePlugGenBaseURL(),
+			cfg.EffectivePlugGenModel(),
+		)
+		projectStore := plugingenstore.NewStore("plugins/src", "plugins")
+		sources := plugingendomain.NewPluginSources("", "")
+		if cfg.PluginBuildEnabled {
+			if _, err := exec.LookPath(cfg.TinyGoPath); err != nil {
+				log.Printf("Warning: PLUGIN_BUILD_ENABLED is set but TinyGo was not found (%s): plugin builds answer 503 build_unavailable", cfg.TinyGoPath)
+			} else {
+				plugenBuilder = plugingeninfra.NewTinyGoBuilder(cfg.TinyGoPath, "plugins", cfg.PluginBuildTimeout, cfg.DevMode, nil)
+			}
+		}
+		plugenService = plugingendomain.NewServiceWithBuilder(
+			generation,
+			plugingendomain.NewValidator(),
+			projectStore,
+			plugenBuilder,
+			func(context.Context) plugingendomain.PluginSources {
+				return sources
+			},
+		)
+	}
+	core.PluginBuildReady = plugenBuilder != nil
+	s.plugingenModule = plugingenmodule.New(
+		plugingenmodule.WithService(plugenService),
+		plugingenmodule.WithStatusReader(NewPluginStatusReader(core.PluginSystem)),
+		plugingenmodule.WithBuildTimeout(cfg.PluginBuildTimeout),
+		plugingenmodule.WithLogger(modules.NewLogger(core.Logger)),
+	)
+	core.Candidates = append(core.Candidates, s.plugingenModule)
+	hs.PlugGen = s.plugingenModule.Handler()
 
 	// Initialize speech-to-text service (voice dictation). The Meta adapter
 	// is the default; the OpenAI-compatible adapter serves Whisper, Groq,
