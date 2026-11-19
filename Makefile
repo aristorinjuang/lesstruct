@@ -215,7 +215,7 @@ release:
 	@echo "requires now pin $(VERSION); lint/test/vulncheck already ran inside release."
 	@echo "next: review (git diff), then:"
 	@echo "  git commit -m 'build: release $(VERSION)'"
-	@echo "  git tag $(VERSION) $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
+	@echo "  for t in $(VERSION) $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' '); do git tag $$t; done"
 	@echo "  git push --atomic origin main $$(for m in $(SUBMODULES); do echo $$m/$(VERSION); done | tr '\n' ' ')"
 	@echo "  git push origin $(VERSION)   # alone — last: fires the Release workflow"
 	@echo "(push the version tag separately: more than three tags in one push"
