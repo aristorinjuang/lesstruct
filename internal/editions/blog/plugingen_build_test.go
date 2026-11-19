@@ -2,6 +2,7 @@ package blog
 
 import (
 	"context"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,6 +25,9 @@ import (
 // TinyGo is installed (CI stays hermetic) and when the installed TinyGo
 // predates the system Go release.
 func TestPlugingenBuildAndLoad(t *testing.T) {
+	if _, err := exec.LookPath("tinygo"); err != nil {
+		t.Skip("tinygo not installed")
+	}
 	project := plugingendomain.NewProject(
 		"tinygo-loader-e2e",
 		"go",
@@ -31,7 +35,7 @@ func TestPlugingenBuildAndLoad(t *testing.T) {
 		[]string{"log_info"},
 		map[string]string{
 			"main.go": "package main\n\nimport \"unsafe\"\n\nvar resultBuf [4096]byte\n\n//export hook_before_save\nfunc hookBeforeSave(offset uint32, length uint32) uint32 {\n\tinput := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(offset))), length)\n\tn := copy(resultBuf[:], input)\n\t_ = n\n\treturn uint32(uintptr(unsafe.Pointer(&resultBuf[0])))\n}\n\n//export __hook_result_len\nfunc hookResultLen(inputLen uint32) uint32 { return uint32(len(resultBuf)) }\n\nfunc main() {}\n",
-			"go.mod": "module tinygo-loader-e2e\n\ngo 1.23\n",
+			"go.mod":  "module tinygo-loader-e2e\n\ngo 1.23\n",
 		},
 		"",
 	)
