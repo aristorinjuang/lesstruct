@@ -183,7 +183,10 @@ Plugins are sandboxed WebAssembly modules with a WordPress-familiar hook model �
 
 Every first-party feature — users, auth, media, comments, SEO, and more — is an independent Go module compiled against the kernel, a small frozen contract module (`kernel/v1.0.0`). Third parties build on the same surface: write a module, drop it into `modules/<name>/`, register it in the composition root, and build your own binary — no runtime installation, no recompile of anyone else's code. (Prefer runtime extension without recompiling? That's exactly what WASM plugins are for.)
 
+Prefer describing over hand-editing? The AI Module Generator writes a validated Tier 1 Go project from a natural-language brief — in the admin panel, via `lesstruct-cli module`, or through MCP module tools — then **Apply to checkout** wires it into your custom edition and verifies the build.
+
 - Module development guide: [`docs/module-development.md`](docs/module-development.md)
+- Generating modules: [`docs/module-generation.md`](docs/module-generation.md)
 - The kernel: [`docs/kernel.md`](docs/kernel.md) · versioning policy: [`docs/kernel-versioning.md`](docs/kernel-versioning.md)
 - Built-in modules reference: [`docs/built-in-modules.md`](docs/built-in-modules.md)
 - AI-assisted workflow: [`skills/lesstruct-module-development/`](skills/lesstruct-module-development/)

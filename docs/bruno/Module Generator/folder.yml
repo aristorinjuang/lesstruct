@@ -1,0 +1,7 @@
+info:
+  name: Module Generator
+  type: folder
+  seq: 16
+
+request:
+  auth: inherit

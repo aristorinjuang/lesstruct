@@ -41,9 +41,10 @@ the site); with the `ADMIN_DEV_URL` dev server open `/` on the Go server
 instead.
 
 Every installed theme card also shows a snapshot of that theme's homepage,
-rendered with sample content — generated and manually dropped themes alike.
-An unknown or broken theme shows a placeholder instead of breaking the
-listing. Same same-origin note as preview.
+rendered with sample content at a fixed 1366×768 viewport, so the layout
+matches an HD-class laptop at any card width — generated and manually dropped
+themes alike. An unknown or broken theme shows a placeholder instead of
+breaking the listing. Same same-origin note as preview.
 
 The storefront theme is commerce-focused: content posts still render the
 comment section and load `comments.js` when comments are enabled, but the

@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -32,6 +33,10 @@ import (
 	hugo "github.com/aristorinjuang/lesstruct/modules/importers/hugo"
 	wordpress "github.com/aristorinjuang/lesstruct/modules/importers/wordpress"
 	mediadomain "github.com/aristorinjuang/lesstruct/modules/media/domain"
+	modgenmodule "github.com/aristorinjuang/lesstruct/modules/modgen"
+	modgendomain "github.com/aristorinjuang/lesstruct/modules/modgen/domain"
+	modgeninfra "github.com/aristorinjuang/lesstruct/modules/modgen/infrastructure"
+	modgenstore "github.com/aristorinjuang/lesstruct/modules/modgen/store"
 	plugingenmodule "github.com/aristorinjuang/lesstruct/modules/plugingen"
 	plugingendomain "github.com/aristorinjuang/lesstruct/modules/plugingen/domain"
 	plugingeninfra "github.com/aristorinjuang/lesstruct/modules/plugingen/infrastructure"
@@ -120,6 +125,7 @@ type state struct {
 	textgenModule   *textgenmodule.Module
 	themegenModule  *themenmodule.Module
 	plugingenModule *plugingenmodule.Module
+	modgenModule    *modgenmodule.Module
 	speechModule    *speechmodule.Module
 	importersModule *importers.Module
 
@@ -377,6 +383,53 @@ func (s *state) wire(core *app.Core) error {
 	)
 	core.Candidates = append(core.Candidates, s.plugingenModule)
 	hs.PlugGen = s.plugingenModule.Handler()
+
+	// Initialize AI module generation service. The prompt grounds on the
+	// distilled module contract plus the host kernel version for the go.mod
+	// pin; without sources it generates from the distilled contract alone.
+	// v1 ships generate → validate → repair → stage as inert source
+	// projects under modules-gen: Tier 1 modules link at compile time, so
+	// there is no runtime install — the download ships an INSTALL.md with
+	// the custom-edition wiring and rebuild steps.
+	var modgenService *modgendomain.Service
+	modKernelVersion := resolveKernelVersion()
+	if modKernelVersion == "" {
+		// Workspace and dev-checkout builds report no kernel version via
+		// build info; fall back to the checkout's own go.mod require so
+		// generated modules still pin the kernel the tree builds against.
+		if cwd, err := os.Getwd(); err == nil {
+			modKernelVersion = resolveKernelVersionFromGoMod(cwd)
+		}
+		if modKernelVersion == "" {
+			log.Printf("Warning: host kernel version is unknown: generated go.mod files will not pin a kernel version")
+		}
+	}
+	if cfg.IsModuleGenerationEnabled() {
+		generation := modgeninfra.NewOpenAIModuleService(
+			cmp.Or(cfg.AIModGenAPIKey, cfg.AITextGenerationAPIKey),
+			cfg.EffectiveModGenBaseURL(),
+			cfg.EffectiveModGenModel(),
+		)
+		projectStore := modgenstore.NewStore("modules-gen", modKernelVersion)
+		var modgenApplier modgendomain.Applier
+		if modApplier, ready := newModuleApplier(cfg, modKernelVersion); ready {
+			modgenApplier = modApplier
+			core.ModuleApplyReady = true
+		}
+		modgenService = modgendomain.NewServiceWithApplier(
+			generation,
+			modgendomain.NewValidatorWithKernelVersion(modKernelVersion),
+			projectStore,
+			modgenApplier,
+			newModuleSources(modKernelVersion),
+		)
+	}
+	s.modgenModule = modgenmodule.New(
+		modgenmodule.WithService(modgenService),
+		modgenmodule.WithLogger(modules.NewLogger(core.Logger)),
+	)
+	core.Candidates = append(core.Candidates, s.modgenModule)
+	hs.ModGen = s.modgenModule.Handler()
 
 	// Initialize speech-to-text service (voice dictation). The Meta adapter
 	// is the default; the OpenAI-compatible adapter serves Whisper, Groq,

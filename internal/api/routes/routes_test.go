@@ -121,7 +121,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 // behavior of the default helper (no content-site catch-all registered at all).
 func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd, nil, nil)
+	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd, nil, nil, nil, false)
 }
 
 // setupTestRouterWithThemGen is setupTestRouterWithOptions with the AI theme
@@ -129,7 +129,7 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 // exercised on the real router. A nil themGen keeps the surface unmounted.
 func setupTestRouterWithThemGen(t *testing.T, themGen routes.ThemGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen, nil)
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen, nil, nil, false)
 }
 
 // setupTestRouterWithPlugGen is setupTestRouterWithOptions with the AI plugin
@@ -138,12 +138,29 @@ func setupTestRouterWithThemGen(t *testing.T, themGen routes.ThemGenSurface) (*c
 // unmounted.
 func setupTestRouterWithPlugGen(t *testing.T, plugGen routes.PlugGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, plugGen)
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, plugGen, nil, false)
+}
+
+// setupTestRouterWithModGen is setupTestRouterWithOptions with the AI module
+// generator surface mounted, so generate (and other modgen) routes can be
+// exercised on the real router. A nil modGen keeps the surface unmounted.
+func setupTestRouterWithModGen(t *testing.T, modGen routes.ModGenSurface) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, nil, modGen, false)
+}
+
+// setupTestRouterWithModGenApply is setupTestRouterWithOptions with the AI
+// module generator surface mounted including the apply/unapply leaves, so
+// the agent-realm dispatch of the gated endpoints can be exercised on the
+// real router.
+func setupTestRouterWithModGenApply(t *testing.T, modGen routes.ModGenSurface) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, nil, modGen, true)
 }
 
 // setupTestRouterWithOptions is setupTestRouterWithFlags with the MCP endpoint
 // toggle exposed, so the /mcp mount can be exercised on the real router.
-func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler, themGen routes.ThemGenSurface, plugGen routes.PlugGenSurface) (*chi.Mux, bearerDeps) {
+func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler, themGen routes.ThemGenSurface, plugGen routes.PlugGenSurface, modGen routes.ModGenSurface, modGenApply bool) (*chi.Mux, bearerDeps) {
 	t.Helper()
 
 	// Create test auth handler
@@ -341,6 +358,9 @@ func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled b
 		plugGen != nil,
 		plugGen,
 		false,
+		modGen != nil,
+		modGen,
+		modGenApply,
 		false,
 		false,
 		nil,
@@ -508,6 +528,9 @@ func TestSetup(t *testing.T) {
 		nil,
 		false,
 		nil,
+		false,
+		nil,
+		false,
 		false,
 		nil,
 		false,
@@ -795,6 +818,200 @@ func TestPlugGenRoutesMounted(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+}
+
+// testModGenSurface records which modgen leaf the router dispatched to.
+// Handlers answer 200 so mount tests prove reachability on the real router.
+type testModGenSurface struct {
+	last string
+}
+
+func (s *testModGenSurface) Generate(w http.ResponseWriter, _ *http.Request) {
+	s.last = "generate"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testModGenSurface) Apply(w http.ResponseWriter, _ *http.Request) {
+	s.last = "apply"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testModGenSurface) Unapply(w http.ResponseWriter, _ *http.Request) {
+	s.last = "unapply"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testModGenSurface) List(w http.ResponseWriter, _ *http.Request) {
+	s.last = "list"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testModGenSurface) Download(w http.ResponseWriter, _ *http.Request) {
+	s.last = "download"
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *testModGenSurface) Delete(w http.ResponseWriter, _ *http.Request) {
+	s.last = "delete"
+	w.WriteHeader(http.StatusOK)
+}
+
+// TestModGenRoutesMounted proves the module generator surface is reachable
+// on the real router.
+func TestModGenRoutesMounted(t *testing.T) {
+	stub := &testModGenSurface{}
+	r, deps := setupTestRouterWithModGen(t, stub)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		withAuth   bool
+		wantStatus int
+		wantLast   string
+		wantErr    bool
+	}{
+		{
+			name:       "success - generate mounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/modgen/generate",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "generate",
+		},
+		{
+			name:       "success - list mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/modgen/projects",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "list",
+		},
+		{
+			name:       "success - download mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/modgen/projects/forum/download",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "download",
+		},
+		{
+			name:       "success - delete mounted",
+			method:     http.MethodDelete,
+			target:     "/api/v1/modgen/projects/forum",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "delete",
+		},
+		{
+			name:       "error - anonymous generate is unauthorized",
+			method:     http.MethodPost,
+			target:     "/api/v1/modgen/generate",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+}
+
+// TestModGenApplyMounted proves the apply and unapply leaves mount only
+// when the apply flag is set: enabled dispatches to the handlers, disabled
+// answers 404, and anonymous callers are unauthorized either way.
+func TestModGenApplyMounted(t *testing.T) {
+	tests := []struct {
+		name       string
+		target     string
+		apply      bool
+		withAuth   bool
+		wantStatus int
+		wantLast   string
+		wantErr    bool
+	}{
+		{
+			name:       "success - apply mounted when enabled",
+			target:     "/api/v1/modgen/projects/forum/apply",
+			apply:      true,
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "apply",
+		},
+		{
+			name:       "success - unapply mounted when enabled",
+			target:     "/api/v1/modgen/projects/forum/unapply",
+			apply:      true,
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "unapply",
+		},
+		{
+			name:       "error - apply unmounted when disabled",
+			target:     "/api/v1/modgen/projects/forum/apply",
+			apply:      false,
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - unapply unmounted when disabled",
+			target:     "/api/v1/modgen/projects/forum/unapply",
+			apply:      false,
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - anonymous apply is unauthorized",
+			target:     "/api/v1/modgen/projects/forum/apply",
+			apply:      true,
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stub := &testModGenSurface{}
+			r, deps := setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, nil, stub, tt.apply)
+			adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+			require.NoError(t, err)
+
+			req := httptest.NewRequest(http.MethodPost, tt.target, nil)
 			if tt.withAuth {
 				req.Header.Set("Authorization", "Bearer "+adminToken)
 			}
@@ -1147,6 +1364,162 @@ func TestAgentPlugGen_DispatchAndAdminOnly(t *testing.T) {
 	}
 }
 
+// TestAgentModGen_DispatchAndAdminOnly proves the six generation endpoints
+// serve the agent realm at the same paths as the browser: an admin API key
+// dispatches to the same leaves, a non-admin key is forbidden, and callers
+// without credentials never reach them. The browser realm is admin-gated
+// too: a non-admin JWT is forbidden on mutations.
+func TestAgentModGen_DispatchAndAdminOnly(t *testing.T) {
+	tests := []struct {
+		name         string
+		method       string
+		target       string
+		role         string
+		withKey      bool
+		sendKey      bool
+		jwtRole      string
+		wantCode     int
+		wantEnvelope string
+		wantLast     string
+	}{
+		{
+			name:     "generate - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/modgen/generate",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "generate",
+		},
+		{
+			name:     "apply - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/modgen/projects/forum/apply",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "apply",
+		},
+		{
+			name:     "unapply - admin key dispatches",
+			method:   http.MethodPost,
+			target:   "/api/v1/modgen/projects/forum/unapply",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "unapply",
+		},
+		{
+			name:     "list - admin key dispatches",
+			method:   http.MethodGet,
+			target:   "/api/v1/modgen/projects",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "list",
+		},
+		{
+			name:     "download - admin key dispatches",
+			method:   http.MethodGet,
+			target:   "/api/v1/modgen/projects/forum/download",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "download",
+		},
+		{
+			name:     "delete - admin key dispatches",
+			method:   http.MethodDelete,
+			target:   "/api/v1/modgen/projects/forum",
+			role:     "Admin",
+			withKey:  true,
+			sendKey:  true,
+			wantCode: http.StatusOK,
+			wantLast: "delete",
+		},
+		{
+			name:         "apply - non-admin key is forbidden",
+			method:       http.MethodPost,
+			target:       "/api/v1/modgen/projects/forum/apply",
+			role:         "Commentator",
+			withKey:      true,
+			sendKey:      true,
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "unapply - non-admin key is forbidden",
+			method:       http.MethodPost,
+			target:       "/api/v1/modgen/projects/forum/unapply",
+			role:         "Contributor",
+			withKey:      true,
+			sendKey:      true,
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "apply - unauthenticated is rejected",
+			method:       http.MethodPost,
+			target:       "/api/v1/modgen/projects/forum/apply",
+			wantCode:     http.StatusUnauthorized,
+			wantEnvelope: "MISSING_TOKEN",
+		},
+		{
+			name:         "apply - non-admin JWT is forbidden",
+			method:       http.MethodPost,
+			target:       "/api/v1/modgen/projects/forum/apply",
+			jwtRole:      "Commentator",
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+		{
+			name:         "list - non-admin JWT is forbidden",
+			method:       http.MethodGet,
+			target:       "/api/v1/modgen/projects",
+			jwtRole:      "Commentator",
+			wantCode:     http.StatusForbidden,
+			wantEnvelope: "INSUFFICIENT_PERMISSIONS",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stub := &testModGenSurface{}
+			r, deps := setupTestRouterWithModGenApply(t, stub)
+
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.sendKey {
+				req.Header.Set("Authorization", "Bearer "+testBearerToken)
+			}
+			if tt.jwtRole != "" {
+				jwt, err := deps.jwtManager.GenerateToken("1", "browser", tt.jwtRole, 0)
+				require.NoError(t, err)
+				req.Header.Set("Authorization", "Bearer "+jwt)
+			}
+			if tt.withKey {
+				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
+				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
+				deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+				deps.user.EXPECT().GetUserByID(mock.Anything, testBearerUserID).
+					Return(&user.User{ID: testBearerUserID, Username: "admin", Role: tt.role, Status: "verified"}, nil)
+			}
+
+			code, envelope := envelopeCode(t, r, req)
+
+			assert.Equal(t, tt.wantCode, code)
+			if tt.wantEnvelope != "" {
+				assert.Equal(t, tt.wantEnvelope, envelope)
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+}
+
 // stubSnapshotRenderer renders a fixed document behind the real themegen
 // handler so the framing test proves the snapshot endpoint overrides the
 // router's global DENY headers end to end.
@@ -1327,6 +1700,8 @@ func TestHealthRoute(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"themeGeneration":false`, "Health route body should contain themeGeneration")
 	assert.Contains(t, w.Body.String(), `"pluginGeneration":false`, "Health route body should contain pluginGeneration")
 	assert.Contains(t, w.Body.String(), `"pluginBuild":false`, "Health route body should contain pluginBuild")
+	assert.Contains(t, w.Body.String(), `"moduleGeneration":false`, "Health route body should contain moduleGeneration")
+	assert.Contains(t, w.Body.String(), `"moduleApply":false`, "Health route body should contain moduleApply")
 	assert.Contains(t, w.Body.String(), `"themeValidationFailed":false`, "Health route body should contain themeValidationFailed")
 }
 
@@ -2634,7 +3009,7 @@ func TestMCPSurface(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil, nil, nil)
+			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil, nil, nil, nil, false)
 			if tt.withKey {
 				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
 				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)

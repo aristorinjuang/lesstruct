@@ -6,6 +6,7 @@ interface Props {
   itemName: string
   isOpen: boolean
   isLoading?: boolean
+  warning?: string
 }
 
 interface Emits {
@@ -13,7 +14,10 @@ interface Emits {
   (e: 'cancel'): void
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  isLoading: false,
+  warning: '',
+})
 const emit = defineEmits<Emits>()
 
 function confirm() {
@@ -32,7 +36,7 @@ function cancel() {
       <div class="delete-confirm__dialog">
         <h3 class="delete-confirm__title">{{ title }}</h3>
         <p class="delete-confirm__warning">
-          Are you sure you want to delete "{{ itemName }}"? This action cannot be undone.
+          {{ props.warning || `Are you sure you want to delete "${itemName}"? This action cannot be undone.` }}
         </p>
         <div class="delete-confirm__actions">
           <Button variant="neutral" @click="cancel" :disabled="isLoading">Cancel</Button>

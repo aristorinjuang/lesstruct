@@ -31,13 +31,13 @@
 
 {{ define "main" }}
 <section class="landing-release">
-  <a href="#whats-new"><span class="landing-release-chip">v1.6</span> The CMS that builds its own plugins. Describe one — the AI writes, validates, and installs it.&nbsp;&rarr;</a>
+  <a href="#whats-new"><span class="landing-release-chip">v1.7</span> The CMS that extends itself. Themes, plugins, modules — describe one and the AI writes, validates, and ships it.&nbsp;&rarr;</a>
 </section>
 
 <section class="landing-hero">
   <div class="landing-hero-inner">
     <img class="landing-logo" src="/brand/lesstruct-320.webp" width="96" height="96" alt="Lesstruct logo">
-    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.6</a></p>
+    <p class="landing-eyebrow">Open-source CMS powered by Go <a class="landing-version-chip" href="/docs/editions/">v1.7</a></p>
     <h1>{{ .Title | default .Site.Title }}</h1>
     <p class="landing-tagline">{{ .Description | default .Site.Params.description }}</p>
     <div class="landing-cta">
@@ -51,27 +51,28 @@
 </section>
 
 <section class="landing-spotlight" id="whats-new">
-  <h2>What&rsquo;s new in v1.6</h2>
+  <h2>What&rsquo;s new in v1.7</h2>
   <p class="landing-section-lede">
-    A plugin used to be a compiler and a spec sheet. Now it&rsquo;s a
-    sentence. The generator writes every plugin from your brief, proves it
-    against the host contract, and installs it where it runs.
+    Extending Lesstruct used to mean a compiler, a spec sheet, or a design
+    system. Now it&rsquo;s a sentence: the CMS generates its own themes,
+    plugins, and modules — writing each artifact from your brief, proving it
+    against the host contract, and installing it where it runs.
   </p>
   <div class="landing-spotlight-grid">
-    <a class="spotlight-tile" href="/docs/plugin-generation/">
-      <span class="spotlight-kicker">Brief in, plugin out</span>
-      <h3>Describe the hook, ship the WASM</h3>
-      <p>Pick the hooks and host functions in plain language. The AI writes TinyGo source from your brief and refuses anything that fails the hook-export and capability gates.</p>
+    <a class="spotlight-tile" href="/docs/theme-generation/">
+      <span class="spotlight-kicker">Brief in, theme out</span>
+      <h3>A storefront from a sentence</h3>
+      <p>Describe the look and the generator writes templates and CSS against your edition&rsquo;s design tokens, validates the render, and installs the theme inactive so you can preview before activating it.</p>
     </a>
     <a class="spotlight-tile" href="/docs/plugin-generation/">
-      <span class="spotlight-kicker">One click to running</span>
-      <h3>Built and installed on the server</h3>
-      <p>Build &amp; install compiles the project with TinyGo, load-checks the binary, and drops the manifest plus <code>.wasm</code> into <code>plugins/</code> — hot-reloaded in dev, one restart in production.</p>
+      <span class="spotlight-kicker">Hooks and capabilities</span>
+      <h3>Plugins that build themselves</h3>
+      <p>Pick the hooks in plain language. The AI writes TinyGo source, refuses anything that fails the hook-export and capability gates, then compiles, load-checks, and installs the <code>.wasm</code> — hot-reloaded in dev.</p>
     </a>
-    <a class="spotlight-tile" href="/docs/plugin-capabilities/">
-      <span class="spotlight-kicker">Grants, not promises</span>
-      <h3>Capabilities with teeth</h3>
-      <p>Every host call rides a capability manifest — URL patterns, database permissions, logging. Checked at load and on every call, across the panel, CLI, and MCP tools.</p>
+    <a class="spotlight-tile" href="/docs/module-generation/">
+      <span class="spotlight-kicker">Describe it, apply it</span>
+      <h3>New Go code for the core</h3>
+      <p>Tier 1 modules arrive as validated Go source. Apply to checkout wires <code>go.work</code>, <code>SUBMODULES</code>, and the custom edition, then verifies with module tests and a full build of the custom binary.</p>
     </a>
   </div>
 </section>
@@ -138,6 +139,11 @@
       <span class="feature-glyph" aria-hidden="true">✨</span>
       <h3>AI Plugin Generator</h3>
       <p>Describe a plugin in plain language. The AI writes the TinyGo source and validates it against the hook contract — then build and install it on the server in one click.</p>
+    </a>
+    <a class="feature-card" href="/docs/module-generation/">
+      <span class="feature-glyph" aria-hidden="true">🧱</span>
+      <h3>AI Module Generator</h3>
+      <p>Describe a module in plain language. The AI writes a validated Tier 1 Go project — then apply it to the checkout, wire the custom edition, and rebuild.</p>
     </a>
     <a class="feature-card" href="/docs/features/#content-authoring">
       <span class="feature-glyph" aria-hidden="true">🛒</span>

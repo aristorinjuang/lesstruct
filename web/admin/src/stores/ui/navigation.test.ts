@@ -9,15 +9,21 @@ vi.mock('@/composables/useAuth', () => ({
   })),
 }))
 
-// Mock useConfig so tests can control the comments flag and the commerce
-// config extras without network calls.
+// Mock useConfig so tests can control the comments flag, the commerce config
+// extras, and the /api/health generator flags without network calls.
 const ordersRef = ref<{ currency: string } | null>(null)
 const paymentsRef = ref<{ methods: string[]; gateway: boolean } | null>(null)
+const themeGenerationRef = ref(true)
+const pluginGenerationRef = ref(true)
+const moduleGenerationRef = ref(true)
 vi.mock('@/composables/useConfig', () => ({
   useConfig: vi.fn(() => ({
     commentsEnabled: ref(true),
     orders: ordersRef,
     payments: paymentsRef,
+    themeGeneration: themeGenerationRef,
+    pluginGeneration: pluginGenerationRef,
+    moduleGeneration: moduleGenerationRef,
   })),
 }))
 
@@ -66,6 +72,9 @@ describe('NavigationStore', () => {
     roleStoreState.capabilitiesLoaded = false
     ordersRef.value = null
     paymentsRef.value = null
+    themeGenerationRef.value = true
+    pluginGenerationRef.value = true
+    moduleGenerationRef.value = true
     // Clear localStorage
     localStorage.clear()
   })
@@ -140,7 +149,7 @@ describe('NavigationStore', () => {
     it('should have all required navigation items', () => {
       const store = useNavigationStore()
 
-      expect(store.navigationItems).toHaveLength(12)
+      expect(store.navigationItems).toHaveLength(14)
       expect(store.navigationItems).toEqual([
         { path: '/dashboard', label: 'Dashboard', icon: 'chart-bars', permission: 'admin' },
         { path: '/comment', label: 'Comments', icon: 'chat-bubble', permission: 'commentator' },
@@ -172,6 +181,13 @@ describe('NavigationStore', () => {
           permission: 'admin',
         },
         { path: '/plugins', label: 'Plugins', icon: 'puzzle-piece', permission: 'admin' },
+        {
+          path: '/module-generator',
+          label: 'Module Generator',
+          icon: 'sparkles',
+          permission: 'admin',
+        },
+        { path: '/modules', label: 'Modules', icon: 'puzzle-piece', permission: 'admin' },
         { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
         { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
       ])
@@ -211,6 +227,13 @@ describe('NavigationStore', () => {
           permission: 'admin',
         },
         { path: '/plugins', label: 'Plugins', icon: 'puzzle-piece', permission: 'admin' },
+        {
+          path: '/module-generator',
+          label: 'Module Generator',
+          icon: 'sparkles',
+          permission: 'admin',
+        },
+        { path: '/modules', label: 'Modules', icon: 'puzzle-piece', permission: 'admin' },
         { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
         { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
       ])
@@ -316,6 +339,33 @@ describe('NavigationStore', () => {
         icon: 'document-text',
         permission: 'admin',
       })
+    })
+
+    it('should hide the theme generator entry when theme generation is disabled', () => {
+      themeGenerationRef.value = false
+      const store = useNavigationStore()
+
+      const paths = store.navigationItems.map((item) => item.path)
+      expect(paths).not.toContain('/theme-generator')
+      expect(paths).toContain('/themes')
+    })
+
+    it('should hide the plugin generator entry when plugin generation is disabled', () => {
+      pluginGenerationRef.value = false
+      const store = useNavigationStore()
+
+      const paths = store.navigationItems.map((item) => item.path)
+      expect(paths).not.toContain('/plugin-generator')
+      expect(paths).toContain('/plugins')
+    })
+
+    it('should hide the module generator entry when module generation is disabled', () => {
+      moduleGenerationRef.value = false
+      const store = useNavigationStore()
+
+      const paths = store.navigationItems.map((item) => item.path)
+      expect(paths).not.toContain('/module-generator')
+      expect(paths).toContain('/modules')
     })
   })
 

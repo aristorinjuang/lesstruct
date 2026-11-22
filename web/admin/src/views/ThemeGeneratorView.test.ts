@@ -191,7 +191,7 @@ describe('ThemeGeneratorView', () => {
     await findButton(wrapper, 'Generate').trigger('click')
     await flushPromises()
 
-    const frame = wrapper.find('.themegen-snapshot-frame iframe')
+    const frame = wrapper.find('.theme-snapshot iframe')
     expect(frame.exists()).toBe(true)
     expect(frame.attributes('src')).toBe('/api/v1/themegen/themes/midnight-serif/snapshot')
     expect(frame.attributes('sandbox')).toBe('allow-same-origin')

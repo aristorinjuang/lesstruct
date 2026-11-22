@@ -84,16 +84,47 @@ export const useNavigationStore = defineStore('navigation', () => {
     return items
   })
 
-  const postFooterNavigationItems: NavigationItem[] = [
-    { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
-    { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
-    { path: '/theme-generator', label: 'Theme Generator', icon: 'sparkles', permission: 'admin' },
-    { path: '/themes', label: 'Themes', icon: 'swatch', permission: 'admin' },
-    { path: '/plugin-generator', label: 'Plugin Generator', icon: 'sparkles', permission: 'admin' },
-    { path: '/plugins', label: 'Plugins', icon: 'puzzle-piece', permission: 'admin' },
-    { path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' },
-    { path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' },
-  ]
+  // Footer entries. Themes, Plugins, and Modules always stay: they manage the
+  // installed artifacts regardless of AI configuration. The generator entries follow
+  // the /api/health flags, so instances without an AI key never advertise a
+  // surface that would only open to a "not configured" notice.
+  const postFooterNavigationItems = computed<NavigationItem[]>(() => {
+    const { themeGeneration, pluginGeneration, moduleGeneration } = useConfig()
+    const items: NavigationItem[] = [
+      { path: '/media', label: 'Media', icon: 'photo', permission: 'media' },
+      { path: '/users', label: 'Users', icon: 'users', permission: 'admin' },
+    ]
+    if (themeGeneration.value) {
+      items.push({
+        path: '/theme-generator',
+        label: 'Theme Generator',
+        icon: 'sparkles',
+        permission: 'admin',
+      })
+    }
+    items.push({ path: '/themes', label: 'Themes', icon: 'swatch', permission: 'admin' })
+    if (pluginGeneration.value) {
+      items.push({
+        path: '/plugin-generator',
+        label: 'Plugin Generator',
+        icon: 'sparkles',
+        permission: 'admin',
+      })
+    }
+    items.push({ path: '/plugins', label: 'Plugins', icon: 'puzzle-piece', permission: 'admin' })
+    if (moduleGeneration.value) {
+      items.push({
+        path: '/module-generator',
+        label: 'Module Generator',
+        icon: 'sparkles',
+        permission: 'admin',
+      })
+    }
+    items.push({ path: '/modules', label: 'Modules', icon: 'puzzle-piece', permission: 'admin' })
+    items.push({ path: '/import', label: 'Import', icon: 'arrow-down-tray', permission: 'admin' })
+    items.push({ path: '/export', label: 'Export', icon: 'arrow-up-tray', permission: 'admin' })
+    return items
+  })
 
   // Dynamic post type navigation items (Posts, Pages, + custom types)
   const postTypeNavigationItems = computed<NavigationItem[]>(() => {
@@ -160,7 +191,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   const allNavigationItems = computed<NavigationItem[]>(() => [
     ...staticNavigationItems.value,
     ...postTypeNavigationItems.value,
-    ...postFooterNavigationItems,
+    ...postFooterNavigationItems.value,
   ])
 
   // Check if user has permission for a navigation item. When the config-driven

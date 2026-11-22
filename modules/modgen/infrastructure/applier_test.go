@@ -1,0 +1,1235 @@
+package infrastructure_test
+
+import (
+	"context"
+	"errors"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	modgendomain "github.com/aristorinjuang/lesstruct/modules/modgen/domain"
+	"github.com/aristorinjuang/lesstruct/modules/modgen/infrastructure"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const applierModuleGo = `package forum
+
+import (
+	"database/sql"
+
+	"github.com/aristorinjuang/lesstruct/kernel"
+	kerneldatabase "github.com/aristorinjuang/lesstruct/kernel/database"
+)
+
+const (
+	Name = "forum"
+
+	Version = "0.1.0"
+)
+
+var _ kernel.Module = (*Module)(nil)
+
+type Option func(*Module)
+
+type Module struct{}
+
+func WithLogger(logger kernel.Logger) Option {
+	return func(m *Module) {
+	}
+}
+
+func WithDB(_ *sql.DB, _ kerneldatabase.Dialect) Option {
+	return func(m *Module) {
+	}
+}
+
+func (m *Module) Name() string {
+	return Name
+}
+
+func (m *Module) Version() string {
+	return Version
+}
+
+func (m *Module) Requires() []string {
+	return nil
+}
+
+func (m *Module) Init(_ kernel.Kernel) error {
+	return nil
+}
+
+func (m *Module) Shutdown() error {
+	return nil
+}
+
+func New(opts ...Option) *Module {
+	m := &Module{}
+	return m
+}
+`
+
+const applierGoWork = `go 1.27
+
+use (
+	.
+	./kernel
+)
+`
+
+const applierMakefile = "SUBMODULES := kernel modules/users\n"
+
+func testCheckout(t *testing.T, goWork, makefile string) string {
+	t.Helper()
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/aristorinjuang/lesstruct\n\ngo 1.27\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.work"), []byte(goWork), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "Makefile"), []byte(makefile), 0o644))
+	return root
+}
+
+func testApplyProject(name string, withDB bool) modgendomain.Project {
+	moduleGo := strings.Replace(applierModuleGo, "package forum", "package "+name, 1)
+	if !withDB {
+		moduleGo = strings.Replace(moduleGo, "func WithDB(_ *sql.DB, _ kerneldatabase.Dialect) Option {\n\treturn func(m *Module) {\n\t}\n}\n\n", "", 1)
+	}
+	return modgendomain.NewProject(
+		name,
+		[]string{"routes"},
+		map[string]string{
+			"go.mod":    "module github.com/aristorinjuang/lesstruct/modules/" + name + "\n\nrequire github.com/aristorinjuang/lesstruct/kernel v1.6.0\n",
+			"module.go": moduleGo,
+			"README.md": name,
+		},
+		"R.",
+	)
+}
+
+type applyScript struct {
+	gitOutput string
+	gitErr    error
+	testErr   error
+	buildErr  error
+	gitStatus func(args []string) (string, error)
+}
+
+func (s applyScript) run(_ context.Context, _ string, _ []string, _ string, args ...string) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, errors.New("no command")
+	}
+	switch args[0] {
+	case "status":
+		if s.gitStatus != nil {
+			output, err := s.gitStatus(args)
+			return []byte(output), err
+		}
+		return []byte(s.gitOutput), s.gitErr
+	case "test":
+		if s.testErr != nil {
+			return []byte("FAIL"), s.testErr
+		}
+		return []byte("ok"), nil
+	case "build":
+		if s.buildErr != nil {
+			return []byte("build failed"), s.buildErr
+		}
+		return []byte(""), nil
+	default:
+		return nil, errors.New("unexpected command")
+	}
+}
+
+func TestCheckoutApplierApply(t *testing.T) {
+	tests := []struct {
+		name       string
+		project    modgendomain.Project
+		replace    bool
+		confirm    bool
+		script     applyScript
+		goPath     string
+		setup      func(t *testing.T, root string)
+		goWork     string
+		makefile   string
+		wantErr    string
+		wantVerify bool
+		wantErr2   bool
+		wantAbsent string
+	}{
+		{
+			name:       "success - first apply wires everything",
+			project:    testApplyProject("forum", true),
+			script:     applyScript{},
+			goWork:     applierGoWork,
+			makefile:   applierMakefile,
+			wantVerify: true,
+		},
+		{
+			name:       "success - logger-only fallback",
+			project:    testApplyProject("wiki", false),
+			script:     applyScript{},
+			goWork:     applierGoWork,
+			makefile:   applierMakefile,
+			wantVerify: true,
+		},
+		{
+			name:       "success - verify failure keeps the tree",
+			project:    testApplyProject("forum", true),
+			script:     applyScript{testErr: errors.New("exit status 1")},
+			goWork:     applierGoWork,
+			makefile:   applierMakefile,
+			wantVerify: false,
+		},
+		{
+			name:    "success - replace overwrites owned tree",
+			project: testApplyProject("forum", true),
+			replace: true,
+			confirm: true,
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "modules", "forum"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "modules", "forum", "module.go"), []byte("package forum // stale\n"), 0o644))
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "internal", "editions", "custom"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "custom.go"), []byte("// Code generated by modgen apply; DO NOT EDIT.\npackage custom\n"), 0o644))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "applied.json"), []byte("[\"forum\"]"), 0o644))
+			},
+			goWork:     applierGoWork,
+			makefile:   applierMakefile,
+			wantVerify: true,
+			wantAbsent: "stale",
+		},
+		{
+			name:    "error - replace without confirm refuses",
+			project: testApplyProject("forum", true),
+			replace: true,
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "modules", "forum"), 0o755))
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "internal", "editions", "custom"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "applied.json"), []byte("[\"forum\"]"), 0o644))
+			},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "already applied",
+			wantErr2: false,
+		},
+		{
+			name:    "error - replace refuses tracked edits",
+			project: testApplyProject("forum", true),
+			replace: true,
+			confirm: true,
+			script: applyScript{gitStatus: func(args []string) (string, error) {
+				for _, arg := range args {
+					if strings.Contains(arg, "modules/") {
+						return " M modules/forum/module.go\n", nil
+					}
+				}
+				return "", nil
+			}},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				inner := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, applyScript{}.run)
+				_, err := inner.Apply(context.Background(), testApplyProject("forum", true), false, false)
+				require.NoError(t, err)
+			},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "tree dirty",
+			wantErr2: false,
+		},
+		{
+			name:    "error - hand-placed tree refuses",
+			project: testApplyProject("forum", true),
+			replace: true,
+			confirm: true,
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "modules", "forum"), 0o755))
+			},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "already applied",
+			wantErr2: false,
+		},
+		{
+			name:    "error - ghost registry entry refuses apply",
+			project: testApplyProject("forum", true),
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "internal", "editions", "custom"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "custom.go"), []byte("// Code generated by modgen apply; DO NOT EDIT.\npackage custom\n"), 0o644))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "applied.json"), []byte("[\"other\"]"), 0o644))
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "cmd", "lesstruct-custom"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "cmd", "lesstruct-custom", "main.go"), []byte("// Code generated by modgen apply; DO NOT EDIT.\npackage main\n"), 0o644))
+			},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "no readable tree",
+			wantErr2: false,
+		},
+		{
+			name:     "error - bad toolchain",
+			project:  testApplyProject("forum", true),
+			script:   applyScript{},
+			goPath:   "definitely-not-a-go-binary",
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "apply unavailable",
+		},
+		{
+			name:     "error - invalid name",
+			project:  modgendomain.NewProject("Bad Name!", nil, map[string]string{"module.go": "x"}, ""),
+			script:   applyScript{},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "invalid module name",
+		},
+		{
+			name:    "error - already applied",
+			project: testApplyProject("forum", true),
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "modules", "forum"), 0o755))
+			},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "already applied",
+		},
+		{
+			name:     "error - dirty shared files",
+			project:  testApplyProject("forum", true),
+			script:   applyScript{gitOutput: " M go.work\n"},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "tree dirty",
+		},
+		{
+			name:     "error - git inspection fails",
+			project:  testApplyProject("forum", true),
+			script:   applyScript{gitErr: errors.New("no git")},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "tree dirty",
+		},
+		{
+			name:    "error - hand-owned custom dir",
+			project: testApplyProject("forum", true),
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "internal", "editions", "custom"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "custom.go"), []byte("package custom\n"), 0o644))
+			},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "tree dirty",
+		},
+		{
+			name:    "error - corrupt registry",
+			project: testApplyProject("forum", true),
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "internal", "editions", "custom"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "custom.go"), []byte("// Code generated by modgen apply; DO NOT EDIT.\npackage custom\n"), 0o644))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "applied.json"), []byte("not json"), 0o644))
+			},
+			goWork:   applierGoWork,
+			makefile: applierMakefile,
+			wantErr:  "tree dirty",
+		},
+		{
+			name:     "error - missing go.work anchor",
+			project:  testApplyProject("forum", true),
+			script:   applyScript{},
+			goWork:   "go 1.27\n",
+			makefile: applierMakefile,
+			wantErr:  "apply failed",
+			wantErr2: true,
+		},
+		{
+			name:     "error - missing makefile anchor",
+			project:  testApplyProject("forum", true),
+			script:   applyScript{},
+			goWork:   applierGoWork,
+			makefile: "all:\n\techo hi\n",
+			wantErr:  "apply failed",
+			wantErr2: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := testCheckout(t, tt.goWork, tt.makefile)
+			if tt.setup != nil {
+				tt.setup(t, root)
+			}
+			goPath := tt.goPath
+			if goPath == "" {
+				goPath = "go"
+			}
+			applier := infrastructure.NewCheckoutApplier(root, goPath, "v1.6.0", time.Minute, tt.script.run)
+			result, err := applier.Apply(context.Background(), tt.project, tt.replace, tt.confirm)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				if tt.wantErr2 {
+					_, statErr := os.Stat(filepath.Join(root, "modules", tt.project.Name))
+					assert.True(t, os.IsNotExist(statErr), "failed apply must roll back the module tree")
+				}
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, result.Applied)
+			assert.Equal(t, tt.wantVerify, result.Verified)
+			assert.True(t, result.RequiresRestart)
+			assert.Contains(t, result.AppliedModules, tt.project.Name)
+
+			data, readErr := os.ReadFile(filepath.Join(root, "modules", tt.project.Name, "module.go"))
+			require.NoError(t, readErr)
+			assert.Contains(t, string(data), "package "+tt.project.Name)
+			if tt.wantAbsent != "" {
+				assert.NotContains(t, string(data), tt.wantAbsent)
+			}
+
+			work, readErr := os.ReadFile(filepath.Join(root, "go.work"))
+			require.NoError(t, readErr)
+			assert.Contains(t, string(work), "./modules/"+tt.project.Name)
+
+			makefile, readErr := os.ReadFile(filepath.Join(root, "Makefile"))
+			require.NoError(t, readErr)
+			assert.Contains(t, string(makefile), "modules/"+tt.project.Name)
+
+			edition, readErr := os.ReadFile(filepath.Join(root, "internal", "editions", "custom", "custom.go"))
+			require.NoError(t, readErr)
+			assert.Contains(t, string(edition), "func Wrap(base app.Edition) app.Edition")
+			assert.Contains(t, string(edition), tt.project.Name+".New(")
+
+			main, readErr := os.ReadFile(filepath.Join(root, "cmd", "lesstruct-custom", "main.go"))
+			require.NoError(t, readErr)
+			assert.Contains(t, string(main), "customedition.Wrap(blogedition.Edition())")
+		})
+	}
+}
+
+func TestCheckoutApplierSecondApply(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{
+			name:    "success - registry merges and edition regenerates",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := testCheckout(t, applierGoWork, applierMakefile)
+			applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, applyScript{}.run)
+
+			first, err := applier.Apply(context.Background(), testApplyProject("alpha", true), false, false)
+			require.NoError(t, err)
+			require.True(t, first.Applied)
+
+			second, err := applier.Apply(context.Background(), testApplyProject("forum", false), false, false)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantErr, false)
+			assert.True(t, second.Applied)
+			assert.Equal(t, []string{"alpha", "forum"}, second.AppliedModules)
+
+			edition, err := os.ReadFile(filepath.Join(root, "internal", "editions", "custom", "custom.go"))
+			require.NoError(t, err)
+			assert.Contains(t, string(edition), "alpha.New(")
+			assert.Contains(t, string(edition), "alpha.WithDB(core.DB, core.Dialect)")
+			assert.Contains(t, string(edition), "forum.New(")
+			assert.NotContains(t, string(edition), "forum.WithDB(")
+
+			registry, err := os.ReadFile(filepath.Join(root, "internal", "editions", "custom", "applied.json"))
+			require.NoError(t, err)
+			assert.Contains(t, string(registry), `"alpha"`)
+			assert.Contains(t, string(registry), `"forum"`)
+
+			applied, err := applier.Applied(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, []string{"alpha", "forum"}, applied)
+		})
+	}
+}
+
+func TestCheckoutApplierNotCheckout(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T, root string)
+		wantErr string
+	}{
+		{
+			name: "error - missing go.mod",
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.Remove(filepath.Join(root, "go.mod")))
+			},
+			wantErr: "not a checkout",
+		},
+		{
+			name: "error - foreign module",
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/other\n"), 0o644))
+			},
+			wantErr: "not a checkout",
+		},
+		{
+			name: "error - missing git",
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.RemoveAll(filepath.Join(root, ".git")))
+			},
+			wantErr: "not a checkout",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := testCheckout(t, applierGoWork, applierMakefile)
+			tt.setup(t, root)
+			applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, applyScript{}.run)
+			_, err := applier.Apply(context.Background(), testApplyProject("forum", true), false, false)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestCheckoutApplierApplied(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func(t *testing.T, root string)
+		expected []string
+		wantErr  bool
+	}{
+		{
+			name:     "success - missing registry reads empty",
+			setup:    nil,
+			expected: []string{},
+			wantErr:  false,
+		},
+		{
+			name: "error - corrupt registry",
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(root, "internal", "editions", "custom"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(root, "internal", "editions", "custom", "applied.json"), []byte("nope"), 0o644))
+			},
+			expected: nil,
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := testCheckout(t, applierGoWork, applierMakefile)
+			if tt.setup != nil {
+				tt.setup(t, root)
+			}
+			applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, applyScript{}.run)
+			applied, err := applier.Applied(context.Background())
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, applied)
+		})
+	}
+}
+
+func TestIsCheckoutDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(t *testing.T, root string)
+		want    bool
+		wantErr bool
+	}{
+		{
+			name:    "success - checkout",
+			setup:   nil,
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "success - missing go.mod",
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.Remove(filepath.Join(root, "go.mod")))
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "success - foreign module",
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/other\n"), 0o644))
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "success - missing git",
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.RemoveAll(filepath.Join(root, ".git")))
+			},
+			want:    false,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := testCheckout(t, applierGoWork, applierMakefile)
+			if tt.setup != nil {
+				tt.setup(t, root)
+			}
+			assert.Equal(t, tt.want, infrastructure.IsCheckoutDir(root))
+			require.Equal(t, tt.wantErr, false)
+		})
+	}
+}
+
+func TestInsertGoWorkUse(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		module  string
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:    "success - inserts into block",
+			content: applierGoWork,
+			module:  "forum",
+			want:    []string{"./modules/forum"},
+			wantErr: false,
+		},
+		{
+			name:    "success - idempotent",
+			content: "go 1.27\n\nuse (\n\t.\n\t./modules/forum\n)\n",
+			module:  "forum",
+			want:    []string{"./modules/forum"},
+			wantErr: false,
+		},
+		{
+			name:    "success - prefix sibling does not match",
+			content: "go 1.27\n\nuse (\n\t.\n\t./modules/forum2\n)\n",
+			module:  "forum",
+			want:    []string{"./modules/forum2", "./modules/forum"},
+			wantErr: false,
+		},
+		{
+			name:    "success - single line expands",
+			content: "go 1.27\n\nuse (./kernel)\n",
+			module:  "forum",
+			want:    []string{"./modules/forum"},
+			wantErr: false,
+		},
+		{
+			name:    "success - single line with trailing comment",
+			content: "go 1.27\n\nuse (./kernel) // workspace\n",
+			module:  "forum",
+			want:    []string{"./modules/forum", "./kernel"},
+			wantErr: false,
+		},
+		{
+			name:    "error - missing anchor",
+			content: "go 1.27\n",
+			module:  "forum",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updated, err := infrastructure.InsertGoWorkUse(tt.content, tt.module)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			for _, want := range tt.want {
+				assert.Contains(t, updated, want)
+			}
+		})
+	}
+}
+
+func TestRenderCustomEditionParses(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{
+			name:    "success - generated edition and main parse",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			edition := infrastructure.RenderCustomEdition(
+				[]string{"forum", "wiki"},
+				map[string]string{"forum": applierModuleGo, "wiki": applierModuleGo},
+			)
+			require.Equal(t, tt.wantErr, false)
+			_, err := parser.ParseFile(token.NewFileSet(), "custom.go", edition, parser.SkipObjectResolution)
+			require.NoError(t, err)
+			main := infrastructure.RenderCustomMain()
+			_, err = parser.ParseFile(token.NewFileSet(), "main.go", main, parser.SkipObjectResolution)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestAppendMakefileSubmodule(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		module  string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "success - appends entry",
+			content: applierMakefile,
+			module:  "forum",
+			want:    "modules/forum",
+			wantErr: false,
+		},
+		{
+			name:    "success - idempotent",
+			content: "SUBMODULES := kernel modules/forum\n",
+			module:  "forum",
+			want:    "modules/forum",
+			wantErr: false,
+		},
+		{
+			name:    "success - prefix sibling does not block append",
+			content: "SUBMODULES := kernel modules/forum2\n",
+			module:  "forum",
+			want:    "modules/forum2 modules/forum",
+			wantErr: false,
+		},
+		{
+			name:    "error - missing anchor",
+			content: "all:\n\techo hi\n",
+			module:  "forum",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updated, err := infrastructure.AppendMakefileSubmodule(tt.content, tt.module)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, updated, tt.want)
+		})
+	}
+}
+
+func appliedCheckout(t *testing.T, script applyScript) string {
+	t.Helper()
+	root := testCheckout(t, applierGoWork, applierMakefile)
+	applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, script.run)
+	_, err := applier.Apply(context.Background(), testApplyProject("forum", true), false, false)
+	require.NoError(t, err)
+	return root
+}
+
+func TestCheckoutApplierUnapply(t *testing.T) {
+	tests := []struct {
+		name       string
+		project    string
+		confirm    bool
+		script     applyScript
+		setup      func(t *testing.T, root string)
+		wantErr    string
+		wantVerify bool
+		wantGone   bool
+	}{
+		{
+			name:       "success - full unapply removes everything",
+			project:    "forum",
+			confirm:    true,
+			script:     applyScript{},
+			wantVerify: true,
+			wantGone:   true,
+		},
+		{
+			name:    "success - registry cleanup when tree missing",
+			project: "forum",
+			confirm: true,
+			script:  applyScript{},
+			setup: func(t *testing.T, root string) {
+				t.Helper()
+				require.NoError(t, os.RemoveAll(filepath.Join(root, "modules", "forum")))
+			},
+			wantVerify: true,
+			wantGone:   false,
+		},
+		{
+			name:       "success - verify failure keeps removal",
+			project:    "forum",
+			confirm:    true,
+			script:     applyScript{buildErr: errors.New("exit status 1")},
+			wantVerify: false,
+			wantGone:   true,
+		},
+		{
+			name:    "error - invalid name",
+			project: "Bad Name!",
+			confirm: true,
+			script:  applyScript{},
+			wantErr: "not applied",
+		},
+		{
+			name:    "error - missing confirm",
+			project: "forum",
+			confirm: false,
+			script:  applyScript{},
+			wantErr: "confirmation required",
+		},
+		{
+			name:    "error - unknown module",
+			project: "wiki",
+			confirm: true,
+			script:  applyScript{},
+			wantErr: "not applied",
+		},
+		{
+			name:    "error - tracked edits refuse",
+			project: "forum",
+			confirm: true,
+			script: applyScript{gitStatus: func(args []string) (string, error) {
+				for _, arg := range args {
+					if strings.Contains(arg, "modules/") {
+						return " M modules/forum/module.go\n", nil
+					}
+				}
+				return "", nil
+			}},
+			wantErr: "tree dirty",
+		},
+		{
+			name:    "success - untracked content proceeds",
+			project: "forum",
+			confirm: true,
+			script: applyScript{gitStatus: func(args []string) (string, error) {
+				for _, arg := range args {
+					if strings.Contains(arg, "modules/") {
+						return "?? modules/forum/notes.txt\n", nil
+					}
+				}
+				return "", nil
+			}},
+			wantVerify: true,
+			wantGone:   true,
+		},
+		{
+			name:    "error - bad toolchain",
+			project: "forum",
+			confirm: true,
+			script:  applyScript{},
+			wantErr: "apply unavailable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			goPath := "go"
+			if tt.name == "error - bad toolchain" {
+				goPath = "definitely-not-a-go-binary"
+			}
+			root := appliedCheckout(t, applyScript{})
+			if tt.setup != nil {
+				tt.setup(t, root)
+			}
+			// Re-resolve the script per case: the applied checkout above
+			// ran with a clean stub, this unapply runs with tt.script.
+			applier := infrastructure.NewCheckoutApplier(root, goPath, "v1.6.0", time.Minute, tt.script.run)
+			result, err := applier.Unapply(context.Background(), tt.project, tt.confirm)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, result.Removed)
+			assert.Equal(t, tt.wantVerify, result.Verified)
+			assert.Equal(t, tt.wantGone, result.ModuleDirRemoved)
+			_, statErr := os.Stat(filepath.Join(root, "modules", tt.project))
+			assert.True(t, os.IsNotExist(statErr))
+
+			work, readErr := os.ReadFile(filepath.Join(root, "go.work"))
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(work), "./modules/"+tt.project)
+
+			makefile, readErr := os.ReadFile(filepath.Join(root, "Makefile"))
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(makefile), "modules/"+tt.project)
+
+			applied, appliedErr := applier.Applied(context.Background())
+			require.NoError(t, appliedErr)
+			assert.NotContains(t, applied, tt.project)
+
+			edition, readErr := os.ReadFile(filepath.Join(root, "internal", "editions", "custom", "custom.go"))
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(edition), tt.project+".New(")
+		})
+	}
+}
+
+func TestRemoveGoWorkUse(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		module  string
+		want    string
+		absent  string
+		wantErr bool
+	}{
+		{
+			name:    "success - removes entry",
+			content: "go 1.27\n\nuse (\n\t.\n\t./modules/forum\n\t./modules/wiki\n)\n",
+			module:  "forum",
+			want:    "./modules/wiki",
+			absent:  "./modules/forum",
+			wantErr: false,
+		},
+		{
+			name:    "success - idempotent",
+			content: applierGoWork,
+			module:  "forum",
+			want:    "./kernel",
+			wantErr: false,
+		},
+		{
+			name:    "success - single line shrinks",
+			content: "go 1.27\n\nuse (./kernel ./modules/forum)\n",
+			module:  "forum",
+			want:    "./kernel",
+			absent:  "./modules/forum",
+			wantErr: false,
+		},
+		{
+			name:    "success - single line with trailing comment shrinks",
+			content: "go 1.27\n\nuse (./kernel ./modules/forum) // workspace\n",
+			module:  "forum",
+			want:    "./kernel",
+			absent:  "./modules/forum",
+			wantErr: false,
+		},
+		{
+			name:    "success - prefix sibling does not match",
+			content: "go 1.27\n\nuse (\n\t.\n\t./modules/forum2\n)\n",
+			module:  "forum",
+			want:    "./modules/forum2",
+			wantErr: false,
+		},
+		{
+			name:    "success - single line empties",
+			content: "go 1.27\n\nuse (./modules/forum)\n",
+			module:  "forum",
+			want:    "use ()",
+			wantErr: false,
+		},
+		{
+			name:    "error - missing anchor",
+			content: "go 1.27\n",
+			module:  "forum",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updated, err := infrastructure.RemoveGoWorkUse(tt.content, tt.module)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, updated, tt.want)
+			if tt.absent != "" {
+				assert.NotContains(t, updated, tt.absent)
+			}
+		})
+	}
+}
+
+func TestRemoveMakefileSubmodule(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		module  string
+		want    string
+		absent  string
+		wantErr bool
+	}{
+		{
+			name:    "success - removes token",
+			content: "SUBMODULES := kernel modules/users modules/forum\n",
+			module:  "forum",
+			want:    "SUBMODULES := kernel modules/users",
+			absent:  "modules/forum",
+			wantErr: false,
+		},
+		{
+			name:    "success - idempotent",
+			content: applierMakefile,
+			module:  "forum",
+			want:    "modules/users",
+			wantErr: false,
+		},
+		{
+			name:    "success - prefix sibling untouched",
+			content: "SUBMODULES := kernel modules/forum2\n",
+			module:  "forum",
+			want:    "modules/forum2",
+			wantErr: false,
+		},
+		{
+			name:    "error - missing anchor",
+			content: "all:\n\techo hi\n",
+			module:  "forum",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updated, err := infrastructure.RemoveMakefileSubmodule(tt.content, tt.module)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Contains(t, updated, tt.want)
+			if tt.absent != "" {
+				assert.NotContains(t, updated, tt.absent)
+			}
+		})
+	}
+}
+
+func TestCheckoutApplierRollbackFresh(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr string
+	}{
+		{
+			name:    "success - mid-write failure rolls back shared files and tree",
+			wantErr: "cannot create custom edition",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := testCheckout(t, applierGoWork, applierMakefile)
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "internal", "editions"), 0o755))
+			require.NoError(t, os.Symlink("nonexistent-target-xyz", filepath.Join(root, "internal", "editions", "custom")))
+			applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, applyScript{}.run)
+			_, err := applier.Apply(context.Background(), testApplyProject("forum", true), false, false)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+
+			work, readErr := os.ReadFile(filepath.Join(root, "go.work"))
+			require.NoError(t, readErr)
+			assert.Equal(t, applierGoWork, string(work))
+			makefile, readErr := os.ReadFile(filepath.Join(root, "Makefile"))
+			require.NoError(t, readErr)
+			assert.Equal(t, applierMakefile, string(makefile))
+			_, statErr := os.Stat(filepath.Join(root, "modules", "forum"))
+			assert.True(t, os.IsNotExist(statErr))
+			_, statErr = os.Stat(filepath.Join(root, "modules", "forum.modgen-backup"))
+			assert.True(t, os.IsNotExist(statErr))
+		})
+	}
+}
+
+func TestStageRestoreReplaceBackup(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{
+			name:    "success - stage and restore round trip",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			moduleDir := filepath.Join(root, "modules", "forum")
+			require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+			sentinel := "package forum // sentinel-original\n"
+			require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "module.go"), []byte(sentinel), 0o644))
+
+			backup, err := infrastructure.StageReplaceBackup(moduleDir)
+			require.Equal(t, tt.wantErr, false)
+			require.NoError(t, err)
+			_, err = os.Stat(moduleDir)
+			assert.True(t, os.IsNotExist(err))
+			staged, err := os.ReadFile(filepath.Join(backup, "module.go"))
+			require.NoError(t, err)
+			assert.Equal(t, sentinel, string(staged))
+
+			partial := filepath.Join(root, "modules", "forum")
+			require.NoError(t, os.MkdirAll(partial, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(partial, "module.go"), []byte("package forum // partial\n"), 0o644))
+
+			infrastructure.RestoreReplaceBackup(moduleDir, backup)
+			restored, err := os.ReadFile(filepath.Join(moduleDir, "module.go"))
+			require.NoError(t, err)
+			assert.Equal(t, sentinel, string(restored))
+			_, err = os.Stat(backup)
+			assert.True(t, os.IsNotExist(err))
+
+			infrastructure.RestoreReplaceBackup(moduleDir, "")
+			restored, err = os.ReadFile(filepath.Join(moduleDir, "module.go"))
+			require.NoError(t, err)
+			assert.Equal(t, sentinel, string(restored))
+		})
+	}
+}
+
+func TestCheckoutApplierReplaceCleansBackup(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{
+			name:    "success - no backup remains after replace",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := testCheckout(t, applierGoWork, applierMakefile)
+			applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, applyScript{}.run)
+			_, err := applier.Apply(context.Background(), testApplyProject("forum", true), false, false)
+			require.NoError(t, err)
+			_, err = applier.Apply(context.Background(), testApplyProject("forum", true), true, true)
+			require.Equal(t, tt.wantErr, false)
+			require.NoError(t, err)
+			_, statErr := os.Stat(filepath.Join(root, "modules", "forum.modgen-backup"))
+			assert.True(t, os.IsNotExist(statErr))
+		})
+	}
+}
+
+func TestCheckoutApplierRollbackUnapply(t *testing.T) {
+	tests := []struct {
+		name   string
+		script applyScript
+	}{
+		{
+			name:   "success - verify failure keeps the removal",
+			script: applyScript{buildErr: errors.New("exit status 1")},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := appliedCheckout(t, applyScript{})
+			applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, tt.script.run)
+			result, err := applier.Unapply(context.Background(), "forum", true)
+			require.NoError(t, err)
+			assert.True(t, result.Removed)
+			assert.False(t, result.Verified)
+			assert.True(t, result.ModuleDirRemoved)
+			_, statErr := os.Stat(filepath.Join(root, "modules", "forum"))
+			assert.True(t, os.IsNotExist(statErr))
+
+			work, readErr := os.ReadFile(filepath.Join(root, "go.work"))
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(work), "./modules/forum")
+			makefile, readErr := os.ReadFile(filepath.Join(root, "Makefile"))
+			require.NoError(t, readErr)
+			assert.NotContains(t, string(makefile), "modules/forum")
+			applied, appliedErr := applier.Applied(context.Background())
+			require.NoError(t, appliedErr)
+			assert.NotContains(t, applied, "forum")
+		})
+	}
+}
+
+func TestCheckoutApplierIsolatedAdvisory(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{
+			name:    "success - isolated failure keeps verified true",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var sawGoworkOff bool
+			var sawIsolatedArgs bool
+			run := func(_ context.Context, _ string, env []string, _ string, args ...string) ([]byte, error) {
+				if len(args) > 0 && args[0] == "status" {
+					return []byte(""), nil
+				}
+				if slices.Contains(env, "GOWORK=off") {
+					sawGoworkOff = true
+					if len(args) > 0 && args[0] == "test" {
+						sawIsolatedArgs = true
+					}
+					return []byte("FAIL"), errors.New("exit status 1")
+				}
+				return []byte("ok"), nil
+			}
+			root := testCheckout(t, applierGoWork, applierMakefile)
+			applier := infrastructure.NewCheckoutApplier(root, "go", "v1.6.0", time.Minute, run)
+			result, err := applier.Apply(context.Background(), testApplyProject("forum", true), false, false)
+			require.Equal(t, tt.wantErr, false)
+			require.NoError(t, err)
+			assert.True(t, result.Applied)
+			assert.True(t, result.Verified, "isolated failures are advisory and must not fail verification")
+			assert.True(t, sawGoworkOff, "isolated step must run with GOWORK=off")
+			assert.True(t, sawIsolatedArgs, "isolated step must run the module tests")
+			names := make([]string, 0, len(result.Steps))
+			for _, step := range result.Steps {
+				names = append(names, step.Name)
+				if step.Name == "isolated" {
+					assert.False(t, step.Passed)
+				} else {
+					assert.True(t, step.Passed)
+				}
+			}
+			assert.Contains(t, names, "tests")
+			assert.Contains(t, names, "isolated")
+			assert.Contains(t, names, "build")
+		})
+	}
+}

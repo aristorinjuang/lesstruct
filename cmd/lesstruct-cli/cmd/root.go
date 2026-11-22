@@ -80,6 +80,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newSSGCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newThemeCmd(&apiKey, &baseURL, &output))
 	root.AddCommand(newPluginCmd(&apiKey, &baseURL, &output))
+	root.AddCommand(newModuleCmd(&apiKey, &baseURL, &output))
 	return root
 }
 

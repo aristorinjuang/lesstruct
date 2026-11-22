@@ -88,7 +88,7 @@ describe('ThemesView', () => {
   it('frames a sandboxed snapshot per theme card', async () => {
     const { wrapper } = await createWrapper()
 
-    const frames = wrapper.findAll('.themes-snapshot-frame iframe')
+    const frames = wrapper.findAll('.theme-snapshot iframe')
     expect(frames).toHaveLength(2)
     expect(frames[0]?.attributes('src')).toBe('/api/v1/themegen/themes/midnight-serif/snapshot')
     expect(frames[1]?.attributes('src')).toBe('/api/v1/themegen/themes/paper-light/snapshot')

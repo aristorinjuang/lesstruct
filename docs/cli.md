@@ -334,6 +334,44 @@ registrations. Install a generated project by compiling with TinyGo
 (`PLUGIN_BUILD_ENABLED=true` plus TinyGo; `503 build_unavailable`
 otherwise) and restart unless the server hot-reloads it.
 
+### `module` — AI module generation
+
+```bash
+lesstruct-cli module generate --description "Forum threads" --surfaces routes,migrations
+lesstruct-cli module list
+lesstruct-cli module download forum --output-dir /path/to/projects
+lesstruct-cli module delete forum
+```
+
+Generates a validated Tier 1 Go module project from a natural-language
+brief — the same endpoint the admin panel's Module Generator drives, over an
+admin API key (non-admin keys get `403`). `--surfaces` (comma-separated,
+optional) declares the kernel surfaces to implement (`routes`,
+`public_routes`, `migrations`, `posttypes`, `roles`, `themes`, `admin`);
+empty lets the model infer them from the brief.
+Generation can take minutes (the repair loop retries up to twice):
+`--timeout` (default `5m`, `0` disables) caps the whole call.
+A failed gate prints the first error finding; warnings print as guidance
+lines. Tier 1 modules link at compile time: the download ships an
+`INSTALL.md` with the custom-edition wiring and rebuild steps — there is no
+runtime install.
+
+```bash
+lesstruct-cli module apply forum [--replace --confirm]
+lesstruct-cli module unapply forum --confirm
+```
+
+Stages the project into the server's source checkout and verifies it
+(tests in both workspaces plus the custom-binary build) — the same endpoint
+the admin panel's **Apply to checkout** drives, over an admin API key.
+`--replace --confirm` overwrites an applied tree the registry owns.
+`unapply` (always `--confirm`) removes an applied module and rebuilds the
+custom binary to verify. Requires `MODULE_APPLY_ENABLED=true` on the server
+plus a Go toolchain and a source checkout; otherwise the call fails with
+`503 apply_unavailable`. Verification failures keep the applied tree and
+print per-step outcomes; rebuild `./cmd/lesstruct-custom` and deploy it
+yourself.
+
 ## Workflows
 
 **Authoring loop** — write Markdown, create, publish, iterate:

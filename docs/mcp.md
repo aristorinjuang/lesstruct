@@ -202,6 +202,7 @@ react to them.
 | transfer | `import_wordpress`, `import_status`, `import_hugo`, `hugo_import_status`, `export_content`, `ssg_generate` |
 | theme | `theme_generate` (minutes-long — returns name, rationale, validation, and file paths, not contents), `theme_list`, `theme_activate`, `theme_deactivate`, `theme_delete` (requires `confirm: true`) — all admin only |
 | plugin | `plugin_generate` (minutes-long — returns name, rationale, validation, and file paths, not contents), `plugin_build` (minutes-long, needs a build-enabled server), `plugin_projects`, `plugin_status`, `plugin_delete` (requires `confirm: true`) — all admin only |
+| module | `module_generate` (minutes-long — returns name, rationale, validation, and file paths, not contents), `module_projects`, `module_delete` (requires `confirm: true`), `module_apply` (minutes-long, needs an apply-enabled server, requires `confirm: true`, optional `replace`), `module_unapply` (requires `confirm: true`) — all admin only |
 | escape hatch | `lesstruct_api` — any `GET`/`POST`/`PUT`/`PATCH`/`DELETE` on a `/api/v1/` path with query/body |
 
 Conventions:
@@ -236,6 +237,15 @@ Conventions:
   `plugins/src` — compile with TinyGo and drop the `.wasm` into `plugins/`,
   or run `plugin_build` on a build-enabled server (restart unless `DEV_MODE`
   hot-reloads the plugin).
+- **Modules generate curated, not raw.** `module_generate` returns
+  `{name, surfaces, rationale, validation, fileNames}` — the file bodies
+  would blow past host truncation limits, so full contents travel via
+  `lesstruct-cli module download` (a zip archive), which the MCP surface
+  omits as binary. The result stages as inert source under `modules-gen/` —
+  Tier 1 modules link at compile time, so copy the tree into a checkout,
+  wire a custom edition, and rebuild (the download's `INSTALL.md` has the
+  steps). On an apply-enabled server, `module_apply` does the staging and
+  the custom-edition wiring for you and reports verification.
 
 ## Troubleshooting
 

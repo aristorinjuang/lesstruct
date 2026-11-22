@@ -174,7 +174,7 @@ type Config struct {
 	HSTSMaxAge int
 
 	AIImageGenerationAPIKey      string
-	AIImageGenerationBaseURL    string
+	AIImageGenerationBaseURL     string
 	AIImageGenerationModel       string
 	AIImageGenerationSize        string
 	AIImageGenerationAspectRatio string
@@ -209,6 +209,19 @@ type Config struct {
 	// Read via AI_PLUGGEN_MODEL.
 	AIPlugGenModel string
 
+	// AIModGenAPIKey enables the AI module generator: a dedicated key for
+	// module project generation. Empty falls back to AITextGenerationAPIKey.
+	// Read via AI_MODGEN_API_KEY.
+	AIModGenAPIKey string
+	// AIModGenBaseURL is the OpenAI-compatible base URL for module
+	// generation. Empty falls back to AITextGenerationBaseURL.
+	// Read via AI_MODGEN_BASE_URL.
+	AIModGenBaseURL string
+	// AIModGenModel is the chat model for module generation. Empty falls
+	// back to AITextGenerationModel, then to gpt-5-mini.
+	// Read via AI_MODGEN_MODEL.
+	AIModGenModel string
+
 	// PluginBuildEnabled gates server-side plugin builds: compiling a
 	// generated project with TinyGo and installing the .wasm into plugins/.
 	// Explicit opt-in — a host never shells out to a compiler by accident.
@@ -220,6 +233,24 @@ type Config struct {
 	// PluginBuildTimeout caps one server-side plugin build end to end.
 	// Read via PLUGIN_BUILD_TIMEOUT.
 	PluginBuildTimeout time.Duration
+
+	// ModuleApplyEnabled gates checkout applies: staging a generated module
+	// into the server's source checkout and verifying it. Explicit opt-in —
+	// a host never edits its own source tree by accident.
+	// Read via MODULE_APPLY_ENABLED.
+	ModuleApplyEnabled bool
+	// ModuleApplyRoot is the source checkout applies target. Empty means the
+	// server working directory.
+	// Read via MODULE_APPLY_ROOT.
+	ModuleApplyRoot string
+	// GoPath names the Go toolchain used for apply verification (module
+	// tests and the custom-binary build).
+	// Read via GO_PATH.
+	GoPath string
+	// ModuleApplyTimeout caps one apply verification end to end: module
+	// tests in both workspaces plus the custom-binary build share it.
+	// Read via MODULE_APPLY_TIMEOUT.
+	ModuleApplyTimeout time.Duration
 
 	// ThemesDir is the filesystem root for installed (generated or manual)
 	// themes: one directory per theme. Read via THEMES_DIR.
@@ -323,6 +354,40 @@ func (c *Config) EffectivePlugGenBaseURL() string {
 func (c *Config) EffectivePlugGenModel() string {
 	if c.AIPlugGenModel != "" {
 		return c.AIPlugGenModel
+	}
+	if c.AITextGenerationModel != "" {
+		return c.AITextGenerationModel
+	}
+	return "gpt-5-mini"
+}
+
+// IsModuleGenerationEnabled returns true when the module generator can run:
+// a dedicated AI_MODGEN_API_KEY or the shared text-generation key.
+func (c *Config) IsModuleGenerationEnabled() bool {
+	return c.AIModGenAPIKey != "" || c.AITextGenerationAPIKey != ""
+}
+
+// IsModuleApplyEnabled returns true when checkout applies are explicitly
+// opted in. The edition additionally requires a source checkout and a Go
+// toolchain before the feature reports ready on /api/health.
+func (c *Config) IsModuleApplyEnabled() bool {
+	return c.ModuleApplyEnabled
+}
+
+// EffectiveModGenBaseURL resolves the module generation base URL: the
+// dedicated value when set, otherwise the shared text-generation URL.
+func (c *Config) EffectiveModGenBaseURL() string {
+	if c.AIModGenBaseURL != "" {
+		return c.AIModGenBaseURL
+	}
+	return c.AITextGenerationBaseURL
+}
+
+// EffectiveModGenModel resolves the module generation model: the dedicated
+// value when set, otherwise the shared text-generation model, then gpt-5-mini.
+func (c *Config) EffectiveModGenModel() string {
+	if c.AIModGenModel != "" {
+		return c.AIModGenModel
 	}
 	if c.AITextGenerationModel != "" {
 		return c.AITextGenerationModel
@@ -458,7 +523,7 @@ func Load() (*Config, error) {
 		HSTSMaxAge:               getEnvInt("HSTS_MAX_AGE_SECONDS", defaultHSTSMaxAge),
 
 		AIImageGenerationAPIKey:      getEnv("AI_IMAGE_GENERATION_API_KEY", ""),
-		AIImageGenerationBaseURL:    getEnv("AI_IMAGE_GENERATION_BASE_URL", ""),
+		AIImageGenerationBaseURL:     getEnv("AI_IMAGE_GENERATION_BASE_URL", ""),
 		AIImageGenerationModel:       getEnv("AI_IMAGE_GENERATION_MODEL", "imagen-4.0-fast-"),
 		AIImageGenerationSize:        getEnv("AI_IMAGE_GENERATION_SIZE", ""),
 		AIImageGenerationAspectRatio: getEnv("AI_IMAGE_GENERATION_ASPECT_RATIO", ""),
@@ -475,10 +540,17 @@ func Load() (*Config, error) {
 		AIPlugGenAPIKey:  getEnv("AI_PLUGGEN_API_KEY", ""),
 		AIPlugGenBaseURL: getEnv("AI_PLUGGEN_BASE_URL", ""),
 		AIPlugGenModel:   getEnv("AI_PLUGGEN_MODEL", ""),
+		AIModGenAPIKey:   getEnv("AI_MODGEN_API_KEY", ""),
+		AIModGenBaseURL:  getEnv("AI_MODGEN_BASE_URL", ""),
+		AIModGenModel:    getEnv("AI_MODGEN_MODEL", ""),
 
 		PluginBuildEnabled: getEnvBool("PLUGIN_BUILD_ENABLED", false),
 		TinyGoPath:         getEnv("TINYGO_PATH", "tinygo"),
 		PluginBuildTimeout: getEnvDuration("PLUGIN_BUILD_TIMEOUT", 5*time.Minute),
+		ModuleApplyEnabled: getEnvBool("MODULE_APPLY_ENABLED", false),
+		ModuleApplyRoot:    getEnv("MODULE_APPLY_ROOT", ""),
+		GoPath:             getEnv("GO_PATH", "go"),
+		ModuleApplyTimeout: getEnvDuration("MODULE_APPLY_TIMEOUT", 10*time.Minute),
 
 		AISamAPIKey:   getEnv("AI_SAM_API_KEY", ""),
 		AISamModel:    getEnv("AI_SAM_MODEL", "sam-3.1"),

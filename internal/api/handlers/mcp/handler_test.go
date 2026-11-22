@@ -81,7 +81,7 @@ func TestHandler_InitializeAndListTools(t *testing.T) {
 
 	tools, err := session.ListTools(context.Background(), nil)
 	require.NoError(t, err)
-	assert.Len(t, tools.Tools, 54)
+	assert.Len(t, tools.Tools, 59)
 }
 
 func TestHandler_ToolCallUsesRequestKey(t *testing.T) {
@@ -131,6 +131,30 @@ func TestHandler_ToolCallUsesRequestKey(t *testing.T) {
 			tool:       "plugin_build",
 			args:       map[string]any{"name": "my-plugin"},
 			wantPath:   "/api/v1/plugingen/projects/my-plugin/build",
+			wantMethod: http.MethodPost,
+		},
+		{
+			name:       "success - module_projects traverses the in-process router",
+			token:      "lesstruct_key_mod",
+			tool:       "module_projects",
+			args:       map[string]any{},
+			wantPath:   "/api/v1/modgen/projects",
+			wantMethod: http.MethodGet,
+		},
+		{
+			name:       "success - module_apply traverses the in-process router",
+			token:      "lesstruct_key_apply",
+			tool:       "module_apply",
+			args:       map[string]any{"name": "forum", "confirm": true},
+			wantPath:   "/api/v1/modgen/projects/forum/apply",
+			wantMethod: http.MethodPost,
+		},
+		{
+			name:       "success - module_unapply traverses the in-process router",
+			token:      "lesstruct_key_unapply",
+			tool:       "module_unapply",
+			args:       map[string]any{"name": "forum", "confirm": true},
+			wantPath:   "/api/v1/modgen/projects/forum/unapply",
 			wantMethod: http.MethodPost,
 		},
 	}

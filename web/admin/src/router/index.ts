@@ -133,6 +133,18 @@ const router = createRouter({
           meta: { title: 'Plugins' },
         },
         {
+          path: 'module-generator',
+          name: 'module-generator',
+          component: () => import('../views/ModuleGeneratorView.vue'),
+          meta: { title: 'Module Generator' },
+        },
+        {
+          path: 'modules',
+          name: 'modules',
+          component: () => import('../views/ModulesView.vue'),
+          meta: { title: 'Modules' },
+        },
+        {
           path: 'settings/invoice',
           name: 'settings-invoice',
           component: () => import('../views/InvoiceSettingsView.vue'),

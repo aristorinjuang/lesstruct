@@ -146,7 +146,7 @@ func (r Renderer) renderNode(n node) string {
 }
 
 func (r Renderer) renderParagraph(n node) string {
-	content := r.renderChildren(n.Content)
+	content := r.renderInlineChildren(n.Content)
 	if content == "" {
 		return `<p class="content-wrapper"></p>`
 	}
@@ -222,6 +222,20 @@ func (r Renderer) renderCodeBlock(n node) string {
 }
 
 func (r Renderer) renderImage(n node) string {
+	img := r.renderImgTag(n)
+	if img == "" {
+		return ""
+	}
+	return "<figure>" + img + "</figure>"
+}
+
+// renderImgTag builds the bare <img> for one image node: srcset/sizes from
+// the configured variants, alt/title passthrough, and eager loading for
+// the document's first image. Block contexts wrap it in <figure>; inline
+// contexts (paragraphs) embed it directly, because <figure> inside <p> is
+// invalid HTML — the browser closes the paragraph early and strands the
+// surrounding text outside the centered wrapper.
+func (r Renderer) renderImgTag(n node) string {
 	src, _ := n.Attrs["src"].(string)
 	if src == "" {
 		return ""
@@ -233,7 +247,6 @@ func (r Renderer) renderImage(n node) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("<figure>")
 	wrapped := false
 	if mobile := mobileVariant(variants); mobile != "" {
 		fmt.Fprintf(&sb, `<picture><source media="(max-width: 767px)" srcset="%s">`, escapeAttr(mobile))
@@ -274,7 +287,6 @@ func (r Renderer) renderImage(n node) string {
 	if wrapped {
 		sb.WriteString("</picture>")
 	}
-	sb.WriteString("</figure>")
 	return sb.String()
 }
 
@@ -303,6 +315,21 @@ func (r Renderer) renderText(n node) string {
 func (r Renderer) renderChildren(children []node) string {
 	var sb strings.Builder
 	for _, child := range children {
+		sb.WriteString(r.renderNode(child))
+	}
+	return sb.String()
+}
+
+// renderInlineChildren renders paragraph content: image nodes embed as bare
+// <img> instead of <figure>, keeping the paragraph valid so text stays
+// inside the centered wrapper. Every other node renders as usual.
+func (r Renderer) renderInlineChildren(children []node) string {
+	var sb strings.Builder
+	for _, child := range children {
+		if child.Type == "image" {
+			sb.WriteString(r.renderImgTag(child))
+			continue
+		}
 		sb.WriteString(r.renderNode(child))
 	}
 	return sb.String()

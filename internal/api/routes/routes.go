@@ -219,6 +219,20 @@ type PlugGenSurface interface {
 	Status(http.ResponseWriter, *http.Request)
 }
 
+// ModGenSurface is the browser-realm AI module generator surface the routes
+// mount. It is satisfied by the modgen module's handler; the structural
+// seam keeps routes.go from importing the module so the surface stays
+// removable. The modGenEnabled feature flag gates mounting; the apply leaf
+// additionally requires modGenApplyEnabled.
+type ModGenSurface interface {
+	Generate(http.ResponseWriter, *http.Request)
+	Apply(http.ResponseWriter, *http.Request)
+	Unapply(http.ResponseWriter, *http.Request)
+	List(http.ResponseWriter, *http.Request)
+	Download(http.ResponseWriter, *http.Request)
+	Delete(http.ResponseWriter, *http.Request)
+}
+
 // WordPressSurface is the browser-and-agent WordPress import surface the
 // routes mount. It is satisfied by the importers module's handler; the
 // structural seam keeps routes.go from importing the module so the surface
@@ -362,6 +376,9 @@ func Setup(
 	plugGenEnabled bool,
 	plugGenHandler PlugGenSurface,
 	plugGenBuildEnabled bool,
+	modGenEnabled bool,
+	modGenHandler ModGenSurface,
+	modGenApplyEnabled bool,
 	themeValidationFailed bool,
 	speechEnabled bool,
 	speechHandler SpeechSurface,
@@ -412,9 +429,11 @@ func Setup(
 		themGenEnabled := themGenEnabled
 		plugGenEnabled := plugGenEnabled
 		plugGenBuildEnabled := plugGenBuildEnabled
+		modGenEnabled := modGenEnabled
+		modGenApplyEnabled := modGenApplyEnabled
 		speechEnabled := speechEnabled
 		themeValidationFailed := themeValidationFailed
-		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v,"themeGeneration":%v,"pluginGeneration":%v,"pluginBuild":%v,"speechToText":%v},"themeValidationFailed":%v}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled, themGenEnabled, plugGenEnabled, plugGenBuildEnabled, speechEnabled, themeValidationFailed); err != nil {
+		if _, err := fmt.Fprintf(w, `{"status":"ok","features":{"imageGeneration":%v,"imageReference":%v,"textGeneration":%v,"themeGeneration":%v,"pluginGeneration":%v,"pluginBuild":%v,"moduleGeneration":%v,"moduleApply":%v,"speechToText":%v},"themeValidationFailed":%v}`, imageGenEnabled, imageReferenceEnabled, textGenEnabled, themGenEnabled, plugGenEnabled, plugGenBuildEnabled, modGenEnabled, modGenApplyEnabled, speechEnabled, themeValidationFailed); err != nil {
 			log.Printf("Failed to write response: %v", err)
 		}
 	})
@@ -706,6 +725,43 @@ func Setup(
 		dual.Get("/api/v1/plugingen/projects/{name}/download", plugGenHandler.Download)
 		dual.Delete("/api/v1/plugingen/projects/{name}", plugGenHandler.Delete)
 		dual.Get("/api/v1/plugins", plugGenHandler.Status)
+	}
+
+	// AI module generator surface. Mounted only when the modgen module
+	// wires a handler. Like plugingen, both the API-key agent and the JWT
+	// browser are dispatched by credential; both realms are admin-only
+	// (generation burns AI credit). Generated projects are inert source,
+	// so there is no build/status surface — the zip ships INSTALL.md with
+	// the custom-edition wiring and rebuild steps.
+	if modGenEnabled && modGenHandler != nil {
+		dual := dualAuthRegistrar{
+			root: r,
+			agent: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.AgentAuthFailureHandler(
+					rateLimitMiddleware.AgentIPHandler(
+						rateLimitMiddleware.APIKeyHandler(
+							apiKeyAuthMiddleware.Handler(
+								agentAdminOnly(authorize)(
+									maxBodySizeMiddleware(1 << 20)(next))))))
+			},
+			browser: func(next http.Handler) http.Handler {
+				return rateLimitMiddleware.Handler(
+					csrfMiddleware.Handler(
+						adminMiddleware.AdminOnly(
+							maxBodySizeMiddleware(1 << 20)(next))))
+			},
+		}
+		dual.Post("/api/v1/modgen/generate", modGenHandler.Generate)
+		dual.Get("/api/v1/modgen/projects", modGenHandler.List)
+		dual.Get("/api/v1/modgen/projects/{name}/download", modGenHandler.Download)
+		dual.Delete("/api/v1/modgen/projects/{name}", modGenHandler.Delete)
+		// Apply is separately gated: the tree edit needs the explicit
+		// MODULE_APPLY_ENABLED opt-in, while staging stays available
+		// whenever generation is configured.
+		if modGenApplyEnabled {
+			dual.Post("/api/v1/modgen/projects/{name}/apply", modGenHandler.Apply)
+			dual.Post("/api/v1/modgen/projects/{name}/unapply", modGenHandler.Unapply)
+		}
 	}
 
 	// Streamable HTTP MCP endpoint (opt-in via [mcp] enabled = true). The tool

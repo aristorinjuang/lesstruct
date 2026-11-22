@@ -71,6 +71,7 @@ type HandlerSet struct {
 	Speech         routes.SpeechSurface
 	ThemGen        routes.ThemGenSurface
 	PlugGen        routes.PlugGenSurface
+	ModGen         routes.ModGenSurface
 
 	// ConfigExtras contributes edition-specific keys to the public
 	// GET /api/v1/config payload (e.g. the catalog block). Nil or empty
@@ -145,6 +146,11 @@ type Core struct {
 	// available: explicitly enabled plus a TinyGo binary on PATH. The
 	// edition sets it during Wire; /api/health reports it.
 	PluginBuildReady bool
+	// ModuleApplyReady reports whether checkout applies are available:
+	// explicitly enabled plus a source checkout at the apply root plus a Go
+	// toolchain on PATH. The edition sets it during Wire; /api/health
+	// reports it.
+	ModuleApplyReady bool
 
 	// Platform handlers every edition serves.
 	ContentHandler      *handlers.ContentHandler

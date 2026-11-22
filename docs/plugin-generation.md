@@ -16,7 +16,8 @@ language.
 
 - An AI key: `AI_PLUGGEN_API_KEY` (or the shared `AI_TEXT_GENERATION_API_KEY`
   fallback) plus model/base-URL settings — see
-  [configuration.md](configuration.md). Without a key the generator answers
+  [configuration.md](configuration.md). Without a key the admin sidebar hides
+  the Plugin Generator entry and the generator answers
   `503 generation_unavailable`.
 - An **admin** account. Every plugin endpoint requires admin on
   both the browser panel and the API — a non-admin key or session gets

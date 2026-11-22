@@ -14,7 +14,8 @@ so the result already speaks your site's design language.
 
 - An AI key: `AI_THEMGEN_API_KEY` (or the shared `AI_TEXT_GENERATION_API_KEY`
   fallback) plus model/base-URL settings — see
-  [configuration.md](configuration.md). Without a key the generator answers
+  [configuration.md](configuration.md). Without a key the admin sidebar hides
+  the Theme Generator entry and the generator answers
   `503 generation_unavailable`.
 - An **admin** account. Since v1.5 every theme endpoint requires admin on
   both the browser panel and the API — a non-admin key or session gets
@@ -61,9 +62,10 @@ Preview needs the production admin (same origin as the site); with the dev
 server open `/` on the Go server instead.
 
 **Snapshots** need no action: every theme card — and the just-generated
-theme — frames a sandboxed, scaled snapshot of that theme's homepage,
-rendered server-side with sample content. An unknown or broken theme shows
-a placeholder instead of breaking the listing.
+theme — frames a sandboxed snapshot of that theme's homepage, rendered
+server-side with sample content at a fixed 1366×768 viewport, so the layout
+matches an HD-class laptop at any card width. An unknown or broken theme
+shows a placeholder instead of breaking the listing.
 
 ## From the terminal
 

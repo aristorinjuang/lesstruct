@@ -10,17 +10,18 @@ use (
 	./modules/comments
 	./modules/importers
 	./modules/media
+	./modules/modgen
 	./modules/orders
 	./modules/payments
+	./modules/plugingen
 	./modules/posttypes-basic
 	./modules/privacy
 	./modules/seo
 	./modules/site-ssr
 	./modules/speech
 	./modules/textgen
-	./modules/plugingen
-	./modules/themegen
 	./modules/theme-default
 	./modules/theme-storefront
+	./modules/themegen
 	./modules/users
 )

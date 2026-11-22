@@ -76,6 +76,7 @@ func registerTools(ms *mcp.Server, c *client.Client) {
 	registerTransferTools(ms, c)
 	registerThemeTools(ms, c)
 	registerPluginTools(ms, c)
+	registerModuleTools(ms, c)
 	registerAPITools(ms, c)
 }
 

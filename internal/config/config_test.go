@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"os"
 	"testing"
+	"time"
 
 	appconfig "github.com/aristorinjuang/lesstruct/internal/config"
 	"github.com/stretchr/testify/assert"
@@ -445,6 +446,40 @@ func TestLoad(t *testing.T) {
 			wantErr: false,
 			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
 				assert.Equal(t, 15, cfg.AgentFailuresPerMinute, "AgentFailuresPerMinute default")
+			},
+		},
+		{
+			name: "Module apply defaults to disabled",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				_ = os.Unsetenv("MODULE_APPLY_ENABLED")
+				_ = os.Unsetenv("MODULE_APPLY_ROOT")
+				_ = os.Unsetenv("GO_PATH")
+				_ = os.Unsetenv("MODULE_APPLY_TIMEOUT")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.False(t, cfg.IsModuleApplyEnabled(), "ModuleApplyEnabled default")
+				assert.Equal(t, "", cfg.ModuleApplyRoot, "ModuleApplyRoot default")
+				assert.Equal(t, "go", cfg.GoPath, "GoPath default")
+				assert.Equal(t, 10*time.Minute, cfg.ModuleApplyTimeout, "ModuleApplyTimeout default")
+			},
+		},
+		{
+			name: "Module apply reads the environment",
+			setupEnv: func(t *testing.T) {
+				t.Setenv("JWT_SECRET", "test-secret-key-that-is-at-least-32-characters-long")
+				t.Setenv("MODULE_APPLY_ENABLED", "true")
+				t.Setenv("MODULE_APPLY_ROOT", "/srv/lesstruct")
+				t.Setenv("GO_PATH", "/usr/local/go/bin/go")
+				t.Setenv("MODULE_APPLY_TIMEOUT", "20m")
+			},
+			wantErr: false,
+			checkConfig: func(t *testing.T, cfg *appconfig.Config) {
+				assert.True(t, cfg.IsModuleApplyEnabled(), "ModuleApplyEnabled")
+				assert.Equal(t, "/srv/lesstruct", cfg.ModuleApplyRoot, "ModuleApplyRoot")
+				assert.Equal(t, "/usr/local/go/bin/go", cfg.GoPath, "GoPath")
+				assert.Equal(t, 20*time.Minute, cfg.ModuleApplyTimeout, "ModuleApplyTimeout")
 			},
 		},
 	}

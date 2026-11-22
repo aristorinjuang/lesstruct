@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import Button from '@/components/atoms/Button.vue'
+import ThemeSnapshot from '@/components/molecules/ThemeSnapshot.vue'
 import Toast from '@/components/molecules/Toast.vue'
 import { useThemegenStore } from '@/stores/domain/themegen'
 
@@ -98,15 +99,7 @@ async function handleStopPreview() {
 
     <div class="themes-grid">
       <div v-for="theme in store.themes" :key="theme.name" class="themes-card">
-        <div class="themes-snapshot-frame">
-          <iframe
-            :src="`/api/v1/themegen/themes/${theme.name}/snapshot`"
-            :title="`Snapshot of ${theme.name}`"
-            sandbox="allow-same-origin"
-            loading="lazy"
-            scrolling="no"
-          />
-        </div>
+        <ThemeSnapshot :name="theme.name" />
         <h2 class="themes-title">{{ theme.name }}</h2>
         <p class="themes-meta">{{ theme.edition }} · {{ theme.source }} · {{ theme.active ? 'active' : 'inactive' }}</p>
         <p v-if="store.previewTheme === theme.name" class="themes-preview-badge">Previewing in this browser</p>
@@ -150,21 +143,6 @@ async function handleStopPreview() {
 }
 .themes-title {
   margin: 0;
-}
-.themes-snapshot-frame {
-  overflow: hidden;
-  height: 180px;
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  background: var(--color-background);
-}
-.themes-snapshot-frame iframe {
-  width: 400%;
-  height: 720px;
-  border: 0;
-  transform: scale(0.25);
-  transform-origin: top left;
-  pointer-events: none;
 }
 .themes-meta {
   margin: 0;

@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import api from '@/utils/request'
 import Button from '@/components/atoms/Button.vue'
+import ThemeSnapshot from '@/components/molecules/ThemeSnapshot.vue'
 import Toast from '@/components/molecules/Toast.vue'
 import { useThemegenStore, firstProblemFromError } from '@/stores/domain/themegen'
 
@@ -148,15 +149,7 @@ async function handleStopPreview() {
       </div>
 
       <div v-if="store.theme" class="themegen-card">
-        <div class="themegen-snapshot-frame">
-          <iframe
-            :src="`/api/v1/themegen/themes/${store.theme.name}/snapshot`"
-            :title="`Snapshot of ${store.theme.name}`"
-            sandbox="allow-same-origin"
-            loading="lazy"
-            scrolling="no"
-          />
-        </div>
+        <ThemeSnapshot :name="store.theme.name" />
         <h2 class="themegen-title">{{ store.theme.name }}</h2>
         <p class="themegen-rationale">{{ store.theme.rationale }}</p>
         <div class="themegen-actions">
@@ -229,21 +222,6 @@ async function handleStopPreview() {
 .themegen-actions {
   display: flex;
   gap: 0.5rem;
-}
-.themegen-snapshot-frame {
-  overflow: hidden;
-  height: 180px;
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  background: var(--color-background);
-}
-.themegen-snapshot-frame iframe {
-  width: 400%;
-  height: 720px;
-  border: 0;
-  transform: scale(0.25);
-  transform-origin: top left;
-  pointer-events: none;
 }
 .themegen-title {
   margin: 0;

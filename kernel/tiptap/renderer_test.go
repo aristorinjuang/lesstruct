@@ -402,6 +402,20 @@ func TestRender_ImageWithOnlySrc(t *testing.T) {
 	assert.Equal(t, `<figure><img src="/uploads/photo.webp" loading="eager" fetchpriority="high"></figure>`, result)
 }
 
+func TestRender_InlineImageStaysInsideParagraph(t *testing.T) {
+	r := tiptap.NewRenderer(nil)
+
+	result, err := r.Render(`{
+		"type": "doc",
+		"content": [{"type": "paragraph", "content": [
+			{"type": "image", "attrs": {"src": "/uploads/photo.webp", "alt": "A photo"}},
+			{"type": "text", "text": "Caption text"}
+		]}]
+	}`)
+	require.NoError(t, err)
+	assert.Equal(t, `<p class="content-wrapper"><img src="/uploads/photo.webp" alt="A photo" loading="eager" fetchpriority="high">Caption text</p>`, result)
+}
+
 func TestRender_ImageWithoutSrc(t *testing.T) {
 	r := tiptap.NewRenderer(nil)
 

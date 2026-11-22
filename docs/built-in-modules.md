@@ -40,6 +40,7 @@ compiles against, see [The Kernel](kernel.md).
 | `textgen` | — | AI text enhance/translate and HTML generation | — |
 | `themegen` | — | AI theme generation: stylesheet-only themes with opt-in template overrides, validated install/activate | Themes |
 | `plugingen` | — | AI plugin generation: validated WASM plugin projects from a natural-language brief, downloadable as `.zip` | Plugins |
+| `modgen` | — | AI module generation: validated Tier 1 Go module projects from a natural-language brief, staged as inert source | Modules |
 | `speech` | — | Voice dictation: speech-to-text transcription enhanced into content | — |
 | `importers` | — | WordPress (WXR) and Hugo importers | Import |
 | `catalog` | — | Commerce catalog (pricing, variants, stock, SKUs) | Catalog panel |
@@ -171,6 +172,10 @@ Bring-your-own key via the AI theme settings (`AI_THEMGEN_*`, falling back to
 ### plugingen
 
 AI plugin generation: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief. Every result is validated before install — file contract, Go parse (dependency-free `go.mod`), hook-export and host-function policy with grant coverage, plus a generated-content scan — with a bounded two-attempt repair loop feeding findings back to the model. Downloadable as `.zip`; install by compiling with TinyGo and dropping the `.wasm` into `plugins/`, or build on the server (explicit opt-in plus TinyGo: the builder compiles, load-checks in wazero, and installs the `.wasm` with the synthesized manifest, hot-reloaded in `DEV_MODE`). Bring-your-own key via the AI plugin settings (`AI_PLUGGEN_*`, falling back to `AI_TEXT_GENERATION_*`). Leaf.
+
+### modgen
+
+AI module generation: validated Tier 1 Go module projects (`go.mod` + `module.go` + `README.md` plus domain/api/store/admin overlays) from a natural-language brief. Every result is validated before staging — file contract, Go parse, the `kernel.Module` lifecycle shape, the layer import policy (no `lesstruct/internal`, no transport/SQL in `domain/`, `api/` through `kernel/httpx`), `go.mod` hygiene (kernel required at the host version, no `replace`), and migration hygiene (idempotent, no cross-module FKs), plus a generated-content scan — with a bounded two-attempt repair loop feeding findings back to the model. Downloadable as `.zip` with an `INSTALL.md` (custom-edition wiring + rebuild steps): Tier 1 modules link at compile time, so there is no runtime install. On apply-enabled servers the download is replaced by the apply flow (refuse-first guards, verify, per-step outcomes) and unapply reverses it. Bring-your-own key via the AI module settings (`AI_MODGEN_*`, falling back to `AI_TEXT_GENERATION_*`). Leaf.
 
 ### speech
 

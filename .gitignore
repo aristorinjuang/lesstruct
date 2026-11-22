@@ -6,6 +6,9 @@ _bmad-output/
 data/
 node_modules/
 bin/
+# Staged AI module projects (modules-gen/<name>/): generated source trees
+# are operator working state, never committed.
+modules-gen/
 # Linked worktree holding the v1 branch — never commit it as an embedded repo.
 /v1/
 .env

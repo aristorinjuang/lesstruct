@@ -267,7 +267,10 @@ admin manifest lists your entries, `[modules] disabled = ["<yourname>"]`
 prunes you like every other module, and `make test` runs your suite.
 
 Shipping a module to *other* people's forks is the same mechanics with a
-different diffusion: publish the source, they perform steps 1–3. A
+different diffusion: publish the source, they perform steps 1–3. The AI
+module generator (`modgen`, see the module-generation guide) covers step 1 from a natural-language brief — validated Tier 1 module
+projects staged as inert source under `modules-gen/`, downloadable as `.zip`
+with the custom-edition wiring (`INSTALL.md`) for steps 2–4. A
 `lesstruct mod get`-style installer that generates the composition
 automatically is a known post-v1 direction — the boring-list design above is
 what keeps that door open.

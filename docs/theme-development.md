@@ -25,10 +25,12 @@ The admin panel ships an AI Theme Generator (`/admin/theme-generator`): describe
 Every installed theme card — and the just-generated theme card on
 `/admin/theme-generator` — also frames a snapshot: the theme's homepage
 rendered server-side with populated sample data (`GET
-/api/v1/themegen/themes/{name}/snapshot`, sandboxed in a scaled iframe).
-Snapshots cover generated and manually dropped themes alike; an unknown or
-broken theme degrades to a placeholder document instead of breaking the
-listing. Same same-origin note as preview.
+/api/v1/themegen/themes/{name}/snapshot`, sandboxed in a scaled iframe). The
+iframe always renders at a fixed 1366×768 virtual viewport, so the preview
+matches an HD-class laptop regardless of the card's width; the frame crops
+the page below the fold. Snapshots cover generated and manually dropped
+themes alike; an unknown or broken theme degrades to a placeholder document
+instead of breaking the listing. Same same-origin note as preview.
 
 ## How Themes Work
 

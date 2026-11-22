@@ -237,7 +237,7 @@ When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhanc
 
 ### AI theme generation (optional)
 
-When `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Theme Generator: validated themes (`static/base.css` + `static/style.css`, plus opt-in `templates/*.html` page overrides) from a natural-language brief, downloadable as `.zip` or activatable in place with a hot reload. Templates are parse-tested and smoke-rendered before install or activation, and a failing theme gets up to two repair attempts before it is refused with the findings surfaced. Each `AI_THEMGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart.
+When `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Theme Generator: validated themes (`static/base.css` + `static/style.css`, plus opt-in `templates/*.html` page overrides) from a natural-language brief, downloadable as `.zip` or activatable in place with a hot reload. Templates are parse-tested and smoke-rendered before install or activation, and a failing theme gets up to two repair attempts before it is refused with the findings surfaced. Each `AI_THEMGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Theme Generator entry (the endpoint still answers `503 generation_unavailable`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -250,7 +250,7 @@ The `[theme]` block in `config.toml` holds the active installed theme (`active =
 
 ### AI plugin generation (optional)
 
-When `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Plugin Generator: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief, downloadable as `.zip`. Generated projects pass the file-contract gate plus dependency-free Go parse and host-function policy with grant coverage, plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Install the result by compiling with TinyGo (`tinygo build -o <name>.wasm -target=wasi main.go`) and dropping the `.wasm` into `plugins/` — or, with `PLUGIN_BUILD_ENABLED=true` and TinyGo on the host, build and install on the server (see [plugin-generation.md](plugin-generation.md)). Each `AI_PLUGGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart.
+When `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Plugin Generator: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief, downloadable as `.zip`. Generated projects pass the file-contract gate plus dependency-free Go parse and host-function policy with grant coverage, plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Install the result by compiling with TinyGo (`tinygo build -o <name>.wasm -target=wasi main.go`) and dropping the `.wasm` into `plugins/` — or, with `PLUGIN_BUILD_ENABLED=true` and TinyGo on the host, build and install on the server (see [plugin-generation.md](plugin-generation.md)). Each `AI_PLUGGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Plugin Generator entry (the endpoint still answers `503 generation_unavailable`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -260,6 +260,22 @@ When `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin pane
 | `PLUGIN_BUILD_ENABLED` | `false` | Opt in to server-side plugin builds: compile with TinyGo and install into `plugins/` on the server. |
 | `TINYGO_PATH` | `tinygo` | TinyGo binary used for server-side builds (PATH lookup by default). |
 | `PLUGIN_BUILD_TIMEOUT` | `5m` | Overall deadline for one server-side build (Go duration). |
+
+### AI module generation (optional)
+
+When `AI_MODGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Module Generator: validated Tier 1 Go module projects (`go.mod` + `module.go` + `README.md` plus domain/api/store/admin overlays) from a natural-language brief, downloadable as `.zip`. Generated projects pass the module-contract gate (file contract, Go parse, `kernel.Module` lifecycle shape, layer import policy, `go.mod` hygiene with the host kernel pin, migration hygiene) plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Tier 1 modules link at compile time: the download ships an `INSTALL.md` with the custom-edition wiring and rebuild steps — there is no runtime install (see [module-generation.md](module-generation.md)). Each `AI_MODGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Module Generator entry (the endpoint still answers `503 generation_unavailable`).
+
+With `MODULE_APPLY_ENABLED=true` (plus a Go toolchain and a source checkout at the apply root — binary deployments stay `503`), the admin panel and API gain **Apply to checkout**: the staged project is copied into `modules/<name>/`, registered in `go.work` and `SUBMODULES`, the machine-owned custom edition (`internal/editions/custom/`, regenerated from its `applied.json` registry) is rewritten, and the result is verified (module tests in both workspaces plus the custom-binary build). Applying executes the generated module's tests on the host and links the module into the custom binary — enable it only on machines you operate, for generated source you have read. Verification failures keep the applied tree and report per-step outcomes; rebuild `./cmd/lesstruct-custom` and deploy it yourself.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_MODGEN_API_KEY` | empty | Dedicated API key for module generation. Falls back to `AI_TEXT_GENERATION_API_KEY`. |
+| `AI_MODGEN_BASE_URL` | empty | Override the API base URL. Falls back to `AI_TEXT_GENERATION_BASE_URL`. |
+| `AI_MODGEN_MODEL` | empty | Chat model name. Falls back to `AI_TEXT_GENERATION_MODEL`, then `gpt-5-mini`. |
+| `MODULE_APPLY_ENABLED` | `false` | Opt in to checkout applies: stage generated modules into the server's source checkout and verify them. |
+| `MODULE_APPLY_ROOT` | empty | Source checkout applies target. Empty means the server working directory. |
+| `GO_PATH` | `go` | Go toolchain used for apply verification (PATH lookup by default). |
+| `MODULE_APPLY_TIMEOUT` | `10m` | Overall deadline for one apply verification (Go duration). |
 
 ### Privacy redaction via SAM 3.1 (optional)
 

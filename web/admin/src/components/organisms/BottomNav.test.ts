@@ -45,12 +45,12 @@ describe('BottomNav', () => {
   }
 
   describe('rendering', () => {
-    it('should render bottom navigation with 12 items', async () => {
+    it('should render bottom navigation with 14 items', async () => {
       const wrapper = mountBottomNav()
       await wrapper.vm.$nextTick()
 
       const navItems = wrapper.findAll('.bottom-nav__item')
-      expect(navItems).toHaveLength(12)
+      expect(navItems).toHaveLength(14)
     })
 
     it('should have correct navigation items', async () => {
@@ -79,7 +79,7 @@ describe('BottomNav', () => {
       await wrapper.vm.$nextTick()
 
       const icons = wrapper.findAll('.bottom-nav__icon')
-      expect(icons).toHaveLength(12)
+      expect(icons).toHaveLength(14)
     })
   })
 

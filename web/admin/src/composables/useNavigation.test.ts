@@ -90,12 +90,12 @@ describe('useNavigation', () => {
       expect(wrapper.vm.navigation.isMobileMenuOpen.value).toBe(true)
     })
 
-    it('should return 12 navigation items from store', async () => {
+    it('should return 14 navigation items from store', async () => {
       const wrapper = mountTestComponent()
 
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.vm.navigation.navigationItems.value).toHaveLength(12)
+      expect(wrapper.vm.navigation.navigationItems.value).toHaveLength(14)
       expect(wrapper.vm.navigation.navigationItems.value[0]).toEqual({
         path: '/dashboard',
         label: 'Dashboard',

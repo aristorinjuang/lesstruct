@@ -901,6 +901,73 @@ List returns installed projects with language and hooks. Download streams `<name
 
 These six endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
 
+## AI module generation
+
+> Requires `AI_MODGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `moduleGeneration`.
+
+### Generate
+
+```
+POST /api/v1/modgen/generate
+```
+
+Generate a Tier 1 Go module project from a natural-language brief. Validates and stages as an inert source project under `modules-gen/`.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `description` | string | yes | Natural-language brief (max 5,000 chars). |
+| `surfaces` | string[] | no | Kernel surfaces to implement (any of `routes`, `public_routes`, `migrations`, `posttypes`, `roles`, `themes`, `admin`); empty lets the model infer them from the brief. |
+
+**Response:** `200 OK` with `{ "data": { "project": { "name": "...", "surfaces": [...], "rationale": "...", "files": { "go.mod": "...", "module.go": "...", "README.md": "...", "domain/types.go": "...", "api/handler.go": "..." } }, "validation": { "valid": true, "findings": [] } } }`.
+
+> `go.mod` must require the host kernel version with no `replace` directives; `domain/` must import no transport, SQL, or `lesstruct/internal`; every `api/` handler must write through `kernel/httpx`; migrations must be idempotent with no cross-module foreign keys.
+
+Warnings keep `valid: true` and surface in `validation.findings` — including unrequested surfaces the model added beyond the brief and the tier-guidance nudge when a hook-shaped brief fits a Tier 2 plugin better. When the validation gate still fails after the repair loop, the API answers `500 generation_failed` and repeats the final findings in `error.details` (`{ "valid": false, "findings": [...] }`). Tier 1 modules link at compile time: download the project, copy the tree into `modules/<name>/` in a source checkout, wire a custom edition, and rebuild — there is no runtime install.
+
+### List / Download / Delete
+
+```
+GET /api/v1/modgen/projects
+GET /api/v1/modgen/projects/{name}/download
+DELETE /api/v1/modgen/projects/{name}
+```
+
+List returns staged projects with surfaces, file counts, and the applied marker. Download streams `<name>.zip` with the `INSTALL.md` custom-edition wiring and rebuild steps. Delete removes the staged project (no active-state guard — staged projects are inert source) and reports `appliedInCheckout` when the module stays applied in the checkout.
+
+These four endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+
+### Apply
+
+```
+POST /api/v1/modgen/projects/{name}/apply
+```
+
+Stage an installed project into the server's source checkout: the tree lands in `modules/<name>/`, `go.work` and `SUBMODULES` gain the registration, the machine-owned custom edition (`internal/editions/custom/`, regenerated from its `applied.json` registry) is rewritten, and the result is verified — module tests in the workspace, the isolated `GOWORK=off` check, and the custom-binary build. Requires `MODULE_APPLY_ENABLED=true` plus a Go toolchain and a source checkout at the apply root (`/api/health` reports `moduleApply`); without them the endpoint answers `503 apply_unavailable`.
+
+**Request body** (optional): `{"replace": true, "confirm": true}` overwrites an applied tree the registry owns with the staged files and runs the full verification. Without both flags an owned collision answers `409 module_applied`.
+
+**Response:** `200 OK` with `{ "data": { "project": { "name": "...", "surfaces": [...] }, "apply": { "applied": true, "verified": true, "steps": [{ "name": "tests", "passed": true, "skipped": false }], "appliedModules": [...], "requiresRestart": true } } }`.
+
+Refusals: unknown projects answer `404`; already-applied modules answer `409 module_applied` (apply with `replace` confirmed to overwrite a registry-owned tree — hand-placed trees stay `409`); shared registry files carrying uncommitted operator changes answer `409 tree_dirty` (the rollback restores the tree for write failures). Staged-project deletion answers `200` with `appliedInCheckout: true` when the module stays applied in the checkout. Verification failures still answer `200` with `verified: false` and per-step outputs — the applied tree is kept for inspection. Rebuild `./cmd/lesstruct-custom` and deploy the binary yourself; the server can never hot-link new code.
+
+### Unapply
+
+```
+POST /api/v1/modgen/projects/{name}/unapply
+```
+
+Remove an applied module from the source checkout: the registry entry and custom-edition wiring are regenerated without it, the `go.work`/`SUBMODULES` registrations are dropped, the module tree is deleted, and the custom binary rebuilds to verify. Requires the same apply-enabled checkout as apply; the request body must carry `{"confirm": true}` (`400 confirmation_required` otherwise). Unknown or never-applied modules answer `404 module_not_applied` — hand-placed trees are never removed. Tracked operator edits inside the tree refuse with `409 tree_dirty`. The tree is deleted last: write failures roll back, and a verification failure keeps the removal while reporting the build output.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `confirm` | bool | yes | Explicit confirmation (removal deletes the applied tree). |
+
+**Response:** `200 OK` with `{ "data": { "unapply": { "removed": true, "verified": true, "steps": [{ "name": "build", "passed": true, "skipped": false }], "appliedModules": [...], "moduleDirRemoved": true } } }`. `moduleDirRemoved: false` marks the registry-only cleanup when the tree was already gone.
+
 ## AI voice dictation
 
 > Requires `AI_SPEECH_TO_TEXT_API_KEY` **and** `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `speechToText`.

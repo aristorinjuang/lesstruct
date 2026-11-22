@@ -13,8 +13,9 @@ async function bootstrap() {
   app.use(createPinia())
   app.use(router)
 
-  // Load feature flags (languages, commentsEnabled, headless) before the first
-  // render so the sidebar and comment surfaces start in the correct state.
+  // Load feature flags (languages, commentsEnabled, headless, plus the
+  // /api/health generator flags) before the first render so the sidebar and
+  // comment surfaces start in the correct state.
   await useConfig().fetchConfig()
 
   app.mount('#app')
