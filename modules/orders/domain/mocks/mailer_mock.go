@@ -47,6 +47,63 @@ func (_m *MockMailer) EXPECT() *MockMailer_Expecter {
 	return &MockMailer_Expecter{mock: &_m.Mock}
 }
 
+// SendNewOrderAlert provides a mock function for the type MockMailer
+func (_mock *MockMailer) SendNewOrderAlert(ctx context.Context, order *orders.Order) error {
+	ret := _mock.Called(ctx, order)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SendNewOrderAlert")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *orders.Order) error); ok {
+		r0 = returnFunc(ctx, order)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockMailer_SendNewOrderAlert_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SendNewOrderAlert'
+type MockMailer_SendNewOrderAlert_Call struct {
+	*mock.Call
+}
+
+// SendNewOrderAlert is a helper method to define mock.On call
+//   - ctx context.Context
+//   - order *orders.Order
+func (_e *MockMailer_Expecter) SendNewOrderAlert(ctx any, order any) *MockMailer_SendNewOrderAlert_Call {
+	return &MockMailer_SendNewOrderAlert_Call{Call: _e.mock.On("SendNewOrderAlert", ctx, order)}
+}
+
+func (_c *MockMailer_SendNewOrderAlert_Call) Run(run func(ctx context.Context, order *orders.Order)) *MockMailer_SendNewOrderAlert_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *orders.Order
+		if args[1] != nil {
+			arg1 = args[1].(*orders.Order)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMailer_SendNewOrderAlert_Call) Return(err error) *MockMailer_SendNewOrderAlert_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockMailer_SendNewOrderAlert_Call) RunAndReturn(run func(ctx context.Context, order *orders.Order) error) *MockMailer_SendNewOrderAlert_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SendOrderConfirmationEmail provides a mock function for the type MockMailer
 func (_mock *MockMailer) SendOrderConfirmationEmail(ctx context.Context, order *orders.Order) error {
 	ret := _mock.Called(ctx, order)

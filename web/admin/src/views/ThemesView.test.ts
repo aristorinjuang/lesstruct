@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import ThemesView from './ThemesView.vue'
 import { useThemegenStore, type InstalledTheme } from '@/stores/domain/themegen'
+import { useConfig } from '@/composables/useConfig'
 
 const activeTheme: InstalledTheme = {
   name: 'midnight-serif',
@@ -216,5 +217,31 @@ describe('ThemesView', () => {
     expect(stopPreview).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('Preview stopped.')
     expect(stopButton(wrapper)).toBeUndefined()
+  })
+
+  it('hides Preview when theme generation is off', async () => {
+    const { themeGeneration } = useConfig()
+    themeGeneration.value = false
+    try {
+      const { wrapper } = await createWrapper()
+
+      expect(cardButtons(wrapper, 'midnight-serif')).not.toContain('Preview')
+      expect(cardButtons(wrapper, 'paper-light')).not.toContain('Preview')
+      expect(cardButtons(wrapper, 'paper-light')).toContain('Download')
+    } finally {
+      themeGeneration.value = true
+    }
+  })
+
+  it('skips the preview status probe when theme generation is off', async () => {
+    const { themeGeneration } = useConfig()
+    themeGeneration.value = false
+    try {
+      const { store } = await createWrapper()
+
+      expect(store.fetchPreviewStatus).not.toHaveBeenCalled()
+    } finally {
+      themeGeneration.value = true
+    }
   })
 })

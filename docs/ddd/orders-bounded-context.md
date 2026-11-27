@@ -205,7 +205,7 @@ re-buildable cart.
 | `CartSource` | `Snapshot`, `Consume` | edition adapter over `modules/cart` |
 | `ContentSource` | `ProductTitle` | edition adapter over `internal/domain/content` |
 | `Inventory` | `Reserve`, `Release` | edition adapter over `catalog.AdjustStock` |
-| `Mailer` | `SendOrderConfirmationEmail`, `SendOrderStatusEmail` | edition adapter over `internal/email` |
+| `Mailer` | `SendOrderConfirmationEmail`, `SendOrderStatusEmail`, `SendNewOrderAlert` | edition adapter over `internal/email` |
 | `InvoiceRenderer` | `Render` | `modules/orders/pdf` |
 
 `OrderStore.MarkPaid` and `SetShipping` return `(bool, error)`: the boolean

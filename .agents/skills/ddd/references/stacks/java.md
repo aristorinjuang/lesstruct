@@ -4,6 +4,7 @@ Loaded when the project is Java (`pom.xml` / `build.gradle`). Vernon's own terri
 
 ## Tactical shapes
 - **Aggregate root** — a class with package-private state, factory methods, and command methods that enforce invariants and collect domain events.
+- **Entity (internal)** — a mutable class **owned by** its root, with identity **local to the aggregate** (`lineId` unique only within its `Order`); no repository of its own; mutated only via root commands (`order.changeLineQuantity(lineId, …)`). Equality by id. Always a reference type, never a `record`.
 - **Value object** — an immutable class (consider `record`) with correct `equals`/`hashCode`.
 - **Repository** — a domain interface (`OrderRepository`); a Spring Data / JPA adapter in infrastructure.
 - **Domain events** — published via the framework's event mechanism or a domain event registry, after the transaction commits for cross-aggregate eventual consistency.
@@ -31,7 +32,7 @@ import java.time.Instant;
 import java.util.*;
 
 // --- Value object: Money (record → value equality synthesized) ---
-public record Money(BigDecimal amount, String currency) implements DomainEvent {
+public record Money(BigDecimal amount, String currency) {
     public Money {
         if (amount.signum() < 0) throw new IllegalArgumentException("negative");
         if (!currency.matches("[A-Z]{3}")) throw new IllegalArgumentException("bad currency");
@@ -43,19 +44,62 @@ public record Money(BigDecimal amount, String currency) implements DomainEvent {
     }
 }
 
-// --- Value object: OrderLine ---
-public record OrderLine(String productId, int quantity, Money unitPrice) {
-    public OrderLine {
+// --- Entity (internal): OrderLine — owned by Order, local identity ---
+// Not a record: entities mutate in place and compare by id, not by value.
+public final class OrderLine {
+    private final String lineId;   // unique only within its Order
+    private final String productId;
+    private int quantity;
+    private final Money unitPrice;
+
+    public OrderLine(String lineId, String productId, int quantity, Money unitPrice) {
         if (quantity <= 0) throw new IllegalArgumentException("quantity must be positive");
+        this.lineId = lineId; this.productId = productId;
+        this.quantity = quantity; this.unitPrice = unitPrice;
+    }
+    void changeQuantity(int qty) {   // package-private: only the root calls this
+        if (qty <= 0) throw new IllegalArgumentException("quantity must be positive");
+        this.quantity = qty;
     }
     public Money lineTotal() {
         return new Money(unitPrice.amount().multiply(BigDecimal.valueOf(quantity)), unitPrice.currency());
     }
+    public String lineId() { return lineId; }
+    public String productId() { return productId; }
+    public int quantity() { return quantity; }
+    public Money unitPrice() { return unitPrice; }
+    @Override public boolean equals(Object o) {
+        return o instanceof OrderLine other && lineId.equals(other.lineId);
+    }
+    @Override public int hashCode() { return lineId.hashCode(); }
+
+    // Snapshot handed out to callers — data about the line, never the live entity.
+    public record Snapshot(String lineId, String productId, int quantity, Money unitPrice) {
+        public Money lineTotal() {
+            return new Money(unitPrice.amount().multiply(BigDecimal.valueOf(quantity)), unitPrice.currency());
+        }
+    }
+    public Snapshot snapshot() {
+        return new Snapshot(lineId, productId, quantity, unitPrice);
+    }
 }
 
-// --- Domain event ---
+// --- Value object: Item — the facts the caller supplies to place an order ---
+// Input VO, not an entity: no identity. The root builds one OrderLine per Item.
+public record Item(String productId, int quantity, Money unitPrice) {
+    public Item {
+        if (quantity <= 0) throw new IllegalArgumentException("quantity must be positive");
+    }
+}
+
+// --- Domain events ---
 public record OrderPlaced(String orderId, Instant occurredAt) implements DomainEvent {
     public OrderPlaced(String orderId) { this(orderId, Instant.now()); }
+}
+public record OrderLineQuantityChanged(String orderId, String lineId, int newQuantity, Instant occurredAt) implements DomainEvent {
+    public OrderLineQuantityChanged(String orderId, String lineId, int newQuantity) {
+        this(orderId, lineId, newQuantity, Instant.now());
+    }
 }
 
 // --- Aggregate: Order ---
@@ -70,8 +114,13 @@ public final class Order extends AggregateRoot {
         this.id = id; this.lines = new ArrayList<>(lines); this.status = status;
     }
 
-    public static Order place(String id, List<OrderLine> lines) {
-        if (lines.isEmpty()) throw new IllegalStateException("order needs a line");
+    public static Order place(String id, List<Item> items) {
+        if (items.isEmpty()) throw new IllegalStateException("order needs a line");
+        List<OrderLine> lines = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            Item it = items.get(i);
+            lines.add(new OrderLine(id + "-" + (i + 1), it.productId(), it.quantity(), it.unitPrice()));
+        }
         Order o = new Order(id, lines, Status.PLACED);
         o.register(new OrderPlaced(id));
         return o;
@@ -82,8 +131,20 @@ public final class Order extends AggregateRoot {
         this.status = Status.CONFIRMED;
     }
 
+    // Root addresses its internal entity by LOCAL identity — the sole mutator.
+    public void changeLineQuantity(String lineId, int qty) {
+        if (status != Status.PLACED) throw new IllegalStateException("only placed orders can change lines");
+        OrderLine line = lines.stream().filter(l -> l.lineId().equals(lineId))
+            .findFirst().orElseThrow(() -> new IllegalArgumentException("unknown line"));
+        line.changeQuantity(qty);
+        register(new OrderLineQuantityChanged(id, lineId, qty));
+    }
+
     public String id() { return id; }
-    public List<OrderLine> lines() { return List.copyOf(lines); }
+    // Snapshots out — never the live OrderLine.
+    public List<OrderLine.Snapshot> lines() {
+        return lines.stream().map(OrderLine::snapshot).toList();
+    }
 }
 
 // --- Domain service: PricingService (pure, stateless, domain layer) ---
@@ -93,7 +154,7 @@ public interface PricingService { Money calculateTotal(Order order, DiscountPoli
 public final class StandardPricingService implements PricingService {
     @Override public Money calculateTotal(Order order, DiscountPolicy policy) {
         Money gross = order.lines().stream()
-            .map(OrderLine::lineTotal)
+            .map(OrderLine.Snapshot::lineTotal)
             .reduce(Money::plus)
             .orElseThrow();
         return new Money(gross.amount().subtract(policy.discountFor(order).amount()), gross.currency());
@@ -109,7 +170,8 @@ public interface OrderRepository {
 
 ## Pitfalls
 - Mark aggregates `final`; keep constructors `private`, expose static factories; invariants enforced before any state is assigned.
-- `record` gives `equals`/`hashCode` for VOs for free — prefer it.
+- Internal entities are **classes** (never `record`): mutable, equality by local id. `record` gives `equals`/`hashCode` for VOs for free — prefer it for VOs only.
+- Only roots get repositories — never create a repository for an internal entity.
 - Don't put JPA annotations on the domain aggregate; map in infrastructure via a separate persistence representation (or accept the coupling as an explicit tradeoff).
-- Command methods return `void`; events are `register`ed, never returned.
+- Command methods return `void`; events are `register`ed, never returned. Hand out snapshots of internal entities, never the live entity.
 - Publish events only **after the transaction commits** (Spring `@TransactionalEventListener(AFTER_COMMIT)`), or via a transactional outbox.

@@ -185,6 +185,7 @@ func TestSubmitPayment(t *testing.T) {
 		h.store.On("Insert", mock.Anything, mock.Anything).Return(int64(7), nil)
 		h.store.On("FindByID", mock.Anything, int64(7)).Return(pendingRecord(), nil)
 		h.mail.On("SendPaymentReceivedEmail", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+		h.mail.On("SendPaymentProofAlert", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 		w := serve(t, h.router, http.MethodPost, "/public/orders/ORD-000042/payments", nil, body)
 
@@ -600,6 +601,8 @@ func TestSubmitPayment_MailFailuresStaySilent(t *testing.T) {
 	h.store.On("FindByID", mock.Anything, int64(7)).Return(pendingRecord(), nil)
 	h.mail.On("SendPaymentReceivedEmail", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return(context.DeadlineExceeded)
+	h.mail.On("SendPaymentProofAlert", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(context.DeadlineExceeded)
 
 	w := serve(t, h.router, http.MethodPost, "/public/orders/ORD-000042/payments", nil,
 		`{"email":"shopper@example.com","token":"track-token","method":"manual","reference":"BR-12345"}`)
@@ -621,6 +624,7 @@ func TestMidtransWebhook(t *testing.T) {
 			return p.OrderID == 42 && p.Method == paymentsdomain.MethodMidtrans &&
 				p.Status == paymentsdomain.StatusVerified && p.Amount == 522500 && p.VerifiedBy == "midtrans"
 		})).Return(int64(8), nil)
+		h.mail.On("SendPaymentSettledAlert", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 		w := serve(t, h.router, http.MethodPost, "/public/payments/midtrans/webhook", nil, signedBody)
 

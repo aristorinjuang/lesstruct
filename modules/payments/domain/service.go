@@ -128,10 +128,12 @@ type Orders interface {
 	Refund(ctx context.Context, orderID int64) error
 }
 
-// Mailer delivers the customer-facing payment emails. Delivery is
-// best-effort by contract: the payment record is authoritative, a failed
-// send never fails a submission or a decision, and the adapter logs its
-// own failures.
+// Mailer delivers the payment emails. Delivery is best-effort by
+// contract: the payment record is authoritative, a failed send never
+// fails a submission or a decision, and the adapter logs its own
+// failures. The customer methods reach the buyer; the alert methods
+// reach the operator (an unset recipient degrades to silence
+// adapter-side).
 type Mailer interface {
 	// SendPaymentReceivedEmail confirms the proof submission: what was
 	// submitted, and that a human decision follows.
@@ -139,6 +141,12 @@ type Mailer interface {
 	// SendPaymentRejectedEmail explains a rejected proof: the customer
 	// may resubmit with corrected references while the order is open.
 	SendPaymentRejectedEmail(ctx context.Context, order *OrderRef, method Method, reference string) error
+	// SendPaymentProofAlert tells the operator a manual proof was
+	// submitted and needs verification.
+	SendPaymentProofAlert(ctx context.Context, order *OrderRef, method Method, reference string) error
+	// SendPaymentSettledAlert tells the operator a gateway payment
+	// settled, so the order is paid and ready to fulfill.
+	SendPaymentSettledAlert(ctx context.Context, order *OrderRef, method Method) error
 }
 
 // Service is the payments domain service: manual proof submission over the
@@ -178,7 +186,8 @@ func (s *Service) Methods() []Method {
 // guest is gated on number and email, the method must be offered, and the
 // reference text is stored verbatim. The expected amount snapshots with
 // the record, so a later price edit can never rewrite the proof. Returns
-// the persisted record; the submission acknowledgment is best-effort.
+// the persisted record; the customer acknowledgment and the operator
+// alert are best-effort.
 func (s *Service) Submit(ctx context.Context, orderNumber string, email string, token string, method Method, reference string) (*Payment, error) {
 	reference = strings.TrimSpace(reference)
 	if reference == "" || len([]rune(reference)) > MaxReferenceRunes {
@@ -211,6 +220,7 @@ func (s *Service) Submit(ctx context.Context, orderNumber string, email string, 
 		return nil, err
 	}
 	_ = s.mail.SendPaymentReceivedEmail(ctx, order, method, reference)
+	_ = s.mail.SendPaymentProofAlert(ctx, order, method, reference)
 	return created, nil
 }
 
@@ -384,6 +394,7 @@ func (s *Service) settleNotification(ctx context.Context, event *Notification) e
 	}); err != nil {
 		return err
 	}
+	_ = s.mail.SendPaymentSettledAlert(ctx, order, MethodMidtrans)
 	return nil
 }
 

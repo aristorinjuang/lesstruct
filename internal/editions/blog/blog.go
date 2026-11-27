@@ -285,45 +285,48 @@ func (s *state) wire(core *app.Core) error {
 	// active edition's readable sources (stylesheets always, page templates
 	// when the brief opts in); without sources it generates from the distilled
 	// contract alone. The edition-side validator adds template parse and
-	// smoke-render checks to the domain file/CSS gate.
+	// smoke-render checks to the domain file/CSS gate. Theme management
+	// (list/download/activate/deactivate/snapshot) is generation-independent:
+	// the service is always built and only the generation backend stays gated
+	// on the AI key, so the Themes surface works without one.
 	themGenEdition := themegendomain.EditionBlog
 	if s.themeProvider != nil && s.themeProvider.Name() == "theme-storefront" {
 		themGenEdition = themegendomain.EditionStorefront
 	}
-	var themenService *themegendomain.Service
+	var generation themegendomain.ThemeGenerationService
 	if cfg.IsThemeGenerationEnabled() {
-		themeSources := themeBaseCSS
-		if themeStyleCSS != "" {
-			themeSources += "\n--- style ---\n" + themeStyleCSS
-		}
-		generation := themeninfra.NewOpenAIThemeService(
+		generation = themeninfra.NewOpenAIThemeService(
 			cmp.Or(cfg.AIThemGenAPIKey, cfg.AITextGenerationAPIKey),
 			cfg.EffectiveThemGenBaseURL(),
 			cfg.EffectiveThemGenModel(),
 		)
-		activation := NewThemeActivation(cfg)
-		store := themenstore.NewStore(cfg.ThemesRoot(), func() string {
-			return activation.ActiveTheme(context.Background())
-		}, func() string {
-			return cfg.ThemeDir
-		})
-		// The generation service receives the same material the prompts used
-		// to bake in: the active stylesheets plus the edition's page
-		// templates. The service decides per brief whether templates matter.
-		sources := themegendomain.NewThemeSources(
-			themeSources,
-			readThemeTemplateSources(themeModule.ThemeFiles()),
-		)
-		themenService = themegendomain.NewService(
-			generation,
-			themeValidator,
-			store,
-			func(context.Context, themegendomain.Edition) themegendomain.ThemeSources {
-				return sources
-			},
-			themGenEdition,
-		)
 	}
+	themeSources := themeBaseCSS
+	if themeStyleCSS != "" {
+		themeSources += "\n--- style ---\n" + themeStyleCSS
+	}
+	activation := NewThemeActivation(cfg)
+	store := themenstore.NewStore(cfg.ThemesRoot(), func() string {
+		return activation.ActiveTheme(context.Background())
+	}, func() string {
+		return cfg.ThemeDir
+	})
+	// The generation service receives the same material the prompts used
+	// to bake in: the active stylesheets plus the edition's page
+	// templates. The service decides per brief whether templates matter.
+	sources := themegendomain.NewThemeSources(
+		themeSources,
+		readThemeTemplateSources(themeModule.ThemeFiles()),
+	)
+	themenService := themegendomain.NewService(
+		generation,
+		themeValidator,
+		store,
+		func(context.Context, themegendomain.Edition) themegendomain.ThemeSources {
+			return sources
+		},
+		themGenEdition,
+	)
 	// Live preview (v1.5): the cookie-signing key is derived from the
 	// server secret once — the raw secret never leaves config — and Secure
 	// mirrors the site origin. The preview cache starts empty.
@@ -333,7 +336,7 @@ func (s *state) wire(core *app.Core) error {
 
 	s.themegenModule = themenmodule.New(
 		themenmodule.WithService(themenService),
-		themenmodule.WithActivations(NewThemeActivation(cfg)),
+		themenmodule.WithActivations(activation),
 		themenmodule.WithReloader(s),
 		themenmodule.WithPreviewKey(s.previewKey, s.previewSecure),
 		themenmodule.WithSnapshotRenderer(s),
@@ -347,33 +350,37 @@ func (s *state) wire(core *app.Core) error {
 	// distilled SDK contract plus the hook payload example; without sources
 	// it generates from the distilled contract alone. v1 ships generate →
 	// validate → repair → store as source projects under plugins/src.
-	var plugenService *plugingendomain.Service
-	var plugenBuilder plugingendomain.Builder
+	// Project management (list/download/delete) and the installed-plugin
+	// status read are generation-independent: the service is always built
+	// and only the generation backend stays gated on the AI key, so the
+	// Plugins surface works without one.
+	var plugenGeneration plugingendomain.PluginGenerationService
 	if cfg.IsPluginGenerationEnabled() {
-		generation := plugingeninfra.NewOpenAIPluginService(
+		plugenGeneration = plugingeninfra.NewOpenAIPluginService(
 			cmp.Or(cfg.AIPlugGenAPIKey, cfg.AITextGenerationAPIKey),
 			cfg.EffectivePlugGenBaseURL(),
 			cfg.EffectivePlugGenModel(),
 		)
-		projectStore := plugingenstore.NewStore("plugins/src", "plugins")
-		sources := plugingendomain.NewPluginSources("", "")
-		if cfg.PluginBuildEnabled {
-			if _, err := exec.LookPath(cfg.TinyGoPath); err != nil {
-				log.Printf("Warning: PLUGIN_BUILD_ENABLED is set but TinyGo was not found (%s): plugin builds answer 503 build_unavailable", cfg.TinyGoPath)
-			} else {
-				plugenBuilder = plugingeninfra.NewTinyGoBuilder(cfg.TinyGoPath, "plugins", cfg.PluginBuildTimeout, cfg.DevMode, nil)
-			}
-		}
-		plugenService = plugingendomain.NewServiceWithBuilder(
-			generation,
-			plugingendomain.NewValidator(),
-			projectStore,
-			plugenBuilder,
-			func(context.Context) plugingendomain.PluginSources {
-				return sources
-			},
-		)
 	}
+	pluginProjectStore := plugingenstore.NewStore("plugins/src", "plugins")
+	pluginSources := plugingendomain.NewPluginSources("", "")
+	var plugenBuilder plugingendomain.Builder
+	if cfg.PluginBuildEnabled {
+		if _, err := exec.LookPath(cfg.TinyGoPath); err != nil {
+			log.Printf("Warning: PLUGIN_BUILD_ENABLED is set but TinyGo was not found (%s): plugin builds answer 503 build_unavailable", cfg.TinyGoPath)
+		} else {
+			plugenBuilder = plugingeninfra.NewTinyGoBuilder(cfg.TinyGoPath, "plugins", cfg.PluginBuildTimeout, cfg.DevMode, nil)
+		}
+	}
+	plugenService := plugingendomain.NewServiceWithBuilder(
+		plugenGeneration,
+		plugingendomain.NewValidator(),
+		pluginProjectStore,
+		plugenBuilder,
+		func(context.Context) plugingendomain.PluginSources {
+			return pluginSources
+		},
+	)
 	core.PluginBuildReady = plugenBuilder != nil
 	s.plugingenModule = plugingenmodule.New(
 		plugingenmodule.WithService(plugenService),
@@ -390,8 +397,10 @@ func (s *state) wire(core *app.Core) error {
 	// v1 ships generate → validate → repair → stage as inert source
 	// projects under modules-gen: Tier 1 modules link at compile time, so
 	// there is no runtime install — the download ships an INSTALL.md with
-	// the custom-edition wiring and rebuild steps.
-	var modgenService *modgendomain.Service
+	// the custom-edition wiring and rebuild steps. Project management
+	// (list/download/delete) is generation-independent: the service is
+	// always built and only the generation backend stays gated on the AI
+	// key, so the Modules surface works without one.
 	modKernelVersion := resolveKernelVersion()
 	if modKernelVersion == "" {
 		// Workspace and dev-checkout builds report no kernel version via
@@ -404,26 +413,27 @@ func (s *state) wire(core *app.Core) error {
 			log.Printf("Warning: host kernel version is unknown: generated go.mod files will not pin a kernel version")
 		}
 	}
+	var modgenGeneration modgendomain.ModuleGenerationService
 	if cfg.IsModuleGenerationEnabled() {
-		generation := modgeninfra.NewOpenAIModuleService(
+		modgenGeneration = modgeninfra.NewOpenAIModuleService(
 			cmp.Or(cfg.AIModGenAPIKey, cfg.AITextGenerationAPIKey),
 			cfg.EffectiveModGenBaseURL(),
 			cfg.EffectiveModGenModel(),
 		)
-		projectStore := modgenstore.NewStore("modules-gen", modKernelVersion)
-		var modgenApplier modgendomain.Applier
-		if modApplier, ready := newModuleApplier(cfg, modKernelVersion); ready {
-			modgenApplier = modApplier
-			core.ModuleApplyReady = true
-		}
-		modgenService = modgendomain.NewServiceWithApplier(
-			generation,
-			modgendomain.NewValidatorWithKernelVersion(modKernelVersion),
-			projectStore,
-			modgenApplier,
-			newModuleSources(modKernelVersion),
-		)
 	}
+	moduleProjectStore := modgenstore.NewStore("modules-gen", modKernelVersion)
+	var modgenApplier modgendomain.Applier
+	if modApplier, ready := newModuleApplier(cfg, modKernelVersion); ready {
+		modgenApplier = modApplier
+		core.ModuleApplyReady = true
+	}
+	modgenService := modgendomain.NewServiceWithApplier(
+		modgenGeneration,
+		modgendomain.NewValidatorWithKernelVersion(modKernelVersion),
+		moduleProjectStore,
+		modgenApplier,
+		newModuleSources(modKernelVersion),
+	)
 	s.modgenModule = modgenmodule.New(
 		modgenmodule.WithService(modgenService),
 		modgenmodule.WithLogger(modules.NewLogger(core.Logger)),

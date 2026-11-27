@@ -18,12 +18,29 @@ An **aggregate** is a cluster of domain objects treated as one unit for data cha
 
 When an aggregate seems large, that's usually a signal to split into smaller aggregates coordinated by events.
 
-## Entities vs value objects
+## Root entities, internal entities, value objects
 
-- **Entity** — has **identity** that persists across attribute changes; equality by id; has a lifecycle. Use only when identity is genuinely required. (e.g., `Customer`)
-- **Value object** — **no identity**; defined entirely by its attributes; **immutable**; equality by value; describes or measures something. Replace rather than mutate. (e.g., `Money`, `Address`, `DateRange`)
+An aggregate contains exactly three kinds of parts. Vernon (*IDDD*, ch. 5–6, 10) distinguishes the **root entity** from **internal entities** — both have identity, but their identity scopes differ:
 
-**Favor value objects.** They're simpler, safer (immutable, no aliasing bugs), and compose well. Promote to entity only when you truly need identity and lifecycle.
+- **Aggregate root (the root entity)** — top-level; **not owned by any other model**. Has **global identity** (meaningful across the bounded context), a lifecycle of its own, and **owns the repository** (one repository per root). Example: `Order`, `BacklogItem`, `Discussion`.
+- **Internal entity** — **owned by** another model: its lifecycle (create, mutate, destroy) is controlled by its aggregate root. Has **identity local to the aggregate** — meaningful only *within* that aggregate instance and meaningless outside it. Equality by id. Never has its own repository. Examples: `OrderLine` (with `OrderLineId`) inside `Order`; Vernon's `Task` (with `TaskId`) inside `BacklogItem`; `Post` (with `PostId`) inside `Discussion`.
+- **Value object** — also a member of another model, but has **no identity**; defined entirely by its attributes; **immutable**; equality by value; describes or measures something. Replace rather than mutate. (e.g., `Money`, `Address`, `DateRange`)
+
+**Decision rule:**
+
+| Is it owned by another model? | Does something need to address it individually over its lifecycle? | It is… |
+|---|---|---|
+| No (top-level) | — | **Aggregate root** |
+| Yes, owned (lifecycle controlled by the root) | Yes (rename it, re-estimate it, change its quantity) | **Internal entity** — give it a local id |
+| Yes, owned | No (just a descriptive measure) | **Value object** |
+
+**Favor value objects.** They're simpler, safer (immutable, no aliasing bugs), and compose well. Promote an internal part to entity **only when something must address it individually over its lifecycle** (rename, re-estimate, change quantity); otherwise keep it a value object. An order line that is never addressed after creation is a perfectly valid value object — it becomes an entity the moment `changeLineQuantity(lineId, …)` must find *that* line.
+
+**Owned vs referenced.** "Owned by" means the root controls the part's lifecycle. A part that merely *references* another aggregate by identity (`OrderLine → ProductId`) does **not** own it — `Product` stays a separate root. Ownership is lifecycle control, not pointer-holding.
+
+**The root is the sole entry point.** External code addresses an internal entity **only through its root, by local identity** — e.g. `order.changeLineQuantity(lineId, qty)` (mirroring Vernon's `backlogItem.changeTaskStatus(taskId, status)`). The root looks the entity up, enforces the aggregate's invariants, mutates it, and records the domain event. Hand out *data about* internal entities (snapshots/copies), never live mutable references to them.
+
+**Reference vs value semantics.** In pointer/reference languages (Go, Java, C#, TS, Python, PHP), model roots and internal entities as **reference/pointer types**: they are looked up, shared, and mutated in place (`*Order`, `*OrderLine`). Model value objects as **value types**: immutable, copied, replaced wholesale (`Money`). In Rust/C++, the same distinction holds via ownership/borrowing (`&mut` commands on entities; `Clone`d `Copy`-like values for VOs).
 
 ## Domain events
 

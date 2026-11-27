@@ -65,10 +65,10 @@ selling:
 | `.env → PII_MASTER_KEY` | **Required.** Generate with `openssl rand -base64 32`. Missing or invalid = startup fails closed. |
 | `config.toml → [catalog]` | `post_type` (defaults to `"product"`), `currency` (base currency — checkout always uses it), `notify_email` for low-stock alerts. Optional `[[catalog.display_currencies]]` (e.g. USD toggle — display only). |
 | `config.toml → [site_config]` | `name`, `logo`, `hero_image` (upload via Media first, copy the URL). |
-| `config.toml → [payments]` | `methods` defaults to `["manual"]`. Add `"midtrans"` (keeping `"manual"`) to offer hosted card/e-wallet checkout alongside manual transfer — see section 7. Requires `MIDTRANS_SERVER_KEY` in `.env` (the **Sandbox Server Key**, `SB-Mid-server-…` — a Merchant-ID-shaped value fails with 401 at mint time). `MIDTRANS_IS_PRODUCTION=false` for sandbox. |
+| `config.toml → [payments]` | `methods` defaults to `["manual"]`. Add `"midtrans"` (keeping `"manual"`) to offer hosted card/e-wallet checkout alongside manual transfer — see section 7. Requires `MIDTRANS_SERVER_KEY` in `.env` (the **Sandbox Server Key**, `SB-Mid-server-…` — a Merchant-ID-shaped value fails with 401 at mint time). `MIDTRANS_IS_PRODUCTION=false` for sandbox. `notify_email` gets the operator payment alerts (proof submitted, gateway settled). |
 | `config.toml → [payments.manual]` | **Your bank details** — `bank`, `account`, `name`. All three are required (a partial block fails startup by design). Shown to buyers on the tracking page ("How to pay") and in the order-confirmation email. Without this block, buyers get no transfer destination. |
 | `config.toml → [invoice]` | `seller_name`, `seller_address`, `seller_tax_id`, `tax_rate` (default PPN 12%). **Prefer the admin UI** (admin → Invoice settings) over hand-editing: it validates, writes the block back atomically, and applies to the next invoice without a restart. `tax_rate = 0` is supported for non-PKP sellers. |
-| `config.toml → [orders]` | `pending_expiry` (default `24h`): how long a pending order stays payable before the sweeper expires it and emails the buyer. |
+| `config.toml → [orders]` | `pending_expiry` (default `24h`): how long a pending order stays payable before the sweeper expires it and emails the buyer. `notify_email` gets the operator new-order alert (customer contact, shipping address, frozen totals). |
 | `config.toml → [registration]` | `enabled = true` allows public sign-up at `/register` even with `[comments] enabled = false`. New accounts verify by email link, then can sign in. |
 | `config.toml → [legal]` | Optional overrides: consent flags (`checkout_consent`, `registration_consent`), policy URLs, `legal_nav` placement. Defaults are compliant out of the box once the four legal pages below exist. |
 | `.env → SMTP_*` | Required for order confirmations, payment/status emails, registration verification, and login codes. |
@@ -163,13 +163,16 @@ all run out shows out of stock.
 3. The order is created **`pending`** (`ORD-00000N`) and the buyer gets an
    **"Order confirmed"** email with items, SKUs, totals, and the
    **How-to-pay** block (bank, account, name + "include your order number
-   in the transfer note").
+   in the transfer note"). You get a **"New order"** alert at the
+   `[orders] notify_email` with the customer contact, shipping address,
+   and frozen totals.
 4. On **Track order** (`/orders/track`, order number + checkout email) the
    buyer sees *Awaiting payment*, the same How-to-pay block, and the
    **Manual transfer** panel: paste the bank **reference / transaction
    ID** → **Submit proof**. Status becomes *"Payment proof received and
-   awaiting verification."* The store gets a **"Payment received"** email
-   with the reference.
+   awaiting verification."* The buyer gets a **"Payment received"** email
+   with the reference, and you get a **"Payment proof submitted"** alert
+   at the `[payments] notify_email` — that alert is your cue to verify.
 5. Buyer tracking progresses through
    Placed → Paid → Packed → Shipped → Delivered as you work the order.
 
@@ -209,7 +212,8 @@ tracking page gains a second chip next to manual transfer.
    dashboard's **Payment Notification URL** to that path.
 4. On `settlement` (cards: `capture` + `accept`) the order flips to
    `paid` exactly like a verified manual proof: stock claimed, payment row
-   recorded as `midtrans / verified`, buyer emailed, tracking shows Paid.
+   recorded as `midtrans / verified`, buyer emailed, you alerted at the
+   `[payments] notify_email` ("Payment settled"), tracking shows Paid.
    `refund` notifications refund the order and release the stock back to
    its buckets. Duplicate webhooks are idempotent; bad signatures, wrong
    amounts, and unknown orders are refused (`403` / `400` / `404`).
@@ -257,6 +261,10 @@ tracking page gains a second chip next to manual transfer.
   verification state; approve or clean up unverified accounts there.
 - **Low stock**: `notify_email` gets an alert when a tracked bucket drops
   to its threshold.
+- **New orders and payments**: the `[orders] notify_email` gets a new-order
+  alert per checkout; the `[payments] notify_email` gets a proof-submitted
+  alert per manual proof and a payment-settled alert per gateway
+  settlement — so the inbox, not the admin list, tells you when to act.
 - **Backups**: the SQLite file is the store — snapshot it before upgrades
   or seeds, **and back up `PII_MASTER_KEY` with every dump**. Without the
   key, encrypted customer data cannot be recovered.
@@ -266,4 +274,5 @@ tracking page gains a second chip next to manual transfer.
 - **Emails to expect**: registration verification, order confirmed,
   payment received, payment rejected, order updates
   (paid/packed/shipped/delivered/refunded), login verification codes,
-  expiry notices.
+  expiry notices — plus the operator alerts (new order, payment proof
+  submitted, payment settled) at the configured `notify_email` addresses.

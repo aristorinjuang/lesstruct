@@ -54,6 +54,24 @@ adapter, where cross-context wiring belongs.
   cases need. A store can satisfy several ports structurally, but no shared
   `Repository[T]` abstraction exists to leak storage assumptions into the
   model.
+- **Roots, internal entities, and value objects.** Aggregate members follow
+  Vernon's three-part taxonomy (*IDDD*, ch. 5–6): the root carries global
+  identity, an **internal entity** carries identity local to its aggregate,
+  and a value object carries none. The promotion rule is addressability, not
+  persistence — a part is an internal entity only when something must address
+  it individually over its lifecycle; a stored row no command ever targets
+  alone stays value-shaped. In this architecture the domain `Service` is the
+  root's sole entry point, so internal entities are commanded through it by
+  local id: `Service.UpdateItem` validates the quantity, finds the cart line
+  by `itemID`, enforces the stock invariant, and writes through the store
+  port — the caller never holds the line. `OrderItem` is the contrasting
+  case: it freezes at checkout and is immutable for the order's life, so its
+  `ID` is storage identity for joins and reads, not a command address —
+  lifecycle transitions hit the `Order` (`Transition`, `ConfirmPaid`), never
+  a line, and items are handed out as values, never as live mutable
+  references. Only roots get persistence ports: there is no
+  `OrderItemRepository` or `CartLineRepository`; lines load through the order
+  and cart stores as part of the root read.
 - **No ORM or identity map.** Stores are hand-written SQL over
   `database/sql`; entities are loaded per call. Conditional updates
   (`UPDATE … WHERE stock + ? >= 0`, `MarkPaid`) are the concurrency primitive.

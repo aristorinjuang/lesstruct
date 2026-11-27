@@ -215,6 +215,7 @@ func TestService_Submit(t *testing.T) {
 				})).Return(int64(7), nil)
 				store.On("FindByID", mock.Anything, int64(7)).Return(submittedPayment(), nil)
 				mail.On("SendPaymentReceivedEmail", mock.Anything, payableOrder(), domain.MethodManual, "BR-12345").Return(nil)
+				mail.On("SendPaymentProofAlert", mock.Anything, payableOrder(), domain.MethodManual, "BR-12345").Return(nil)
 			},
 			want: submittedPayment(),
 		},
@@ -228,6 +229,7 @@ func TestService_Submit(t *testing.T) {
 				store.On("Insert", mock.Anything, mock.Anything).Return(int64(7), nil)
 				store.On("FindByID", mock.Anything, int64(7)).Return(submittedPayment(), nil)
 				mail.On("SendPaymentReceivedEmail", mock.Anything, mock.Anything, domain.MethodManual, mock.Anything).Return(nil)
+				mail.On("SendPaymentProofAlert", mock.Anything, mock.Anything, domain.MethodManual, mock.Anything).Return(nil)
 			},
 			reference: "BR-12345",
 			want:      submittedPayment(),
@@ -245,6 +247,7 @@ func TestService_Submit(t *testing.T) {
 				})).Return(int64(7), nil)
 				store.On("FindByID", mock.Anything, int64(7)).Return(submittedPayment(), nil)
 				mail.On("SendPaymentReceivedEmail", mock.Anything, mock.Anything, mock.Anything, "BR-12345").Return(nil)
+				mail.On("SendPaymentProofAlert", mock.Anything, mock.Anything, mock.Anything, "BR-12345").Return(nil)
 			},
 			want: submittedPayment(),
 		},
@@ -277,6 +280,7 @@ func TestService_Submit(t *testing.T) {
 				store.On("Insert", mock.Anything, mock.Anything).Return(int64(7), nil)
 				store.On("FindByID", mock.Anything, int64(7)).Return(submittedPayment(), nil)
 				mail.On("SendPaymentReceivedEmail", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				mail.On("SendPaymentProofAlert", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			},
 			want: submittedPayment(),
 		},
@@ -349,6 +353,7 @@ func TestService_Submit(t *testing.T) {
 				store.On("Insert", mock.Anything, mock.Anything).Return(int64(7), nil)
 				store.On("FindByID", mock.Anything, int64(7)).Return(submittedPayment(), nil)
 				mail.On("SendPaymentReceivedEmail", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("smtp down"))
+				mail.On("SendPaymentProofAlert", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("smtp down"))
 			},
 			want: submittedPayment(),
 		},
@@ -713,6 +718,19 @@ func TestService_HandleNotification(t *testing.T) {
 			return p.OrderID == 42 && p.Method == domain.MethodMidtrans &&
 				p.Status == domain.StatusVerified && p.Amount == 522500 && p.VerifiedBy == "midtrans"
 		})).Return(int64(8), nil)
+		mail.On("SendPaymentSettledAlert", mock.Anything, mock.Anything, domain.MethodMidtrans).Return(nil)
+		service := newService(store, orders, mail)
+
+		require.NoError(t, service.HandleNotification(context.Background(), settled()))
+	})
+
+	t.Run("a settled alert failure never fails the fold", func(t *testing.T) {
+		store, orders, mail := newSeams(t)
+		store.On("FindByReference", mock.Anything, "T-1").Return(nil, domain.ErrPaymentNotFound)
+		orders.On("DetailsByNumber", mock.Anything, "ORD-000042").Return(payableOrder(), nil)
+		orders.On("Confirm", mock.Anything, int64(42)).Return(payableOrder(), nil)
+		store.On("Insert", mock.Anything, mock.Anything).Return(int64(8), nil)
+		mail.On("SendPaymentSettledAlert", mock.Anything, mock.Anything, domain.MethodMidtrans).Return(errors.New("smtp down"))
 		service := newService(store, orders, mail)
 
 		require.NoError(t, service.HandleNotification(context.Background(), settled()))
@@ -813,6 +831,7 @@ func TestService_HandleNotification(t *testing.T) {
 		orders.On("DetailsByNumber", mock.Anything, "ORD-000042").Return(payableOrder(), nil)
 		orders.On("Confirm", mock.Anything, int64(42)).Return(payableOrder(), nil)
 		store.On("Insert", mock.Anything, mock.Anything).Return(int64(8), nil)
+		mail.On("SendPaymentSettledAlert", mock.Anything, mock.Anything, domain.MethodMidtrans).Return(nil)
 		service := newService(store, orders, mail)
 
 		event := settled()

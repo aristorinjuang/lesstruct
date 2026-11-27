@@ -237,3 +237,60 @@ func TestOrderSeams_Refund(t *testing.T) {
 		assert.ErrorIs(t, err, paymentsdomain.ErrOrderNotFound)
 	})
 }
+
+// alertOrderRef is the payable view a submitted proof or a settled
+// gateway payment carries into the operator alert.
+func alertOrderRef() *paymentsdomain.OrderRef {
+	return &paymentsdomain.OrderRef{
+		ID:            42,
+		OrderNumber:   "ORD-000042",
+		Status:        "pending",
+		TotalMinor:    522500,
+		CustomerEmail: "shopper@example.com",
+		Currency:      "IDR",
+	}
+}
+
+func TestPaymentMailer_SendPaymentProofAlert(t *testing.T) {
+	t.Run("an unset recipient degrades to silence", func(t *testing.T) {
+		mailer := commerce.NewPaymentMailer(disabledEmail(), "")
+
+		err := mailer.SendPaymentProofAlert(context.Background(), alertOrderRef(), paymentsdomain.MethodManual, "BR-12345")
+
+		require.NoError(t, err)
+	})
+
+	t.Run("a configured recipient routes the notice", func(t *testing.T) {
+		mailer := commerce.NewPaymentMailer(disabledEmail(), "ops@example.com")
+
+		err := mailer.SendPaymentProofAlert(context.Background(), alertOrderRef(), paymentsdomain.MethodManual, "BR-12345")
+
+		// The disabled service fails closed: the assertion is the
+		// routing itself — the notice reached the platform email
+		// service instead of degrading to silence.
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "email service is disabled")
+	})
+}
+
+func TestPaymentMailer_SendPaymentSettledAlert(t *testing.T) {
+	t.Run("an unset recipient degrades to silence", func(t *testing.T) {
+		mailer := commerce.NewPaymentMailer(disabledEmail(), "")
+
+		err := mailer.SendPaymentSettledAlert(context.Background(), alertOrderRef(), paymentsdomain.MethodMidtrans)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("a configured recipient routes the notice", func(t *testing.T) {
+		mailer := commerce.NewPaymentMailer(disabledEmail(), "ops@example.com")
+
+		err := mailer.SendPaymentSettledAlert(context.Background(), alertOrderRef(), paymentsdomain.MethodMidtrans)
+
+		// The disabled service fails closed: the assertion is the
+		// routing itself — the notice reached the platform email
+		// service instead of degrading to silence.
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "email service is disabled")
+	})
+}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/aristorinjuang/lesstruct/internal/editions/commerce"
+	"github.com/aristorinjuang/lesstruct/internal/email"
 	catalogdomain "github.com/aristorinjuang/lesstruct/modules/catalog/domain"
 	ordersdomain "github.com/aristorinjuang/lesstruct/modules/orders/domain"
 	"github.com/stretchr/testify/assert"
@@ -153,4 +154,55 @@ func TestCatalogInventory_ReleaseFailureLogsAndSweeps(t *testing.T) {
 	err := adapter.Release(context.Background(), []ordersdomain.OrderItem{stockLine(7, nil, 2)})
 
 	require.NoError(t, err)
+}
+
+// alertOrder is a placed order carrying the customer contact, the
+// shipping snapshot, and one frozen line the operator alert renders.
+func alertOrder() *ordersdomain.Order {
+	return &ordersdomain.Order{
+		ID:            42,
+		Status:        ordersdomain.StatusPending,
+		CustomerEmail: "shopper@example.com",
+		CustomerName:  "Annisa Putri",
+		CustomerPhone: "+6281234567890",
+		ShipTo: ordersdomain.Address{
+			Street:     "Jl. Kemang Raya 21",
+			City:       "Jakarta Selatan",
+			Province:   "DKI Jakarta",
+			PostalCode: "12730",
+		},
+		Currency: "IDR",
+		Subtotal: 598000,
+		Items: []ordersdomain.OrderItem{{
+			ID:               1,
+			OrderID:          42,
+			ProductContentID: 7,
+			SKU:              "TSHIRT",
+			Title:            "Nainggolan T-Shirt",
+			UnitPrice:        299000,
+			Quantity:         2,
+		}},
+	}
+}
+
+func TestOrderMailer_SendNewOrderAlert(t *testing.T) {
+	t.Run("an unset recipient degrades to silence", func(t *testing.T) {
+		mailer := commerce.NewOrderMailer(disabledEmail(), email.ManualPayee{}, "")
+
+		err := mailer.SendNewOrderAlert(context.Background(), alertOrder())
+
+		require.NoError(t, err)
+	})
+
+	t.Run("a configured recipient routes the notice", func(t *testing.T) {
+		mailer := commerce.NewOrderMailer(disabledEmail(), email.ManualPayee{}, "ops@example.com")
+
+		err := mailer.SendNewOrderAlert(context.Background(), alertOrder())
+
+		// The disabled service fails closed: the assertion is the
+		// routing itself — the notice reached the platform email
+		// service instead of degrading to silence.
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "email service is disabled")
+	})
 }

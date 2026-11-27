@@ -168,8 +168,8 @@ type Service struct {
 }
 
 // Checkout validates the request, claims the presented cart, and stores it
-// as a pending order, then emails the confirmation (best-effort). Every
-// line must resolve and be in stock: stock is validated here and only
+// as a pending order, then emails the confirmation and the operator alert
+// (both best-effort). Every line must resolve and be in stock: stock is validated here and only
 // decremented later, at payment. The order numbers snapshot live cart
 // prices at the moment of purchase, so later catalog edits never rewrite
 // history.
@@ -258,6 +258,7 @@ func (s *Service) Checkout(ctx context.Context, input CheckoutInput) (*Order, er
 	// a failed send never fails the checkout. The mailer adapter logs its
 	// own failures.
 	_ = s.mail.SendOrderConfirmationEmail(ctx, order)
+	_ = s.mail.SendNewOrderAlert(ctx, order)
 	return order, nil
 }
 

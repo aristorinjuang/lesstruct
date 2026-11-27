@@ -167,15 +167,16 @@ parse always, plus template parse and smoke renders when templates are present
 — with a bounded two-attempt repair loop feeding findings back to the model.
 Downloadable as `.zip` or activatable in place (`[theme]` active, hot-applied).
 Bring-your-own key via the AI theme settings (`AI_THEMGEN_*`, falling back to
-`AI_TEXT_GENERATION_*`). Leaf.
+`AI_TEXT_GENERATION_*`) for generate and preview; managing installed themes
+(list/download/activate/deactivate/snapshot) needs no key. Leaf.
 
 ### plugingen
 
-AI plugin generation: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief. Every result is validated before install — file contract, Go parse (dependency-free `go.mod`), hook-export and host-function policy with grant coverage, plus a generated-content scan — with a bounded two-attempt repair loop feeding findings back to the model. Downloadable as `.zip`; install by compiling with TinyGo and dropping the `.wasm` into `plugins/`, or build on the server (explicit opt-in plus TinyGo: the builder compiles, load-checks in wazero, and installs the `.wasm` with the synthesized manifest, hot-reloaded in `DEV_MODE`). Bring-your-own key via the AI plugin settings (`AI_PLUGGEN_*`, falling back to `AI_TEXT_GENERATION_*`). Leaf.
+AI plugin generation: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief. Every result is validated before install — file contract, Go parse (dependency-free `go.mod`), hook-export and host-function policy with grant coverage, plus a generated-content scan — with a bounded two-attempt repair loop feeding findings back to the model. Downloadable as `.zip`; install by compiling with TinyGo and dropping the `.wasm` into `plugins/`, or build on the server (explicit opt-in plus TinyGo: the builder compiles, load-checks in wazero, and installs the `.wasm` with the synthesized manifest, hot-reloaded in `DEV_MODE`). Listing, downloading, deleting, and installed-plugin status need no AI key; only generate and build stay key-gated. Bring-your-own key via the AI plugin settings (`AI_PLUGGEN_*`, falling back to `AI_TEXT_GENERATION_*`). Leaf.
 
 ### modgen
 
-AI module generation: validated Tier 1 Go module projects (`go.mod` + `module.go` + `README.md` plus domain/api/store/admin overlays) from a natural-language brief. Every result is validated before staging — file contract, Go parse, the `kernel.Module` lifecycle shape, the layer import policy (no `lesstruct/internal`, no transport/SQL in `domain/`, `api/` through `kernel/httpx`), `go.mod` hygiene (kernel required at the host version, no `replace`), and migration hygiene (idempotent, no cross-module FKs), plus a generated-content scan — with a bounded two-attempt repair loop feeding findings back to the model. Downloadable as `.zip` with an `INSTALL.md` (custom-edition wiring + rebuild steps): Tier 1 modules link at compile time, so there is no runtime install. On apply-enabled servers the download is replaced by the apply flow (refuse-first guards, verify, per-step outcomes) and unapply reverses it. Bring-your-own key via the AI module settings (`AI_MODGEN_*`, falling back to `AI_TEXT_GENERATION_*`). Leaf.
+AI module generation: validated Tier 1 Go module projects (`go.mod` + `module.go` + `README.md` plus domain/api/store/admin overlays) from a natural-language brief. Every result is validated before staging — file contract, Go parse, the `kernel.Module` lifecycle shape, the layer import policy (no `lesstruct/internal`, no transport/SQL in `domain/`, `api/` through `kernel/httpx`), `go.mod` hygiene (kernel required at the host version, no `replace`), and migration hygiene (idempotent, no cross-module FKs), plus a generated-content scan — with a bounded two-attempt repair loop feeding findings back to the model. Downloadable as `.zip` with an `INSTALL.md` (custom-edition wiring + rebuild steps): Tier 1 modules link at compile time, so there is no runtime install. On apply-enabled servers the download is replaced by the apply flow (refuse-first guards, verify, per-step outcomes) and unapply reverses it. Listing, downloading, and deleting staged projects need no AI key; only generate stays key-gated (apply/unapply keep the `MODULE_APPLY_ENABLED` gate). Bring-your-own key via the AI module settings (`AI_MODGEN_*`, falling back to `AI_TEXT_GENERATION_*`). Leaf.
 
 ### speech
 
@@ -233,7 +234,8 @@ Stock claims at payment
 confirmation through the catalog and returns when paid or packed orders
 cancel or refund; shipment and delivery end the unwind. Display order
 numbers are derived (`ORD-000042`), customer emails ride every move on a
-best-effort basis, and a background sweeper expires pendings older than
+best-effort basis, the `[orders] notify_email` gets the operator new-order
+alert per checkout (unset disables), and a background sweeper expires pendings older than
 the `[orders] pending_expiry` window (default 24h, batched with
 best-effort customer emails). Invoices stream on demand as PDF
 (`GET /api/v1/orders/{orderID}/invoice`): frozen lines, shipping, and a
@@ -278,7 +280,10 @@ amount against the current total, and `?orderId=` narrows the list to one
 order's history. Verification confirms the order
 through the orders payment-gated path — a stock shortfall leaves the
 order pending for fulfillment; rejection keeps it open for a corrected
-resubmission. Both decisions email the customer. Midtrans flow: the
+resubmission. Both decisions email the customer. Proof submissions
+(manual) and settlements (gateway) also alert the `[payments]
+notify_email` (unset disables); the admin's own Verify/Reject stays
+silent toward the operator. Midtrans flow: the
 module mints Snap hosted sessions
 (`POST /api/v1/public/orders/{orderNumber}/payments/session`) whose
 expiry mirrors `[orders] pending_expiry`, receives webhook events at

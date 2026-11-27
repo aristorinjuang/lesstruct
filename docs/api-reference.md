@@ -794,7 +794,7 @@ Translate content between languages, along with its SEO title and meta descripti
 
 ## AI theme generation
 
-> Requires `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `themeGeneration`.
+> Requires `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` for generate and preview (see [Configuration](../configuration.md)). The `/api/health` feature flag is `themeGeneration`. Listing, downloading, activating, deactivating, deleting, and snapshotting installed themes need no AI key.
 
 ### Generate
 
@@ -829,7 +829,7 @@ DELETE /api/v1/themegen/themes/{name}
 
 List returns installed themes with active markers and edition. Download streams `<name>.zip` with `THEME_DIR` install steps. Activate validates, writes `[theme] active`, and hot-applies the theme (`requiresRestart: false`); without a reload-capable edition it keeps the restart hint (`requiresRestart: true`). A reload failure reverts the config write. Deactivate clears back to the embedded default, hot-applying the same way; delete refuses `409 theme_active` while active or while the theme is the live `THEME_DIR` target.
 
-These six endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`). The preview trio and the snapshot endpoint below are browser-only — preview needs its per-browser signed cookie, and snapshots frame the session-authenticated HTML.
+These seven endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`). Only the preview trio below is browser-only — preview needs its per-browser signed cookie.
 
 ### Preview
 
@@ -847,11 +847,11 @@ Preview renders an installed theme on the real site for the requesting browser o
 GET /api/v1/themegen/themes/{name}/snapshot
 ```
 
-Renders the installed theme's homepage to a standalone HTML document with populated sample data, for the admin panel's snapshot frames. Browser-only like preview (no Bearer access): unknown or broken themes degrade to a placeholder document instead of an error, and missing render support answers `503 snapshot_unavailable`. Responses carry `Cache-Control: private, max-age=300`. The endpoint overrides the global anti-framing headers (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`, scripts forbidden) so the panel may frame it; the frames themselves run `sandbox="allow-same-origin"` without scripts.
+Renders the installed theme's homepage to a standalone HTML document with populated sample data, for the admin panel's snapshot frames. Dual-realm like the other management leaves: unknown or broken themes degrade to a placeholder document instead of an error, and missing render support answers `503 snapshot_unavailable`. Responses carry `Cache-Control: private, max-age=300`. The endpoint overrides the global anti-framing headers (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`, scripts forbidden) and additionally trusts the KaTeX CDN for `font-src` (the layouts already load its stylesheets from there); the frames themselves run `sandbox="allow-same-origin"` without scripts.
 
 ## AI plugin generation
 
-> Requires `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flags are `pluginGeneration` and (for builds) `pluginBuild`.
+> Requires `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` for generate and build (see [Configuration](../configuration.md)). The `/api/health` feature flags are `pluginGeneration` and (for builds) `pluginBuild`. Listing, downloading, deleting, and reading installed-plugin status need no AI key.
 
 ### Generate
 
@@ -899,11 +899,11 @@ GET /api/v1/plugins
 
 List returns installed projects with language and hooks. Download streams `<name>.zip` with TinyGo build and install steps. Delete removes the project (no active-state guard — projects are inert source until compiled). Status returns the loaded `.wasm` plugins with their hook registrations (read-only inspection).
 
-These six endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+These six endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`). Generate and build additionally require a configured AI key (`404` without one).
 
 ## AI module generation
 
-> Requires `AI_MODGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` (see [Configuration](../configuration.md)). The `/api/health` feature flag is `moduleGeneration`.
+> Requires `AI_MODGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` for generate (see [Configuration](../configuration.md)). The `/api/health` feature flag is `moduleGeneration`. Listing, downloading, and deleting staged projects need no AI key; apply/unapply additionally require `MODULE_APPLY_ENABLED`.
 
 ### Generate
 
@@ -936,7 +936,7 @@ DELETE /api/v1/modgen/projects/{name}
 
 List returns staged projects with surfaces, file counts, and the applied marker. Download streams `<name>.zip` with the `INSTALL.md` custom-edition wiring and rebuild steps. Delete removes the staged project (no active-state guard — staged projects are inert source) and reports `appliedInCheckout` when the module stays applied in the checkout.
 
-These four endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`).
+These four endpoints are dual-realm: the browser admin panel drives them with a session cookie, and API clients drive the same paths with a Bearer admin API key (non-admin keys get `403 INSUFFICIENT_PERMISSIONS`). Generate additionally requires a configured AI key (`404` without one).
 
 ### Apply
 

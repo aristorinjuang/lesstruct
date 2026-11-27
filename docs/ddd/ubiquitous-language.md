@@ -125,7 +125,8 @@
 | Invoice | A derived, never-persisted render document (`INV-000042`). | `InvoiceDocument` |
 | PPN | Indonesian VAT, a display-only invoice breakdown at the configured rate. | `InvoiceSettings.TaxRate` |
 | Invoice settings | The live `[invoice]` block (seller identity + PPN rate): module state behind a mutex, persisted through `config.SaveInvoice` so an admin edit applies without a restart. | `Module.InvoiceSettings` |
-| Order mailer | Best-effort confirmation/status email delivery. | `Mailer` |
+| Order mailer | Best-effort customer confirmation/status emails plus the operator new-order alert. | `Mailer` |
+| Payment mailer | Best-effort customer proof/rejection emails plus the operator proof and settlement alerts. | `payments.Mailer` |
 
 ## Legal & consent
 

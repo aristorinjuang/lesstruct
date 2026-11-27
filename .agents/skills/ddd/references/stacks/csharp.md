@@ -4,6 +4,7 @@ Loaded when the project is C# / .NET (`*.csproj` / `*.sln`). Adapt to your model
 
 ## Tactical shapes
 - **Aggregate root** — class with private setters; constructor/static factory validates invariants; command methods mutate state and append events to a `_domainEvents` collection. Typically inherits an `AggregateRoot` base (or implements `IAggregateRoot`) exposing `AddDomainEvent` / `PullDomainEvents`.
+- **Entity (internal)** — a mutable `sealed class` **owned by** its root, with identity **local to the aggregate** (`LineId` unique only within its `Order`); no repository of its own; mutated only via root commands (`order.ChangeLineQuantity(lineId, …)`). Equality by id — never a `record` (records synthesize value equality).
 - **Value object** — immutable class/record overriding equality members, or a `ValueObject` base class comparing equality components. C# 9+ `record` (and `record struct`) is ideal — value equality is synthesized.
 - **Repository** — domain interface `IOrderRepository { Task<Order?> FindByIdAsync(...); Task SaveAsync(...); }`; an EF Core adapter (`DbContext` + `DbSet<Order>`) in `infrastructure/`.
 - **Domain events** — collected on the aggregate; dispatched by an EF Core `SaveChanges` interceptor, a unit-of-work, or MediatR (`INotification`) after the transaction commits.
@@ -48,18 +49,53 @@ public record Money(decimal Amount, string Currency)
     }
 }
 
-// --- Value object: OrderLine ---
-public record OrderLine(string ProductId, int Quantity, Money UnitPrice)
+// --- Entity (internal): OrderLine — owned by Order, local identity ---
+// Sealed class, not a record: entities mutate in place and compare by id.
+public sealed class OrderLine
 {
-    public OrderLine
+    public string LineId { get; }
+    public string ProductId { get; }
+    public int Quantity { get; private set; }
+    public Money UnitPrice { get; }
+
+    public OrderLine(string lineId, string productId, int quantity, Money unitPrice)
+    {
+        if (quantity <= 0) throw new ArgumentException("quantity must be positive");
+        LineId = lineId; ProductId = productId; Quantity = quantity; UnitPrice = unitPrice;
+    }
+    internal void ChangeQuantity(int qty)
+    {
+        if (qty <= 0) throw new ArgumentException("quantity must be positive");
+        Quantity = qty;
+    }
+    public Money LineTotal() => new(UnitPrice.Amount * Quantity, UnitPrice.Currency);
+    public override bool Equals(object? o) => o is OrderLine other && LineId == other.LineId;
+    public override int GetHashCode() => LineId.GetHashCode();
+
+    // Snapshot handed out to callers — data about the line, never the live entity.
+    public sealed record Snapshot(string LineId, string ProductId, int Quantity, Money UnitPrice)
+    {
+        public Money LineTotal() => new(UnitPrice.Amount * Quantity, UnitPrice.Currency);
+    }
+    public Snapshot ToSnapshot() => new(LineId, ProductId, Quantity, UnitPrice);
+}
+
+// --- Value object: LineItem — the facts the caller supplies to place an order ---
+// Input VO, not an entity: no identity. The root builds one OrderLine per LineItem.
+public sealed record LineItem(string ProductId, int Quantity, Money UnitPrice)
+{
+    public LineItem
     {
         if (Quantity <= 0) throw new ArgumentException("quantity must be positive");
     }
-    public Money LineTotal() => new(UnitPrice.Amount * Quantity, UnitPrice.Currency);
 }
 
-// --- Domain event ---
+// --- Domain events ---
 public sealed record OrderPlaced(string OrderId) : IDomainEvent
+{
+    public DateTime OccurredAt { get; } = DateTime.UtcNow;
+}
+public sealed record OrderLineQuantityChanged(string OrderId, string LineId, int NewQuantity) : IDomainEvent
 {
     public DateTime OccurredAt { get; } = DateTime.UtcNow;
 }
@@ -78,9 +114,11 @@ public sealed class Order : AggregateRoot
         Id = id; _lines = lines.ToList(); _status = status;
     }
 
-    public static Order Place(string id, IReadOnlyList<OrderLine> lines)
+    public static Order Place(string id, IReadOnlyList<LineItem> items)
     {
-        if (lines.Count == 0) throw new InvalidOperationException("order needs a line");
+        if (items.Count == 0) throw new InvalidOperationException("order needs a line");
+        var lines = items.Select((it, i) =>
+            new OrderLine($"{id}-{i + 1}", it.ProductId, it.Quantity, it.UnitPrice)).ToList();
         var o = new Order(id, lines, Status.Placed);
         o.Register(new OrderPlaced(id));
         return o;
@@ -92,7 +130,17 @@ public sealed class Order : AggregateRoot
         _status = Status.Confirmed;
     }
 
-    public IReadOnlyList<OrderLine> Lines => _lines.AsReadOnly();
+    // Root addresses its internal entity by LOCAL identity — the sole mutator.
+    public void ChangeLineQuantity(string lineId, int qty)
+    {
+        if (_status != Status.Placed) throw new InvalidOperationException("only placed orders can change lines");
+        var line = _lines.FirstOrDefault(l => l.LineId == lineId)
+            ?? throw new ArgumentException("unknown line");
+        line.ChangeQuantity(qty);
+        Register(new OrderLineQuantityChanged(Id, lineId, qty));
+    }
+
+    public IReadOnlyList<OrderLine.Snapshot> Lines => _lines.Select(l => l.ToSnapshot()).ToList().AsReadOnly();
 }
 
 // --- Domain service: PricingService (pure, stateless, domain layer) ---
@@ -119,8 +167,9 @@ public interface IOrderRepository
 ```
 
 ## Pitfalls
-- `sealed` aggregates; `record` for VOs (synthesizes `Equals`/`GetHashCode`).
+- `sealed` aggregates and entities; `record` for VOs (synthesizes `Equals`/`GetHashCode`) — never `record` for entities (value equality is wrong for identity).
+- Only roots get repositories — never create a repository for an internal entity.
 - EF Core maps private setters and fields via backing-field conventions — don't expose public setters just for the ORM.
 - Dispatch events via an EF Core `SaveChanges` interceptor or MediatR `INotification` **after** `SaveChanges`/commit.
-- Command methods return `void`; events are `Register`ed.
+- Command methods return `void`; events are `Register`ed. Hand out snapshots of internal entities, never the live entity.
 - Use `decimal` for money (never `float`/`double`).

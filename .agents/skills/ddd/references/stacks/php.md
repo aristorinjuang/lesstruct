@@ -8,6 +8,7 @@ Loaded when the project is PHP (`composer.json`). Covers **Symfony**, **Laravel*
   - *Laravel* — either a plain PHP aggregate persisted via a repository (more DDD-pure) or an Eloquent model re-purposed as the aggregate; events via `Illuminate\Foundation\Events\Dispatchable` or Spatie's `laravel-event-sourcing`.
   - *Framework-agnostic* — plain PSR-4 classes (`App\Domain\Order`); persistence entirely behind the repository interface.
 - **Value object** — `final readonly class` (PHP 8.2+) or class with `readonly` props, implementing `equals(self): bool`; single-value VOs as a typed wrapper with `__toString()` and an `of()` factory.
+- **Entity (internal)** — a mutable class **owned by** its root, with identity **local to the aggregate** (`$lineId` unique only within its `Order`); no repository of its own; mutated only via root commands (`$order->changeLineQuantity($lineId, …)`). Equality by id. Never `readonly` — `readonly` is for value objects.
 - **Repository** — domain interface `OrderRepository` in the domain layer.
   - *Symfony* — Doctrine ORM repository in infrastructure.
   - *Laravel* — repository backed by Eloquent queries or the `DB` facade.
@@ -80,8 +81,54 @@ final readonly class Money
     }
 }
 
-// --- Value object: OrderLine ---
-final readonly class OrderLine
+// --- Entity (internal): OrderLine --- owned by Order, local identity.
+// Mutable, compared by lineId: NOT a value object, so NOT readonly.
+final class OrderLine
+{
+    public function __construct(
+        public readonly string $lineId,
+        public readonly string $productId,
+        public int $quantity,
+        public readonly Money $unitPrice,
+    ) {
+        if ($quantity <= 0) throw new \InvalidArgumentException('quantity must be positive');
+    }
+
+    /** Called only by Order::changeLineQuantity. */
+    public function changeQuantity(int $qty): void {
+        if ($qty <= 0) throw new \InvalidArgumentException('quantity must be positive');
+        $this->quantity = $qty;
+    }
+
+    public function lineTotal(): Money {
+        return new Money($this->unitPrice->amount * $this->quantity, $this->unitPrice->currency);
+    }
+
+    public function equals(self $other): bool { return $this->lineId === $other->lineId; }
+
+    /** Snapshot handed out to callers: data, never the live entity. */
+    public function snapshot(): OrderLineSnapshot {
+        return new OrderLineSnapshot($this->lineId, $this->productId, $this->quantity, $this->unitPrice);
+    }
+}
+
+final readonly class OrderLineSnapshot
+{
+    public function __construct(
+        public string $lineId,
+        public string $productId,
+        public int $quantity,
+        public Money $unitPrice,
+    ) {}
+
+    public function lineTotal(): Money {
+        return new Money($this->unitPrice->amount * $this->quantity, $this->unitPrice->currency);
+    }
+}
+
+// --- Value object: LineItem --- the facts the caller supplies to place an order.
+// Input VO, not an entity: no identity. The root builds one OrderLine per LineItem.
+final readonly class LineItem
 {
     public function __construct(
         public string $productId,
@@ -90,16 +137,25 @@ final readonly class OrderLine
     ) {
         if ($quantity <= 0) throw new \InvalidArgumentException('quantity must be positive');
     }
-
-    public function lineTotal(): Money {
-        return new Money($this->unitPrice->amount * $this->quantity, $this->unitPrice->currency);
-    }
 }
 
 // --- Domain event ---
 final readonly class OrderPlaced implements DomainEvent
 {
     public function __construct(public string $orderId) {}
+
+    public function occurredAt(): \DateTimeImmutable {
+        return new \DateTimeImmutable();
+    }
+}
+
+final readonly class OrderLineQuantityChanged implements DomainEvent
+{
+    public function __construct(
+        public string $orderId,
+        public string $lineId,
+        public int $newQuantity,
+    ) {}
 
     public function occurredAt(): \DateTimeImmutable {
         return new \DateTimeImmutable();
@@ -130,9 +186,13 @@ final class Order
         $this->status = OrderStatus::Placed;
     }
 
-    /** Named constructor / factory. @param list<OrderLine> $lines */
-    public static function place(string $id, array $lines): self {
-        if (count($lines) === 0) throw new \DomainException('order needs a line');
+    /** Named constructor / factory. @param list<LineItem> $items */
+    public static function place(string $id, array $items): self {
+        if (count($items) === 0) throw new \DomainException('order needs a line');
+        $lines = [];
+        foreach (array_values($items) as $i => $it) {
+            $lines[] = new OrderLine($id . '-' . ($i + 1), $it->productId, $it->quantity, $it->unitPrice);
+        }
         $o = new self($id, $lines);
         $o->record(new OrderPlaced($id));
         return $o;
@@ -143,8 +203,21 @@ final class Order
         $this->status = OrderStatus::Confirmed;
     }
 
-    /** @return list<OrderLine> */
-    public function lines(): array { return $this->lines; }
+    // Root addresses its internal entity by LOCAL identity: the sole mutator.
+    public function changeLineQuantity(string $lineId, int $qty): void {
+        if ($this->status !== OrderStatus::Placed) throw new \DomainException('only placed orders can change lines');
+        foreach ($this->lines as $line) {
+            if ($line->lineId === $lineId) {
+                $line->changeQuantity($qty);
+                $this->record(new OrderLineQuantityChanged($this->id, $lineId, $qty));
+                return;
+            }
+        }
+        throw new \DomainException('unknown line');
+    }
+
+    /** @return list<OrderLineSnapshot> snapshots out, never the live OrderLine */
+    public function lines(): array { return array_map(fn ($l) => $l->snapshot(), $this->lines); }
 }
 
 // --- Domain service: PricingService (pure, stateless, domain layer) ---
@@ -223,6 +296,7 @@ final class PdoOrderRepository implements OrderRepository
 - PHP 8.1+ `readonly` properties / 8.2+ `readonly class` for VOs; PHP 8.1+ `enum` for status.
 - Store money as integer **minor units** in production (or `brick/money`); the `int $amount` here is illustrative.
 - Named constructors (static factory methods); keep the real constructor `private` to enforce invariants at creation.
+- Internal entities are mutable classes with identity equality; never `readonly`. Only roots get repositories. Hand out snapshots of internal entities, never the live object.
 - *Symfony*: keep Doctrine mapping in infrastructure; don't leak ORM annotations into the domain aggregate (a deliberate tradeoff if you do).
 - *Laravel*: prefer a plain aggregate + repository over Eloquent active record for DDD purity; use events on a **queued** connection for reliability.
 - Dispatch events **after** the transaction commits/flushes (Messenger async transport or a queued listener acts as the outbox).

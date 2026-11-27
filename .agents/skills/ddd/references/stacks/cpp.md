@@ -4,6 +4,7 @@ Loaded when the project is C++ or C (`CMakeLists.txt`, `meson.build`, `BUILD`/`M
 
 ## Tactical shapes
 - **Aggregate root** — class with private data members; a constructor or static factory (named-constructor idiom) validates invariants; command methods (`void confirm()`) enforce rules and `register_event(...)` into a `std::vector` member. C++ has real single inheritance, so the classic Vernon `AggregateRoot` base works (unlike Rust traits / Go embedding).
+- **Entity (internal)** — a mutable class **owned by** its root, with identity **local to the aggregate**; no repository of its own; mutated only via root commands. Equality by id, never defaulted value equality.
 - **Value object** — immutable class/struct with `operator==` (add a `std::hash` specialization if keyed in a set/map). Use **strong types** for branded primitives: a distinct `struct OrderId { std::string value; }` with explicit conversions (or a strong-type library) — never a bare `std::string` at an aggregate boundary.
 - **Repository** — an abstract base class (or a C++20 concept-constrained polymorphic interface) declared **in the domain**; a concrete adapter lives in `infrastructure/` (libpqxx, sqlpp11, ODB ORM, soci). The domain header links no DB client.
 - **Domain events** — either a polymorphic `DomainEvent` base with concrete event classes, or a single `std::variant<OrderPlaced, OrderConfirmed, …>` of plain event structs — pick whichever matches the codebase. Events are collected on the aggregate; the application/use-case layer pulls and publishes them after `save`. The domain never links a broker.
@@ -88,28 +89,56 @@ private:
     std::string currency_;
 };
 
-// --- Value object: OrderLine ---
+// --- Entity (internal): OrderLine — owned by Order, local identity ---
+// Mutable, compared by line_id only: NOT value equality. Only the root mutates it.
 class OrderLine {
 public:
-    static expected<OrderLine, std::string> make(OrderId product, int qty, Money unit_price) {
+    static expected<OrderLine, std::string> make(std::string line, OrderId product, int qty, Money unit_price) {
         if (qty <= 0) return unexpected("quantity must be positive");
-        return OrderLine{std::move(product), qty, std::move(unit_price)};
+        return OrderLine{std::move(line), std::move(product), qty, std::move(unit_price)};
     }
+    std::string const& line_id() const { return line_; }
     OrderId const& product() const { return product_; }
+    int quantity() const { return qty_; }
     Money line_total() const { return unit_price_.times(qty_); }
-    friend bool operator==(OrderLine const&, OrderLine const&) = default;
+    bool operator==(OrderLine const& o) const { return line_ == o.line_; }
+    // Snapshot handed out to callers — data about the line, never a mutable alias.
+    struct Snapshot { std::string line; OrderId product; int qty; Money unit_price; };
+    Snapshot snapshot() const { return Snapshot{line_, product_, qty_, unit_price_}; }
 private:
-    OrderLine(OrderId p, int q, Money u) : product_{std::move(p)}, qty_{q}, unit_price_{std::move(u)} {}
+    friend class Order;   // only the root mutates internals
+    void change_quantity(int q) { qty_ = q; }   // caller validates; root owns the invariant
+    OrderLine(std::string l, OrderId p, int q, Money u)
+        : line_{std::move(l)}, product_{std::move(p)}, qty_{q}, unit_price_{std::move(u)} {}
+    std::string line_;   // unique only within its Order
     OrderId product_;
     int qty_;
     Money unit_price_;
 };
 
-// --- Domain event ---
+// --- Value object: LineItem — the facts the caller supplies to place an order ---
+// Input VO, not an entity: no identity. The root builds one OrderLine per LineItem.
+struct LineItem {
+    OrderId product;
+    int qty;
+    Money unit_price;
+    static expected<LineItem, std::string> make(OrderId p, int q, Money u) {
+        if (q <= 0) return unexpected("quantity must be positive");
+        return LineItem{std::move(p), q, std::move(u)};
+    }
+};
+
+// --- Domain events ---
 struct OrderPlaced : DomainEvent {
     OrderId order_id;
     std::chrono::steady_clock::time_point at = std::chrono::steady_clock::now();
     explicit OrderPlaced(OrderId id) : order_id{std::move(id)} {}
+};
+struct OrderLineQuantityChanged : DomainEvent {
+    OrderId order_id;
+    std::string line_id;
+    int new_quantity;
+    std::chrono::steady_clock::time_point at = std::chrono::steady_clock::now();
 };
 
 // --- Aggregate: Order ---
@@ -117,8 +146,16 @@ class Order : public AggregateRoot {
 public:
     enum class Status { Placed, Confirmed };
 
-    static expected<Order, std::string> place(OrderId id, std::vector<OrderLine> lines) {
-        if (lines.empty()) return unexpected("order needs a line");
+    static expected<Order, std::string> place(OrderId id, std::vector<LineItem> items) {
+        if (items.empty()) return unexpected("order needs a line");
+        std::vector<OrderLine> lines;
+        lines.reserve(items.size());
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            auto l = OrderLine::make(id.value + "-" + std::to_string(i + 1),
+                std::move(items[i].product), items[i].qty, std::move(items[i].unit_price));
+            if (!l) return unexpected(l.error());
+            lines.push_back(std::move(*l));
+        }
         Order o{std::move(id), std::move(lines), Status::Placed};
         o.register_event(std::make_unique<OrderPlaced>(o.id_));
         return o;
@@ -129,8 +166,30 @@ public:
         return {};
     }
 
+    // Root addresses its internal entity by LOCAL identity — the sole mutator.
+    expected<void, std::string> change_line_quantity(std::string_view line_id, int qty) {
+        if (status_ != Status::Placed) return unexpected("only placed orders can change lines");
+        if (qty <= 0) return unexpected("quantity must be positive");
+        for (auto& l : lines_)
+            if (l.line_id() == line_id) {
+                l.change_quantity(qty);
+                auto e = std::make_unique<OrderLineQuantityChanged>();
+                e->order_id = id_; e->line_id = std::string(line_id); e->new_quantity = qty;
+                register_event(std::move(e));
+                return {};
+            }
+        return unexpected("unknown line");
+    }
+
     OrderId const& id() const { return id_; }
+    // Read-only views out — callers see data, never a mutable alias to internals.
     std::vector<OrderLine> const& lines() const { return lines_; }
+    std::vector<OrderLine::Snapshot> line_snapshots() const {
+        std::vector<OrderLine::Snapshot> out;
+        out.reserve(lines_.size());
+        for (auto const& l : lines_) out.push_back(l.snapshot());
+        return out;
+    }
 private:
     Order(OrderId id, std::vector<OrderLine> lines, Status s)
         : id_{std::move(id)}, lines_{std::move(lines)}, status_{s} {}
@@ -172,12 +231,13 @@ public:
 ```
 
 ## Pitfalls
+- Internal entities are mutable classes with identity equality (compare the local id); VOs use defaulted value equality. Only roots get repositories. Hand out snapshots/read-only views, never mutable aliases to internals.
 - Store money as **integer minor units** (`std::int64_t`), or `boost::multiprecision::cpp_int` for arbitrary precision — never `float`/`double`.
 - `expected` over exceptions for fallible factories/commands; keep exceptions (if used) out of VO constructors in hot paths.
 - Header/source split: keep the aggregate's private members in the header (needed for `AggregateRoot` inheritance and inline methods); for true opacity use the **Pimpl** idiom only where ABI stability matters, not as a default.
 - `unique_ptr` events move cheaply and self-free; the publisher owns them after `pull_events()`. Don't store raw `new`-ed events.
 - Pick **one** event representation per codebase — polymorphic `DomainEvent` base **or** `std::variant<…>` — not both.
-- `final` on concrete aggregates/services; `= default` equality on VOs; reserve `virtual` for ports.
+- `final` on concrete aggregates/services; `= default` equality on VOs (never on entities); reserve `virtual` for ports.
 - Link the DB/broker client only in `infrastructure/`; the domain target must compile with no framework deps (hexagonal discipline).
 
 ## §5. Plain C (optional)
@@ -185,7 +245,8 @@ public:
 For pure-C projects (same manifests; sources are `.c` with no C++). C has no classes, generics, exceptions, or RAII — DDD maps via **opaque-pointer ADTs** and **vtables**.
 
 - **Aggregate root** — declare `typedef struct Order Order;` (opaque) in the header; define `struct Order { … }` in the `.c` file. Command functions `order_confirm(Order* o, OrderError* err)` enforce invariants and append events to an internal array. "Inheritance" is **composition**: embed `struct aggregate_root { domain_event* events; size_t count; size_t cap; }` as the **first** member of every aggregate and route mutations through helpers `aggregate_root_record()` / `aggregate_root_pull()` — the C analogue of an embedded base.
-- **Value object** — a plain struct passed **by value**, with an explicit `money_equals()` / `order_line_equals()` function (`memcmp` only when the struct is bit-identical and has no padding traps). Strong IDs: `typedef struct { char value[37]; } OrderId;` — a fixed-size struct, not a bare `char*`.
+- **Entity (internal)** — a nested `struct order_line` with a local `line_id`, stored in the aggregate's array and mutated only via root functions (`order_change_line_quantity(o, line_id, qty, err)`); identity comparison on the id.
+- **Value object** — a plain struct passed **by value**, with an explicit `money_equals()` function (`memcmp` only when the struct is bit-identical and has no padding traps). Strong IDs: `typedef struct { char value[37]; } OrderId;` — a fixed-size struct, not a bare `char*`. (Internal entities compare by id: `order_line_id_equals()`, not full-struct equality.)
 - **Repository** — a **vtable struct** of function pointers carrying a `void* ctx`:
   ```c
   typedef struct {

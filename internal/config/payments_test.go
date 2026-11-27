@@ -171,6 +171,44 @@ account = "1234567890"
 	}
 }
 
+func TestLoadPayments_NotifyEmail(t *testing.T) {
+	tests := []struct {
+		name       string
+		content    string
+		wantNotify string
+		wantErr    string
+	}{
+		{
+			name:       "absent block yields no recipient",
+			content:    "[site_config]\nname = \"x\"\n",
+			wantNotify: "",
+			wantErr:    "",
+		},
+		{
+			name:       "an explicit address wins trimmed",
+			content:    "[payments]\nmethods = [\"manual\"]\nnotify_email = \" ops@example.com \"\n",
+			wantNotify: "ops@example.com",
+			wantErr:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := writePaymentsConfig(t, tt.content)
+
+			pc, err := config.LoadPayments(cfg)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantNotify, pc.NotifyEmail)
+		})
+	}
+}
+
 func TestLoadPayments_NilConfig(t *testing.T) {
 	_, err := config.LoadPayments(nil)
 	require.Error(t, err)

@@ -208,6 +208,7 @@ func TestHandler_Checkout(t *testing.T) {
 				h.cart.On("Consume", mock.Anything, "token").Return(nil)
 				h.store.On("CreateOrder", mock.Anything, mock.AnythingOfType("*orders.Order")).Return(int64(42), nil)
 				h.mail.On("SendOrderConfirmationEmail", mock.Anything, mock.Anything).Return(nil)
+				h.mail.On("SendNewOrderAlert", mock.Anything, mock.Anything).Return(nil)
 			},
 			wantCode: http.StatusOK,
 		},
@@ -350,6 +351,7 @@ func TestHandler_Checkout_Consent(t *testing.T) {
 				h.cart.On("Consume", mock.Anything, "token").Return(nil)
 				h.store.On("CreateOrder", mock.Anything, mock.AnythingOfType("*orders.Order")).Return(int64(42), nil)
 				h.mail.On("SendOrderConfirmationEmail", mock.Anything, mock.Anything).Return(nil)
+				h.mail.On("SendNewOrderAlert", mock.Anything, mock.Anything).Return(nil)
 			},
 			wantCode:    http.StatusOK,
 			wantConsent: true,

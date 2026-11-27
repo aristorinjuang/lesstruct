@@ -43,9 +43,10 @@ const (
 	// frame-ancestors 'self' is the actual unlock (the admin panel is
 	// same-origin); script-src 'none' keeps a model-injected script in a
 	// generated template from ever executing; style-src preserves the CDN
-	// stylesheets the embedded layouts carry.
+	// stylesheets the embedded layouts carry, and font-src their KaTeX
+	// webfonts (same host — the stylesheet already trusts it).
 	snapshotCSP = "default-src 'none'; style-src 'unsafe-inline' https://cdn.jsdelivr.net; " +
-		"img-src 'self' data:; font-src 'self'; frame-ancestors 'self'; " +
+		"img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'; " +
 		"base-uri 'none'; form-action 'none'; script-src 'none'"
 
 	// snapshotPlaceholder is the degraded snapshot document: a visual

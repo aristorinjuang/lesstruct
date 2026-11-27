@@ -45,3 +45,56 @@ func TestGenerateOrderConfirmationEmailBody_TrackingLink(t *testing.T) {
 		assert.NotContains(t, body.html, "orders/track")
 	})
 }
+
+func TestGenerateNewOrderAlertEmailBody(t *testing.T) {
+	items := []OrderEmailItem{{SKU: "TSHIRT", Title: "T-Shirt", Quantity: 2, LineTotal: "IDR 598,000"}}
+
+	tests := []struct {
+		name          string
+		customerPhone string
+		wantPhone     bool
+	}{
+		{
+			name:          "a set phone rides the notice",
+			customerPhone: "+6281234567890",
+			wantPhone:     true,
+		},
+		{
+			name:          "an empty phone stays silent",
+			customerPhone: "",
+			wantPhone:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := generateNewOrderAlertEmailBody(
+				"ORD-000042",
+				"Annisa Putri",
+				"shopper@example.com",
+				tt.customerPhone,
+				"Jl. Kemang Raya 21\nJakarta Selatan",
+				items,
+				"IDR 598,000",
+				"IDR 0",
+				"IDR 598,000",
+			)
+
+			assert.Contains(t, body.text, "ORD-000042")
+			assert.Contains(t, body.text, "Annisa Putri")
+			assert.Contains(t, body.text, "shopper@example.com")
+			assert.Contains(t, body.text, "Jl. Kemang Raya 21")
+			assert.Contains(t, body.text, "TSHIRT")
+			assert.Contains(t, body.text, "IDR 598,000")
+			assert.Contains(t, body.html, "ORD-000042")
+			assert.Contains(t, body.html, "Annisa Putri")
+			if tt.wantPhone {
+				assert.Contains(t, body.text, "+6281234567890")
+				assert.Contains(t, body.html, "+6281234567890")
+			} else {
+				assert.NotContains(t, body.text, "Phone:")
+				assert.NotContains(t, body.html, "Phone:")
+			}
+		})
+	}
+}

@@ -118,6 +118,89 @@ The Lesstruct Team`, orderNumber, status)
 	return emailBody{text: text, html: html}
 }
 
+// generateNewOrderAlertEmailBody renders the operator notice for a
+// just-placed order: who bought, where it ships, and the frozen money
+// lines. Every field arrives display-ready from the caller, so the
+// template stays plain text over strings.
+func generateNewOrderAlertEmailBody(
+	orderNumber string,
+	customerName string,
+	customerEmail string,
+	customerPhone string,
+	shipTo string,
+	items []OrderEmailItem,
+	subtotal string,
+	shipping string,
+	total string,
+) emailBody {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		line := fmt.Sprintf("- %d x %s", item.Quantity, item.Title)
+		if item.SKU != "" {
+			line += fmt.Sprintf(" (SKU %s)", item.SKU)
+		}
+		line += fmt.Sprintf(" — %s", item.LineTotal)
+		lines = append(lines, line)
+	}
+	itemList := strings.Join(lines, "\n")
+
+	phoneLine := ""
+	if customerPhone != "" {
+		phoneLine = fmt.Sprintf("\nPhone: %s", customerPhone)
+	}
+	phoneHTML := ""
+	if customerPhone != "" {
+		phoneHTML = fmt.Sprintf("<br/>Phone: %s", customerPhone)
+	}
+	shipHTML := strings.ReplaceAll(shipTo, "\n", "<br/>")
+
+	text := fmt.Sprintf(`Hello,
+
+A new order was placed and is awaiting payment.
+
+Order number: %s
+
+Customer: %s <%s>%s
+
+Ship to:
+%s
+
+Items:
+%s
+
+Subtotal: %s
+Shipping: %s
+
+Total due: %s
+
+Open the admin orders surface to review and fulfill it.`,
+		orderNumber, customerName, customerEmail, phoneLine, shipTo, itemList, subtotal, shipping, total)
+
+	html := htmlWrap(fmt.Sprintf(`
+<p>Hello,</p>
+
+<p>A new order was placed and is awaiting payment.</p>
+
+<p>Order number: <strong>%s</strong></p>
+
+<p><strong>Customer:</strong> %s &lt;%s&gt;%s</p>
+
+<p><strong>Ship to:</strong><br/>%s</p>
+<p><strong>Items:</strong></p>
+<ul>%s</ul>
+
+<p>Subtotal: <strong>%s</strong></p>
+
+<p>Shipping: <strong>%s</strong></p>
+
+<p>Total due: <strong>%s</strong></p>
+
+<p>Open the admin orders surface to review and fulfill it.</p>`,
+		orderNumber, customerName, customerEmail, phoneHTML, shipHTML, htmlItemsList(items), subtotal, shipping, total))
+
+	return emailBody{text: text, html: html}
+}
+
 // ManualPayee is the destination account for manual bank transfers,
 // adopted from the [payments.manual] config block. Empty means no payee
 // block is configured and the confirmation email carries no How-to-pay
@@ -207,6 +290,61 @@ func (s *Service) SendOrderStatusEmail(ctx context.Context, to, orderNumber, sta
 		"recipient", to,
 		"orderNumber", orderNumber,
 		"status", status)
+
+	return nil
+}
+
+// SendNewOrderAlert tells the operator a new order was placed, carrying
+// the customer contact, the shipping address, and the frozen totals. The
+// address and money amounts arrive display-ready, so the email service
+// needs no commerce knowledge.
+func (s *Service) SendNewOrderAlert(
+	ctx context.Context,
+	to string,
+	orderNumber string,
+	customerName string,
+	customerEmail string,
+	customerPhone string,
+	shipTo string,
+	items []OrderEmailItem,
+	subtotal string,
+	shipping string,
+	total string,
+) error {
+	if !s.enabled {
+		s.logger.Warn("Email service is disabled",
+			"reason", "SMTP_HOST and SMTP_PORT must be configured",
+			"recipient", to)
+		return fmt.Errorf("email service is disabled: SMTP_HOST and SMTP_PORT must be configured")
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	subject := "New order: " + orderNumber
+	body := generateNewOrderAlertEmailBody(
+		orderNumber,
+		customerName,
+		customerEmail,
+		customerPhone,
+		shipTo,
+		items,
+		subtotal,
+		shipping,
+		total,
+	)
+
+	if err := s.sendEmail(ctx, to, subject, body); err != nil {
+		s.logger.Error("Failed to send new order alert email",
+			"recipient", to,
+			"orderNumber", orderNumber,
+			"error", err)
+		return fmt.Errorf("failed to send new order alert email: %w", err)
+	}
+
+	s.logger.Info("New order alert email sent successfully",
+		"recipient", to,
+		"orderNumber", orderNumber)
 
 	return nil
 }

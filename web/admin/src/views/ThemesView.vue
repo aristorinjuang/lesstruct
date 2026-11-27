@@ -3,9 +3,14 @@ import { onMounted, ref } from 'vue'
 import Button from '@/components/atoms/Button.vue'
 import ThemeSnapshot from '@/components/molecules/ThemeSnapshot.vue'
 import Toast from '@/components/molecules/Toast.vue'
+import { useConfig } from '@/composables/useConfig'
 import { useThemegenStore } from '@/stores/domain/themegen'
 
 const store = useThemegenStore()
+// The AI key gates generation, not management: the Themes page lists,
+// downloads, activates, and deletes without one, so the preview action —
+// whose endpoint stays key-gated — hides when generation is off.
+const { themeGeneration } = useConfig()
 
 const toastMessage = ref('')
 const toastType = ref<'success' | 'error'>('success')
@@ -25,7 +30,11 @@ onMounted(async () => {
   } catch {
     displayToast('Failed to load themes', 'error')
   }
-  await store.fetchPreviewStatus()
+  // The preview status probe stays key-gated server-side; skip it when
+  // generation is off instead of logging a 404 per mount.
+  if (themeGeneration.value) {
+    await store.fetchPreviewStatus()
+  }
 })
 
 async function handleDownload(name: string) {
@@ -105,7 +114,7 @@ async function handleStopPreview() {
         <p v-if="store.previewTheme === theme.name" class="themes-preview-badge">Previewing in this browser</p>
         <div class="themes-actions">
           <Button type="button" variant="neutral" size="small" @click="handleDownload(theme.name)">Download</Button>
-          <Button type="button" variant="neutral" size="small" @click="handlePreview(theme.name)">Preview</Button>
+          <Button v-if="themeGeneration" type="button" variant="neutral" size="small" @click="handlePreview(theme.name)">Preview</Button>
           <Button v-if="!theme.active" type="button" variant="primary" size="small" @click="handleActivate(theme.name)">Activate</Button>
           <Button v-if="theme.active" type="button" variant="neutral" size="small" @click="handleDeactivate">Deactivate</Button>
           <Button v-if="!theme.active" type="button" variant="danger" size="small" @click="handleDelete(theme.name)">Delete</Button>

@@ -146,6 +146,7 @@ func TestService_Checkout(t *testing.T) {
 				seams.cart.On("Consume", mock.Anything, "token").Return(nil)
 				seams.store.On("CreateOrder", mock.Anything, mock.AnythingOfType("*orders.Order")).Return(int64(42), nil)
 				seams.mail.On("SendOrderConfirmationEmail", mock.Anything, mock.Anything).Return(nil)
+				seams.mail.On("SendNewOrderAlert", mock.Anything, mock.Anything).Return(nil)
 			},
 			want: &domain.Order{
 				ID:            42,
@@ -364,6 +365,7 @@ func TestService_Checkout_Consent(t *testing.T) {
 				seams.cart.On("Consume", mock.Anything, "token").Return(nil)
 				seams.store.On("CreateOrder", mock.Anything, mock.AnythingOfType("*orders.Order")).Return(int64(42), nil)
 				seams.mail.On("SendOrderConfirmationEmail", mock.Anything, mock.Anything).Return(nil)
+				seams.mail.On("SendNewOrderAlert", mock.Anything, mock.Anything).Return(nil)
 			},
 			wantConsent: true,
 		},
@@ -379,6 +381,7 @@ func TestService_Checkout_Consent(t *testing.T) {
 				seams.cart.On("Consume", mock.Anything, "token").Return(nil)
 				seams.store.On("CreateOrder", mock.Anything, mock.AnythingOfType("*orders.Order")).Return(int64(42), nil)
 				seams.mail.On("SendOrderConfirmationEmail", mock.Anything, mock.Anything).Return(nil)
+				seams.mail.On("SendNewOrderAlert", mock.Anything, mock.Anything).Return(nil)
 			},
 			wantConsent: false,
 		},

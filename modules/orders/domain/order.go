@@ -213,13 +213,18 @@ type ContentSource interface {
 	ProductTitle(ctx context.Context, contentID int) (string, bool)
 }
 
-// Mailer delivers the customer-facing order emails. Delivery is
-// best-effort by contract: the order record is authoritative, so a failed
-// send never fails the checkout or a transition, and the adapter logs its
-// own failures.
+// Mailer delivers the order emails. Delivery is best-effort by contract:
+// the order record is authoritative, so a failed send never fails the
+// checkout or a transition, and the adapter logs its own failures. The
+// customer methods reach the buyer; the alert method reaches the
+// operator (an unset recipient degrades to silence adapter-side).
 type Mailer interface {
 	SendOrderConfirmationEmail(ctx context.Context, order *Order) error
 	SendOrderStatusEmail(ctx context.Context, order *Order, from Status) error
+	// SendNewOrderAlert tells the operator a new order was placed,
+	// carrying the customer contact, the shipping address, and the
+	// frozen totals for review and fulfillment.
+	SendNewOrderAlert(ctx context.Context, order *Order) error
 }
 
 // Inventory is the stock ledger seam between orders and the catalog:

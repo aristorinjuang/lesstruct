@@ -237,7 +237,7 @@ When `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables AI text enhanc
 
 ### AI theme generation (optional)
 
-When `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Theme Generator: validated themes (`static/base.css` + `static/style.css`, plus opt-in `templates/*.html` page overrides) from a natural-language brief, downloadable as `.zip` or activatable in place with a hot reload. Templates are parse-tested and smoke-rendered before install or activation, and a failing theme gets up to two repair attempts before it is refused with the findings surfaced. Each `AI_THEMGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Theme Generator entry (the endpoint still answers `503 generation_unavailable`).
+When `AI_THEMGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Theme Generator: validated themes (`static/base.css` + `static/style.css`, plus opt-in `templates/*.html` page overrides) from a natural-language brief, downloadable as `.zip` or activatable in place with a hot reload. Templates are parse-tested and smoke-rendered before install or activation, and a failing theme gets up to two repair attempts before it is refused with the findings surfaced. Each `AI_THEMGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Theme Generator entry and generate/preview answer `404`; the Themes page keeps working — listing, downloading, activating, deactivating, and snapshotting installed themes need no AI key.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -250,7 +250,7 @@ The `[theme]` block in `config.toml` holds the active installed theme (`active =
 
 ### AI plugin generation (optional)
 
-When `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Plugin Generator: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief, downloadable as `.zip`. Generated projects pass the file-contract gate plus dependency-free Go parse and host-function policy with grant coverage, plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Install the result by compiling with TinyGo (`tinygo build -o <name>.wasm -target=wasi main.go`) and dropping the `.wasm` into `plugins/` — or, with `PLUGIN_BUILD_ENABLED=true` and TinyGo on the host, build and install on the server (see [plugin-generation.md](plugin-generation.md)). Each `AI_PLUGGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Plugin Generator entry (the endpoint still answers `503 generation_unavailable`).
+When `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Plugin Generator: validated WASM plugin projects (`main.go` + `go.mod` + a `project.json` manifest) from a natural-language brief, downloadable as `.zip`. Generated projects pass the file-contract gate plus dependency-free Go parse and host-function policy with grant coverage, plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Install the result by compiling with TinyGo (`tinygo build -o <name>.wasm -target=wasi main.go`) and dropping the `.wasm` into `plugins/` — or, with `PLUGIN_BUILD_ENABLED=true` and TinyGo on the host, build and install on the server (see [plugin-generation.md](plugin-generation.md)). Each `AI_PLUGGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Plugin Generator entry and generate/build answer `404`; the Plugins page keeps working — listing, downloading, deleting, and reading installed-plugin status need no AI key.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -263,7 +263,7 @@ When `AI_PLUGGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin pane
 
 ### AI module generation (optional)
 
-When `AI_MODGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Module Generator: validated Tier 1 Go module projects (`go.mod` + `module.go` + `README.md` plus domain/api/store/admin overlays) from a natural-language brief, downloadable as `.zip`. Generated projects pass the module-contract gate (file contract, Go parse, `kernel.Module` lifecycle shape, layer import policy, `go.mod` hygiene with the host kernel pin, migration hygiene) plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Tier 1 modules link at compile time: the download ships an `INSTALL.md` with the custom-edition wiring and rebuild steps — there is no runtime install (see [module-generation.md](module-generation.md)). Each `AI_MODGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Module Generator entry (the endpoint still answers `503 generation_unavailable`).
+When `AI_MODGEN_API_KEY` or `AI_TEXT_GENERATION_API_KEY` is set, the admin panel enables the Module Generator: validated Tier 1 Go module projects (`go.mod` + `module.go` + `README.md` plus domain/api/store/admin overlays) from a natural-language brief, downloadable as `.zip`. Generated projects pass the module-contract gate (file contract, Go parse, `kernel.Module` lifecycle shape, layer import policy, `go.mod` hygiene with the host kernel pin, migration hygiene) plus a generated-content scan; a failing project gets up to two repair attempts before it is refused with the findings surfaced. Tier 1 modules link at compile time: the download ships an `INSTALL.md` with the custom-edition wiring and rebuild steps — there is no runtime install (see [module-generation.md](module-generation.md)). Each `AI_MODGEN_*` var falls back to its `AI_TEXT_GENERATION_*` counterpart. Without either key the admin sidebar hides the Module Generator entry and generate answers `404` (apply/unapply keep their own `MODULE_APPLY_ENABLED` gate); the Modules page keeps working — listing, downloading, and deleting staged projects need no AI key.
 
 With `MODULE_APPLY_ENABLED=true` (plus a Go toolchain and a source checkout at the apply root — binary deployments stay `503`), the admin panel and API gain **Apply to checkout**: the staged project is copied into `modules/<name>/`, registered in `go.work` and `SUBMODULES`, the machine-owned custom edition (`internal/editions/custom/`, regenerated from its `applied.json` registry) is rewritten, and the result is verified (module tests in both workspaces plus the custom-binary build). Applying executes the generated module's tests on the host and links the module into the custom binary — enable it only on machines you operate, for generated source you have read. Verification failures keep the applied tree and report per-step outcomes; rebuild `./cmd/lesstruct-custom` and deploy it yourself.
 
@@ -668,11 +668,12 @@ Public catalog payloads: `GET /api/v1/public/catalog/products/{slug}` returns th
 
 ### `[payments]`
 
-Optional block read by the eCommerce edition's payments module (the `lesstruct-ecommerce` binary; other editions ignore it). Lists the offered payment methods, in the order the checkout presents them:
+Optional block read by the eCommerce edition's payments module (the `lesstruct-ecommerce` binary; other editions ignore it). Lists the offered payment methods, in the order the checkout presents them, and the operator address for payment alerts:
 
 ```toml
 [payments]
 methods = ["manual"]
+notify_email = "ops@example.com"
 
 [payments.manual]
 bank = "BCA"
@@ -681,6 +682,7 @@ name = "PT Lesstruct Demo"
 ```
 
 - `manual` is the bank-transfer proof flow: the guest submits a payment reference against order number + email, and an administrator verifies or rejects it from the admin payments surface.
+- `notify_email` receives the operator payment alerts: a proof-submitted notice (manual flow, needs verification) and a payment-settled notice (gateway flow, ready to fulfill); unset disables both notices (the default).
 - Unknown values ride through config and drop at adoption: a config may pre-list gateway methods (e.g. `midtrans`) before their drivers exist.
 - An absent block, an empty list, or a list where nothing maps yields no offered methods — the methods endpoint returns `{"methods": []}` and submissions without a known method answer `400 VALIDATION_ERROR`.
 - Admin verification confirms the order through the orders inventory path: a settlement that cannot cover stock refuses with `409 OUT_OF_STOCK` while the order stays pending for fulfillment.
@@ -690,13 +692,15 @@ name = "PT Lesstruct Demo"
 
 ### `[orders]`
 
-Optional block read by the eCommerce edition's orders module (the `lesstruct-ecommerce` binary; other editions ignore it). Sets how long a pending order stays payable before the sweeper expires it:
+Optional block read by the eCommerce edition's orders module (the `lesstruct-ecommerce` binary; other editions ignore it). Sets how long a pending order stays payable before the sweeper expires it, and the operator address for new-order alerts:
 
 ```toml
 [orders]
 pending_expiry = "24h"
+notify_email = "ops@example.com"
 ```
 
+- `notify_email` receives the operator new-order alert (customer contact, shipping address, frozen totals); unset disables the notice (the default).
 - The sweeper ticks every 5 minutes and expires pendings older than the window in batches of 100; each expiration emails the customer (best-effort, no payment was ever claimed on a pending order).
 - The same window mirrors into Midtrans Snap session lifetimes (rounded up to whole hours), so a hosted checkout cannot outlive the order it pays.
 - The value parses as a Go duration (`30m`, `24h`, `72h`); anything else fails startup naming the key.

@@ -30,6 +30,7 @@ package "Order Aggregate" <<Aggregate>> {
     ' command methods — state transitions, each enforces invariants
     +confirm(): void
     +cancel(reason: String): void
+    +changeLineQuantity(lineId: OrderLineId, quantity: int): void
 
     ' queries — no mutation
     +total(): Money
@@ -40,7 +41,8 @@ package "Order Aggregate" <<Aggregate>> {
     -productId: ProductId
     -quantity: int
     -unitPrice: Money
-    +subtotal(): Money
+    +lineTotal(): Money
+    +changeQuantity(quantity: int): void
   }
 
   ' Value objects meaningful only inside this aggregate
@@ -90,6 +92,12 @@ class OrderCancelled <<(D,gold) Domain Event>> {
   +reason: String
   +occurredOn: DateTime
 }
+class OrderLineQuantityChanged <<(D,gold) Domain Event>> {
+  +orderId: OrderId
+  +lineId: OrderLineId
+  +newQuantity: int
+  +occurredOn: DateTime
+}
 
 ' --- Repository: one per root; interface in domain, impl in infrastructure ---
 interface OrderRepository <<(R) Repository>> {
@@ -105,6 +113,7 @@ OrderLine    --> Money          : priced in
 Order        ..> OrderPlaced    : publishes
 Order        ..> OrderConfirmed : publishes
 Order        ..> OrderCancelled : publishes
+Order        ..> OrderLineQuantityChanged : publishes
 OrderRepository ..> Order       : manages
 Order        --> CustomerId     : references by identity
 OrderLine    --> ProductId      : references by identity
@@ -115,9 +124,11 @@ note right of Order
   <b>Aggregate rules (Vernon, IDDD):</b>
   1. The root is the only entry point — internal parts
      (e.g. OrderLine) are never handed out directly.
+     Internal entities are addressed by LOCAL identity:
+     changeLineQuantity(lineId, …) finds the line, mutates it.
   2. Reference OTHER aggregates (Customer, Product) by identity only.
   3. One transaction modifies one aggregate.
-  4. Invariants enforced in place()/confirm()/cancel()
+  4. Invariants enforced in place()/confirm()/cancel()/changeLineQuantity()
      and on construction — reject invalid state, never "validate later".
   5. Publish a domain event on every state change.
 end note

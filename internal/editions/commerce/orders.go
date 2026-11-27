@@ -100,10 +100,12 @@ func NewContentTitles(service *contentdomain.Service) ordersdomain.ContentSource
 // Mailer seam. It composes the display-ready item lines and money strings;
 // the send failures the domain treats as best-effort already log here.
 // A set payee appends the How-to-pay block to the confirmation email;
-// an empty payee sends the legacy body unchanged.
+// an empty payee sends the legacy body unchanged. An empty notify
+// address degrades the operator alert to silence.
 type orderMailer struct {
-	email *email.Service
-	payee email.ManualPayee
+	email  *email.Service
+	payee  email.ManualPayee
+	notify string
 }
 
 // SendOrderConfirmationEmail renders the placed-order confirmation.
@@ -142,10 +144,45 @@ func (m orderMailer) SendOrderStatusEmail(ctx context.Context, order *ordersdoma
 	)
 }
 
-// NewOrderMailer builds the seam adapter over the platform email service.
-// A set payee appends the How-to-pay block to the confirmation email.
-func NewOrderMailer(service *email.Service, payee email.ManualPayee) ordersdomain.Mailer {
-	return orderMailer{email: service, payee: payee}
+// SendNewOrderAlert renders the operator notice for a just-placed order:
+// who bought, where it ships, and the frozen totals. An empty notify
+// address degrades to silence without the domain ever knowing.
+func (m orderMailer) SendNewOrderAlert(ctx context.Context, order *ordersdomain.Order) error {
+	if m.notify == "" {
+		return nil
+	}
+	items := make([]email.OrderEmailItem, 0, len(order.Items))
+	for i := range order.Items {
+		item := order.Items[i]
+		items = append(items, email.OrderEmailItem{
+			SKU:       item.SKU,
+			Title:     item.Title,
+			Quantity:  item.Quantity,
+			UnitPrice: ordersdomain.NewMoney(item.UnitPrice, order.Currency).Format(),
+			LineTotal: ordersdomain.NewMoney(item.LineTotal(), order.Currency).Format(),
+		})
+	}
+	shipTo := order.ShipTo.Street + "\n" + order.ShipTo.City + "\n" + order.ShipTo.Province + "\n" + order.ShipTo.PostalCode
+	return m.email.SendNewOrderAlert(
+		ctx,
+		m.notify,
+		order.DisplayNumber(),
+		order.CustomerName,
+		order.CustomerEmail,
+		order.CustomerPhone,
+		shipTo,
+		items,
+		ordersdomain.NewMoney(order.Subtotal, order.Currency).Format(),
+		ordersdomain.NewMoney(order.ShippingMinor, order.Currency).Format(),
+		ordersdomain.NewMoney(order.TotalMinor(), order.Currency).Format(),
+	)
+}
+
+// NewOrderMailer builds the seam adapter over the platform email
+// service. A set payee appends the How-to-pay block to the confirmation
+// email; an empty notify address disables the operator alert.
+func NewOrderMailer(service *email.Service, payee email.ManualPayee, notifyEmail string) ordersdomain.Mailer {
+	return orderMailer{email: service, payee: payee, notify: notifyEmail}
 }
 
 // catalogInventory adapts the catalog service onto the orders module's

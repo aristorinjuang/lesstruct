@@ -70,6 +70,44 @@ func TestLoadOrders(t *testing.T) {
 	}
 }
 
+func TestLoadOrders_NotifyEmail(t *testing.T) {
+	tests := []struct {
+		name       string
+		content    string
+		wantNotify string
+		wantErr    string
+	}{
+		{
+			name:       "absent block yields no recipient",
+			content:    "[site_config]\nname = \"x\"\n",
+			wantNotify: "",
+			wantErr:    "",
+		},
+		{
+			name:       "an explicit address wins trimmed",
+			content:    "[orders]\npending_expiry = \"24h\"\nnotify_email = \" ops@example.com \"\n",
+			wantNotify: "ops@example.com",
+			wantErr:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := writePaymentsConfig(t, tt.content)
+
+			oc, err := config.LoadOrders(cfg)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantNotify, oc.NotifyEmail)
+		})
+	}
+}
+
 func TestLoadOrders_NilConfig(t *testing.T) {
 	_, err := config.LoadOrders(nil)
 	require.Error(t, err)

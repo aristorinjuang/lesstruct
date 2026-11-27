@@ -204,7 +204,7 @@ func (s *state) wireOrders(core *app.Core) error {
 		store,
 		NewCartCheckout(s.cartService),
 		NewContentTitles(core.ContentService),
-		NewOrderMailer(core.EmailService, manualPayee),
+		NewOrderMailer(core.EmailService, manualPayee, ordersConfig.NotifyEmail),
 		NewCatalogInventory(s.catalogService, modules.NewLogger(core.Logger)),
 		s.config.Currency,
 		ordersdomain.WithConsentPolicy(consentPolicy),
@@ -288,7 +288,7 @@ func (s *state) wirePayments(core *app.Core) error {
 	service := paymentsdomain.NewPaymentsService(
 		store,
 		NewOrderSeams(s.ordersService),
-		NewPaymentMailer(core.EmailService),
+		NewPaymentMailer(core.EmailService, paymentsConfig.NotifyEmail),
 		gateway,
 		methods,
 	)

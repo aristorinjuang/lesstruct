@@ -121,7 +121,7 @@ func setupTestRouterWithBearerDeps(t *testing.T) (*chi.Mux, bearerDeps) {
 // behavior of the default helper (no content-site catch-all registered at all).
 func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd, nil, nil, nil, false)
+	return setupTestRouterWithOptions(t, headlessEnabled, false, commentsEnabled, spaHandler, staticHnd, nil, false, nil, false, nil, false, false)
 }
 
 // setupTestRouterWithThemGen is setupTestRouterWithOptions with the AI theme
@@ -129,7 +129,15 @@ func setupTestRouterWithFlags(t *testing.T, headlessEnabled bool, commentsEnable
 // exercised on the real router. A nil themGen keeps the surface unmounted.
 func setupTestRouterWithThemGen(t *testing.T, themGen routes.ThemGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen, nil, nil, false)
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen, true, nil, false, nil, false, false)
+}
+
+// setupTestRouterWithThemGenDisabled is setupTestRouterWithThemGen with the
+// AI key off: the management leaves mount from the wired handler alone,
+// while generate and the preview trio stay unmounted.
+func setupTestRouterWithThemGenDisabled(t *testing.T, themGen routes.ThemGenSurface) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, themGen, false, nil, false, nil, false, false)
 }
 
 // setupTestRouterWithPlugGen is setupTestRouterWithOptions with the AI plugin
@@ -138,7 +146,15 @@ func setupTestRouterWithThemGen(t *testing.T, themGen routes.ThemGenSurface) (*c
 // unmounted.
 func setupTestRouterWithPlugGen(t *testing.T, plugGen routes.PlugGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, plugGen, nil, false)
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, false, plugGen, true, nil, false, false)
+}
+
+// setupTestRouterWithPlugGenDisabled is setupTestRouterWithPlugGen with the
+// AI key off: the management leaves mount from the wired handler alone,
+// while generate and build stay unmounted.
+func setupTestRouterWithPlugGenDisabled(t *testing.T, plugGen routes.PlugGenSurface) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, false, plugGen, false, nil, false, false)
 }
 
 // setupTestRouterWithModGen is setupTestRouterWithOptions with the AI module
@@ -146,7 +162,15 @@ func setupTestRouterWithPlugGen(t *testing.T, plugGen routes.PlugGenSurface) (*c
 // exercised on the real router. A nil modGen keeps the surface unmounted.
 func setupTestRouterWithModGen(t *testing.T, modGen routes.ModGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, nil, modGen, false)
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, false, nil, false, modGen, true, false)
+}
+
+// setupTestRouterWithModGenDisabled is setupTestRouterWithModGen with the
+// AI key off: the management leaves mount from the wired handler alone,
+// while generate stays unmounted.
+func setupTestRouterWithModGenDisabled(t *testing.T, modGen routes.ModGenSurface) (*chi.Mux, bearerDeps) {
+	t.Helper()
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, false, nil, false, modGen, false, false)
 }
 
 // setupTestRouterWithModGenApply is setupTestRouterWithOptions with the AI
@@ -155,12 +179,12 @@ func setupTestRouterWithModGen(t *testing.T, modGen routes.ModGenSurface) (*chi.
 // real router.
 func setupTestRouterWithModGenApply(t *testing.T, modGen routes.ModGenSurface) (*chi.Mux, bearerDeps) {
 	t.Helper()
-	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, nil, modGen, true)
+	return setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, false, nil, false, modGen, true, true)
 }
 
 // setupTestRouterWithOptions is setupTestRouterWithFlags with the MCP endpoint
 // toggle exposed, so the /mcp mount can be exercised on the real router.
-func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler, themGen routes.ThemGenSurface, plugGen routes.PlugGenSurface, modGen routes.ModGenSurface, modGenApply bool) (*chi.Mux, bearerDeps) {
+func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled bool, commentsEnabled bool, spaHandler routes.AdminPanelSurface, staticHnd http.Handler, themGen routes.ThemGenSurface, themGenEnabled bool, plugGen routes.PlugGenSurface, plugGenEnabled bool, modGen routes.ModGenSurface, modGenEnabled bool, modGenApply bool) (*chi.Mux, bearerDeps) {
 	t.Helper()
 
 	// Create test auth handler
@@ -353,12 +377,12 @@ func setupTestRouterWithOptions(t *testing.T, headlessEnabled bool, mcpEnabled b
 		false,
 		false,
 		nil,
-		themGen != nil,
+		themGenEnabled,
 		themGen,
-		plugGen != nil,
+		plugGenEnabled,
 		plugGen,
 		false,
-		modGen != nil,
+		modGenEnabled,
 		modGen,
 		modGenApply,
 		false,
@@ -719,6 +743,153 @@ func TestThemGenRoutesMounted(t *testing.T) {
 	}
 }
 
+// TestThemGenManagementMountedWithoutFlag proves theme management stays
+// reachable when the AI key is off: the management leaves answer for an
+// admin JWT from the wired handler alone, while generate and the preview
+// trio 404. The snapshot leaf also answers an admin API key — it rides
+// the dual-realm group with the other management leaves.
+func TestThemGenManagementMountedWithoutFlag(t *testing.T) {
+	stub := &testThemGenSurface{}
+	r, deps := setupTestRouterWithThemGenDisabled(t, stub)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		withAuth   bool
+		wantStatus int
+		wantLast   string
+		wantErr    bool
+	}{
+		{
+			name:       "success - list mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/themes",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "list",
+		},
+		{
+			name:       "success - download mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/themes/midnight-serif/download",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "download",
+		},
+		{
+			name:       "success - activate mounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/themes/midnight-serif/activate",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "activate",
+		},
+		{
+			name:       "success - static deactivate not swallowed",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/themes/deactivate",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "deactivate",
+		},
+		{
+			name:       "success - delete mounted",
+			method:     http.MethodDelete,
+			target:     "/api/v1/themegen/themes/midnight-serif",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "delete",
+		},
+		{
+			name:       "success - snapshot mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/themes/midnight-serif/snapshot",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "snapshot",
+		},
+		{
+			name:       "error - generate unmounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/generate",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - preview unmounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/themegen/themes/midnight-serif/preview",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - preview status unmounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/preview",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - stop preview unmounted",
+			method:     http.MethodDelete,
+			target:     "/api/v1/themegen/preview",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - anonymous list is unauthorized",
+			method:     http.MethodGet,
+			target:     "/api/v1/themegen/themes",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+
+	t.Run("snapshot - admin key dispatches without the flag", func(t *testing.T) {
+		verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
+		deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
+		deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+		deps.user.EXPECT().GetUserByID(mock.Anything, testBearerUserID).
+			Return(&user.User{ID: testBearerUserID, Username: "admin", Role: "Admin", Status: "verified"}, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/themegen/themes/midnight-serif/snapshot", nil)
+		req.Header.Set("Authorization", "Bearer "+testBearerToken)
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "snapshot", stub.last)
+	})
+}
+
 // testPlugGenSurface records which plugingen leaf the router dispatched to.
 // Handlers answer 200 so mount tests prove reachability on the real router.
 type testPlugGenSurface struct {
@@ -832,6 +1003,121 @@ func TestPlugGenRoutesMounted(t *testing.T) {
 			assert.Equal(t, tt.wantLast, stub.last)
 		})
 	}
+}
+
+// TestPlugGenManagementMountedWithoutFlag proves plugin management stays
+// reachable when the AI key is off: list/download/delete and the installed
+// status read answer for an admin JWT from the wired handler alone, while
+// generate and build 404. The status leaf also answers an admin API key —
+// it rides the dual-realm group with the other management leaves.
+func TestPlugGenManagementMountedWithoutFlag(t *testing.T) {
+	stub := &testPlugGenSurface{}
+	r, deps := setupTestRouterWithPlugGenDisabled(t, stub)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		withAuth   bool
+		wantStatus int
+		wantLast   string
+		wantErr    bool
+	}{
+		{
+			name:       "success - list mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/plugingen/projects",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "list",
+		},
+		{
+			name:       "success - download mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/plugingen/projects/my-plugin/download",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "download",
+		},
+		{
+			name:       "success - delete mounted",
+			method:     http.MethodDelete,
+			target:     "/api/v1/plugingen/projects/my-plugin",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "delete",
+		},
+		{
+			name:       "success - status mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/plugins",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "status",
+		},
+		{
+			name:       "error - generate unmounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/plugingen/generate",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - build unmounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/plugingen/projects/my-plugin/build",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - anonymous list is unauthorized",
+			method:     http.MethodGet,
+			target:     "/api/v1/plugingen/projects",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+
+	t.Run("status - admin key dispatches without the flag", func(t *testing.T) {
+		verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
+		deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
+		deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+		deps.user.EXPECT().GetUserByID(mock.Anything, testBearerUserID).
+			Return(&user.User{ID: testBearerUserID, Username: "admin", Role: "Admin", Status: "verified"}, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/plugins", nil)
+		req.Header.Set("Authorization", "Bearer "+testBearerToken)
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "status", stub.last)
+	})
 }
 
 // testModGenSurface records which modgen leaf the router dispatched to.
@@ -949,6 +1235,105 @@ func TestModGenRoutesMounted(t *testing.T) {
 	}
 }
 
+// TestModGenManagementMountedWithoutFlag proves module management stays
+// reachable when the AI key is off: list/download/delete answer for an
+// admin JWT from the wired handler alone, while generate 404s. The list
+// leaf also answers an admin API key — it rides the dual-realm group with
+// the other management leaves.
+func TestModGenManagementMountedWithoutFlag(t *testing.T) {
+	stub := &testModGenSurface{}
+	r, deps := setupTestRouterWithModGenDisabled(t, stub)
+
+	adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name       string
+		method     string
+		target     string
+		withAuth   bool
+		wantStatus int
+		wantLast   string
+		wantErr    bool
+	}{
+		{
+			name:       "success - list mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/modgen/projects",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "list",
+		},
+		{
+			name:       "success - download mounted",
+			method:     http.MethodGet,
+			target:     "/api/v1/modgen/projects/forum/download",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "download",
+		},
+		{
+			name:       "success - delete mounted",
+			method:     http.MethodDelete,
+			target:     "/api/v1/modgen/projects/forum",
+			withAuth:   true,
+			wantStatus: http.StatusOK,
+			wantLast:   "delete",
+		},
+		{
+			name:       "error - generate unmounted",
+			method:     http.MethodPost,
+			target:     "/api/v1/modgen/generate",
+			withAuth:   true,
+			wantStatus: http.StatusNotFound,
+			wantErr:    true,
+		},
+		{
+			name:       "error - anonymous list is unauthorized",
+			method:     http.MethodGet,
+			target:     "/api/v1/modgen/projects",
+			withAuth:   false,
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, nil)
+			if tt.withAuth {
+				req.Header.Set("Authorization", "Bearer "+adminToken)
+			}
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantErr {
+				return
+			}
+			assert.Equal(t, tt.wantLast, stub.last)
+		})
+	}
+
+	t.Run("list - admin key dispatches without the flag", func(t *testing.T) {
+		verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
+		deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)
+		deps.verifier.EXPECT().UpdateLastUsed(mock.Anything, 7, mock.Anything).Return(nil)
+		deps.user.EXPECT().GetUserByID(mock.Anything, testBearerUserID).
+			Return(&user.User{ID: testBearerUserID, Username: "admin", Role: "Admin", Status: "verified"}, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/modgen/projects", nil)
+		req.Header.Set("Authorization", "Bearer "+testBearerToken)
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "list", stub.last)
+	})
+}
+
 // TestModGenApplyMounted proves the apply and unapply leaves mount only
 // when the apply flag is set: enabled dispatches to the handlers, disabled
 // answers 404, and anonymous callers are unauthorized either way.
@@ -1007,7 +1392,7 @@ func TestModGenApplyMounted(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stub := &testModGenSurface{}
-			r, deps := setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, nil, stub, tt.apply)
+			r, deps := setupTestRouterWithOptions(t, false, false, true, nil, nil, nil, false, nil, false, stub, true, tt.apply)
 			adminToken, err := deps.jwtManager.GenerateToken("1", "admin", "Admin", 0)
 			require.NoError(t, err)
 
@@ -1028,13 +1413,13 @@ func TestModGenApplyMounted(t *testing.T) {
 	}
 }
 
-// TestAgentThemGen_DispatchAndAdminOnly proves the six generation endpoints
-// serve the agent realm at the same paths as the browser: an admin API key
-// dispatches to the same leaves, a non-admin key is forbidden, and callers
-// without credentials never reach them. The browser realm is admin-gated
-// too — a non-admin JWT is forbidden on mutations. The cookie-scoped preview
-// trio is deliberately absent from the agent realm — a Bearer key is rejected
-// there.
+// TestAgentThemGen_DispatchAndAdminOnly proves the seven dual-realm
+// endpoints serve the agent realm at the same paths as the browser: an
+// admin API key dispatches to the same leaves, a non-admin key is
+// forbidden, and callers without credentials never reach them. The
+// browser realm is admin-gated too — a non-admin JWT is forbidden on
+// mutations. The cookie-scoped preview trio is deliberately absent from
+// the agent realm — a Bearer key is rejected there.
 func TestAgentThemGen_DispatchAndAdminOnly(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -1176,12 +1561,14 @@ func TestAgentThemGen_DispatchAndAdminOnly(t *testing.T) {
 			wantCode: http.StatusUnauthorized,
 		},
 		{
-			name:     "snapshot - agent key is rejected",
+			name:     "snapshot - admin key dispatches",
 			method:   http.MethodGet,
 			target:   "/api/v1/themegen/themes/midnight-serif/snapshot",
 			role:     "Admin",
+			withKey:  true,
 			sendKey:  true,
-			wantCode: http.StatusUnauthorized,
+			wantCode: http.StatusOK,
+			wantLast: "snapshot",
 		},
 	}
 
@@ -1557,6 +1944,7 @@ func TestThemGenSnapshot_OverridesFramingHeaders(t *testing.T) {
 	assert.Contains(t, csp, "frame-ancestors 'self'")
 	assert.Contains(t, csp, "script-src 'none'")
 	assert.NotContains(t, csp, "frame-ancestors 'none'")
+	assert.Contains(t, csp, "font-src 'self' https://cdn.jsdelivr.net")
 }
 
 // TestModulePostTypesMounted proves the posttypes-basic module serves its
@@ -3009,7 +3397,7 @@ func TestMCPSurface(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil, nil, nil, nil, false)
+			r, deps := setupTestRouterWithOptions(t, false, tt.enabled, true, nil, nil, nil, false, nil, false, nil, false, false)
 			if tt.withKey {
 				verifiedKey := &apikey.APIKey{ID: 7, UserID: testBearerUserID, KeyID: testBearerKeyID}
 				deps.verifier.EXPECT().Verify(mock.Anything, testBearerToken).Return(verifiedKey, nil)

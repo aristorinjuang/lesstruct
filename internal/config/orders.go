@@ -15,11 +15,13 @@ type ordersConfigFile struct {
 }
 
 // OrdersConfig is the optional [orders] block from config.toml: how long
-// a pending order stays payable before the sweeper expires it. The same
-// value mirrors into the Midtrans Snap session expiry, so a hosted
-// checkout cannot outlive its order.
+// a pending order stays payable before the sweeper expires it, and the
+// operator address for new-order alerts. The same value mirrors into the
+// Midtrans Snap session expiry, so a hosted checkout cannot outlive its
+// order.
 type OrdersConfig struct {
 	PendingExpiry string `toml:"pending_expiry"`
+	NotifyEmail   string `toml:"notify_email"`
 }
 
 // PendingExpiryDuration renders the configured window as a duration.
@@ -62,6 +64,9 @@ func LoadOrders(cfg *Config) (OrdersConfig, error) {
 	if file.Orders.PendingExpiry != "" {
 		resolved.PendingExpiry = file.Orders.PendingExpiry
 	}
+	// An unset address disables the notice: the adapter degrades to
+	// silence and the domain never knows.
+	resolved.NotifyEmail = strings.TrimSpace(file.Orders.NotifyEmail)
 	if _, err := time.ParseDuration(resolved.PendingExpiry); err != nil {
 		return OrdersConfig{}, fmt.Errorf("failed to parse orders config: pending_expiry %q is not a duration: %w", resolved.PendingExpiry, err)
 	}

@@ -26,6 +26,7 @@ Also detect the **architecture style** present (layered, hexagonal/ports-and-ada
 Whatever the stack, the same DDD shapes apply — map them to idiomatic constructs:
 
 - **Aggregate root** — a class/struct that holds state, enforces invariants in constructors and command methods, and emits domain events. No public setters; mutations only through intention-revealing methods.
+- **Entity (internal)** — a mutable member owned by the root, with identity **local to the aggregate** (e.g. `OrderLine` with `lineId`). Addressed only via root commands (`order.changeLineQuantity(lineId, …)`); no repository of its own; in pointer languages a reference/pointer type (`*OrderLine`). Promote a part to entity only when something must address it individually over its lifecycle.
 - **Value object** — an immutable type with value equality.
 - **Domain event** — a small immutable record of "what happened," published when the aggregate changes.
 - **Repository** — a domain interface (port) with a concrete implementation in infrastructure (adapter).

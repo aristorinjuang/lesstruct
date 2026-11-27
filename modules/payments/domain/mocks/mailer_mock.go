@@ -47,6 +47,75 @@ func (_m *MockMailer) EXPECT() *MockMailer_Expecter {
 	return &MockMailer_Expecter{mock: &_m.Mock}
 }
 
+// SendPaymentProofAlert provides a mock function for the type MockMailer
+func (_mock *MockMailer) SendPaymentProofAlert(ctx context.Context, order *payments.OrderRef, method payments.Method, reference string) error {
+	ret := _mock.Called(ctx, order, method, reference)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SendPaymentProofAlert")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *payments.OrderRef, payments.Method, string) error); ok {
+		r0 = returnFunc(ctx, order, method, reference)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockMailer_SendPaymentProofAlert_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SendPaymentProofAlert'
+type MockMailer_SendPaymentProofAlert_Call struct {
+	*mock.Call
+}
+
+// SendPaymentProofAlert is a helper method to define mock.On call
+//   - ctx context.Context
+//   - order *payments.OrderRef
+//   - method payments.Method
+//   - reference string
+func (_e *MockMailer_Expecter) SendPaymentProofAlert(ctx any, order any, method any, reference any) *MockMailer_SendPaymentProofAlert_Call {
+	return &MockMailer_SendPaymentProofAlert_Call{Call: _e.mock.On("SendPaymentProofAlert", ctx, order, method, reference)}
+}
+
+func (_c *MockMailer_SendPaymentProofAlert_Call) Run(run func(ctx context.Context, order *payments.OrderRef, method payments.Method, reference string)) *MockMailer_SendPaymentProofAlert_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *payments.OrderRef
+		if args[1] != nil {
+			arg1 = args[1].(*payments.OrderRef)
+		}
+		var arg2 payments.Method
+		if args[2] != nil {
+			arg2 = args[2].(payments.Method)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMailer_SendPaymentProofAlert_Call) Return(err error) *MockMailer_SendPaymentProofAlert_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockMailer_SendPaymentProofAlert_Call) RunAndReturn(run func(ctx context.Context, order *payments.OrderRef, method payments.Method, reference string) error) *MockMailer_SendPaymentProofAlert_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // SendPaymentReceivedEmail provides a mock function for the type MockMailer
 func (_mock *MockMailer) SendPaymentReceivedEmail(ctx context.Context, order *payments.OrderRef, method payments.Method, reference string) error {
 	ret := _mock.Called(ctx, order, method, reference)
@@ -181,6 +250,69 @@ func (_c *MockMailer_SendPaymentRejectedEmail_Call) Return(err error) *MockMaile
 }
 
 func (_c *MockMailer_SendPaymentRejectedEmail_Call) RunAndReturn(run func(ctx context.Context, order *payments.OrderRef, method payments.Method, reference string) error) *MockMailer_SendPaymentRejectedEmail_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SendPaymentSettledAlert provides a mock function for the type MockMailer
+func (_mock *MockMailer) SendPaymentSettledAlert(ctx context.Context, order *payments.OrderRef, method payments.Method) error {
+	ret := _mock.Called(ctx, order, method)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SendPaymentSettledAlert")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *payments.OrderRef, payments.Method) error); ok {
+		r0 = returnFunc(ctx, order, method)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockMailer_SendPaymentSettledAlert_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SendPaymentSettledAlert'
+type MockMailer_SendPaymentSettledAlert_Call struct {
+	*mock.Call
+}
+
+// SendPaymentSettledAlert is a helper method to define mock.On call
+//   - ctx context.Context
+//   - order *payments.OrderRef
+//   - method payments.Method
+func (_e *MockMailer_Expecter) SendPaymentSettledAlert(ctx any, order any, method any) *MockMailer_SendPaymentSettledAlert_Call {
+	return &MockMailer_SendPaymentSettledAlert_Call{Call: _e.mock.On("SendPaymentSettledAlert", ctx, order, method)}
+}
+
+func (_c *MockMailer_SendPaymentSettledAlert_Call) Run(run func(ctx context.Context, order *payments.OrderRef, method payments.Method)) *MockMailer_SendPaymentSettledAlert_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *payments.OrderRef
+		if args[1] != nil {
+			arg1 = args[1].(*payments.OrderRef)
+		}
+		var arg2 payments.Method
+		if args[2] != nil {
+			arg2 = args[2].(payments.Method)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMailer_SendPaymentSettledAlert_Call) Return(err error) *MockMailer_SendPaymentSettledAlert_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockMailer_SendPaymentSettledAlert_Call) RunAndReturn(run func(ctx context.Context, order *payments.OrderRef, method payments.Method) error) *MockMailer_SendPaymentSettledAlert_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -184,7 +184,9 @@ type TextGenSurface interface {
 // ThemGenSurface is the browser-realm AI theme generator surface the routes
 // mount. It is satisfied by the themegen module's handler; the structural
 // seam keeps routes.go from importing the module so the surface stays
-// removable. The themGenEnabled feature flag gates mounting.
+// removable. Only the generate leaf stays behind the themGenEnabled feature
+// flag: theme management (list/download/activate/deactivate/snapshot) needs
+// no AI key and mounts whenever the module wires a handler.
 type ThemGenSurface interface {
 	Generate(http.ResponseWriter, *http.Request)
 	List(http.ResponseWriter, *http.Request)
@@ -209,7 +211,9 @@ type SpeechSurface interface {
 // PlugGenSurface is the browser-realm AI plugin generator surface the routes
 // mount. It is satisfied by the plugingen module's handler; the structural
 // seam keeps routes.go from importing the module so the surface stays
-// removable. The plugGenEnabled feature flag gates mounting.
+// removable. Only generate and build stay behind the plugGenEnabled feature
+// flag: project management (list/download/delete) and the installed-plugin
+// status read need no AI key and mount whenever the module wires a handler.
 type PlugGenSurface interface {
 	Generate(http.ResponseWriter, *http.Request)
 	Build(http.ResponseWriter, *http.Request)
@@ -222,8 +226,10 @@ type PlugGenSurface interface {
 // ModGenSurface is the browser-realm AI module generator surface the routes
 // mount. It is satisfied by the modgen module's handler; the structural
 // seam keeps routes.go from importing the module so the surface stays
-// removable. The modGenEnabled feature flag gates mounting; the apply leaf
-// additionally requires modGenApplyEnabled.
+// removable. Only generate stays behind the modGenEnabled feature flag:
+// project management (list/download/delete) needs no AI key and mounts
+// whenever the module wires a handler; the apply leaf additionally requires
+// modGenApplyEnabled.
 type ModGenSurface interface {
 	Generate(http.ResponseWriter, *http.Request)
 	Apply(http.ResponseWriter, *http.Request)
@@ -662,14 +668,15 @@ func Setup(
 	// like the co-owned media paths above. Both realms are admin-only:
 	// generated themes restyle the whole site and generation burns AI
 	// credit, so a non-admin key gets 403 and a non-admin browser user is
-	// forbidden the same way. Preview and snapshot stay browser-only in the
-	// /api/v1 subrouter below: their per-browser cookie and session framing
-	// are meaningless for an API key. Each branch mirrors its realm group's
-	// stack — agent per-key rate limits plus API-key auth plus the admin
-	// gate, browser global API rate limit plus CSRF plus the admin role gate,
-	// both capped at the 1MB JSON body limit. Mounted only when the themegen
-	// module wires a handler.
-	if themGenEnabled && themGenHandler != nil {
+	// forbidden the same way. The per-browser preview trio stays in the
+	// /api/v1 subrouter below: its cookie framing is meaningless for an API
+	// key. Each branch mirrors its realm group's stack — agent per-key rate
+	// limits plus API-key auth plus the admin gate, browser global API rate
+	// limit plus CSRF plus the admin role gate, both capped at the 1MB JSON
+	// body limit. The management leaves mount whenever the themegen module
+	// wires a handler — managing installed themes needs no AI key — while
+	// generate stays behind the themGenEnabled feature flag.
+	if themGenHandler != nil {
 		dual := dualAuthRegistrar{
 			root: r,
 			agent: func(next http.Handler) http.Handler {
@@ -687,21 +694,26 @@ func Setup(
 							maxBodySizeMiddleware(1 << 20)(next))))
 			},
 		}
-		dual.Post("/api/v1/themegen/generate", themGenHandler.Generate)
 		dual.Get("/api/v1/themegen/themes", themGenHandler.List)
 		dual.Get("/api/v1/themegen/themes/{name}/download", themGenHandler.Download)
 		dual.Post("/api/v1/themegen/themes/{name}/activate", themGenHandler.Activate)
 		dual.Post("/api/v1/themegen/themes/deactivate", themGenHandler.Deactivate)
 		dual.Delete("/api/v1/themegen/themes/{name}", themGenHandler.Delete)
+		dual.Get("/api/v1/themegen/themes/{name}/snapshot", themGenHandler.Snapshot)
+		if themGenEnabled {
+			dual.Post("/api/v1/themegen/generate", themGenHandler.Generate)
+		}
 	}
 
 	// Dual-realm plugin generation surface — one registration per path serves
 	// both the API-key agent and the JWT browser, dispatched by credential
 	// like the co-owned media paths above. Both realms are admin-only:
 	// generation burns AI credit, so a non-admin key gets 403 and a non-admin
-	// browser user is forbidden the same way. Mounted only when the plugingen
-	// module wires a handler.
-	if plugGenEnabled && plugGenHandler != nil {
+	// browser user is forbidden the same way. The management leaves mount
+	// whenever the plugingen module wires a handler — managing projects and
+	// reading installed-plugin status needs no AI key — while generate and
+	// build stay behind the plugGenEnabled feature flag.
+	if plugGenHandler != nil {
 		dual := dualAuthRegistrar{
 			root: r,
 			agent: func(next http.Handler) http.Handler {
@@ -719,21 +731,25 @@ func Setup(
 							maxBodySizeMiddleware(1 << 20)(next))))
 			},
 		}
-		dual.Post("/api/v1/plugingen/generate", plugGenHandler.Generate)
-		dual.Post("/api/v1/plugingen/projects/{name}/build", plugGenHandler.Build)
 		dual.Get("/api/v1/plugingen/projects", plugGenHandler.List)
 		dual.Get("/api/v1/plugingen/projects/{name}/download", plugGenHandler.Download)
 		dual.Delete("/api/v1/plugingen/projects/{name}", plugGenHandler.Delete)
 		dual.Get("/api/v1/plugins", plugGenHandler.Status)
+		if plugGenEnabled {
+			dual.Post("/api/v1/plugingen/generate", plugGenHandler.Generate)
+			dual.Post("/api/v1/plugingen/projects/{name}/build", plugGenHandler.Build)
+		}
 	}
 
-	// AI module generator surface. Mounted only when the modgen module
-	// wires a handler. Like plugingen, both the API-key agent and the JWT
-	// browser are dispatched by credential; both realms are admin-only
-	// (generation burns AI credit). Generated projects are inert source,
-	// so there is no build/status surface — the zip ships INSTALL.md with
-	// the custom-edition wiring and rebuild steps.
-	if modGenEnabled && modGenHandler != nil {
+	// AI module generator surface. The management leaves mount whenever the
+	// modgen module wires a handler — managing staged projects needs no AI
+	// key — while generate stays behind the modGenEnabled feature flag.
+	// Like plugingen, both the API-key agent and the JWT browser are
+	// dispatched by credential; both realms are admin-only (generation burns
+	// AI credit). Generated projects are inert source, so there is no
+	// build/status surface — the zip ships INSTALL.md with the
+	// custom-edition wiring and rebuild steps.
+	if modGenHandler != nil {
 		dual := dualAuthRegistrar{
 			root: r,
 			agent: func(next http.Handler) http.Handler {
@@ -751,10 +767,12 @@ func Setup(
 							maxBodySizeMiddleware(1 << 20)(next))))
 			},
 		}
-		dual.Post("/api/v1/modgen/generate", modGenHandler.Generate)
 		dual.Get("/api/v1/modgen/projects", modGenHandler.List)
 		dual.Get("/api/v1/modgen/projects/{name}/download", modGenHandler.Download)
 		dual.Delete("/api/v1/modgen/projects/{name}", modGenHandler.Delete)
+		if modGenEnabled {
+			dual.Post("/api/v1/modgen/generate", modGenHandler.Generate)
+		}
 		// Apply is separately gated: the tree edit needs the explicit
 		// MODULE_APPLY_ENABLED opt-in, while staging stays available
 		// whenever generation is configured.
@@ -999,9 +1017,10 @@ func Setup(
 				}
 
 				// AI theme generation routes (require authentication + feature enabled).
-				// The generation surface (generate/list/download/activate/
-				// deactivate/delete) is dual-realm at the router root above;
-				// only the cookie-scoped preview trio stays browser-only here.
+				// The management surface (list/download/activate/deactivate/
+				// delete/snapshot) is dual-realm at the router root above and
+				// mounts without the AI key; only the cookie-scoped preview
+				// trio stays browser-only here.
 				// Stop/status live at the flat /themegen/preview path on
 				// purpose: a static themes/preview leaf would compete with
 				// the dual themes/{name} leaf and chi matches those in map
@@ -1009,7 +1028,6 @@ func Setup(
 				if themGenEnabled && themGenHandler != nil {
 					r.Delete("/themegen/preview", themGenHandler.StopPreview)
 					r.Get("/themegen/preview", themGenHandler.PreviewStatus)
-					r.Get("/themegen/themes/{name}/snapshot", themGenHandler.Snapshot)
 					r.Post("/themegen/themes/{name}/preview", themGenHandler.Preview)
 				}
 			})

@@ -26,12 +26,14 @@ type ManualPayee struct {
 }
 
 // PaymentsConfig is the optional [payments] block from config.toml: the
-// offered payment methods, in the order the client presents them, plus
-// the Midtrans gateway credentials read from the environment (secrets
-// never ride config.toml). Loaded by the composition root and mapped
-// into the payments module's options.
+// offered payment methods, in the order the client presents them, the
+// operator address for payment alerts, plus the Midtrans gateway
+// credentials read from the environment (secrets never ride
+// config.toml). Loaded by the composition root and mapped into the
+// payments module's options.
 type PaymentsConfig struct {
 	Methods              []string    `toml:"methods"`
+	NotifyEmail          string      `toml:"notify_email"`
 	Manual               ManualPayee `toml:"manual"`
 	MidtransServerKey    string
 	MidtransIsProduction bool
@@ -98,6 +100,9 @@ func LoadPayments(cfg *Config) (PaymentsConfig, error) {
 		Account: strings.TrimSpace(file.Payments.Manual.Account),
 		Name:    strings.TrimSpace(file.Payments.Manual.Name),
 	}
+	// An unset address disables the notice: the adapter degrades to
+	// silence and the domain never knows.
+	config.NotifyEmail = strings.TrimSpace(file.Payments.NotifyEmail)
 	set := 0
 	if manual.Bank != "" {
 		set++

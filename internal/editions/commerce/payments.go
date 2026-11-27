@@ -128,9 +128,11 @@ func NewOrderSeams(service *ordersdomain.Service) paymentsdomain.Orders {
 // paymentMailer adapts the platform email service onto the payments
 // module's Mailer seam: money and references ride as display strings, so
 // the email service needs no commerce knowledge. Failures log adapter-side
-// and never fail a submission or decision.
+// and never fail a submission or decision. An empty notify address
+// degrades the operator alerts to silence.
 type paymentMailer struct {
-	email *email.Service
+	email  *email.Service
+	notify string
 }
 
 // SendPaymentReceivedEmail confirms the proof submission.
@@ -166,8 +168,53 @@ func (m paymentMailer) SendPaymentRejectedEmail(
 	)
 }
 
+// SendPaymentProofAlert renders the operator notice for a submitted
+// proof: which order, which method, the reference to verify, and the
+// expected amount. An empty notify address degrades to silence without
+// the domain ever knowing.
+func (m paymentMailer) SendPaymentProofAlert(
+	ctx context.Context,
+	order *paymentsdomain.OrderRef,
+	method paymentsdomain.Method,
+	reference string,
+) error {
+	if m.notify == "" {
+		return nil
+	}
+	return m.email.SendPaymentProofAlert(
+		ctx,
+		m.notify,
+		order.OrderNumber,
+		order.CustomerEmail,
+		string(method),
+		reference,
+		ordersdomain.NewMoney(order.TotalMinor, order.Currency).Format(),
+	)
+}
+
+// SendPaymentSettledAlert renders the operator notice for a settled
+// gateway payment: the order is paid and ready to fulfill. An empty
+// notify address degrades to silence without the domain ever knowing.
+func (m paymentMailer) SendPaymentSettledAlert(
+	ctx context.Context,
+	order *paymentsdomain.OrderRef,
+	method paymentsdomain.Method,
+) error {
+	if m.notify == "" {
+		return nil
+	}
+	return m.email.SendPaymentSettledAlert(
+		ctx,
+		m.notify,
+		order.OrderNumber,
+		order.CustomerEmail,
+		string(method),
+		ordersdomain.NewMoney(order.TotalMinor, order.Currency).Format(),
+	)
+}
+
 // NewPaymentMailer builds the Mailer seam adapter over the platform email
-// service.
-func NewPaymentMailer(service *email.Service) paymentsdomain.Mailer {
-	return paymentMailer{email: service}
+// service. An empty notify address disables the operator alerts.
+func NewPaymentMailer(service *email.Service, notifyEmail string) paymentsdomain.Mailer {
+	return paymentMailer{email: service, notify: notifyEmail}
 }
