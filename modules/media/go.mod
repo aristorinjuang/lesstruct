@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/aristorinjuang/lesstruct/kernel v1.7.1
+	github.com/aristorinjuang/lesstruct/kernel v1.7.2
 	github.com/deepteams/webp v1.2.1
 	github.com/openai/openai-go v1.12.0
 	github.com/stretchr/testify v1.12.1
