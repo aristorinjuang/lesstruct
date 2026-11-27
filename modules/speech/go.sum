@@ -1,8 +1,7 @@
-github.com/aristorinjuang/lesstruct/kernel v1.6.0 h1:uSH3iA/NclBfS/Z1bdor/v9mzj4sQ5hBlV06dJULcQ8=
-github.com/aristorinjuang/lesstruct/kernel v1.6.0/go.mod h1:kllJAvN88s8WLc7rTyY7WV7cFRqmA8nQA0mcpWORRyA=
-github.com/aristorinjuang/lesstruct/modules/textgen v1.6.0 h1:G693uBjZLZYjCo+caMAUKXF3bIgZlQq4zPP2noqc0rI=
-github.com/aristorinjuang/lesstruct/modules/textgen v1.6.0/go.mod h1:k+V4vWDXRynLgK1a5RwtK9AGrFfzgYuCUXaSU8fC0os=
-github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
+github.com/aristorinjuang/lesstruct/kernel v1.7.2 h1:KC79KizU3AA9mYlw3XjzuZjg+kVUu5yld0Z6ip9SkJU=
+github.com/aristorinjuang/lesstruct/kernel v1.7.2/go.mod h1:kllJAvN88s8WLc7rTyY7WV7cFRqmA8nQA0mcpWORRyA=
+github.com/aristorinjuang/lesstruct/modules/textgen v1.7.2 h1:vTgau7b0mo1vbUGo43Zj92QxOzFWMq8rEMb3DgJdXGQ=
+github.com/aristorinjuang/lesstruct/modules/textgen v1.7.2/go.mod h1:NuH2a3S24qSr7o3MEIZPQzSpFO0EuFPK3J2iZva1z9A=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-chi/chi/v5 v5.3.1 h1:3j4HZLGZQ3JpMCrPJF/Jl3mYJfWLKBfNJ6quurUGCf8=
