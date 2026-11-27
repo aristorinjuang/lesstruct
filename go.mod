@@ -6,27 +6,28 @@ toolchain go1.27.4
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/aristorinjuang/lesstruct/kernel v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/adminpanel v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/auth v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/cart v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/catalog v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/comments v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/importers v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/media v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/orders v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/payments v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/plugingen v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/privacy v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/seo v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/site-ssr v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/speech v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/textgen v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/theme-default v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/themegen v1.7.0
-	github.com/aristorinjuang/lesstruct/modules/users v1.7.0
+	github.com/aristorinjuang/lesstruct/kernel v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/adminpanel v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/auth v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/cart v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/catalog v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/comments v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/importers v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/media v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/modgen v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/orders v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/payments v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/plugingen v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/posttypes-basic v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/privacy v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/seo v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/site-ssr v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/speech v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/textgen v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/theme-default v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/theme-storefront v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/themegen v1.7.1
+	github.com/aristorinjuang/lesstruct/modules/users v1.7.1
 	github.com/aws/aws-sdk-go-v2 v1.43.4
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.34
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.0
@@ -40,7 +41,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/spf13/cobra v1.10.2
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.1
 	github.com/tetratelabs/wazero v1.11.0
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.58.0
@@ -55,7 +56,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
-	github.com/aristorinjuang/lesstruct/modules/modgen v1.7.0
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.16 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.35 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.35 // indirect
@@ -74,7 +74,7 @@ require (
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
@@ -119,9 +119,12 @@ require (
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
-	go.opentelemetry.io/otel v1.44.0 // indirect
-	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/trace v1.44.0 // indirect
+	go.opentelemetry.io/otel v1.47.0 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	golang.org/x/image v0.45.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect

@@ -6,10 +6,10 @@ toolchain go1.27.4
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/aristorinjuang/lesstruct/kernel v1.7.0
+	github.com/aristorinjuang/lesstruct/kernel v1.7.1
 	github.com/deepteams/webp v1.2.1
 	github.com/openai/openai-go v1.12.0
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.1
 	golang.org/x/image v0.45.0
 	google.golang.org/genai v1.59.0
 	modernc.org/sqlite v1.59.0
@@ -24,7 +24,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-chi/chi/v5 v5.3.1 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
@@ -36,16 +36,19 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
-	go.opentelemetry.io/otel v1.44.0 // indirect
-	go.opentelemetry.io/otel/metric v1.44.0 // indirect
-	go.opentelemetry.io/otel/trace v1.44.0 // indirect
+	go.opentelemetry.io/otel v1.47.0 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
