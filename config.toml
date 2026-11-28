@@ -214,6 +214,65 @@ suffix = "_medium"
 max_width = 616
 suffix = "_large"
 
+# ── Catalog (optional, eCommerce edition) ───────────────────────────
+# Read by the lesstruct-ecommerce binary; other editions ignore it.
+# [catalog]
+# post_type = "product"      # registered post type carrying products (startup
+#                            # fails naming the slug when unregistered)
+# currency = "IDR"           # display currency label on public payloads
+#                            # (3-letter uppercase code)
+# notify_email = "ops@example.com"  # low-stock alert recipient: fires once when
+#                            # a tracked bucket crosses its threshold downward;
+#                            # unset disables
+#
+# Display-only currencies for the storefront toggle (checkout stays in the
+# base currency). rate is display-major per base-minor, e.g. USD per IDR
+# minor unit.
+# [[catalog.display_currency]]
+# code = "USD"
+# rate = 0.000062
+
+# ── Orders (optional, eCommerce edition) ────────────────────────────
+# Read by the lesstruct-ecommerce binary; other editions ignore it.
+# [orders]
+# pending_expiry = "24h"     # how long a pending order stays payable before the
+#                            # sweeper expires it (Go duration; default 24h; also
+#                            # mirrors Midtrans Snap session lifetimes)
+# notify_email = "ops@example.com"  # operator alert on every new order (customer
+#                            # contact, shipping address, frozen totals);
+#                            # unset disables
+
+# ── Payments (optional, eCommerce edition) ──────────────────────────
+# Read by the lesstruct-ecommerce binary; other editions ignore it.
+# [payments]
+# methods = ["manual"]       # offered methods, in checkout order; add "midtrans"
+#                            # (requires MIDTRANS_SERVER_KEY in .env —
+#                            # SB-Mid-server-… on sandbox, Mid-server-… on
+#                            # production, MIDTRANS_IS_PRODUCTION chooses)
+# notify_email = "ops@example.com"  # operator alerts: manual proof submitted
+#                            # (verify it) and gateway settlement (fulfill it);
+#                            # unset disables
+#
+# Manual bank-transfer destination shown on the order-confirmation email
+# ("How to pay") and the guest tracking panel. All-or-nothing: either all
+# three fields are set or none is — a partial block fails startup naming
+# the missing field.
+# [payments.manual]
+# bank = "BCA"
+# account = "1234567890"
+# name = "PT Lesstruct Demo"
+
+# ── Invoice (optional, eCommerce edition) ───────────────────────────
+# Read by the lesstruct-ecommerce binary; other editions ignore it.
+# Prefer admin → Invoice settings: it validates, writes this block back
+# atomically, and applies to the next invoice without a restart.
+# [invoice]
+# seller_name = "Lesstruct Demo"
+# seller_address = "Jl. Example No. 1"
+# seller_tax_id = "01.234.567.8-901.234"
+# tax_rate = 12              # display-only PPN percent (0–100); an absent key
+#                            # defaults to 12, an explicit 0 survives (no tax line)
+
 # ── Theme (optional) ────────────────────────────────────────────────
 # Installed theme the content site layers over the embedded default.
 # Managed by POST /api/v1/themegen/themes/{name}/activate (restart to apply);
